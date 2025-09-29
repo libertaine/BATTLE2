@@ -1,16 +1,32 @@
-# main.py — Milestone-6: blob support + config overrides + extra agent knobs
-import argparse, json, os, sys
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
 from battle_engine.core import Kernel, Config, JSONLSink
 from battle_engine.builtins import build_agent, SUPPORTED
-from renderers import PygameRenderer
 
 
 def parse_args():
-    p = argparse.ArgumentParser(prog="BATTLE")
+    p = argparse.ArgumentParser(
+        prog="BATTLE",
+        description=(
+            "Deterministic BATTLE engine. Produces replay.jsonl and a summary.json.\n"
+            "Agents may be specified via CLI flags or BATTLE_AGENTS_JSON (preferred).\n"
+            "Rendering has moved to the client; this CLI is headless."
+        ),
+    )
     p.add_argument("--config", "-c", default="")
     p.add_argument("--ticks", type=int, default=3000)
     p.add_argument("--replay", default="replay.jsonl")
-    p.add_argument("--pygame", action="store_true", help="enable Pygame visualization")
+
+    # kept for backward-compat, but ignored (no client import here)
+    p.add_argument(
+        "--pygame",
+        action="store_true",
+        help="(deprecated/no-op) rendering moved to the client; use battle-client",
+    )
 
     # config overrides
     p.add_argument("--seed", type=int)
@@ -28,7 +44,7 @@ def parse_args():
         help="winner resolution mode at timeout",
     )
 
-    # agent types (used only if no blob provided)
+    # agent types (used only if no blob provided and no agents.json provided)
     p.add_argument("--a-type", default="writer", choices=SUPPORTED)
     p.add_argument("--b-type", default="runner", choices=SUPPORTED)
     p.add_argument("--c-type", default="", choices=SUPPORTED + ("",))
@@ -51,7 +67,7 @@ def parse_args():
         "--ptr", type=int, default=512, help="initial pointer for pointer-based agents"
     )
 
-    # NEW extra knobs (5 flags)
+    # extra knobs
     p.add_argument("--writes", type=int, help="flooder: writes per loop")
     p.add_argument("--step", type=int, help="spiral: initial stride step")
     p.add_argument("--delta", type=int, help="spiral: stride delta per loop")
@@ -64,7 +80,7 @@ def parse_args():
         help="optional alias for --byte (overrides it if provided)",
     )
 
-    # raw blob paths (override type/params for that agent)
+    # raw blob paths (override type/params for that agent) — used if no agents.json
     p.add_argument("--a-blob")
     p.add_argument("--b-blob")
     p.add_argument("--c-blob")
@@ -81,6 +97,7 @@ def load_config(path: str) -> Config:
 
 
 def read_blob(path: str) -> bytes:
+    # Support resolving blob path relative to the agents.json location later if needed:
     if not os.path.exists(path):
         print(f"ERROR: blob not found: {path}", file=sys.stderr)
         sys.exit(2)
@@ -88,8 +105,67 @@ def read_blob(path: str) -> bytes:
         return f.read()
 
 
+def _load_agents_spec_from_env():
+    """Return (spec_dict, base_dir) if BATTLE_AGENTS_JSON is set; else ({}, None)."""
+    p = os.environ.get("BATTLE_AGENTS_JSON")
+    if not p:
+        return {}, None
+    with open(p, "r") as f:
+        spec = json.load(f)
+    base = Path(p).parent
+    return spec, base
+
+
+def _resolve_agent(letter: str, spec: dict, spec_dir: Path | None, args, cfg, common_kwargs):
+    """
+    Resolve an agent for slot letter ('A'/'B'/'C') returning (code_bytes, agent_name, start_pos).
+    Precedence:
+      1) spec[letter] from agents.json via env
+      2) --{letter}-blob
+      3) --{letter}-type with builtins
+    """
+    # defaults
+    start = getattr(args, f"{letter.lower()}_start")
+    # 1) agents.json
+    if spec and letter in spec:
+        s = spec[letter]
+        t = s.get("type")
+        if t == "blob":
+            path = s["path"]
+            if spec_dir is not None and not os.path.isabs(path):
+                path = str((spec_dir / path).resolve())
+            code = read_blob(path)
+            name = s.get("name") or f"{letter}_blob"
+            # entry/header are metadata; VM/dispatcher should already handle ABI if needed
+            return code, name, start
+        elif t == "builtin":
+            agent_id = s["id"]
+            code = build_agent(agent_id, start, **common_kwargs)
+            return code, agent_id, start
+        else:
+            print(f"ERROR: unknown agent type for {letter}: {t}", file=sys.stderr)
+            sys.exit(2)
+
+    # 2) direct blob flag
+    blob = getattr(args, f"{letter.lower()}_blob")
+    if blob:
+        code = read_blob(blob)
+        return code, f"{letter}_blob", start
+
+    # 3) builtin type flag
+    agent_type = getattr(args, f"{letter.lower()}_type")
+    if not agent_type:
+        # empty string for C means "not used"
+        return None, "", start
+    code = build_agent(agent_type, start, **common_kwargs)
+    return code, agent_type, start
+
+
 if __name__ == "__main__":
     args = parse_args()
+    if args.pygame:
+        print("warn: --pygame is ignored here; use the client to render replays", file=sys.stderr)
+
     cfg = load_config(args.config)
 
     # apply overrides
@@ -110,14 +186,18 @@ if __name__ == "__main__":
     if args.win_mode is not None:
         cfg.win_mode = args.win_mode
 
-    # decide effective byte value (allow --attack-byte to override --byte)
+    # effective general byte
     eff_byte = args.attack_byte if args.attack_byte is not None else args.byte
 
-    sink = JSONLSink(args.replay)
-    renderer = PygameRenderer() if args.pygame else None
-    k = Kernel(cfg, sink=sink, renderer=renderer)
+    # replay sink
+    replay_path = Path(args.replay)
+    replay_path.parent.mkdir(parents=True, exist_ok=True)
+    sink = JSONLSink(str(replay_path))
 
-    # common kwargs for built-in assemblers (passed through to agents.build_agent)
+    # renderer removed from engine (headless)
+    k = Kernel(cfg, sink=sink, renderer=None)
+
+    # common kwargs for built-in assemblers
     common_kwargs = {
         "offset": args.offset,
         "byte": eff_byte,
@@ -126,37 +206,56 @@ if __name__ == "__main__":
         "writes": args.writes,
         "step": args.step,
         "delta": args.delta,
-        "target": args.target,
+        "target": args.target,   # may be None
     }
+    # NEW: drop None-valued keys so registry defaults apply
+    common_kwargs = {k: v for k, v in common_kwargs.items() if v is not None}
 
-    # Agent A
-    if args.a_blob:
-        codeA = read_blob(args.a_blob)
-    else:
-        codeA = build_agent(args.a_type, args.a_start, **common_kwargs)
-    k.spawn("A", args.a_start % cfg.arena_size, codeA)
+    # Resolve agents via env spec or CLI
+    spec, spec_dir = _load_agents_spec_from_env()
 
-    # Agent B
-    if args.b_blob:
-        codeB = read_blob(args.b_blob)
-    else:
-        # nudge default pointer for variety between agents
-        kwargsB = dict(common_kwargs)
-        if kwargsB.get("ptr") is not None:
-            kwargsB["ptr"] = (kwargsB["ptr"] + 128) % cfg.arena_size
-        codeB = build_agent(args.b_type, args.b_start, **kwargsB)
-    k.spawn("B", args.b_start % cfg.arena_size, codeB)
+    codeA, nameA, startA = _resolve_agent("A", spec, spec_dir, args, cfg, common_kwargs)
+    codeB, nameB, startB = _resolve_agent("B", spec, spec_dir, args, cfg, common_kwargs)
+    codeC, nameC, startC = _resolve_agent("C", spec, spec_dir, args, cfg, common_kwargs)
 
-    # Agent C (optional)
-    if args.c_blob or args.c_type:
-        if args.c_blob:
-            codeC = read_blob(args.c_blob)
-        else:
-            kwargsC = dict(common_kwargs)
-            if kwargsC.get("ptr") is not None:
-                kwargsC["ptr"] = (kwargsC["ptr"] + 256) % cfg.arena_size
-            codeC = build_agent(args.c_type, args.c_start, **kwargsC)
-        k.spawn("C", args.c_start % cfg.arena_size, codeC)
+    # Spawn required agents
+    if codeA is None or codeB is None:
+        print("ERROR: agents A and B must be specified (builtin or blob)", file=sys.stderr)
+        sys.exit(2)
+
+    k.spawn("A", startA % cfg.arena_size, codeA)
+    k.spawn("B", startB % cfg.arena_size, codeB)
+    if codeC is not None and nameC:
+        k.spawn("C", startC % cfg.arena_size, codeC)
 
     winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
-    print(f"Winner: {winner or 'tie'}; replay: {args.replay}")
+
+    # Write summary.json next to replay
+    summary_path = replay_path.with_name("summary.json")
+    params = {
+        "arena": cfg.arena_size,
+        "ticks": args.ticks,
+        "win_mode": getattr(cfg, "win_mode", None),
+        "territory_w": getattr(cfg.weights, "territory", None),
+        "territory_bucket": getattr(cfg.weights, "territory_bucket", None),
+    }
+    # kernel stats are implementation-specific; guard via getattr
+    summary = {
+        "version": 1,
+        "seed": getattr(cfg, "seed", None),
+        "ticks": args.ticks,
+        "winner": winner or "tie",
+        "A_score": getattr(k, "A_score", 0),
+        "B_score": getattr(k, "B_score", 0),
+        "A_alive_ticks": getattr(k, "A_alive", 0),
+        "B_alive_ticks": getattr(k, "B_alive", 0),
+        "A_territory": getattr(k, "A_territory", 0),
+        "B_territory": getattr(k, "B_territory", 0),
+        "params": params,
+        "agents": {"A": nameA, "B": nameB, **({"C": nameC} if nameC else {})},
+    }
+    summary_path.write_text(json.dumps(summary, indent=2))
+
+    if not args.quiet:
+        print(f"Winner: {winner or 'tie'}; replay: {replay_path}; summary: {summary_path}")
+
