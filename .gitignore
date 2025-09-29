@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Venvs
+.venv/
+venv/
+
+# VSCode (share later if desired)
+.vscode/
+
+# Project artifacts
+runs/
+engine/src/battle_engine/runs/
+agents_build/
+*.blob
+*.jsonl
+
+# Logs / temps / backups
+*.log
+*.tmp
+*.bak
+*.old
+*.orig
