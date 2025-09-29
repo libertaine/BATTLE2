@@ -1,7 +1,7 @@
 # main.py — Milestone-6: blob support + config overrides + extra agent knobs
 import argparse, json, os, sys
-from core import Kernel, Config, JSONLSink
-from agents import build_agent, SUPPORTED
+from battle_engine.core import Kernel, Config, JSONLSink
+from battle_engine.builtins import build_agent, SUPPORTED
 from renderers import PygameRenderer
 
 

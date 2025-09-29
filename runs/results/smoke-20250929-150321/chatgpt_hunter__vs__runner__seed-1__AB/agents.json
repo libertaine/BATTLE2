@@ -1,0 +1,10 @@
+{
+  "A": {
+    "type": "blob",
+    "path": "/home/rod/Projects/BATTLE2/tournament/agents_build/chatgpt_hunter.blob"
+  },
+  "B": {
+    "type": "builtin",
+    "id": "runner"
+  }
+}
