@@ -1,0 +1,5 @@
+# id,kind,source,byte,stride,header
+cgpt,asm,agents_tooling/chatgpt_hunter.asm,0xC6,7,0
+claude,asm,agents_tooling/claude_agent.asm,0xC1,7,16
+runner,builtin,runner,0,0,0
+bomber,builtin,bomber,0,0,0

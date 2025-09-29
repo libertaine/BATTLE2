@@ -1,0 +1,53 @@
+<frozen importlib._bootstrap>:488: RuntimeWarning: Your system is avx2 capable but pygame was not built with support for it. The performance of some of your blits could be adversely affected. Consider enabling compile time detection with environment variables like PYGAME_DETECT_AVX2=1 if you are compiling without cross compilation.
+pygame 2.6.1 (SDL 2.32.2, Python 3.13.3)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[T00001] alive=['A', 'B'] score={'A': 10, 'B': 1}
+[T00002] alive=['A', 'B'] score={'A': 20, 'B': 2}
+[T00003] alive=['A', 'B'] score={'A': 30, 'B': 3}
+[T00004] alive=['A', 'B'] score={'A': 40, 'B': 4}
+[T00005] alive=['A', 'B'] score={'A': 50, 'B': 5}
+[T00006] alive=['A', 'B'] score={'A': 60, 'B': 6}
+[T00007] alive=['A', 'B'] score={'A': 70, 'B': 7}
+[T00008] alive=['A', 'B'] score={'A': 80, 'B': 8}
+[T00009] alive=['A', 'B'] score={'A': 90, 'B': 9}
+[T00050] alive=['A', 'B'] score={'A': 500, 'B': 50}
+[T00100] alive=['A', 'B'] score={'A': 1000, 'B': 100}
+[T00150] alive=['A', 'B'] score={'A': 1500, 'B': 150}
+[T00200] alive=['A', 'B'] score={'A': 2000, 'B': 200}
+[T00250] alive=['A', 'B'] score={'A': 2500, 'B': 250}
+[T00300] alive=['A', 'B'] score={'A': 3000, 'B': 300}
+[T00350] alive=['A', 'B'] score={'A': 3500, 'B': 350}
+[T00400] alive=['A', 'B'] score={'A': 4000, 'B': 400}
+[T00450] alive=['A', 'B'] score={'A': 4500, 'B': 450}
+[T00500] alive=['A', 'B'] score={'A': 5000, 'B': 500}
+[T00550] alive=['A', 'B'] score={'A': 5500, 'B': 550}
+[T00600] alive=['A', 'B'] score={'A': 6000, 'B': 600}
+[T00650] alive=['A', 'B'] score={'A': 6500, 'B': 650}
+[T00700] alive=['A', 'B'] score={'A': 7000, 'B': 700}
+[T00750] alive=['A', 'B'] score={'A': 7500, 'B': 750}
+[T00800] alive=['A', 'B'] score={'A': 8000, 'B': 800}
+[T00850] alive=['A', 'B'] score={'A': 8500, 'B': 850}
+[T00900] alive=['A', 'B'] score={'A': 9000, 'B': 900}
+[T00950] alive=['A', 'B'] score={'A': 9500, 'B': 950}
+[T01000] alive=['A', 'B'] score={'A': 10000, 'B': 1000}
+[T01050] alive=['A', 'B'] score={'A': 10500, 'B': 1050}
+[T01100] alive=['A', 'B'] score={'A': 11000, 'B': 1100}
+[T01150] alive=['A', 'B'] score={'A': 11500, 'B': 1150}
+[T01200] alive=['A', 'B'] score={'A': 12000, 'B': 1200}
+[T01250] alive=['A', 'B'] score={'A': 12500, 'B': 1250}
+[T01300] alive=['A', 'B'] score={'A': 13000, 'B': 1300}
+[T01350] alive=['A', 'B'] score={'A': 13500, 'B': 1350}
+[T01400] alive=['A', 'B'] score={'A': 14000, 'B': 1400}
+[T01450] alive=['A', 'B'] score={'A': 14500, 'B': 1450}
+[T01500] alive=['A', 'B'] score={'A': 15000, 'B': 1500}
+[T01550] alive=['A', 'B'] score={'A': 15500, 'B': 1550}
+[T01600] alive=['A', 'B'] score={'A': 16000, 'B': 1600}
+[T01650] alive=['A', 'B'] score={'A': 16500, 'B': 1650}
+[T01700] alive=['A', 'B'] score={'A': 17000, 'B': 1700}
+[T01750] alive=['A', 'B'] score={'A': 17500, 'B': 1750}
+[T01800] alive=['A', 'B'] score={'A': 18000, 'B': 1800}
+[T01850] alive=['A', 'B'] score={'A': 18500, 'B': 1850}
+[T01900] alive=['A', 'B'] score={'A': 19000, 'B': 1900}
+[T01950] alive=['A', 'B'] score={'A': 19500, 'B': 1950}
+[T02000] alive=['A', 'B'] score={'A': 20000, 'B': 2000}
+Winner: A; replay: replay.jsonl

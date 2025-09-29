@@ -1,0 +1,7 @@
+{
+  "arena_size": 4096,
+  "instr_per_tick": 8,
+  "seed": 424242,
+  "weights": { "alive": 1, "kill": 5 }
+}
+

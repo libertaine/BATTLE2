@@ -1,0 +1,56 @@
+{
+  "winner": "B",
+  "win_mode": "score_fallback",
+  "ticks": 13,
+  "arena_size": 2048,
+  "config": {
+    "arena_size": 2048,
+    "instr_per_tick": 8,
+    "seed": 3,
+    "win_mode": "score_fallback",
+    "weights": {
+      "alive": 1,
+      "kill": 5,
+      "territory": 1,
+      "territory_bucket": 32
+    }
+  },
+  "score": {
+    "A": 181,
+    "B": 27
+  },
+  "agents": [
+    {
+      "id": "A",
+      "alive": false,
+      "score": 181,
+      "alive_ticks": 12,
+      "kills": 0,
+      "deaths": 1,
+      "cpu_total": 100,
+      "mem_writes": 1,
+      "territory_last": 439,
+      "territory_max": 447,
+      "territory_avg": 443.61538461538464,
+      "territory_pct_last": 21.435546875,
+      "territory_pct_max": 21.826171875,
+      "territory_pct_avg": 21.660907451923077
+    },
+    {
+      "id": "B",
+      "alive": true,
+      "score": 27,
+      "alive_ticks": 13,
+      "kills": 1,
+      "deaths": 0,
+      "cpu_total": 104,
+      "mem_writes": 34,
+      "territory_last": 52,
+      "territory_max": 52,
+      "territory_avg": 39.0,
+      "territory_pct_last": 2.5390625,
+      "territory_pct_max": 2.5390625,
+      "territory_pct_avg": 1.904296875
+    }
+  ]
+}

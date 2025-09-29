@@ -1,0 +1,13 @@
+<frozen importlib._bootstrap>:488: RuntimeWarning: Your system is avx2 capable but pygame was not built with support for it. The performance of some of your blits could be adversely affected. Consider enabling compile time detection with environment variables like PYGAME_DETECT_AVX2=1 if you are compiling without cross compilation.
+pygame 2.6.1 (SDL 2.32.2, Python 3.13.3)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[T00001] alive=['A', 'B'] score={'A': 10, 'B': 1}
+[T00002] alive=['A', 'B'] score={'A': 20, 'B': 2}
+[T00003] alive=['A', 'B'] score={'A': 30, 'B': 3}
+[T00004] alive=['A', 'B'] score={'A': 40, 'B': 4}
+[T00005] alive=['A', 'B'] score={'A': 50, 'B': 5}
+[T00006] alive=['A', 'B'] score={'A': 60, 'B': 6}
+[T00007] alive=['A', 'B'] score={'A': 70, 'B': 7}
+[T00008] alive=['A', 'B'] score={'A': 80, 'B': 8}
+[T00009] alive=['A', 'B'] score={'A': 90, 'B': 9}
+Winner: B; replay: replay.jsonl
