@@ -1,6 +1,7 @@
 # agents.py — expanded agent library (flooder, spiral, seeker)
 from typing import Tuple
-from battle_engine import core import enc, NOP, MOV, ADD, LOAD, STORE, JMP, JZ, MOVP, ADDP, LOADI, STOREI
+from battle_engine import core
+from battle_engine.core import enc, NOP, MOV, ADD, LOAD, STORE, JMP, JZ, MOVP, ADDP, LOADI, STOREI
 
 SUPPORTED = ("runner", "writer", "bomber", "flooder", "spiral", "seeker")
 
