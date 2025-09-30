@@ -1,0 +1,1 @@
+{ "name": "bomber", "display": "Bomber", "defaults": { "blob_path": "agents/bomber/model.blob" } }

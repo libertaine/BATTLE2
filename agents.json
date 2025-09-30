@@ -1,0 +1,4 @@
+{
+  "A": {"type":"blob","path":"agents_build/claude_agent.h16.blob","entry":0, "name": "claude_agent"},
+  "B": {"type":"builtin","id":"runner"}
+}
