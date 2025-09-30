@@ -29,3 +29,6 @@ agents_build/
 summary.json
 replay.jsonl
 runs/
+runs/_loose/
+battle_agent_designer.egg-info/
+engine/src/battle_engine/cli.py.*

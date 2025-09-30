@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "battle-agent-designer"
+version = "0.1.0"
+description = "PySide6 desktop editor/launcher for Battle engine"
+authors = [{name = "Your Name"}]
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.5",
+]
+
+[project.scripts]
+battle-agent-designer = "app.main:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["runs*", "results*", "agents/*"]  # keep non-code dirs out of the wheel

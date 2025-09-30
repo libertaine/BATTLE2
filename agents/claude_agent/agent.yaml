@@ -1,0 +1,1 @@
+{ "name": "claude_agent", "display": "Claude Agent (h16)", "defaults": { "blob_path": "agents/claude_agent/model.blob" } }
