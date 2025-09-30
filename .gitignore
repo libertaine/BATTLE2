@@ -25,3 +25,7 @@ agents_build/
 *.bak
 *.old
 *.orig
+
+summary.json
+replay.jsonl
+runs/
