@@ -158,6 +158,37 @@ python3 -m battle_engine.cli --a-type replicator --b-type runner --ticks 50
 
 ---
 
+## Battle Agent Designer (Experimental)
+
+BATTLE2 includes an **Agent Designer** GUI for creating and testing agents without editing YAML or Python by hand.
+
+### Launching
+
+```bash
+python3 -m battle_agent_designer
+```
+
+### Features
+
+* Pick a base template (`runner`, `writer`, `bomber`, etc.)
+* Adjust parameters (aggression, stride, step, etc.)
+* Save designs as new agents under `agents/<name>/`
+* Quickly test agents against built-ins in a small arena
+
+### Workflow
+
+1. Design your agent visually in the GUI.
+2. Save → creates `agent.yaml` (and optional stub `agent.py`).
+3. Run battles with your new agent via the CLI:
+
+   ```bash
+   python3 -m battle_engine.cli --a-type my_custom_agent --b-type runner --ticks 50
+   ```
+
+The Agent Designer is **experimental** but provides a faster on-ramp for experimenting with agent behaviors and for use in classrooms/demos.
+
+---
+
 ## Development
 
 Typical workflow:
