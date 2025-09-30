@@ -29,3 +29,4 @@ agents_build/
 summary.json
 replay.jsonl
 runs/
+runs/_loose/
