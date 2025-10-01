@@ -4,6 +4,9 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, Tuple, Optional
+import subprocess
+import re
+from pathlib import Path
 
 from battle_engine.core import Kernel, Config, JSONLSink
 from battle_engine.builtins import build_agent, SUPPORTED
@@ -15,6 +18,91 @@ from .agents import AgentSpec, discover_agents, resolve_agent
 # ----------------------------
 # Helpers
 # ----------------------------
+
+
+def _run_pmars(
+    red_a: Path,
+    red_b: Path,
+    *,
+    pmars_cmd: str,
+    core_size: int,
+    max_cycles: int,
+    max_processes: int,
+    max_len: int,
+    min_dist: int,
+    rounds: int,
+) -> tuple[str, dict]:
+    """
+    Run pMARS in batch (no GUI) and try to parse the result from stdout.
+
+    Returns: (winner, extra)
+      winner in {"A", "B", "tie", "unknown"}
+      extra: dict with raw stdout/stderr for debugging and any parsed stats
+    """
+    # pMARS flags referenced from upstream docs/manpages.
+    # -b : benchmark / batch (no UI)
+    # -r : rounds
+    # -s : core size
+    # -c : max cycles
+    # -p : max processes
+    # -l : max length
+    # -d : min distance
+    # We pass A then B sources directly; pMARS assembles them.
+    cmd = [
+        pmars_cmd,
+        "-b",
+        "-r",
+        str(rounds),
+        "-s",
+        str(core_size),
+        "-c",
+        str(max_cycles),
+        "-p",
+        str(max_processes),
+        "-l",
+        str(max_len),
+        "-d",
+        str(min_dist),
+        str(red_a),
+        str(red_b),
+    ]
+    proc = subprocess.run(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    out = proc.stdout
+    err = proc.stderr
+
+    # Heuristic parser:
+    # Many builds print a result summary or a final line with who survives.
+    # We try a few common patterns; if none match we return 'unknown'.
+    # Tweak these for your local build if needed.
+    winner = "unknown"
+    # Common explicit phrases:
+    if re.search(r"\b[Aa]\s+wins\b", out):
+        winner = "A"
+    elif re.search(r"\b[Bb]\s+wins\b", out):
+        winner = "B"
+    elif re.search(r"\b[tT]ie\b|\b[dD]raw\b", out):
+        winner = "tie"
+
+    # Fallback: look for a final scoreboard like "A: <n>  B: <m>"
+    if winner == "unknown":
+        m = re.search(r"A\s*[:=]\s*(\d+).+?B\s*[:=]\s*(\d+)", out, re.DOTALL)
+        if m:
+            a_score, b_score = int(m.group(1)), int(m.group(2))
+            if a_score > b_score:
+                winner = "A"
+            elif b_score > a_score:
+                winner = "B"
+            else:
+                winner = "tie"
+
+    extra = {
+        "stdout": out,
+        "stderr": err,
+        "returncode": proc.returncode,
+    }
+    return winner, extra
 
 
 def _final_from_replay(replay_path: Path) -> dict[str, int]:
@@ -254,6 +342,35 @@ def parse_args() -> argparse.Namespace:
         help="optional alias for --byte (overrides it if provided)",
     )
 
+    # --- ICWS'94 / pMARS backend flags ---
+    p.add_argument(
+        "--mode",
+        choices=["b2", "redcode94"],
+        default="b2",
+        help="Engine mode: 'b2' for built-in BATTLE agents (default) or 'redcode94' to run pMARS.",
+    )
+
+    p.add_argument(
+        "--red-a", type=str, help="Warrior A file (.red or .load) for redcode94 mode"
+    )
+    p.add_argument(
+        "--red-b", type=str, help="Warrior B file (.red or .load) for redcode94 mode"
+    )
+
+    p.add_argument("--core-size", type=int, default=8000, help="ICWS'94 core size")
+    p.add_argument("--max-cycles", type=int, default=80000, help="Max cycles per round")
+    p.add_argument(
+        "--max-processes", type=int, default=8000, help="Max processes per warrior"
+    )
+    p.add_argument("--max-len", type=int, default=100, help="Max warrior length")
+    p.add_argument(
+        "--min-dist",
+        type=int,
+        default=100,
+        help="Minimum initial distance between warriors",
+    )
+    p.add_argument("--rounds", type=int, default=1, help="Number of rounds to run")
+
     # quiet mode
     p.add_argument("--quiet", action="store_true")
 
@@ -405,6 +522,65 @@ def main(argv: Iterable[str] | None = None) -> int:
     replay_path = Path(args.replay).expanduser().resolve()
     replay_path.parent.mkdir(parents=True, exist_ok=True)
     sink = JSONLSink(str(replay_path))
+
+    if args.mode == "redcode94":
+        if not args.red_a or not args.red_b:
+            print("redcode94 mode requires --red-a and --red-b", file=sys.stderr)
+            return 2
+
+        pmars_cmd = os.environ.get("PMARS_CMD", "pmars")
+        a_path = Path(args.red_a)
+        b_path = Path(args.red_b)
+        if not a_path.exists() or not b_path.exists():
+            print(
+                f"Warrior file missing: {a_path if not a_path.exists() else b_path}",
+                file=sys.stderr,
+            )
+            return 2
+
+        winner, extra = _run_pmars(
+            a_path,
+            b_path,
+            pmars_cmd=pmars_cmd,
+            core_size=args.core_size,
+            max_cycles=args.max_cycles,
+            max_processes=args.max_processes,
+            max_len=args.max_len,
+            min_dist=args.min_dist,
+            rounds=args.rounds,
+        )
+
+        # Write summary.json next to your (planned) replay path
+        summary_path = replay_path.with_name("summary.json")
+        summary = {
+            "version": 1,
+            "mode": "redcode94",
+            "ticks": args.max_cycles,
+            "winner": winner or "tie",
+            "A_score": None,  # Unknown unless you enhance parsing
+            "B_score": None,
+            "params": {
+                "core_size": args.core_size,
+                "max_cycles": args.max_cycles,
+                "max_processes": args.max_processes,
+                "max_len": args.max_len,
+                "min_dist": args.min_dist,
+                "rounds": args.rounds,
+            },
+            "agents": {"A": str(a_path), "B": str(b_path)},
+            "backend": {"cmd": pmars_cmd, "returncode": extra.get("returncode")},
+        }
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+        # Optional: write a tiny replay.jsonl (so downstream tools don't break)
+        # replay_path.write_text("", encoding="utf-8")
+
+        print(f"Winner: {summary['winner']}; summary: {summary_path}")
+        # If you want verbose troubleshooting, uncomment:
+        # if winner == "unknown":
+        #     print(extra["stdout"])
+        #     print(extra["stderr"], file=sys.stderr)
+        return 0
 
     # kernel
     k = Kernel(cfg, sink)
