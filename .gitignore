@@ -32,3 +32,7 @@ runs/
 runs/_loose/
 battle_agent_designer.egg-info/
 engine/src/battle_engine/cli.py.*
+
+/build/
+/dist/
+/*.spec
