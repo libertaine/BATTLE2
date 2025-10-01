@@ -1,0 +1,10 @@
+altgraph==0.17.4
+-e git+ssh://git@github.com/libertaine/BATTLE2.git@77fdbe838f1117751c3bc52c184eb7a42c9cea61#egg=battle_agent_designer
+packaging==25.0
+pyinstaller==6.16.0
+pyinstaller-hooks-contrib==2025.9
+PySide6==6.9.3
+PySide6_Addons==6.9.3
+PySide6_Essentials==6.9.3
+setuptools==80.9.0
+shiboken6==6.9.3
