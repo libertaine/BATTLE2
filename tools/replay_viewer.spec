@@ -1,16 +1,41 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.building.datastruct import Tree
+import os
 
 hidden = collect_submodules('pygame') + collect_submodules('battle_client')
-datas = collect_data_files('assets', includes=['assets/**'])
 
-exe = EXE(
-    PYZ([]),
-    script='client\\src\\battle_client\\cli.py',
-    pathex=['.', 'client\\src', 'engine\\src'],
-    hiddenimports=hidden,
+datas = []
+for p, pref in (('..\\assets','assets'), ('..\\agents','agents')):
+    if os.path.isdir(p):
+        datas.append(Tree(p, prefix=pref))
+
+a = Analysis(
+    ['..\\client\\src\\battle_client\\cli.py'],
+    pathex=['..', '..\\client\\src', '..\\engine\\src'],
+    binaries=[],
     datas=datas,
-    console=True,
-    name='BattleReplayViewer',
+    hiddenimports=hidden,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False
 )
-coll = COLLECT(exe, strip=False, upx=False, name='BattleReplayViewer')
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=None)   # MUST be here
+exe = EXE(
+    a.scripts,
+    exclude_binaries=True,
+    name='BattleReplayViewer',
+    console=True
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    name='BattleReplayViewer'
+)
