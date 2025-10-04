@@ -1,9 +1,6 @@
 
 Project to determine feasibility of using LLM to assist me in creation of a project.
 
-Here’s a cleaned-up, more complete **README.md** draft. It reflects your wrapper entry point, MIT license, PMARS mode, agent formats, usage examples, and packaging notes. You can drop this in replacing the old one (adjust sections to match your file layout exactly).
-
----
 
 ````markdown
 # BATTLE2
@@ -186,10 +183,4 @@ If you are migrating from the prior version, check the following:
 
 Contributions welcome — open a PR or issue. Thanks for checking out BATTLE2!
 
-```
-
----
-
-Let me know if you want a trimmed or extended version (with diagrams, more examples, or deeper dev notes). I can also diff this against your existing README to highlight what needs replacing.
-::contentReference[oaicite:0]{index=0}
 ```
