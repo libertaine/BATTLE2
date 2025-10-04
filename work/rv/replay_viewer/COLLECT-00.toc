@@ -1,0 +1,3 @@
+([('battlereplayviewer.exe',
+   'D:\\Projects\\BATTLE2\\builds\\rv\\battlereplayviewer.exe',
+   'EXECUTABLE')],)

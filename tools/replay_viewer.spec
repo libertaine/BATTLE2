@@ -1,41 +1,37 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
-from PyInstaller.building.datastruct import Tree
 import os
+from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.building.build_main import Analysis, PYZ
+from PyInstaller.building.api import EXE, COLLECT
 
-hidden = collect_submodules('pygame') + collect_submodules('battle_client')
+project_root = os.path.abspath(".")
+engine_src   = os.path.join(project_root, "engine", "src")
+assets_dir   = os.path.join(project_root, "assets")
+script_path  = os.path.join(project_root, "app", "replay_viewer.py")  # ABSOLUTE
 
+block_cipher = None
+hiddenimports = collect_submodules("battle_engine")
 datas = []
-for p, pref in (('..\\assets','assets'), ('..\\agents','agents')):
-    if os.path.isdir(p):
-        datas.append(Tree(p, prefix=pref))
+if os.path.isdir(assets_dir):
+    datas.append((assets_dir, "assets"))
 
 a = Analysis(
-    ['..\\client\\src\\battle_client\\cli.py'],
-    pathex=['..', '..\\client\\src', '..\\engine\\src'],
+    [script_path],
+    pathex=[project_root, engine_src],
     binaries=[],
     datas=datas,
-    hiddenimports=hidden,
+    hiddenimports=hiddenimports,
     hookspath=[],
-    hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
-    noarchive=False
+    excludes=['PySide6.scripts.deploy', 'PySide6.scripts.deploy_lib', 'project_lib'],
+    noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=None)   # MUST be here
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
-    a.scripts,
-    exclude_binaries=True,
-    name='BattleReplayViewer',
-    console=True
+    pyz, a.scripts, a.binaries, a.zipfiles, a.datas,
+    name='battlereplayviewer',
+    console=False,
+    icon=None,
 )
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    name='BattleReplayViewer'
-)
+coll = COLLECT(exe, name='battlereplayviewer')

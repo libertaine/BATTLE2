@@ -36,3 +36,5 @@ engine/src/battle_engine/cli.py.*
 /build/
 /dist/
 /*.spec
+.idea/
+.env

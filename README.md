@@ -42,7 +42,7 @@ rulesets, round-robin tournaments, replay capture, and multiple rendering backen
 
 ### Clone
 ```bash
-git clone https://github.com/<your-org>/BATTLE.git
+git clone https://github.com/libertaine/BATTLE2/BATTLE.git
 cd BATTLE
 ````
 
@@ -174,5 +174,5 @@ python .\tools\agent_designer.py
 
 ## License
 
-GPLv3 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
