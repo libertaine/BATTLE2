@@ -1,28 +1,102 @@
+# pyproject.toml — BATTLE2
+# Uses setuptools backend; supports src-style layout in BOTH engine/src and client/src.
+
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "battle-agent-designer"
+name = "battle2"
 version = "0.1.0"
-description = "PySide6 desktop editor/launcher for Battle engine"
+description = "BATTLE2: Core Wars–inspired battle engine, agent designer, and replay viewer."
+readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["PySide6>=6.5"]
-
-[project.scripts]
-battle-agent-designer = "app.main:main"
-
-# Tell setuptools to ONLY package `app/`
-[tool.setuptools.packages.find]
-include = ["app*"]
-exclude = [
-  "agents*",
-  "engine*",
-  "client*",
-  "runs*",
-  "results*",
-  "tournament*",
-  "sdk*",
-  "agents_build*"
+license = { file = "LICENSE" }
+authors = [{ name = "Rod Satterfield" }]
+keywords = ["corewar", "pmars", "ai-agents", "pygame", "simulation"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
 ]
+
+# ---- Runtime dependencies (keep core minimal; GUI in extras) ----
+dependencies = [
+  # CLI/core libs here (example):
+  "click>=8.1",
+]
+
+[project.optional-dependencies]
+# Install with: pip install .[gui]
+gui = [
+  "pygame>=2.5",
+]
+# Dev conveniences
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "pytest>=8",
+]
+# Windows build toolchain
+windows-build = [
+  "pyinstaller>=6.6",
+  "pefile>=2023.2.7",
+]
+
+# ---- Console entry points ----
+# Adjust module paths if your GUI entry modules differ.
+[project.scripts]
+battle-cli = "battle_engine.cli:main"
+battle-agent-designer = "app.agent_designer:main"
+battle-replay-viewer = "app.replay_viewer:main"
+
+[project.urls]
+Homepage = "https://github.com/libertaine/BATTLE2"
+Issues = "https://github.com/libertaine/BATTLE2/issues"
+
+# -------------------- setuptools config --------------------
+
+[tool.setuptools]
+# Include non-Python files (see [tool.setuptools.package-data] below)
+include-package-data = true
+
+# Discover packages from BOTH trees.
+[tool.setuptools.packages.find]
+where = ["engine/src", "client/src"]
+# Include patterns for both engine and client packages.
+include = ["battle_engine*", "app*", "battle_client*"]
+
+# Map top-level package names to their source roots (multi-root layout).
+[tool.setuptools.package-dir]
+battle_engine = "engine/src/battle_engine"
+# If your client code lives under client/src/app and/or client/src/battle_client:
+app = "client/src/app"
+battle_client = "client/src/battle_client"
+
+# Package data bundled inside the wheels (installed alongside Python modules).
+# Adjust globs to your actual asset dirs.
+[tool.setuptools.package-data]
+# Ship replay icons/assets, if any
+app = [
+  "assets/**/*",
+  "images/**/*",
+  "sounds/**/*",
+]
+# If the engine needs embedded reference files (e.g., default warriors/config)
+battle_engine = [
+  "data/**/*",
+  "warriors/**/*",
+]
+
+# If you prefer installing external, non-package files to a known location, you can
+# instead use data-files (commented out here; enable if you want to place files
+# outside the package, e.g., share/battle2). Many projects stick to package-data.
+# [tool.setuptools.data-files]
+# "share/battle2/warriors" = ["warriors/*"]
+# "share/battle2/licenses" = ["third_party_licenses/*"]
+
+# -------------------- Ruff (example) --------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
 
