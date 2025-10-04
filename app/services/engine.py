@@ -3,10 +3,9 @@ import json
 import os
 import sys
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 from subprocess import Popen, PIPE, STDOUT
 
 from PySide6.QtCore import QObject, Signal
@@ -72,7 +71,7 @@ class EngineRunner(QObject):
                 stderr=STDOUT,
                 env=env,
                 text=True,
-                cwd=str(self.paths.root),
+                cwd=str(self.paths.root),  # ensure runs/ paths resolve under repo root
             )
         except FileNotFoundError:
             self.error.emit("Python interpreter not found when launching engine.")
@@ -106,15 +105,17 @@ class EngineRunner(QObject):
 
     # ---- Internal helpers ----
     def _build_engine_cmd(self, cfg: RunConfig) -> tuple[list[str], dict[str, str]]:
+        """
+        Build command/env to launch the engine as a module to preserve package imports:
+        `python -m battle_engine.cli ...`
+        """
         py = sys.executable
-        engine_cli = self.paths.root / "engine" / "src" / "battle_engine" / "cli.py"
-        if not engine_cli.exists():
-            raise FileNotFoundError(f"Missing engine CLI at {engine_cli}")
 
-        # Common arguments
+        # Common arguments (module form)
         args: list[str] = [
             py,
-            str(engine_cli),
+            "-m",
+            "battle_engine.cli",
             "--arena",
             str(cfg.arena),
             "--ticks",
@@ -139,17 +140,19 @@ class EngineRunner(QObject):
         if cfg.seed is not None and cfg.seed > 0:
             args += ["--seed", str(cfg.seed)]
 
-        # Agent params via environment variables (engine can read if supported)
+        # Environment: ensure package discovery across repo root, engine/src, client/src
         env = os.environ.copy()
         sep = pythonpath_separator()
         env["PYTHONPATH"] = sep.join(
             [
-                str(self.paths.root / "engine" / "src"),
-                str(self.paths.root / "client" / "src"),
+                str(self.paths.root),  # app package visibility
+                str(self.paths.root / "engine" / "src"),  # battle_engine
+                str(self.paths.root / "client" / "src"),  # battle_client
             ]
+            + ([env["PYTHONPATH"]] if "PYTHONPATH" in env and env["PYTHONPATH"] else [])
         )
 
-        # If engine supports agent params via JSON envs, pass them.
+        # Optional agent params via env (if supported by engine)
         if cfg.a_params is not None:
             env["BATTLE_AGENT_A_PARAMS_JSON"] = json.dumps(cfg.a_params)
         if cfg.b_params is not None:
@@ -172,6 +175,10 @@ class EngineRunner(QObject):
 
 
 def open_pygame_client_direct(battle_root: Path, replay_path: Path) -> None:
+    """
+    Launch the replay viewer (Pygame client) as a module to maintain package imports:
+    `python -m battle_client.cli --replay <path> ...`
+    """
     if not replay_path.exists():
         raise FileNotFoundError(f"Replay not found: {replay_path}")
     py = sys.executable
@@ -191,9 +198,11 @@ def open_pygame_client_direct(battle_root: Path, replay_path: Path) -> None:
     sep = pythonpath_separator()
     env["PYTHONPATH"] = sep.join(
         [
-            str(battle_root / "engine" / "src"),
-            str(battle_root / "client" / "src"),
+            str(battle_root),  # app package visibility
+            str(battle_root / "engine" / "src"),  # battle_engine
+            str(battle_root / "client" / "src"),  # battle_client
         ]
+        + ([env["PYTHONPATH"]] if "PYTHONPATH" in env and env["PYTHONPATH"] else [])
     )
 
     Popen(module_cmd, cwd=str(battle_root), env=env)

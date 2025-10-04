@@ -1,0 +1,893 @@
+== Searching under: /home/rod/Projects/BATTLE2 ==
+
+== 1) UI labels & object names possibly named 'Run' / 'Run Match' ==
+
+== 2) Qt signal connections to slots (clicked.connect / triggered.connect) ==
+./app/views/advanced.py:148:        self.btnRun.clicked.connect(self._emit_run)
+./app/views/advanced.py:149:        self.btnStop.clicked.connect(self.stopRequested.emit)
+./app/views/advanced.py:150:        self.btnOpen.clicked.connect(self.openReplayRequested.emit)
+./app/views/advanced.py:151:        self.btnRefresh.clicked.connect(self.refreshAgentsRequested.emit)
+./app/views/advanced.py:152:        self.btnChooseReplay.clicked.connect(self._choose_replay)
+./app/views/advanced.py:153:        self.btnOpenReplay.clicked.connect(self._open_replay_browser)
+./app/views/simple.py:88:        self.btnRun.clicked.connect(self._emit_run)
+./app/views/simple.py:89:        self.btnStop.clicked.connect(self.stopRequested.emit)
+./app/views/simple.py:90:        self.btnOpen.clicked.connect(self.openReplayRequested.emit)
+./app/views/simple.py:91:        self.btnRefresh.clicked.connect(self.refreshAgentsRequested.emit)
+./app/widgets/json_editor.py:30:        self.btn.clicked.connect(self._validate)
+./app/main.py:93:        self.actionSimple.triggered.connect(lambda: self._set_mode(self.MODE_SIMPLE))
+./app/main.py:98:        self.actionAdvanced.triggered.connect(
+./app/main.py:108:        self.actionSimple.triggered.connect(lambda _: _exclusive(self.actionSimple))
+./app/main.py:109:        self.actionAdvanced.triggered.connect(lambda _: _exclusive(self.actionAdvanced))
+./app/main.py:116:        openReplay.triggered.connect(self._choose_and_open_replay)
+
+== 3) Function names that look like handlers ==
+./_legacy/core.py:253:    def run(self, max_ticks: int = 10000, verbose: bool = True) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/blib2to3/pgen2/conv.py:49:    def run(self, graminit_h, graminit_c):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_install_scripts.py:23:    def _run_install_scripts(self, install_dir, executable=None):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/environment.py:18:    def run(self, cmd, *args, **kwargs):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_build.py:32:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_sdist.py:820:            def run(self): ...
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_manifest.py:322:    def test_graft_prune(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_manifest.py:607:    def test_prune(self, caplog):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_editable_install.py:1110:                def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_egg_info.py:1247:    def _run_egg_info_command(self, tmpdir_cwd, env, cmd=None, output=None):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/install_scripts.py:22:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/build_ext.py:93:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/develop.py:30:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/editable_wheel.py:129:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/editable_wheel.py:279:    def _run_build_subcommands(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/editable_wheel.py:301:    def _safely_run(self, cmd_name: str):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/editable_wheel.py:357:    def _run_install(self, category: str):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/alias.py:40:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/bdist_rpm.py:18:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/bdist_wheel.py:361:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/build.py:96:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/dist_info.py:92:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/sdist.py:58:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/sdist.py:161:    def prune_file_list(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/test.py:44:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/install_lib.py:18:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/egg_info.py:292:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/egg_info.py:453:    def prune(self, dir):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/egg_info.py:539:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/build_py.py:68:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/install_egg_info.py:31:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/bdist_egg.py:164:    def run(self):  # noqa: C901  # is too complex (14)  # FIXME
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/setopt.py:136:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/saveopts.py:9:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/command/rotate.py:46:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/wheel/_bdist_wheel.py:378:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:166:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:171:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:245:    def user_runtime_path(self) -> Path:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:250:    def site_runtime_path(self) -> Path:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:269:    def iter_runtime_dirs(self) -> Iterator[str]:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:289:    def iter_runtime_paths(self) -> Iterator[Path]:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/macos.py:118:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/macos.py:123:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/unix.py:165:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/unix.py:185:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/android.py:103:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/android.py:114:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/windows.py:129:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/platformdirs/windows.py:138:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_install_data.py:15:    def test_simple_run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_check.py:22:    def _run(self, metadata=None, cwd=None, **options):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_install_headers.py:14:    def test_simple_run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_sdist.py:90:    def test_prune_file_list(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_build_clib.py:111:    def test_run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_clean.py:9:    def test_simple_run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:69:    def test_run_setup_provides_file(self, temp_file):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:75:    def test_run_setup_preserves_sys_argv(self, temp_file):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:82:    def test_run_setup_defines_subclass(self, temp_file):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:90:    def test_run_setup_uses_current_dir(self, tmp_path):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:108:    def test_run_setup_within_if_main(self, temp_file):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:114:    def test_run_commands(self, temp_file):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/bdist_dumb.py:94:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/install_scripts.py:43:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/bdist.py:142:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/build_ext.py:300:    def run(self) -> None:  # noqa: C901
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/bdist_rpm.py:278:    def run(self) -> None:  # noqa: C901
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/install.py:685:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/check.py:72:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/build.py:128:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/build_scripts.py:54:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/install_data.py:50:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/build_clib.py:87:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/sdist.py:164:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/sdist.py:377:    def prune_file_list(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/install_headers.py:32:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/install_lib.py:92:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/build_py.py:71:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/install_egg_info.py:44:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/clean.py:54:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/command/config.py:81:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/cmd.py:197:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/cmd.py:352:    def run_command(self, command: str) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/tests/test_msvc.py:90:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/tests/test_unix.py:36:    def test_runtime_libdir_option(self):  # noqa: C901
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/tests/test_cygwin.py:38:    def test_runtime_library_dir_option(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/tests/test_mingw.py:30:    def test_runtime_library_dir_option(self):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/unix.py:325:    def runtime_library_dir_option(self, dir: str) -> str | list[str]:  # type: ignore[override] # Fixed in pypa/distutils#339
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/msvc.py:592:    def runtime_library_dir_option(self, dir):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/zos.py:163:    def runtime_library_dir_option(self, dir):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/cygwin.py:218:    def runtime_library_dir_option(self, dir):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/cygwin.py:268:    def runtime_library_dir_option(self, dir):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/base.py:337:    def add_runtime_library_dir(self, dir: str) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/base.py:343:    def set_runtime_library_dirs(self, dirs: list[str]) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/compilers/C/base.py:868:    def runtime_library_dir_option(self, dir: str) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/dist.py:996:    def run_commands(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/dist.py:1006:    def run_command(self, command: str) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/build_meta.py:307:    def run_setup(self, setup_script: str = 'setup.py'):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/build_meta.py:495:    def run_setup(self, setup_script: str = 'setup.py'):
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/dist.py:1097:    def run_command(self, command) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/__init__.py:210:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/pygments/sphinxext.py:71:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/wheel/_bdist_wheel.py:378:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/api.py:173:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/api.py:178:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/api.py:252:    def user_runtime_path(self) -> Path:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/api.py:257:    def site_runtime_path(self) -> Path:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/api.py:276:    def iter_runtime_dirs(self) -> Iterator[str]:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/api.py:296:    def iter_runtime_paths(self) -> Iterator[Path]:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/macos.py:134:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/macos.py:139:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/unix.py:168:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/unix.py:188:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/android.py:103:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/android.py:114:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/windows.py:129:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/platformdirs/windows.py:138:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/pygments/sphinxext.py:71:    def run(self):
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/distlib/util.py:1761:    def run_command(self, cmd, **kwargs):
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/distlib/scripts.py:393:    def dry_run(self):
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/distlib/scripts.py:397:    def dry_run(self, value):
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/pyproject_hooks/_impl.py:159:    def subprocess_runner(self, runner: "SubprocessRunner") -> Iterator[None]:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/api.py:173:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/api.py:178:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/api.py:252:    def user_runtime_path(self) -> Path:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/api.py:257:    def site_runtime_path(self) -> Path:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/api.py:276:    def iter_runtime_dirs(self) -> Iterator[str]:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/api.py:296:    def iter_runtime_paths(self) -> Iterator[Path]:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/macos.py:132:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/macos.py:137:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/unix.py:168:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/unix.py:188:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/android.py:103:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/android.py:114:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/windows.py:129:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/platformdirs/windows.py:138:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/rich/_null_file.py:33:    def truncate(self, __size: Optional[int] = 1) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/rich/live.py:34:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/rich/progress.py:76:    def run(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/pkg_resources/__init__.py:587:    def run_script(self, script_name: str, namespace: dict[str, Any]) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/pkg_resources/__init__.py:741:    def run_script(self, requires: str, script_name: str):
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/pkg_resources/__init__.py:1698:    def run_script(self, script_name: str, namespace: dict[str, Any]):
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/help.py:15:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/list.py:168:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/index.py:61:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/cache.py:61:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/hash.py:39:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/completion.py:121:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/download.py:77:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/install.py:281:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/check.py:25:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/wheel.py:103:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/inspect.py:48:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/debug.py:174:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/freeze.py:87:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/show.py:50:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/configuration.py:108:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/uninstall.py:64:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/search.py:54:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/commands/lock.py:92:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/metadata/pkg_resources.py:76:    def run_script(self, script_name: str, namespace: str) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/network/lazy_wheel.py:123:    def truncate(self, size: int | None = None) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/cli/base_command.py:92:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/cli/base_command.py:95:    def _run_wrapper(self, level_number: int, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/pkg_resources/__init__.py:577:    def run_script(self, script_name: str, namespace: dict[str, Any]) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/pkg_resources/__init__.py:745:    def run_script(self, requires: str, script_name: str) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/pkg_resources/__init__.py:1722:    def run_script(self, script_name: str, namespace: dict[str, Any]) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/python.py:1669:    def runtest(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/python.py:1720:    def runtest(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/doctest.py:295:    def runtest(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/logging.py:791:    def pytest_runtestloop(self, session: Session) -> Generator[None, object, object]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/logging.py:804:    def pytest_runtest_logstart(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/logging.py:809:    def pytest_runtest_logreport(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/logging.py:813:    def _runtest_for(self, item: nodes.Item, when: str) -> Generator[None]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/logging.py:837:    def pytest_runtest_setup(self, item: nodes.Item) -> Generator[None]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/logging.py:846:    def pytest_runtest_call(self, item: nodes.Item) -> Generator[None]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/logging.py:853:    def pytest_runtest_teardown(self, item: nodes.Item) -> Generator[None]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/logging.py:864:    def pytest_runtest_logfinish(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/unittest.py:322:    def runtest(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/cacheprovider.py:354:    def pytest_runtest_logreport(self, report: TestReport) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/capture.py:270:    def truncate(self, size: int | None = None) -> int:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/capture.py:893:    def pytest_runtest_setup(self, item: Item) -> Generator[None]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/capture.py:898:    def pytest_runtest_call(self, item: Item) -> Generator[None]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/capture.py:903:    def pytest_runtest_teardown(self, item: Item) -> Generator[None]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/fixtures.py:344:    def prune_dependency_tree(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:159:    def runitem(self, source):
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:163:    def inline_runsource(self, source, *cmdlineargs):
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:171:    def inline_run(self, *args, plugins=(), no_reraise_ctrlc: bool = False):
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:177:    def runpytest_inprocess(self, *args, **kwargs) -> RunResult:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:181:    def runpytest(self, *args, **kwargs) -> RunResult:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:222:    def run(self, *cmdargs, timeout=None, stdin=CLOSE_STDIN) -> RunResult:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:226:    def runpython(self, script) -> RunResult:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:230:    def runpython_c(self, command):
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/legacypath.py:234:    def runpytest_subprocess(self, *args, timeout=None) -> RunResult:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/main.py:657:    def pytest_runtest_logreport(self, report: TestReport | CollectReport) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:168:    def pytest_runtest_protocol(self, item: Item) -> Generator[None, object, object]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1033:    def runitem(self, source: str) -> Any:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1048:    def inline_runsource(self, source: str, *cmdlineargs) -> HookRecorder:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1195:    def runpytest(self, *args: str | os.PathLike[str], **kwargs: Any) -> RunResult:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1467:    def runpython(self, script: os.PathLike[str]) -> RunResult:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1471:    def runpython_c(self, command: str) -> RunResult:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/terminal.py:605:    def pytest_runtest_logreport(self, report: TestReport) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/terminal.py:687:    def pytest_runtestloop(self) -> Generator[None, object, object]:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/stepwise.py:174:    def pytest_runtest_logreport(self, report: TestReport) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/nodes.py:722:    def runtest(self) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:692:    def run(self, mod: ast.Module) -> None:
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/junitxml.py:531:    def pytest_runtest_logreport(self, report: TestReport) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/blib2to3/pgen2/conv.py:49:    def run(self, graminit_h, graminit_c):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_install_scripts.py:23:    def _run_install_scripts(self, install_dir, executable=None):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/environment.py:18:    def run(self, cmd, *args, **kwargs):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_build.py:32:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_sdist.py:820:            def run(self): ...
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_manifest.py:322:    def test_graft_prune(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_manifest.py:607:    def test_prune(self, caplog):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_editable_install.py:1110:                def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_egg_info.py:1247:    def _run_egg_info_command(self, tmpdir_cwd, env, cmd=None, output=None):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/install_scripts.py:22:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/build_ext.py:93:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/develop.py:30:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/editable_wheel.py:129:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/editable_wheel.py:279:    def _run_build_subcommands(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/editable_wheel.py:301:    def _safely_run(self, cmd_name: str):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/editable_wheel.py:357:    def _run_install(self, category: str):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/alias.py:40:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/bdist_rpm.py:18:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/bdist_wheel.py:361:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/build.py:96:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/dist_info.py:92:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/sdist.py:58:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/sdist.py:161:    def prune_file_list(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/test.py:44:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/install_lib.py:18:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/egg_info.py:292:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/egg_info.py:453:    def prune(self, dir):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/egg_info.py:539:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/build_py.py:68:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/install_egg_info.py:31:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/bdist_egg.py:164:    def run(self):  # noqa: C901  # is too complex (14)  # FIXME
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/setopt.py:136:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/saveopts.py:9:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/command/rotate.py:46:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/wheel/_bdist_wheel.py:378:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:166:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:171:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:245:    def user_runtime_path(self) -> Path:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:250:    def site_runtime_path(self) -> Path:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:269:    def iter_runtime_dirs(self) -> Iterator[str]:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/api.py:289:    def iter_runtime_paths(self) -> Iterator[Path]:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/macos.py:118:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/macos.py:123:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/unix.py:165:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/unix.py:185:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/android.py:103:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/android.py:114:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/windows.py:129:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/platformdirs/windows.py:138:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_install_data.py:15:    def test_simple_run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_check.py:22:    def _run(self, metadata=None, cwd=None, **options):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_install_headers.py:14:    def test_simple_run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_sdist.py:90:    def test_prune_file_list(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_build_clib.py:111:    def test_run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_clean.py:9:    def test_simple_run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:69:    def test_run_setup_provides_file(self, temp_file):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:75:    def test_run_setup_preserves_sys_argv(self, temp_file):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:82:    def test_run_setup_defines_subclass(self, temp_file):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:90:    def test_run_setup_uses_current_dir(self, tmp_path):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:108:    def test_run_setup_within_if_main(self, temp_file):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_core.py:114:    def test_run_commands(self, temp_file):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/bdist_dumb.py:94:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/install_scripts.py:43:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/bdist.py:142:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/build_ext.py:300:    def run(self) -> None:  # noqa: C901
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/bdist_rpm.py:278:    def run(self) -> None:  # noqa: C901
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/install.py:685:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/check.py:72:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/build.py:128:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/build_scripts.py:54:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/install_data.py:50:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/build_clib.py:87:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/sdist.py:164:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/sdist.py:377:    def prune_file_list(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/install_headers.py:32:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/install_lib.py:92:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/build_py.py:71:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/install_egg_info.py:44:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/clean.py:54:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/command/config.py:81:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/cmd.py:197:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/cmd.py:352:    def run_command(self, command: str) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/tests/test_msvc.py:90:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/tests/test_unix.py:36:    def test_runtime_libdir_option(self):  # noqa: C901
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/tests/test_cygwin.py:38:    def test_runtime_library_dir_option(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/tests/test_mingw.py:30:    def test_runtime_library_dir_option(self):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/unix.py:325:    def runtime_library_dir_option(self, dir: str) -> str | list[str]:  # type: ignore[override] # Fixed in pypa/distutils#339
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/msvc.py:592:    def runtime_library_dir_option(self, dir):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/zos.py:163:    def runtime_library_dir_option(self, dir):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/cygwin.py:218:    def runtime_library_dir_option(self, dir):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/cygwin.py:268:    def runtime_library_dir_option(self, dir):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/base.py:337:    def add_runtime_library_dir(self, dir: str) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/base.py:343:    def set_runtime_library_dirs(self, dirs: list[str]) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/compilers/C/base.py:868:    def runtime_library_dir_option(self, dir: str) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/dist.py:996:    def run_commands(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/dist.py:1006:    def run_command(self, command: str) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/build_meta.py:307:    def run_setup(self, setup_script: str = 'setup.py'):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/build_meta.py:495:    def run_setup(self, setup_script: str = 'setup.py'):
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/dist.py:1097:    def run_command(self, command) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/__init__.py:210:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/pygments/sphinxext.py:71:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/wheel/_bdist_wheel.py:378:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/api.py:173:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/api.py:178:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/api.py:252:    def user_runtime_path(self) -> Path:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/api.py:257:    def site_runtime_path(self) -> Path:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/api.py:276:    def iter_runtime_dirs(self) -> Iterator[str]:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/api.py:296:    def iter_runtime_paths(self) -> Iterator[Path]:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/macos.py:134:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/macos.py:139:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/unix.py:168:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/unix.py:188:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/android.py:103:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/android.py:114:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/windows.py:129:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/platformdirs/windows.py:138:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/pygments/sphinxext.py:71:    def run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/distlib/util.py:1761:    def run_command(self, cmd, **kwargs):
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/distlib/scripts.py:393:    def dry_run(self):
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/distlib/scripts.py:397:    def dry_run(self, value):
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/pyproject_hooks/_impl.py:159:    def subprocess_runner(self, runner: "SubprocessRunner") -> Iterator[None]:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/api.py:173:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/api.py:178:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/api.py:252:    def user_runtime_path(self) -> Path:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/api.py:257:    def site_runtime_path(self) -> Path:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/api.py:276:    def iter_runtime_dirs(self) -> Iterator[str]:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/api.py:296:    def iter_runtime_paths(self) -> Iterator[Path]:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/macos.py:132:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/macos.py:137:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/unix.py:168:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/unix.py:188:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/android.py:103:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/android.py:114:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/windows.py:129:    def user_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/platformdirs/windows.py:138:    def site_runtime_dir(self) -> str:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/rich/_null_file.py:33:    def truncate(self, __size: Optional[int] = 1) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/rich/live.py:34:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/rich/progress.py:76:    def run(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/pkg_resources/__init__.py:587:    def run_script(self, script_name: str, namespace: dict[str, Any]) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/pkg_resources/__init__.py:741:    def run_script(self, requires: str, script_name: str):
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/pkg_resources/__init__.py:1698:    def run_script(self, script_name: str, namespace: dict[str, Any]):
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/help.py:15:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/list.py:168:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/index.py:61:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/cache.py:61:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/hash.py:39:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/completion.py:121:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/download.py:77:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/install.py:281:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/check.py:25:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/wheel.py:103:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/inspect.py:48:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/debug.py:174:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/freeze.py:87:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/show.py:50:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/configuration.py:108:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/uninstall.py:64:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/search.py:54:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/commands/lock.py:92:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/metadata/pkg_resources.py:76:    def run_script(self, script_name: str, namespace: str) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/network/lazy_wheel.py:123:    def truncate(self, size: int | None = None) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/cli/base_command.py:92:    def run(self, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/cli/base_command.py:95:    def _run_wrapper(self, level_number: int, options: Values, args: list[str]) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/pkg_resources/__init__.py:577:    def run_script(self, script_name: str, namespace: dict[str, Any]) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/pkg_resources/__init__.py:745:    def run_script(self, requires: str, script_name: str) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/pkg_resources/__init__.py:1722:    def run_script(self, script_name: str, namespace: dict[str, Any]) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/python.py:1669:    def runtest(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/python.py:1720:    def runtest(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/doctest.py:295:    def runtest(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/logging.py:791:    def pytest_runtestloop(self, session: Session) -> Generator[None, object, object]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/logging.py:804:    def pytest_runtest_logstart(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/logging.py:809:    def pytest_runtest_logreport(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/logging.py:813:    def _runtest_for(self, item: nodes.Item, when: str) -> Generator[None]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/logging.py:837:    def pytest_runtest_setup(self, item: nodes.Item) -> Generator[None]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/logging.py:846:    def pytest_runtest_call(self, item: nodes.Item) -> Generator[None]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/logging.py:853:    def pytest_runtest_teardown(self, item: nodes.Item) -> Generator[None]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/logging.py:864:    def pytest_runtest_logfinish(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/unittest.py:322:    def runtest(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/cacheprovider.py:354:    def pytest_runtest_logreport(self, report: TestReport) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/capture.py:270:    def truncate(self, size: int | None = None) -> int:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/capture.py:893:    def pytest_runtest_setup(self, item: Item) -> Generator[None]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/capture.py:898:    def pytest_runtest_call(self, item: Item) -> Generator[None]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/capture.py:903:    def pytest_runtest_teardown(self, item: Item) -> Generator[None]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/fixtures.py:344:    def prune_dependency_tree(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:159:    def runitem(self, source):
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:163:    def inline_runsource(self, source, *cmdlineargs):
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:171:    def inline_run(self, *args, plugins=(), no_reraise_ctrlc: bool = False):
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:177:    def runpytest_inprocess(self, *args, **kwargs) -> RunResult:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:181:    def runpytest(self, *args, **kwargs) -> RunResult:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:222:    def run(self, *cmdargs, timeout=None, stdin=CLOSE_STDIN) -> RunResult:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:226:    def runpython(self, script) -> RunResult:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:230:    def runpython_c(self, command):
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/legacypath.py:234:    def runpytest_subprocess(self, *args, timeout=None) -> RunResult:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/main.py:657:    def pytest_runtest_logreport(self, report: TestReport | CollectReport) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:168:    def pytest_runtest_protocol(self, item: Item) -> Generator[None, object, object]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1033:    def runitem(self, source: str) -> Any:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1048:    def inline_runsource(self, source: str, *cmdlineargs) -> HookRecorder:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1195:    def runpytest(self, *args: str | os.PathLike[str], **kwargs: Any) -> RunResult:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1467:    def runpython(self, script: os.PathLike[str]) -> RunResult:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1471:    def runpython_c(self, command: str) -> RunResult:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/terminal.py:605:    def pytest_runtest_logreport(self, report: TestReport) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/terminal.py:687:    def pytest_runtestloop(self) -> Generator[None, object, object]:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/stepwise.py:174:    def pytest_runtest_logreport(self, report: TestReport) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/nodes.py:722:    def runtest(self) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/assertion/rewrite.py:692:    def run(self, mod: ast.Module) -> None:
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/junitxml.py:531:    def pytest_runtest_logreport(self, report: TestReport) -> None:
+./app/views/advanced.py:215:    def _emit_run(self) -> None:
+./app/views/simple.py:125:    def _emit_run(self) -> None:
+./app/main.py:128:    def _on_run_requested(self, cfg: RunConfig) -> None:
+./app/services/engine.py:51:    def is_running(self) -> bool:
+./app/services/engine.py:55:    def run(self, cfg: RunConfig) -> None:
+./.venv/lib/python3.11/site-packages/setuptools/command/upload.py:10:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/install_scripts.py:18:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/build_ext.py:81:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/develop.py:28:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/editable_wheel.py:130:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/editable_wheel.py:268:    def _run_build_subcommands(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/editable_wheel.py:290:    def _safely_run(self, cmd_name: str):
+./.venv/lib/python3.11/site-packages/setuptools/command/editable_wheel.py:338:    def _run_install(self, category: str):
+./.venv/lib/python3.11/site-packages/setuptools/command/alias.py:41:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/upload_docs.py:94:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/bdist_rpm.py:16:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/register.py:10:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/install.py:65:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/build.py:111:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/dist_info.py:94:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/sdist.py:47:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/test.py:203:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/test.py:226:    def run_tests(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/install_lib.py:10:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/egg_info.py:296:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/egg_info.py:470:    def prune(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/command/egg_info.py:556:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/egg_info.py:621:    def prune_file_list(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/build_py.py:53:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/install_egg_info.py:34:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/bdist_egg.py:154:    def run(self):  # noqa: C901  # is too complex (14)  # FIXME
+./.venv/lib/python3.11/site-packages/setuptools/command/setopt.py:143:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/saveopts.py:9:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/command/easy_install.py:409:    def run(self, show_deprecation=True):
+./.venv/lib/python3.11/site-packages/setuptools/command/easy_install.py:1142:    def run_setup(self, setup_script, setup_base, args):
+./.venv/lib/python3.11/site-packages/setuptools/command/rotate.py:45:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/bdist_dumb.py:94:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/upload.py:64:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/install_scripts.py:42:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/bdist.py:132:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/build_ext.py:282:    def run(self):  # noqa: C901
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/bdist_rpm.py:279:    def run(self):  # noqa: C901
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/register.py:51:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/install.py:694:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/check.py:73:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/build.py:125:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/build_scripts.py:54:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/install_data.py:46:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/build_clib.py:90:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/sdist.py:160:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/sdist.py:385:    def prune_file_list(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/install_headers.py:31:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/install_lib.py:91:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/build_py.py:71:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/install_egg_info.py:44:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/clean.py:53:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/command/config.py:77:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/cmd.py:168:    def run(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/cmd.py:314:    def run_command(self, command):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/msvccompiler.py:584:    def runtime_library_dir_option(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/_msvccompiler.py:550:    def runtime_library_dir_option(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/unixccompiler.py:285:    def runtime_library_dir_option(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/cygwinccompiler.py:235:    def runtime_library_dir_option(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/cygwinccompiler.py:294:    def runtime_library_dir_option(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/dist.py:962:    def run_commands(self):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/dist.py:972:    def run_command(self, command):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/msvc9compiler.py:786:    def runtime_library_dir_option(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/ccompiler.py:301:    def add_runtime_library_dir(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/ccompiler.py:307:    def set_runtime_library_dirs(self, dirs):
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/ccompiler.py:807:    def runtime_library_dir_option(self, dir):
+./.venv/lib/python3.11/site-packages/setuptools/build_meta.py:326:    def run_setup(self, setup_script='setup.py'):
+./.venv/lib/python3.11/site-packages/setuptools/build_meta.py:466:    def run_setup(self, setup_script='setup.py'):
+./.venv/lib/python3.11/site-packages/setuptools/dist.py:1212:    def run_command(self, command):
+./.venv/lib/python3.11/site-packages/setuptools/sandbox.py:296:    def run(self, func):
+./.venv/lib/python3.11/site-packages/wheel/_bdist_wheel.py:378:    def run(self):
+./.venv/lib/python3.11/site-packages/PySide6/QtAsyncio/events.py:151:        def run(self) -> None:
+./.venv/lib/python3.11/site-packages/PySide6/QtAsyncio/events.py:219:    def _run_until_complete_cb(self, future: futures.QAsyncioFuture) -> None:
+./.venv/lib/python3.11/site-packages/PySide6/QtAsyncio/events.py:229:    def run_until_complete(self,
+./.venv/lib/python3.11/site-packages/PySide6/QtAsyncio/events.py:254:    def run_forever(self) -> None:
+./.venv/lib/python3.11/site-packages/PySide6/QtAsyncio/events.py:290:    def is_running(self) -> bool:
+./.venv/lib/python3.11/site-packages/PySide6/QtAsyncio/events.py:563:    def run_in_executor(self,
+./.venv/lib/python3.11/site-packages/PySide6/scripts/deploy_lib/config.py:201:    def dry_run(self) -> bool:
+./.venv/lib/python3.11/site-packages/PySide6/scripts/project.py:189:    def run(self) -> int:
+./.venv/lib/python3.11/site-packages/pip/_vendor/pygments/sphinxext.py:71:    def run(self):
+./.venv/lib/python3.11/site-packages/pip/_vendor/distlib/util.py:1761:    def run_command(self, cmd, **kwargs):
+./.venv/lib/python3.11/site-packages/pip/_vendor/distlib/scripts.py:393:    def dry_run(self):
+./.venv/lib/python3.11/site-packages/pip/_vendor/distlib/scripts.py:397:    def dry_run(self, value):
+./.venv/lib/python3.11/site-packages/pip/_vendor/pyproject_hooks/_impl.py:159:    def subprocess_runner(self, runner: "SubprocessRunner") -> Iterator[None]:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/api.py:173:    def user_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/api.py:178:    def site_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/api.py:252:    def user_runtime_path(self) -> Path:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/api.py:257:    def site_runtime_path(self) -> Path:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/api.py:276:    def iter_runtime_dirs(self) -> Iterator[str]:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/api.py:296:    def iter_runtime_paths(self) -> Iterator[Path]:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/macos.py:132:    def user_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/macos.py:137:    def site_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/unix.py:168:    def user_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/unix.py:188:    def site_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/android.py:103:    def user_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/android.py:114:    def site_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/windows.py:129:    def user_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/platformdirs/windows.py:138:    def site_runtime_dir(self) -> str:
+./.venv/lib/python3.11/site-packages/pip/_vendor/rich/_null_file.py:33:    def truncate(self, __size: Optional[int] = 1) -> int:
+./.venv/lib/python3.11/site-packages/pip/_vendor/rich/live.py:34:    def run(self) -> None:
+./.venv/lib/python3.11/site-packages/pip/_vendor/rich/progress.py:76:    def run(self) -> None:
+./.venv/lib/python3.11/site-packages/pip/_vendor/pkg_resources/__init__.py:587:    def run_script(self, script_name: str, namespace: dict[str, Any]) -> None:
+./.venv/lib/python3.11/site-packages/pip/_vendor/pkg_resources/__init__.py:741:    def run_script(self, requires: str, script_name: str):
+./.venv/lib/python3.11/site-packages/pip/_vendor/pkg_resources/__init__.py:1698:    def run_script(self, script_name: str, namespace: dict[str, Any]):
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/help.py:15:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/list.py:168:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/index.py:61:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/cache.py:61:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/hash.py:39:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/completion.py:121:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/download.py:77:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/install.py:281:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/check.py:25:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/wheel.py:103:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/inspect.py:48:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/debug.py:174:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/freeze.py:87:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/show.py:50:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/configuration.py:108:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/uninstall.py:64:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/search.py:54:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/commands/lock.py:92:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/metadata/pkg_resources.py:76:    def run_script(self, script_name: str, namespace: str) -> None:
+./.venv/lib/python3.11/site-packages/pip/_internal/network/lazy_wheel.py:123:    def truncate(self, size: int | None = None) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/cli/base_command.py:92:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pip/_internal/cli/base_command.py:95:    def _run_wrapper(self, level_number: int, options: Values, args: list[str]) -> int:
+./.venv/lib/python3.11/site-packages/pkg_resources/__init__.py:666:    def run_script(self, requires, script_name):
+./.venv/lib/python3.11/site-packages/pkg_resources/__init__.py:1457:    def run_script(self, script_name, namespace):
+./.venv/lib64/python3.11/site-packages/setuptools/command/upload.py:10:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/install_scripts.py:18:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/build_ext.py:81:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/develop.py:28:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/editable_wheel.py:130:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/editable_wheel.py:268:    def _run_build_subcommands(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/editable_wheel.py:290:    def _safely_run(self, cmd_name: str):
+./.venv/lib64/python3.11/site-packages/setuptools/command/editable_wheel.py:338:    def _run_install(self, category: str):
+./.venv/lib64/python3.11/site-packages/setuptools/command/alias.py:41:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/upload_docs.py:94:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/bdist_rpm.py:16:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/register.py:10:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/install.py:65:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/build.py:111:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/dist_info.py:94:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/sdist.py:47:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/test.py:203:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/test.py:226:    def run_tests(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/install_lib.py:10:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/egg_info.py:296:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/egg_info.py:470:    def prune(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/command/egg_info.py:556:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/egg_info.py:621:    def prune_file_list(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/build_py.py:53:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/install_egg_info.py:34:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/bdist_egg.py:154:    def run(self):  # noqa: C901  # is too complex (14)  # FIXME
+./.venv/lib64/python3.11/site-packages/setuptools/command/setopt.py:143:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/saveopts.py:9:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/command/easy_install.py:409:    def run(self, show_deprecation=True):
+./.venv/lib64/python3.11/site-packages/setuptools/command/easy_install.py:1142:    def run_setup(self, setup_script, setup_base, args):
+./.venv/lib64/python3.11/site-packages/setuptools/command/rotate.py:45:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/bdist_dumb.py:94:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/upload.py:64:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/install_scripts.py:42:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/bdist.py:132:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/build_ext.py:282:    def run(self):  # noqa: C901
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/bdist_rpm.py:279:    def run(self):  # noqa: C901
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/register.py:51:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/install.py:694:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/check.py:73:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/build.py:125:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/build_scripts.py:54:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/install_data.py:46:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/build_clib.py:90:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/sdist.py:160:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/sdist.py:385:    def prune_file_list(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/install_headers.py:31:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/install_lib.py:91:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/build_py.py:71:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/install_egg_info.py:44:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/clean.py:53:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/command/config.py:77:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/cmd.py:168:    def run(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/cmd.py:314:    def run_command(self, command):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/msvccompiler.py:584:    def runtime_library_dir_option(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/_msvccompiler.py:550:    def runtime_library_dir_option(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/unixccompiler.py:285:    def runtime_library_dir_option(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/cygwinccompiler.py:235:    def runtime_library_dir_option(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/cygwinccompiler.py:294:    def runtime_library_dir_option(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/dist.py:962:    def run_commands(self):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/dist.py:972:    def run_command(self, command):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/msvc9compiler.py:786:    def runtime_library_dir_option(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/ccompiler.py:301:    def add_runtime_library_dir(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/ccompiler.py:307:    def set_runtime_library_dirs(self, dirs):
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/ccompiler.py:807:    def runtime_library_dir_option(self, dir):
+./.venv/lib64/python3.11/site-packages/setuptools/build_meta.py:326:    def run_setup(self, setup_script='setup.py'):
+./.venv/lib64/python3.11/site-packages/setuptools/build_meta.py:466:    def run_setup(self, setup_script='setup.py'):
+./.venv/lib64/python3.11/site-packages/setuptools/dist.py:1212:    def run_command(self, command):
+./.venv/lib64/python3.11/site-packages/setuptools/sandbox.py:296:    def run(self, func):
+./.venv/lib64/python3.11/site-packages/wheel/_bdist_wheel.py:378:    def run(self):
+./.venv/lib64/python3.11/site-packages/PySide6/QtAsyncio/events.py:151:        def run(self) -> None:
+./.venv/lib64/python3.11/site-packages/PySide6/QtAsyncio/events.py:219:    def _run_until_complete_cb(self, future: futures.QAsyncioFuture) -> None:
+./.venv/lib64/python3.11/site-packages/PySide6/QtAsyncio/events.py:229:    def run_until_complete(self,
+./.venv/lib64/python3.11/site-packages/PySide6/QtAsyncio/events.py:254:    def run_forever(self) -> None:
+./.venv/lib64/python3.11/site-packages/PySide6/QtAsyncio/events.py:290:    def is_running(self) -> bool:
+./.venv/lib64/python3.11/site-packages/PySide6/QtAsyncio/events.py:563:    def run_in_executor(self,
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/deploy_lib/config.py:201:    def dry_run(self) -> bool:
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/project.py:189:    def run(self) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/pygments/sphinxext.py:71:    def run(self):
+./.venv/lib64/python3.11/site-packages/pip/_vendor/distlib/util.py:1761:    def run_command(self, cmd, **kwargs):
+./.venv/lib64/python3.11/site-packages/pip/_vendor/distlib/scripts.py:393:    def dry_run(self):
+./.venv/lib64/python3.11/site-packages/pip/_vendor/distlib/scripts.py:397:    def dry_run(self, value):
+./.venv/lib64/python3.11/site-packages/pip/_vendor/pyproject_hooks/_impl.py:159:    def subprocess_runner(self, runner: "SubprocessRunner") -> Iterator[None]:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/api.py:173:    def user_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/api.py:178:    def site_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/api.py:252:    def user_runtime_path(self) -> Path:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/api.py:257:    def site_runtime_path(self) -> Path:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/api.py:276:    def iter_runtime_dirs(self) -> Iterator[str]:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/api.py:296:    def iter_runtime_paths(self) -> Iterator[Path]:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/macos.py:132:    def user_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/macos.py:137:    def site_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/unix.py:168:    def user_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/unix.py:188:    def site_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/android.py:103:    def user_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/android.py:114:    def site_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/windows.py:129:    def user_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/platformdirs/windows.py:138:    def site_runtime_dir(self) -> str:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/rich/_null_file.py:33:    def truncate(self, __size: Optional[int] = 1) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/rich/live.py:34:    def run(self) -> None:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/rich/progress.py:76:    def run(self) -> None:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/pkg_resources/__init__.py:587:    def run_script(self, script_name: str, namespace: dict[str, Any]) -> None:
+./.venv/lib64/python3.11/site-packages/pip/_vendor/pkg_resources/__init__.py:741:    def run_script(self, requires: str, script_name: str):
+./.venv/lib64/python3.11/site-packages/pip/_vendor/pkg_resources/__init__.py:1698:    def run_script(self, script_name: str, namespace: dict[str, Any]):
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/help.py:15:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/list.py:168:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/index.py:61:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/cache.py:61:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/hash.py:39:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/completion.py:121:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/download.py:77:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/install.py:281:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/check.py:25:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/wheel.py:103:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/inspect.py:48:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/debug.py:174:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/freeze.py:87:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/show.py:50:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/configuration.py:108:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/uninstall.py:64:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/search.py:54:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/commands/lock.py:92:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/metadata/pkg_resources.py:76:    def run_script(self, script_name: str, namespace: str) -> None:
+./.venv/lib64/python3.11/site-packages/pip/_internal/network/lazy_wheel.py:123:    def truncate(self, size: int | None = None) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/cli/base_command.py:92:    def run(self, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pip/_internal/cli/base_command.py:95:    def _run_wrapper(self, level_number: int, options: Values, args: list[str]) -> int:
+./.venv/lib64/python3.11/site-packages/pkg_resources/__init__.py:666:    def run_script(self, requires, script_name):
+./.venv/lib64/python3.11/site-packages/pkg_resources/__init__.py:1457:    def run_script(self, script_name, namespace):
+./engine/src/battle_engine/core.py:253:    def run(self, max_ticks: int = 10000, verbose: bool = True) -> str:
+
+== 4) Places that launch subprocesses (engine starter suspects) ==
+./_legacy/.venv/lib/python3.13/site-packages/packaging/_musllinux.py:52:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib/python3.13/site-packages/packaging/tags.py:414:            version_str = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_windows_wrappers.py:111:        proc = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_windows_wrappers.py:148:        proc = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_windows_wrappers.py:195:        proc = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_windows_wrappers.py:245:        proc = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/environment.py:73:        proc = _Popen(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_distutils_adoption.py:10:_TEXT_KWARGS = {"text": True, "encoding": "utf-8"}  # For subprocess.run
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/integration/helpers.py:16:    r = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/tests/test_dist_info.py:143:    return subprocess.run(cmd, **opts)
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/packaging/_musllinux.py:52:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/packaging/tags.py:414:            version_str = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/wheel/vendored/packaging/_musllinux.py:50:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_vendor/wheel/vendored/packaging/tags.py:418:            version_str = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/setuptools/_distutils/tests/test_sysconfig.py:253:        p = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/ruff/__main__.py:85:        completed_process = subprocess.run([ruff, *sys.argv[1:]])
+./_legacy/.venv/lib/python3.13/site-packages/pygments/lexers/_csound_builtins.py:41:#   output = Popen(['csound', '--list-opcodes0'], stderr=PIPE, text=True).communicate()[1]
+./_legacy/.venv/lib/python3.13/site-packages/pygments/lexers/_csound_builtins.py:43:#   output = Popen(['csound', '--list-opcodes2'], stderr=PIPE, text=True).communicate()[1]
+./_legacy/.venv/lib/python3.13/site-packages/pygments/lexers/_scilab_builtins.py:3061:        s = subprocess.Popen(['scilab', '-nwni'], stdin=subprocess.PIPE,
+./_legacy/.venv/lib/python3.13/site-packages/pygments/formatters/img.py:93:        proc = subprocess.Popen(['fc-list', f"{name}:style={style}", 'file'],
+./_legacy/.venv/lib/python3.13/site-packages/pygame/tests/run_tests__tests/run_tests__test.py:28:    proc = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/pygame/tests/docs_test.py:20:            subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/pygame/tests/test_utils/async_sub.py:106:class Popen(subprocess.Popen):
+./_legacy/.venv/lib/python3.13/site-packages/pygame/tests/test_utils/async_sub.py:256:    proc = Popen(
+./_legacy/.venv/lib/python3.13/site-packages/pygame/sysfont.py:212:        proc = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/pygame/_camera_opencv.py:44:    flout, _ = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/click/_termui_impl.py:451:    c = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/click/_termui_impl.py:602:            c = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/click/_termui_impl.py:691:            return subprocess.Popen(args, stderr=null).wait()
+./_legacy/.venv/lib/python3.13/site-packages/click/_termui_impl.py:729:        c = subprocess.Popen(["xdg-open", url])
+./_legacy/.venv/lib/python3.13/site-packages/click/shell_completion.py:320:            output = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/wheel/vendored/packaging/_musllinux.py:50:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib/python3.13/site-packages/wheel/vendored/packaging/tags.py:418:            version_str = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/packaging/_musllinux.py:52:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/packaging/tags.py:414:            version_str = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/pip/_vendor/distlib/util.py:1762:        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/network/auth.py:137:        res = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/network/auth.py:153:        subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/utils/subprocess.py:80:        prior to calling subprocess.Popen().
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/utils/subprocess.py:129:        proc = subprocess.Popen(
+./_legacy/.venv/lib/python3.13/site-packages/pip/_internal/cli/main_parser.py:101:            proc = subprocess.run(pip_cmd)
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:128:        out = subprocess.run(
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:161:            subprocess.run(("lsof", "-v"), check=True)
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1342:        """Invoke :py:class:`subprocess.Popen`.
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1344:        Calls :py:class:`subprocess.Popen` making sure the current working
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1362:        popen = subprocess.Popen(cmdargs, stdout=stdout, stderr=stderr, **kw)
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1380:        Run a process using :py:class:`subprocess.Popen` saving the stdout and
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1384:            The sequence of arguments to pass to :py:class:`subprocess.Popen`,
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1394:              :py:class:`subprocess.Popen` with ``stdin=subprocess.PIPE``, and
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1401:            - Otherwise, it is passed through to :py:class:`subprocess.Popen`.
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/pytester.py:1403:              ``stdin`` parameter in :py:class:`subprocess.Popen`.
+./_legacy/.venv/lib/python3.13/site-packages/_pytest/_py/path.py:1169:        proc = Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/packaging/_musllinux.py:52:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib64/python3.13/site-packages/packaging/tags.py:414:            version_str = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_windows_wrappers.py:111:        proc = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_windows_wrappers.py:148:        proc = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_windows_wrappers.py:195:        proc = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_windows_wrappers.py:245:        proc = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/environment.py:73:        proc = _Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_distutils_adoption.py:10:_TEXT_KWARGS = {"text": True, "encoding": "utf-8"}  # For subprocess.run
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/integration/helpers.py:16:    r = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/tests/test_dist_info.py:143:    return subprocess.run(cmd, **opts)
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/packaging/_musllinux.py:52:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/packaging/tags.py:414:            version_str = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/wheel/vendored/packaging/_musllinux.py:50:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_vendor/wheel/vendored/packaging/tags.py:418:            version_str = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/setuptools/_distutils/tests/test_sysconfig.py:253:        p = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/ruff/__main__.py:85:        completed_process = subprocess.run([ruff, *sys.argv[1:]])
+./_legacy/.venv/lib64/python3.13/site-packages/pygments/lexers/_csound_builtins.py:41:#   output = Popen(['csound', '--list-opcodes0'], stderr=PIPE, text=True).communicate()[1]
+./_legacy/.venv/lib64/python3.13/site-packages/pygments/lexers/_csound_builtins.py:43:#   output = Popen(['csound', '--list-opcodes2'], stderr=PIPE, text=True).communicate()[1]
+./_legacy/.venv/lib64/python3.13/site-packages/pygments/lexers/_scilab_builtins.py:3061:        s = subprocess.Popen(['scilab', '-nwni'], stdin=subprocess.PIPE,
+./_legacy/.venv/lib64/python3.13/site-packages/pygments/formatters/img.py:93:        proc = subprocess.Popen(['fc-list', f"{name}:style={style}", 'file'],
+./_legacy/.venv/lib64/python3.13/site-packages/pygame/tests/run_tests__tests/run_tests__test.py:28:    proc = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/pygame/tests/docs_test.py:20:            subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/pygame/tests/test_utils/async_sub.py:106:class Popen(subprocess.Popen):
+./_legacy/.venv/lib64/python3.13/site-packages/pygame/tests/test_utils/async_sub.py:256:    proc = Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/pygame/sysfont.py:212:        proc = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/pygame/_camera_opencv.py:44:    flout, _ = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/click/_termui_impl.py:451:    c = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/click/_termui_impl.py:602:            c = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/click/_termui_impl.py:691:            return subprocess.Popen(args, stderr=null).wait()
+./_legacy/.venv/lib64/python3.13/site-packages/click/_termui_impl.py:729:        c = subprocess.Popen(["xdg-open", url])
+./_legacy/.venv/lib64/python3.13/site-packages/click/shell_completion.py:320:            output = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/wheel/vendored/packaging/_musllinux.py:50:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib64/python3.13/site-packages/wheel/vendored/packaging/tags.py:418:            version_str = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/packaging/_musllinux.py:52:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/packaging/tags.py:414:            version_str = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_vendor/distlib/util.py:1762:        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/network/auth.py:137:        res = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/network/auth.py:153:        subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/utils/subprocess.py:80:        prior to calling subprocess.Popen().
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/utils/subprocess.py:129:        proc = subprocess.Popen(
+./_legacy/.venv/lib64/python3.13/site-packages/pip/_internal/cli/main_parser.py:101:            proc = subprocess.run(pip_cmd)
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:128:        out = subprocess.run(
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:161:            subprocess.run(("lsof", "-v"), check=True)
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1342:        """Invoke :py:class:`subprocess.Popen`.
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1344:        Calls :py:class:`subprocess.Popen` making sure the current working
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1362:        popen = subprocess.Popen(cmdargs, stdout=stdout, stderr=stderr, **kw)
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1380:        Run a process using :py:class:`subprocess.Popen` saving the stdout and
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1384:            The sequence of arguments to pass to :py:class:`subprocess.Popen`,
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1394:              :py:class:`subprocess.Popen` with ``stdin=subprocess.PIPE``, and
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1401:            - Otherwise, it is passed through to :py:class:`subprocess.Popen`.
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/pytester.py:1403:              ``stdin`` parameter in :py:class:`subprocess.Popen`.
+./_legacy/.venv/lib64/python3.13/site-packages/_pytest/_py/path.py:1169:        proc = Popen(
+./app/services/engine.py:69:            self._proc = Popen(
+./app/services/engine.py:199:    Popen(module_cmd, cwd=str(battle_root), env=env)
+./.venv/lib/python3.11/site-packages/setuptools/_vendor/packaging/_musllinux.py:106:    proc = subprocess.run([ld], stderr=subprocess.PIPE, universal_newlines=True)
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/msvc9compiler.py:283:    popen = subprocess.Popen(
+./.venv/lib/python3.11/site-packages/setuptools/_distutils/spawn.py:57:        proc = subprocess.Popen(cmd, env=env)
+./.venv/lib/python3.11/site-packages/pygame/tests/run_tests__tests/run_tests__test.py:28:    proc = subprocess.Popen(
+./.venv/lib/python3.11/site-packages/pygame/tests/docs_test.py:20:            subprocess.run(
+./.venv/lib/python3.11/site-packages/pygame/tests/test_utils/async_sub.py:106:class Popen(subprocess.Popen):
+./.venv/lib/python3.11/site-packages/pygame/tests/test_utils/async_sub.py:256:    proc = Popen(
+./.venv/lib/python3.11/site-packages/pygame/sysfont.py:212:        proc = subprocess.run(
+./.venv/lib/python3.11/site-packages/pygame/_camera_opencv.py:44:    flout, _ = subprocess.Popen(
+./.venv/lib/python3.11/site-packages/wheel/vendored/packaging/_musllinux.py:50:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./.venv/lib/python3.11/site-packages/wheel/vendored/packaging/tags.py:418:            version_str = subprocess.run(
+./.venv/lib/python3.11/site-packages/PySide6/scripts/project_lib/project_data.py:233:        with subprocess.Popen(cmd, stdout=subprocess.PIPE) as proc:
+./.venv/lib/python3.11/site-packages/PySide6/scripts/deploy_lib/android/android_utilities.py:44:    result = subprocess.run(command, cwd=cwd, input=input, stdout=stdout,
+./.venv/lib/python3.11/site-packages/pip/_vendor/packaging/_musllinux.py:52:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./.venv/lib/python3.11/site-packages/pip/_vendor/packaging/tags.py:414:            version_str = subprocess.run(
+./.venv/lib/python3.11/site-packages/pip/_vendor/distlib/util.py:1762:        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+./.venv/lib/python3.11/site-packages/pip/_internal/network/auth.py:137:        res = subprocess.run(
+./.venv/lib/python3.11/site-packages/pip/_internal/network/auth.py:153:        subprocess.run(
+./.venv/lib/python3.11/site-packages/pip/_internal/utils/subprocess.py:80:        prior to calling subprocess.Popen().
+./.venv/lib/python3.11/site-packages/pip/_internal/utils/subprocess.py:129:        proc = subprocess.Popen(
+./.venv/lib/python3.11/site-packages/pip/_internal/cli/main_parser.py:101:            proc = subprocess.run(pip_cmd)
+./.venv/lib/python3.11/site-packages/pkg_resources/_vendor/packaging/_musllinux.py:106:    proc = subprocess.run([ld], stderr=subprocess.PIPE, universal_newlines=True)
+./.venv/lib64/python3.11/site-packages/setuptools/_vendor/packaging/_musllinux.py:106:    proc = subprocess.run([ld], stderr=subprocess.PIPE, universal_newlines=True)
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/msvc9compiler.py:283:    popen = subprocess.Popen(
+./.venv/lib64/python3.11/site-packages/setuptools/_distutils/spawn.py:57:        proc = subprocess.Popen(cmd, env=env)
+./.venv/lib64/python3.11/site-packages/pygame/tests/run_tests__tests/run_tests__test.py:28:    proc = subprocess.Popen(
+./.venv/lib64/python3.11/site-packages/pygame/tests/docs_test.py:20:            subprocess.run(
+./.venv/lib64/python3.11/site-packages/pygame/tests/test_utils/async_sub.py:106:class Popen(subprocess.Popen):
+./.venv/lib64/python3.11/site-packages/pygame/tests/test_utils/async_sub.py:256:    proc = Popen(
+./.venv/lib64/python3.11/site-packages/pygame/sysfont.py:212:        proc = subprocess.run(
+./.venv/lib64/python3.11/site-packages/pygame/_camera_opencv.py:44:    flout, _ = subprocess.Popen(
+./.venv/lib64/python3.11/site-packages/wheel/vendored/packaging/_musllinux.py:50:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./.venv/lib64/python3.11/site-packages/wheel/vendored/packaging/tags.py:418:            version_str = subprocess.run(
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/project_lib/project_data.py:233:        with subprocess.Popen(cmd, stdout=subprocess.PIPE) as proc:
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/deploy_lib/android/android_utilities.py:44:    result = subprocess.run(command, cwd=cwd, input=input, stdout=stdout,
+./.venv/lib64/python3.11/site-packages/pip/_vendor/packaging/_musllinux.py:52:    proc = subprocess.run([ld], stderr=subprocess.PIPE, text=True)
+./.venv/lib64/python3.11/site-packages/pip/_vendor/packaging/tags.py:414:            version_str = subprocess.run(
+./.venv/lib64/python3.11/site-packages/pip/_vendor/distlib/util.py:1762:        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+./.venv/lib64/python3.11/site-packages/pip/_internal/network/auth.py:137:        res = subprocess.run(
+./.venv/lib64/python3.11/site-packages/pip/_internal/network/auth.py:153:        subprocess.run(
+./.venv/lib64/python3.11/site-packages/pip/_internal/utils/subprocess.py:80:        prior to calling subprocess.Popen().
+./.venv/lib64/python3.11/site-packages/pip/_internal/utils/subprocess.py:129:        proc = subprocess.Popen(
+./.venv/lib64/python3.11/site-packages/pip/_internal/cli/main_parser.py:101:            proc = subprocess.run(pip_cmd)
+./.venv/lib64/python3.11/site-packages/pkg_resources/_vendor/packaging/_musllinux.py:106:    proc = subprocess.run([ld], stderr=subprocess.PIPE, universal_newlines=True)
+./engine/src/battle_engine/cli.py:70:    proc = subprocess.run(
+./tournament/scripts/btctl.py:62:        subprocess.run(cmd, cwd=ROOT, check=True)
+./tournament/scripts/btctl.py:99:    subprocess.run(cmd, cwd=ROOT, env=env, check=True)
+
+== 5) Direct or module-based engine calls (what we need to change) ==
+./engine/src/battle_engine/cli.py:157:    # .../engine/src/battle_engine/cli.py
+
+== 6) PySide6 imports (narrow likely files) ==
+./app/views/advanced.py:7:from PySide6.QtCore import Qt, Signal
+./app/views/advanced.py:8:from PySide6.QtWidgets import (
+./app/views/simple.py:5:from PySide6.QtCore import Qt, Signal
+./app/views/simple.py:6:from PySide6.QtWidgets import (
+./app/widgets/json_editor.py:5:from PySide6.QtCore import Qt
+./app/widgets/json_editor.py:6:from PySide6.QtWidgets import (
+./app/main.py:6:from PySide6.QtCore import Qt, Signal, Slot
+./app/main.py:7:from PySide6.QtGui import QAction, QIcon
+./app/main.py:8:from PySide6.QtWidgets import (
+./app/services/engine.py:12:from PySide6.QtCore import QObject, Signal
+./.venv/lib/python3.11/site-packages/PySide6/QtAsyncio/events.py:5:from PySide6.QtCore import (QCoreApplication, QDateTime, QDeadlineTimer,
+./.venv/lib/python3.11/site-packages/PySide6/scripts/qml.py:16:from PySide6.QtCore import QCoreApplication, Qt, QLibraryInfo, QUrl, SignalInstance
+./.venv/lib/python3.11/site-packages/PySide6/scripts/qml.py:17:from PySide6.QtGui import QGuiApplication, QSurfaceFormat
+./.venv/lib/python3.11/site-packages/PySide6/scripts/qml.py:18:from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent
+./.venv/lib/python3.11/site-packages/PySide6/scripts/qml.py:19:from PySide6.QtQuick import QQuickView, QQuickItem
+./.venv/lib/python3.11/site-packages/PySide6/scripts/qml.py:20:from PySide6.QtWidgets import QApplication
+./.venv/lib/python3.11/site-packages/PySide6/scripts/project_lib/newproject.py:24:from PySide6.QtWidgets import QApplication, QMainWindow
+./.venv/lib/python3.11/site-packages/PySide6/scripts/project_lib/newproject.py:81:from PySide6.QtGui import QGuiApplication
+./.venv/lib/python3.11/site-packages/PySide6/scripts/project_lib/newproject.py:82:from PySide6.QtCore import QUrl
+./.venv/lib/python3.11/site-packages/PySide6/scripts/project_lib/newproject.py:83:from PySide6.QtQml import QQmlApplicationEngine
+./.venv/lib/python3.11/site-packages/PySide6/scripts/pyside_tool.py:13:import PySide6 as ref_mod
+./.venv/lib64/python3.11/site-packages/PySide6/QtAsyncio/events.py:5:from PySide6.QtCore import (QCoreApplication, QDateTime, QDeadlineTimer,
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/qml.py:16:from PySide6.QtCore import QCoreApplication, Qt, QLibraryInfo, QUrl, SignalInstance
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/qml.py:17:from PySide6.QtGui import QGuiApplication, QSurfaceFormat
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/qml.py:18:from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/qml.py:19:from PySide6.QtQuick import QQuickView, QQuickItem
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/qml.py:20:from PySide6.QtWidgets import QApplication
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/project_lib/newproject.py:24:from PySide6.QtWidgets import QApplication, QMainWindow
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/project_lib/newproject.py:81:from PySide6.QtGui import QGuiApplication
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/project_lib/newproject.py:82:from PySide6.QtCore import QUrl
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/project_lib/newproject.py:83:from PySide6.QtQml import QQmlApplicationEngine
+./.venv/lib64/python3.11/site-packages/PySide6/scripts/pyside_tool.py:13:import PySide6 as ref_mod
+
+Hints:
+ - Look for a file that both imports PySide6 AND has a clicked.connect line near a button named 'run*'.
+ - Common spots: client/src/app/main.py, client/src/app/widgets/*, client/src/app/windows/*.
+ - If using Qt Designer, a .ui may define objectName='runButton'; wiring might be in a generated ui_* file or after uic.loadUi().

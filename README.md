@@ -1,221 +1,178 @@
 
 Project to determine feasibility of using LLM to assist me in creation of a project.
 
+# BATTLE
 
-BATTLE2 is an experimental **agent battle engine**.  
-It provides a simulation environment where agents compete on a grid, writing values, claiming territory, and surviving against one another.  
-
-Agents can be **built-in** (e.g. `runner`, `writer`, `bomber`, `flooder`, `spiral`, `seeker`) or **custom** (discovered dynamically from the `agents/` directory).
+BATTLE is an experimental battle engine and client framework for running,
+visualizing, and analyzing agent-based competitions. It supports configurable
+rulesets, round-robin tournaments, replay capture, and multiple rendering backends.
 
 ---
 
-## Project Layout
+## Features
 
-```
+- **Battle Engine**
+  - Configurable core size, arena, and tick count
+  - Multiple scoring modes (`survival`, `score`, `score_fallback`)
+  - Supports multiple agents with round-robin elimination
+  - Replay export to JSON for analysis or replay
 
-BATTLE2/
-├── engine/
-│   └── src/battle_engine/
-│       ├── cli.py          # Command-line interface (entry point)
-│       ├── core.py         # Engine kernel and simulation logic
-│       ├── renderers.py    # Pygame and other renderers
-│       └── agents.py       # Agent discovery/resolution helpers
-├── agents/
-│   └── <agent_name>/       # Custom agent definitions
-│       ├── agent.yaml      # Optional JSON/YAML-like config
-│       ├── agent.py        # Agent code (optional if using blobs)
-│       └── model.blob      # Optional default binary model file
-├── runs/
-│   └── ...                 # Saved replays and summaries
-└── README.md               # This file
+- **Agents**
+  - Built-in sample agents (`runner`, `writer`, `bomber`, `flooder`, `spiral`, `seeker`)
+  - Extensible YAML + code definition system for custom agents
+  - Blob/model support for advanced agents
 
-````
+- **Visualization**
+  - CLI text output
+  - Optional Pygame renderer for real-time grid display
+  - Replay viewer executable (Windows builds available with PyInstaller)
+
+- **Cross-Platform**
+  - Tested on Linux (Ubuntu) and Windows 10/11
+  - Python 3.11 recommended
 
 ---
 
 ## Installation
 
-Requirements:
-- Python **3.10+**
-- [Pygame](https://www.pygame.org/) (for visual rendering)
+### Prerequisites
+- Python 3.11+
+- `pip install -r requirements.txt`
+- Optional: `pygame` for live visualization
 
-Set up a virtual environment:
-
+### Clone
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+git clone https://github.com/<your-org>/BATTLE.git
+cd BATTLE
 ````
 
 ---
 
 ## Usage
 
-Run a simple match between built-in agents:
+### Run a Simple Match
 
 ```bash
-python3 -m battle_engine.cli --a-type runner --b-type writer --ticks 50
+python -m battle_engine.cli --arena 512 --ticks 200 \
+  --a-type runner --b-type bomber
 ```
 
-List discovered agents:
+### With Pygame Renderer
 
 ```bash
-python3 -m battle_engine.cli --list-agents
+python -m battle_engine.cli --pygame --arena 512 --ticks 200 \
+  --a-type runner --b-type seeker
 ```
 
-Run with a third agent:
+### Replay Viewer (Windows example)
 
-```bash
-python3 -m battle_engine.cli --a-type runner --b-type writer --c-type bomber
+```powershell
+.\dist\windows\BattleReplayViewer.exe
 ```
 
-Control simulation size and duration:
+### Example Tournament
 
 ```bash
-python3 -m battle_engine.cli --arena 512 --ticks 200
+python tools/tournament.py --rounds 5 --arena 2048 --ticks 80000
 ```
 
 ---
 
-## Replays and Summaries
+## Project Structure
 
-Each run produces:
-
-* `replay.jsonl` — line-delimited JSON log of every tick (`alive`, `score`, etc.)
-* `summary.json` — concise match metadata:
-
-  ```json
-  {
-    "version": 1,
-    "ticks": 200,
-    "winner": "A",
-    "A_score": 38,
-    "B_score": 70,
-    "params": { "arena": 512, "ticks": 200, "win_mode": "score" },
-    "agents": { "A": "runner", "B": "writer" }
-  }
-  ```
-
----
-
-## Custom Agents
-
-Place agents under `agents/<name>/`.
-Each agent may include:
-
-* `agent.yaml` (JSON superset)
-
-  ```json
-  {
-    "name": "replicator",
-    "display": "Replicator Agent",
-    "defaults": { "aggression": 0.4 }
-  }
-  ```
-
-* `agent.py` (Python logic, optional if using blobs)
-
-  ```python
-  # agents/replicator/agent.py
-  #
-  # Example stub agent that moves randomly.
-  # The engine will import and use `Agent` at runtime.
-
-  import random
-
-  class Agent:
-      def __init__(self, config=None):
-          self.config = config or {}
-          self.aggression = self.config.get("aggression", 0.5)
-
-      def step(self, state):
-          """
-          Called once per tick.
-          - state: dictionary with current simulation info
-          Returns an action dict, e.g.:
-              {"move": (dx, dy), "write": byte_value}
-          """
-          dx, dy = random.choice([(0,1),(1,0),(0,-1),(-1,0)])
-          return {
-              "move": (dx, dy),
-              "write": random.randint(0, 255),
-          }
-  ```
-
-* `model.blob` (binary model artifact, optional)
-
-### Parameter overrides
-
-* Defaults come from `agent.yaml`
-* Override per side via env JSON:
-
-```bash
-export BATTLE_AGENT_A_PARAMS_JSON='{"blob_path":"agents/replicator/model.blob","aggression":0.7}'
-python3 -m battle_engine.cli --a-type replicator --b-type runner --ticks 50
 ```
-
-* Explicit CLI flags (`--a-blob`) override both defaults and env.
-
----
-
-## Battle Agent Designer (Experimental)
-
-BATTLE2 includes an **Agent Designer** GUI for creating and testing agents without editing YAML or Python by hand.
-
-### Launching
-
-```bash
-python3 -m battle_agent_designer
+BATTLE/
+├── engine/               # Core battle engine
+│   └── src/battle_engine/
+├── agents/               # Agent definitions & blobs
+├── runs/                 # Saved run logs and summaries
+├── tools/                # Utilities (replay viewer, agent designer, tournament runner)
+├── dist/                 # Built executables (Windows/Linux)
+└── README.md             # This file
 ```
-
-### Features
-
-* Pick a base template (`runner`, `writer`, `bomber`, etc.)
-* Adjust parameters (aggression, stride, step, etc.)
-* Save designs as new agents under `agents/<name>/`
-* Quickly test agents against built-ins in a small arena
-
-### Workflow
-
-1. Design your agent visually in the GUI.
-2. Save → creates `agent.yaml` (and optional stub `agent.py`).
-3. Run battles with your new agent via the CLI:
-
-   ```bash
-   python3 -m battle_engine.cli --a-type my_custom_agent --b-type runner --ticks 50
-   ```
-
-The Agent Designer is **experimental** but provides a faster on-ramp for experimenting with agent behaviors and for use in classrooms/demos.
 
 ---
 
 ## Development
 
-Typical workflow:
+### Testing
 
 ```bash
-# Start from main branch
-git checkout main
-git pull origin main
+./tools/smoke_test.sh
+```
 
-# Create feature branch
-git checkout -b feature/my-feature
+Runs a set of quick validation battles across agents.
 
-# Work, commit, push
-git add .
-git commit -m "Implement new agent type"
-git push origin feature/my-feature
+### Adding a New Agent
 
-# Merge back to main when ready
-git checkout main
-git pull origin main
-git merge --no-ff feature/my-feature
-git push origin main
+1. Create an `agents/<name>/agent.yaml`
+2. Add optional model blob under `agents/<name>/`
+3. Update engine registry if needed
+
+### Packaging (Windows Example)
+
+```powershell
+pyinstaller --noconfirm --clean `
+  --workpath build\windows `
+  --distpath  dist\windows `
+  tools\agent_designer.spec
 ```
 
 ---
 
+## Roadmap
+
+* [ ] Expand agent library
+* [ ] Add networked multiplayer mode
+* [ ] Web-based replay viewer
+* [ ] Configurable AI training hooks
+* [ ] CI smoke test integration
+
+
+
+### Battle Agent Designer
+
+The **Battle Agent Designer** is a graphical utility for creating and editing agent configurations. It allows quick setup of agent metadata (`name`, `display`, parameters, blob paths) without manually editing YAML files.
+
+#### Status
+
+* Currently in **beta**
+* Core functionality: create/edit agent YAML files, assign blobs, validate config
+* Built with Python + PyQt (packaged via PyInstaller for Windows)
+* Linux runs directly with Python environment
+
+#### Run from Source
+
+```bash
+# Linux / macOS
+python tools/agent_designer.py
+```
+
+```powershell
+# Windows (with virtualenv active)
+python .\tools\agent_designer.py
+```
+
+#### Run Packaged Executable (Windows)
+
+```powershell
+.\dist\windows\BattleReplayViewer.exe
+.\dist\windows\BattleAgentDesigner.exe
+```
+
+#### Workflow
+
+1. Launch the designer
+2. Fill in **agent name**, **display label**, and optional blob/model path
+3. Save, which generates or updates `agents/<agent>/agent.yaml`
+4. Use new agent directly in battles:
+
+   ```bash
+   python -m battle_engine.cli --a-type <agent> --b-type runner
+   ```
+
+
 ## License
 
-This project is open source under the GPLv3 license.
+GPLv3 — see [LICENSE](LICENSE).
 

@@ -11,8 +11,9 @@ from pathlib import Path
 from battle_engine.core import Kernel, Config, JSONLSink
 from battle_engine.builtins import build_agent, SUPPORTED
 
-# New: dynamic agents helper (stdlib only)
-from .agents import AgentSpec, discover_agents, resolve_agent
+
+# Absolute imports so this works whether launched as a module or as a script
+from battle_engine.agents import AgentSpec, discover_agents, resolve_agent
 
 
 # ----------------------------
