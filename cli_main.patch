@@ -1,0 +1,138 @@
+diff --git a/engine/src/battle_engine/cli.py b/engine/src/battle_engine/cli.py
+index 0000000..1111111 100644
+--- a/engine/src/battle_engine/cli.py
++++ b/engine/src/battle_engine/cli.py
+@@
+-from pathlib import Path
++from pathlib import Path
+@@
+-from battle_engine.core import Kernel, Config, JSONLSink
++from battle_engine.core import Kernel, Config, JSONLSink
+ from battle_engine.builtins import build_agent, SUPPORTED
+ # Absolute imports so this works whether launched as a module or as a script
+ from battle_engine.agents import AgentSpec, discover_agents, resolve_agent
+@@
+ def parse_args() -> argparse.Namespace:
+@@
+     p.add_argument("--quiet", action="store_true")
+     return p.parse_args()
+ 
+ # ----------------------------
+ # Agent Resolution
+ # ----------------------------
+@@
+     return code, agent_name, start
+ 
+ print( f"ERROR: Unknown agent '{agent_name}'."
+ )
+ sys.exit(2)
++
++# ----------------------------
++# Entrypoint
++# ----------------------------
++def main(argv: Optional[Iterable[str]] = None) -> int:
++    """CLI entry point compatible with setuptools console_scripts."""
++    args = parse_args()
++
++    # --list-agents shortcut
++    if getattr(args, "list_agents", False):
++        root = _battle_root()
++        specs = discover_agents(root)
++        if not specs:
++            print("No agents found under:", (root / "agents"))
++            return 0
++        for name, spec in sorted(specs.items()):
++            blob = " (blob)" if spec.blob and spec.blob.exists() else ""
++            print(f"{name}: {spec.display}{blob}")
++        return 0
++
++    # Redcode / pMARS backend
++    if args.mode == "redcode94":
++        if not args.red_a or not args.red_b:
++            print("--mode redcode94 requires --red-a and --red-b", file=sys.stderr)
++            return 2
++        pmars_cmd = os.environ.get("PMARS_CMD", "pmars")
++        winner, extra = _run_pmars(
++            Path(args.red_a),
++            Path(args.red_b),
++            pmars_cmd=pmars_cmd,
++            core_size=int(args.core_size),
++            max_cycles=int(args.max_cycles),
++            max_processes=int(args.max_processes),
++            max_len=int(args.max_len),
++            min_dist=int(args.min_dist),
++            rounds=int(args.rounds),
++        )
++        if not args.quiet:
++            print(f"[pMARS] winner={winner} rc={extra.get('returncode')}")
++        # Emit a tiny summary.json to match your workflow
++        try:
++            summary = {
++                "version": 1,
++                "mode": "redcode94",
++                "ticks": args.max_cycles,
++                "winner": winner,
++                "A_score": None,
++                "B_score": None,
++                "params": {
++                    "core_size": args.core_size,
++                    "max_cycles": args.max_cycles,
++                    "max_processes": args.max_processes,
++                    "max_len": args.max_len,
++                    "min_dist": args.min_dist,
++                    "rounds": args.rounds,
++                },
++                "agents": {"A": str(args.red_a), "B": str(args.red_b)},
++                "backend": {"cmd": pmars_cmd, "returncode": extra.get("returncode", 0)},
++            }
++            with open("summary.json", "w", encoding="utf-8") as f:
++                import json as _json
++                _json.dump(summary, f, indent=2)
++        except Exception:
++            pass
++        return 0 if winner else 1
++
++    # Built-in B2 engine
++    # Map CLI flags -> Config.from_dict schema
++    cfg_dict = {
++        "arena_size": int(args.arena) if args.arena else 4096,
++        "instr_per_tick": int(args.quota) if args.quota else 8,
++        "seed": int(args.seed) if args.seed is not None else 1337,
++        "win_mode": (args.win_mode or "score_fallback"),
++        "weights": {
++            "alive": int(args.alive_w) if args.alive_w is not None else 1,
++            "kill": int(args.kill_w) if args.kill_w is not None else 5,
++            "territory": int(args.territory_w) if args.territory_w is not None else 1,
++            "territory_bucket": int(args.territory_bucket) if args.territory_bucket is not None else 64,
++        },
++    }
++    cfg = Config.from_dict(cfg_dict)
++    sink = JSONLSink(args.replay)
++    kernel = Kernel(cfg, sink=sink)
++
++    # Common kwargs used by built-in assemblers
++    common_kwargs = {
++        "byte": int(args.attack_byte) if args.attack_byte is not None else int(args.byte, 0) if isinstance(args.byte, str) else args.byte,
++        "offset": args.offset,
++        "stride": args.stride,
++        "ptr": args.ptr,
++        "writes": args.writes,
++        "step": args.step,
++        "delta": args.delta,
++        "target": args.target,
++    }
++
++    spec_env, spec_dir = _load_agents_spec_from_env()
++    for letter in ("A", "B", "C"):
++        code, name, entry = _resolve_agent(letter, spec_env, spec_dir, args, cfg, common_kwargs)
++        if code is not None and name:
++            kernel.spawn(letter, entry, code)
++
++    winner = kernel.run(max_ticks=int(args.ticks), verbose=not args.quiet)
++    if not args.quiet:
++        print(f"winner={winner or ''}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

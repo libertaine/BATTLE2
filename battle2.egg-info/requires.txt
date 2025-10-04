@@ -1,0 +1,13 @@
+click>=8.1
+
+[dev]
+ruff>=0.6
+mypy>=1.10
+pytest>=8
+
+[gui]
+pygame>=2.5
+
+[windows-build]
+pyinstaller>=6.6
+pefile>=2023.2.7

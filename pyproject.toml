@@ -46,7 +46,7 @@ windows-build = [
 # ---- Console entry points ----
 # Adjust module paths if your GUI entry modules differ.
 [project.scripts]
-battle-cli = "battle_engine.cli:main"
+battle-cli = "battle_engine._entry:main"
 battle-agent-designer = "app.agent_designer:main"
 battle-replay-viewer = "app.replay_viewer:main"
 
