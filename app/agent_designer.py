@@ -1,13 +1,51 @@
-import sys, pathlib
+# app/agent_designer.py
+from __future__ import annotations
+import os
+import sys
+from pathlib import Path
+from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QMessageBox
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-ENGINE_SRC = ROOT / "engine" / "src"
-if ENGINE_SRC.exists():
-    sys.path.insert(0, str(ENGINE_SRC))
+from app.views.simple import SimplePanel
+from app.views.advanced import AdvancedPanel
 
-from app.main import main  # <-- import main, not entrypoint
+def _resolve_battle_root() -> Path:
+    # 1) allow override via env
+    env = os.getenv("BATTLE2_ROOT")
+    if env:
+        return Path(env).resolve()
+    # 2) default to project root (parent of app/)
+    return Path(__file__).resolve().parent.parent
+
+class AgentDesigner(QMainWindow):
+    """Main window combining Simple and Advanced tabs."""
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("BATTLE2 – Agent Designer")
+
+        tabs = QTabWidget()
+        # Simple tab (no battle_root required)
+        try:
+            tabs.addTab(SimplePanel(catalog=None), "Simple")
+        except Exception as e:
+            QMessageBox.critical(self, "Simple Panel Error", str(e))
+
+        # Advanced tab (requires battle_root)
+        battle_root = _resolve_battle_root()
+        try:
+            tabs.addTab(AdvancedPanel(catalog=None, battle_root=battle_root), "Advanced")
+        except Exception as e:
+            # Don’t crash the whole app; show Simple tab and inform the user
+            QMessageBox.warning(self, "Advanced Panel Unavailable",
+                                f"Failed to initialize Advanced panel with battle_root={battle_root}\n\n{e}")
+
+        self.setCentralWidget(tabs)
+        self.resize(1000, 720)
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    win = AgentDesigner()
+    win.show()
+    return app.exec()
 
 if __name__ == "__main__":
-    # If app.main.main parses sys.argv, provide the mode flag
-    sys.argv = [sys.argv[0], "--mode", "designer"]
-    raise SystemExit(main())
+    sys.exit(main())

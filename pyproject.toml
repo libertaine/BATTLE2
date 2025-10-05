@@ -43,12 +43,11 @@ windows-build = [
   "pefile>=2023.2.7",
 ]
 
-# ---- Console entry points ----
-# Adjust module paths if your GUI entry modules differ.
 [project.scripts]
-battle-cli = "battle_engine._entry:main"
 battle-agent-designer = "app.agent_designer:main"
-battle-replay-viewer = "app.replay_viewer:main"
+match-runner          = "app.match_runner:main"
+battle-cli             = "battle_engine.cli:main"
+
 
 [project.urls]
 Homepage = "https://github.com/libertaine/BATTLE2"
@@ -62,16 +61,13 @@ include-package-data = true
 
 # Discover packages from BOTH trees.
 [tool.setuptools.packages.find]
-where = ["engine/src", "client/src"]
-# Include patterns for both engine and client packages.
-include = ["battle_engine*", "app*", "battle_client*"]
+where = ["engine/src", "client/src", "."]
+include = ["battle_engine*", "battle_client*", "app*"]
 
-# Map top-level package names to their source roots (multi-root layout).
 [tool.setuptools.package-dir]
 battle_engine = "engine/src/battle_engine"
-# If your client code lives under client/src/app and/or client/src/battle_client:
-app = "client/src/app"
 battle_client = "client/src/battle_client"
+app = "app"
 
 # Package data bundled inside the wheels (installed alongside Python modules).
 # Adjust globs to your actual asset dirs.

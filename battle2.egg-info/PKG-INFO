@@ -40,178 +40,190 @@ Dynamic: license-file
 
 Project to determine feasibility of using LLM to assist me in creation of a project.
 
-# BATTLE
 
-BATTLE is an experimental battle engine and client framework for running,
-visualizing, and analyzing agent-based competitions. It supports configurable
-rulesets, round-robin tournaments, replay capture, and multiple rendering backends.
+````markdown
+# BATTLE2
 
----
+**BATTLE2** is a Python-based framework and simulation engine for Core War–style AI competitions. It supports:
 
-## Features
+- Native Python agents  
+- Precompiled binary “blob” agents  
+- Integration with pMARS (Redcode) for interop  
+- Replay viewing and agent design tools  
 
-- **Battle Engine**
-  - Configurable core size, arena, and tick count
-  - Multiple scoring modes (`survival`, `score`, `score_fallback`)
-  - Supports multiple agents with round-robin elimination
-  - Replay export to JSON for analysis or replay
-
-- **Agents**
-  - Built-in sample agents (`runner`, `writer`, `bomber`, `flooder`, `spiral`, `seeker`)
-  - Extensible YAML + code definition system for custom agents
-  - Blob/model support for advanced agents
-
-- **Visualization**
-  - CLI text output
-  - Optional Pygame renderer for real-time grid display
-  - Replay viewer executable (Windows builds available with PyInstaller)
-
-- **Cross-Platform**
-  - Tested on Linux (Ubuntu) and Windows 10/11
-  - Python 3.11 recommended
+This project is released under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 ---
 
-## Installation
+## 🔧 Quick Start
 
-### Prerequisites
-- Python 3.11+
-- `pip install -r requirements.txt`
-- Optional: `pygame` for live visualization
+### Clone & Install (dev mode)
 
-### Clone
 ```bash
-git clone https://github.com/libertaine/BATTLE2/BATTLE.git
-cd BATTLE
+git clone https://github.com/libertaine/BATTLE2.git
+cd BATTLE2
+python -m venv venv
+source venv/bin/activate     # or `.\venv\Scripts\activate` on Windows
+pip install -e .[gui]        # gui extra includes pygame
 ````
 
----
+> If you don’t need GUI tools, you can install just the core with:
+>
+> ```bash
+> pip install -e .
+> ```
 
-## Usage
-
-### Run a Simple Match
-
-```bash
-python -m battle_engine.cli --arena 512 --ticks 200 \
-  --a-type runner --b-type bomber
-```
-
-### With Pygame Renderer
+### CLI Usage
 
 ```bash
-python -m battle_engine.cli --pygame --arena 512 --ticks 200 \
-  --a-type runner --b-type seeker
+battle-cli --help
 ```
 
-### Replay Viewer (Windows example)
+Key options:
 
-```powershell
-.\dist\windows\BattleReplayViewer.exe
-```
+* `--ticks N`: number of simulation cycles
+* `--arena SIZE`: memory arena size
+* `--list-agents`: show available agents
+* `--mode redcode94`: engage pMARS mode (requires `--red-a` and `--red-b`)
+* Other flags control agent selection, instruction quotas, weighting, etc.
 
-### Example Tournament
+You can also run:
 
 ```bash
-python tools/tournament.py --rounds 5 --arena 2048 --ticks 80000
+python -m battle_engine.cli --help
 ```
 
 ---
 
-## Project Structure
+## 🧠 Agent Formats & Execution Modes
+
+### Supported Agent Formats
+
+| Type    | File         | Execution Path            | Notes                                    |
+| ------- | ------------ | ------------------------- | ---------------------------------------- |
+| Python  | `agent.py`   | Interpreted at runtime    | Use Python logic & host APIs             |
+| Blob    | `model.blob` | Loaded directly by engine | Faster, minimal runtime                  |
+| Redcode | `.red/.asm`  | Via pMARS integration     | Compatible with existing Core War agents |
+
+* The **Python** format is great for experimentation and rapid prototyping.
+* Use **blob** when you want to ship just the low-level compiled version.
+* The **Redcode** mode allows interop with legacy Core War agents (via pMARS). Use `--mode redcode94`.
+
+### Agent Discovery Structure
+
+Under the `agents/` directory:
 
 ```
-BATTLE/
-├── engine/               # Core battle engine
-│   └── src/battle_engine/
-├── agents/               # Agent definitions & blobs
-├── runs/                 # Saved run logs and summaries
-├── tools/                # Utilities (replay viewer, agent designer, tournament runner)
-├── dist/                 # Built executables (Windows/Linux)
-└── README.md             # This file
+agents/
+  my_agent/
+    agent.yaml
+    agent.py
+    model.blob  # optional
+  ...
 ```
+
+The `agent.yaml` defines metadata (name, display name, required blobs, dependencies). If `model.blob` exists, it will be preferred in binary execution.
+
+Use:
+
+```bash
+battle-cli --list-agents
+```
+
+to see all discovered agents.
 
 ---
 
-## Development
+## 🎮 GUI Tools (optional)
 
-### Testing
+### Tools
 
-```bash
-./tools/smoke_test.sh
-```
+| Executable | Role | Tech |
+|-----------|------|------|
+| battle-agent-designer.exe | Configure & run matches, open replays | PySide6 (Qt) |
+| match_runner.exe          | Live match visualizer (grid/ticks)     | Pygame |
 
-Runs a set of quick validation battles across agents.
 
-### Adding a New Agent
-
-1. Create an `agents/<name>/agent.yaml`
-2. Add optional model blob under `agents/<name>/`
-3. Update engine registry if needed
-
-### Packaging (Windows Example)
-
-```powershell
-pyinstaller --noconfirm --clean `
-  --workpath build\windows `
-  --distpath  dist\windows `
-  tools\agent_designer.spec
-```
 
 ---
 
-## Roadmap
+## ⚙ Integration with pMARS (Redcode mode)
 
-* [ ] Expand agent library
-* [ ] Add networked multiplayer mode
-* [ ] Web-based replay viewer
-* [ ] Configurable AI training hooks
-* [ ] CI smoke test integration
-
-
-
-### Battle Agent Designer
-
-The **Battle Agent Designer** is a graphical utility for creating and editing agent configurations. It allows quick setup of agent metadata (`name`, `display`, parameters, blob paths) without manually editing YAML files.
-
-#### Status
-
-* Currently in **beta**
-* Core functionality: create/edit agent YAML files, assign blobs, validate config
-* Built with Python + PyQt (packaged via PyInstaller for Windows)
-* Linux runs directly with Python environment
-
-#### Run from Source
+BATTLE2 supports pMARS (Redcode) for interoperability:
 
 ```bash
-# Linux / macOS
-python tools/agent_designer.py
+battle-cli --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
 ```
 
-```powershell
-# Windows (with virtualenv active)
-python .\tools\agent_designer.py
-```
+* The backend spawns `pmars` with appropriate flags to evaluate the match.
+* The output includes a `summary.json` indicating winner, return code, and parameters.
+* You need to install `pmars` binaries (bundled or via your system). The license of pMARS must be respected (typically GPLv2). See `third_party_licenses/` in this repo for full details.
 
-#### Run Packaged Executable (Windows)
+---
 
-```powershell
-.\dist\windows\BattleReplayViewer.exe
-.\dist\windows\BattleAgentDesigner.exe
-```
+## 🧪 First-Run Example
 
-#### Workflow
+1. Clone & install (see **Quick Start** above).
 
-1. Launch the designer
-2. Fill in **agent name**, **display label**, and optional blob/model path
-3. Save, which generates or updates `agents/<agent>/agent.yaml`
-4. Use new agent directly in battles:
+2. View available agents:
 
    ```bash
-   python -m battle_engine.cli --a-type <agent> --b-type runner
+   battle-cli --list-agents
    ```
 
+3. Run a match with default agents:
 
-## License
+   ```bash
+   battle-cli --ticks 500 --arena 2048 --a-agent my_agent --b-agent other_agent
+   ```
 
-MIT — see [LICENSE](LICENSE).
+4. Optional: launch viewer to inspect results:
 
+   ```bash
+   battle-replay-viewer path/to/replay.json
+   ```
+
+---
+
+## 🚀 Packaging for Windows
+
+We use a wrapper entry point (`battle_engine._entry:main`) to surface `battle-cli` without modifying `cli.py` directly.
+For Windows packaging, two approaches are viable:
+
+* **PyInstaller + Inno Setup**
+
+  * Build executables for `battle-cli`, `battle-agent-designer`, and `replay-viewer`
+  * Use Inno Setup script (`.iss`) to bundle binaries, agents folder, pmars, etc.
+  * Add Start Menu shortcuts, add to PATH optionally
+
+* **MSI via WiX Toolset**
+
+  * More control (repair, feature sets), suitable for enterprise use
+  * You can author features/components for `bin/`, `agents/`, `pmars/`
+
+In both cases, rely on the `console_scripts` wrappers and package metadata from `pyproject.toml`.
+
+---
+
+## 🧷 Developer Notes & Contribution
+
+* The project uses a **multi-root source layout**:
+
+  * `engine/src/` (battle engine core)
+  * `client/src/` (GUI / client tooling)
+
+* Packaging via `pyproject.toml` uses `tool.setuptools.packages.find` to detect both roots.
+
+* Keep asset/dataset files in package directories (e.g. `warriors/`, `data/`) so they get included in installs.
+
+* CI (GitHub Actions) should at least run `battle-cli --help`, build tests, and optionally GUI smoke tests.
+
+If you are migrating from the prior version, check the following:
+
+* Your old agent files must be relocated under `agents/` with a matching directory structure
+* `.env` has been removed; use environment variables or CLI options instead
+* The wrapper ensures existing CLI logic carries forward unchanged
+
+Contributions welcome — open a PR or issue. Thanks for checking out BATTLE2!
+
+```

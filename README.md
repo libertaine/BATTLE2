@@ -97,10 +97,14 @@ to see all discovered agents.
 
 ## 🎮 GUI Tools (optional)
 
-* **Agent Designer**: `battle-agent-designer`
-* **Replay Viewer**: `battle-replay-viewer`
+### Tools
 
-They are simple stubs now (pygame windows), but ready for extension. If you didn’t install the `gui` extras, you’ll get a friendly error about missing `pygame`.
+| Executable | Role | Tech |
+|-----------|------|------|
+| battle-agent-designer.exe | Configure & run matches, open replays | PySide6 (Qt) |
+| match_runner.exe          | Live match visualizer (grid/ticks)     | Pygame |
+
+
 
 ---
 

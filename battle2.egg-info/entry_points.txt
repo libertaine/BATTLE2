@@ -1,4 +1,4 @@
 [console_scripts]
 battle-agent-designer = app.agent_designer:main
-battle-cli = battle_engine._entry:main
-battle-replay-viewer = app.replay_viewer:main
+battle-cli = battle_engine.cli:main
+match-runner = app.match_runner:main
