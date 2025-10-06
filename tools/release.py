@@ -11,3 +11,4 @@ def pack_release_linux(
     symlinks: Optional[dict[str, str]] = None,  # {"battle2": "bin/battle2"}
     write_checksums: bool = True,
 ) -> Path:
+    pass

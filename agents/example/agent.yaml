@@ -1,4 +1,4 @@
-{
-  "name": "runner",
-  "display": "Runner (example)"
-}
+name: runner
+display: runner
+defaults:
+  aggression: 0.6

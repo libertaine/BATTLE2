@@ -38,12 +38,29 @@ def _read_json_like(path: Path) -> Dict[str, Any]:
         s = line.split("//", 1)[0]
         s = s.split("#", 1)[0]
         lines.append(s)
-    cleansed = "\n".join(lines)
+    cleansed = "\n".join(lines).strip()
     cleansed = cleansed.replace(",}", "}").replace(", }", " }").replace(",]", "]").replace(", ]", " ]")
-    data = json.loads(cleansed) if cleansed.strip() else {}
+
+    if not cleansed:
+        return {}
+
+    # 1) Try JSON (original behavior)
+    try:
+        data = json.loads(cleansed)
+    except json.JSONDecodeError:
+        # 2) Fallback: YAML if available
+        try:
+            import yaml  # optional dependency
+        except Exception:
+            raise ValueError(
+                f"{path} is not valid JSON. Convert to JSON, or 'pip install pyyaml' to allow YAML."
+            )
+        data = yaml.safe_load(cleansed) or {}
+
     if not isinstance(data, dict):
-        raise ValueError(f"{path} must contain a JSON object.")
+        raise ValueError(f"{path} must contain an object/map.")
     return data
+
 
 
 def _spec_from_dir(agent_dir: Path) -> AgentSpec | None:

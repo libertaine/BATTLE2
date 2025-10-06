@@ -1,1 +1,5 @@
-{ "name": "bomber", "display": "Bomber", "defaults": { "blob_path": "agents/bomber/model.blob" } }
+name: bomber
+display: Bomber
+blob_path: agents/bomber/model.blob
+defaults:
+  aggression: 0.6

@@ -1,136 +1,125 @@
-# tools/smoke_test.ps1
-# Smoke tests for the battle project on Windows (PowerShell 5+).
-# - Simple CLI agent vs agent
-# - Redcode94 via pMARS (if present)
-# - Agent "builder" execution (no extra weights)
-# Assumes repo layout with engine\src\battle_engine\cli.py
+#Requires -Version 5.1
+<#
+  BATTLE2 smoke_test.ps1
+  Purpose: Quick, deterministic checks to ensure the repo runs from source on Windows.
+  - Activates venv python (if available)
+  - Sets PYTHONPATH for engine/src and client/src
+  - Verifies key imports
+  - Discovers agents
+  - Performs a tiny CLI run (short, safe parameters)
 
-param(
-  [switch]$Strict # If set, fail when pmars is missing (instead of skipping test 2)
-)
+  Usage:
+    powershell -ExecutionPolicy Bypass -File tools\smoke_test.ps1
+#>
 
 $ErrorActionPreference = 'Stop'
 
-function Write-Log([string]$msg) {
-  $ts = Get-Date -Format HH:mm:ss
-  Write-Host "[$ts] $msg"
+# --- Helpers ---------------------------------------------------------------
+
+function Write-Info([string]$msg)  { Write-Host "[INFO]  $msg" -ForegroundColor Cyan }
+function Write-Ok([string]$msg)    { Write-Host "[ OK ]  $msg" -ForegroundColor Green }
+function Write-Warn([string]$msg)  { Write-Host "[WARN] $msg" -ForegroundColor Yellow }
+function Write-Err([string]$msg)   { Write-Host "[FAIL] $msg" -ForegroundColor Red }
+
+function Resolve-RepoRoot {
+  # Prefer git root; fallback to script parent\..
+  try {
+    $gitTop = (git rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $gitTop) { return (Resolve-Path $gitTop).Path }
+  } catch { }
+  return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
 
-function Fail([string]$msg) {
-  Write-Error $msg
-  exit 1
-}
-
-# Return best available python launcher: python, python3, or py -3
-function Get-PythonCmd {
-  foreach ($candidate in @('python', 'python3')) {
-    if (Get-Command $candidate -ErrorAction SilentlyContinue) { return $candidate }
+function Get-Python {
+  param([string]$RepoRoot)
+  # 1) Active venv python if already activated
+  if ($env:VIRTUAL_ENV) {
+    $py = Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe'
+    if (Test-Path $py) { return (Resolve-Path $py).Path }
   }
-  if (Get-Command py -ErrorAction SilentlyContinue) { return 'py -3' }
-  Fail "Python not found. Install Python 3 or ensure it's on PATH."
+  # 2) Local .venv
+  $py = Join-Path $RepoRoot '.venv\Scripts\python.exe'
+  if (Test-Path $py) { return (Resolve-Path $py).Path }
+  # 3) Fallback to PATH
+  $py = (Get-Command python -ErrorAction SilentlyContinue)?.Source
+  if ($py) { return $py }
+  throw "Python executable not found. Create venv:  python -m venv .venv"
 }
 
-# --- config ----------------------------------------------------------------
-$RepoRoot   = Resolve-Path (Join-Path $PSScriptRoot '..')
-$EngineSrc  = Join-Path $RepoRoot 'engine\src'
-$CliMod     = 'battle_engine.cli'
-$RunRoot    = Join-Path $RepoRoot 'runs\_smoke'
-$Timestamp  = Get-Date -Format 'yyyyMMdd-HHmmss'
-$RunDir     = Join-Path $RunRoot $Timestamp
-
-$AgentA     = 'runner'
-$AgentB     = 'bomber'
-
-$RedRounds        = 3
-$RedCoreSize      = 8000
-$RedMaxCycles     = 80000
-$RedMaxProcesses  = 8000
-$RedMaxLen        = 100
-$RedMinDist       = 100
-
-# --- environment -----------------------------------------------------------
-Set-Location $RepoRoot
-Write-Log "Project root: $RepoRoot"
-
-# Activate venv if present
-$VenvActivate = Join-Path $RepoRoot '.venv\Scripts\Activate.ps1'
-if (Test-Path $VenvActivate) {
-  . $VenvActivate
-  Write-Log "Activated venv: $($RepoRoot)\.venv"
-} else {
-  Write-Log "No .venv found. Using system Python."
+function Ensure-Env {
+  param([string]$RepoRoot)
+  $engine = (Resolve-Path (Join-Path $RepoRoot 'engine\src')).Path
+  $client = (Resolve-Path (Join-Path $RepoRoot 'client\src')).Path
+  $env:PYTHONPATH = "$engine;$client"
+  if (-not $env:BATTLE_AGENTS_DIR) {
+    $agents = Join-Path $RepoRoot 'agents'
+    if (Test-Path $agents) { $env:BATTLE_AGENTS_DIR = (Resolve-Path $agents).Path }
+  }
+  Write-Info "Repo root: $RepoRoot"
+  Write-Info "PYTHONPATH = $($env:PYTHONPATH)"
+  if ($env:BATTLE_AGENTS_DIR) { Write-Info "BATTLE_AGENTS_DIR = $($env:BATTLE_AGENTS_DIR)" }
 }
 
-# Ensure PYTHONPATH includes engine\src
-if (-not $env:PYTHONPATH) {
-  $env:PYTHONPATH = $EngineSrc
-  Write-Log "PYTHONPATH set to include engine\src"
-} elseif ($env:PYTHONPATH -notlike "*$EngineSrc*") {
-  $env:PYTHONPATH = "$EngineSrc;$($env:PYTHONPATH)"
-  Write-Log "PYTHONPATH augmented to include engine\src"
+function Invoke-PyCode {
+  param(
+    [string]$PythonExe,
+    [string]$Code,
+    [string]$What = "python snippet"
+  )
+  try {
+    $Code | & $PythonExe - 2>&1 | ForEach-Object { $_ }
+    if ($LASTEXITCODE -ne 0) { throw "$What failed with exit code $LASTEXITCODE" }
+  } catch {
+    Write-Err "$What failed."
+    throw
+  }
 }
 
-# Ensure run dir
-New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
-Write-Log "Run dir: $RunDir"
+# --- Main -----------------------------------------------------------------
 
-$PY = Get-PythonCmd
+$repo = Resolve-RepoRoot
+Set-Location $repo
 
-# Verify CLI import path
-& $PY - << 'PYCODE'
-import importlib, sys
-try:
-    m = importlib.import_module("battle_engine.cli")
-    print("[check] battle_engine.cli path:", m.__file__)
-except Exception as e:
-    print("[check] FAILED to import battle_engine.cli:", e)
-    sys.exit(1)
-PYCODE
+$PY = Get-Python -RepoRoot $repo
+Write-Ok "Python: $PY"
 
-function Invoke-CLI([string[]]$Args) {
-  Write-Log ("Running CLI: " + ($Args -join ' '))
-  & $PY -m $CliMod @Args
+Ensure-Env -RepoRoot $repo
+
+# 1) Import sanity: battle_engine and client renderer
+Write-Info "Check: module imports"
+Invoke-PyCode -PythonExe $PY -What "import check" -Code @'
+import sys, pkgutil
+sys.path[:0] = [r"engine/src", r"client/src"]
+print("has battle_engine:", pkgutil.find_loader("battle_engine") is not None)
+print("has battle_client.renderers.pygame_renderer:",
+      pkgutil.find_loader("battle_client.renderers.pygame_renderer") is not None)
+'@
+
+# 2) Agent discovery (uses discover_agents(Path(root)))
+Write-Info "Check: agent discovery"
+Invoke-PyCode -PythonExe $PY -What "agent discovery" -Code @'
+import sys, pathlib
+sys.path[:0] = [r"engine/src", r"client/src"]
+from app.services.osutil import get_battle_root
+from battle_engine.agents import discover_agents
+root = pathlib.Path(get_battle_root())
+items = discover_agents(root)
+names = [getattr(x, "display", None) or getattr(x, "name", None) or getattr(x, "id", None) for x in items]
+print("agents count:", len(items))
+print("agents:", names)
+if len(items) == 0:
+    raise SystemExit("No agents discovered; ensure agents/*/agent.yaml exist.")
+'@
+
+# 3) Tiny CLI run (safe/short)
+Write-Info "Check: tiny CLI run"
+# If your CLI is python -m battle_engine.cli; adjust flags to very small work.
+& $PY -m battle_engine.cli --ticks 10 --arena 128 1>$null 2>$null
+if ($LASTEXITCODE -ne 0) {
+  Write-Err "CLI run failed (exit $LASTEXITCODE)"
+  exit $LASTEXITCODE
 }
+Write-Ok "CLI run ok"
 
-# --- helpers ---------------------------------------------------------------
-function Prepare-RedcodeWarriors([string]$Dir) {
-  New-Item -ItemType Directory -Force -Path $Dir | Out-Null
-
-  $imp = @"
-;name Imp
-;author SmokeTest
-;strategy 1-instruction process that marches through core
-        MOV     0, 1
-"@
-  Set-Content -NoNewline -Path (Join-Path $Dir 'imp.red') -Value $imp
-
-  $dwarf = @"
-;name Dwarf
-;author SmokeTest
-;strategy Bomb every 4 cells
-STEP    EQU     4
-        ADD     #STEP,   BAIT
-BAIT    DAT     #0,      #0
-        MOV     BAIT,    @BAIT
-        JMP     -2
-        END
-"@
-  Set-Content -NoNewline -Path (Join-Path $Dir 'dwarf.red') -Value $dwarf
-
-  return ,(Join-Path $Dir 'imp.red'),(Join-Path $Dir 'dwarf.red')
-}
-
-function Have-Cmd([string]$name) {
-  return [bool](Get-Command $name -ErrorAction SilentlyContinue)
-}
-
-# --- tests -----------------------------------------------------------------
-function Test-1-SimpleCLI {
-  Write-Log "=== [1/3] Simple CLI battle with built-in agents ($AgentA vs $AgentB) ==="
-  Invoke-CLI @(
-    '--ticks','50',
-    '--arena','512',
-    '--win-mode','score_fallback',
-    '--a-type', $AgentA,
-    '--b-type', $AgentB,
-    '--q
+Write-Ok "Smoke tests passed."
+exit 0

@@ -1,1 +1,4 @@
-{ "name":"replicator", "display":"Replicator", "defaults": { "aggression": 0.4 } }
+name: replicator
+blob_path: agents/replicator/model.blob
+defaults:
+  aggression: 0.6

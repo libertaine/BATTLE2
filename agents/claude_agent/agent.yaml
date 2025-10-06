@@ -1,1 +1,5 @@
-{ "name": "claude_agent", "display": "Claude Agent (h16)", "defaults": { "blob_path": "agents/claude_agent/model.blob" } }
+name: claude_agent
+display: claude_agent (h16)
+blob_path: agents/claude_agent/model.blob
+defaults:
+  aggression: 0.6

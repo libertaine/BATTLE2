@@ -1,1 +1,5 @@
-{ "name": "chatgpt_hunter", "display": "ChatGPT Hunter", "defaults": { "blob_path": "agents/chatgpt_hunter/model.blob" } }
+name: chatgpt_hunter
+display: chatgpt_hunter
+blob_path: agents/chatgpt_hunter/model.blob
+defaults:
+  aggression: 0.6
