@@ -14,6 +14,11 @@ Project to determine feasibility of using LLM to assist me in creation of a proj
 
 This project is released under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/libertaine/BATTLE2?label=latest%20release)](https://github.com/libertaine/BATTLE2/releases)
+[![Changelog](https://img.shields.io/badge/Changelog-view-blue)](CHANGELOG.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+
 ---
 
 ## 🔧 Quick Start
@@ -33,6 +38,32 @@ pip install -e .[gui]        # gui extra includes pygame
 > ```bash
 > pip install -e .
 > ```
+
+---
+
+## 📦 Downloads
+
+**Latest Release:** [v0.1.0 (Pre-release)](https://github.com/libertaine/BATTLE2/releases/tag/v0.1.0)
+
+Choose one of the options below:
+
+| Type | File | Description |
+|------|------|--------------|
+| 🧰 **Installer** | [BATTLE2-Setup-0.1.0.exe](https://github.com/libertaine/BATTLE2/releases/download/v0.1.0/BATTLE2-Setup-0.1.0.exe) | Installs under `C:\Program Files\BATTLE2` (recommended) |
+| 💼 **Portable ZIP** | [BATTLE2-portable.zip](https://github.com/libertaine/BATTLE2/releases/download/v0.1.0/BATTLE2-portable.zip) | Unpack and run from any folder (no installation) |
+
+---
+
+### Default Install Paths
+| Component | Location |
+|------------|-----------|
+| Binaries | `C:\Program Files\BATTLE2\bin\` |
+| Data root | `%ProgramData%\BATTLE2\` |
+| Replays | `%ProgramData%\BATTLE2\runs\_loose\` |
+| Agents | `%ProgramData%\BATTLE2\resources\agents\` |
+
+Environment variable `BATTLE2_ROOT` is automatically set to the data root during installation.
+
 
 ### CLI Usage
 
@@ -188,3 +219,91 @@ If you are migrating from the prior version, check the following:
 Contributions welcome — open a PR or issue. Thanks for checking out BATTLE2!
 
 ```
+
+## 🧰 Development / Build from Source
+
+Developers can build and test BATTLE2 directly from source.
+Requires **Python 3.11** and **pip >= 24.0**.
+
+```bash
+# 1️⃣ Clone the repository
+git clone https://github.com/libertaine/BATTLE2.git
+cd BATTLE2
+
+# 2️⃣ Create and activate a virtual environment
+py -3.11 -m venv .venv
+.venv\Scripts\activate        # Windows PowerShell
+# or
+source .venv/bin/activate     # Linux / macOS
+
+# 3️⃣ Install dependencies
+pip install -U pip setuptools wheel
+pip install -e .
+
+# 4️⃣ Run the engine or GUI directly
+python -m app.match_runner     # Pygame match window
+python -m app.agent_designer   # PySide6 designer GUI
+python -m battle_engine.cli --help
+
+# 5️⃣ (Optional) Build executables
+pyinstaller -y --clean --name battle-cli --console ^
+  --paths engine\src --collect-all battle_engine -m battle_engine.cli
+
+pyinstaller -y --clean --name match_runner --windowed ^
+  app\match_runner.py
+
+pyinstaller -y --clean --name battle-agent-designer --windowed ^
+  app\agent_designer.py
+```
+
+> 💡 *Note:* For Windows packaging, use **Inno Setup 6** and compile
+> `tools\installer.iss` to create `BATTLE2-Setup-x.y.z.exe`.
+> This installer copies executables to `C:\Program Files\BATTLE2`
+> and shared data to `%ProgramData%\BATTLE2`.
+
+---
+
+### Directory Overview
+
+```
+BATTLE2/
+├── app/
+│   ├── agent_designer.py      # PySide6 GUI
+│   ├── match_runner.py        # Pygame visualizer
+│   └── main.py                # GUI entry and window setup
+├── engine/
+│   └── src/battle_engine/     # Simulation core & CLI
+├── client/
+│   └── src/battle_client/     # Renderer and interface code
+├── tools/
+│   ├── build_executables.ps1  # Build helper script
+│   ├── installer.iss          # Inno Setup installer definition
+│   └── smoke_after_install.ps1
+├── examples/                  # Sample agents and match configs
+├── LICENSE
+├── README.md
+└── pyproject.toml
+```
+
+---
+
+### 🧪 Quick Validation
+
+To verify a successful build and installation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1 -AppDir "C:\Program Files\BATTLE2"
+```
+
+This runs a minimal smoke test of all installed executables to ensure:
+
+* `battle-cli.exe` runs headless matches
+* `match_runner.exe` opens the Pygame window
+* `battle-agent-designer.exe` opens the Qt interface
+
+---
+
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and upcoming features.
+
