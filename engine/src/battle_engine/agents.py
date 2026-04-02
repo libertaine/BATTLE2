@@ -1,79 +1,123 @@
-import importlib.util
-import os
-import sys
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict
 
-# Assuming you have a base class for type-hinting/consistency
-# from .base import BaseAgent
+__all__ = [
+    "AgentSpec",
+    "discover_agents",
+    "resolve_agent",
+]
 
 
-def resolve_agent(agent_id):
+@dataclass
+class AgentSpec:
+    name: str
+    display: str
+    dir: Path
+    blob: Path | None
+    defaults: Dict[str, Any]
+
+
+def _agents_root(root: Path) -> Path:
+    return (root / "agents").resolve()
+
+
+def _read_json_like(path: Path) -> Dict[str, Any]:
     """
-    High-level resolver:
-    1. Checks if it's a built-in agent name.
-    2. Checks if it's a path to a .py file or a directory containing agent.py.
-    3. Checks if it's a pre-assembled binary/blob.
+    Parse agent.yaml as JSON (no YAML dependency).
+    Allows:
+      - // and # comments (stripped)
+      - simple trailing comma cleanup
     """
-    # 1. Check BATTLE2_ROOT for local agent folders
-    root = os.environ.get("BATTLE2_ROOT", os.getcwd())
-    agent_path = Path(root) / "agents" / agent_id
+    text = path.read_text(encoding="utf-8")
+    lines = []
+    for line in text.splitlines():
+        s = line.split("//", 1)[0]
+        s = s.split("#", 1)[0]
+        lines.append(s)
+    cleansed = "\n".join(lines).strip()
+    cleansed = cleansed.replace(",}", "}").replace(", }", " }").replace(",]", "]").replace(", ]", " ]")
 
-    # Handle Directory vs File path
-    if agent_path.is_dir():
-        py_file = agent_path / "agent.py"
-    else:
-        py_file = Path(agent_id)  # Direct path passed via CLI
+    if not cleansed:
+        return {}
 
-    if py_file.exists() and py_file.suffix == ".py":
-        return load_python_agent(py_file)
-
-    # 2. Fallback: Built-in agents (Placeholder for your existing logic)
-    # return get_builtin_agent(agent_id)
-
-    raise ValueError(
-        f"Could not resolve agent: {agent_id}. No agent.py found at {py_file}"
-    )
-
-
-def load_python_agent(path):
-    """
-    Dynamically imports a .py file and returns an executable agent instance.
-    """
-    module_name = f"agent_{path.stem}"
-    spec = importlib.util.spec_from_file_location(module_name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load spec for {path}")
-
-    module = importlib.util.module_from_spec(spec)
-    # Add the agent's directory to sys.path so it can import local helpers
-    sys.path.insert(0, str(path.parent))
-
+    # 1) Try JSON (original behavior)
     try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.path.pop(0)
+        data = json.loads(cleansed)
+    except json.JSONDecodeError:
+        # 2) Fallback: YAML if available
+        try:
+            import yaml  # optional dependency
+        except Exception:
+            raise ValueError(
+                f"{path} is not valid JSON. Convert to JSON, or 'pip install pyyaml' to allow YAML."
+            )
+        data = yaml.safe_load(cleansed) or {}
 
-    # Contract: The agent.py MUST define a class named 'Agent' or a 'create_agent' function
-    if hasattr(module, "Agent"):
-        return module.Agent()
-    elif hasattr(module, "create_agent"):
-        return module.create_agent()
-
-    raise AttributeError(
-        f"Agent script {path} missing 'Agent' class or 'create_agent' function."
-    )
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain an object/map.")
+    return data
 
 
-def list_available_agents():
-    """
-    Scans the agents directory for discoverable Python agents.
-    """
-    root = os.environ.get("BATTLE2_ROOT", os.getcwd())
-    agents_dir = Path(root) / "agents"
 
-    found = []
-    if agents_dir.exists():
-        for item in agents_dir.iterdir():
-            if item.is_dir() and (item / "agent.py").exists():
-                found.append(item.name)
-    return found
+def _spec_from_dir(agent_dir: Path) -> AgentSpec | None:
+    if not agent_dir.is_dir():
+        return None
+    name = agent_dir.name
+    yaml_path = agent_dir / "agent.yaml"
+    py_path = agent_dir / "agent.py"
+    blob_path = agent_dir / "model.blob"
+
+    display = name
+    defaults: Dict[str, Any] = {}
+
+    if yaml_path.exists():
+        try:
+            meta = _read_json_like(yaml_path)
+        except Exception as e:
+            raise SystemExit(f"Failed parsing {yaml_path}: {e}")
+        display = str(meta.get("display") or meta.get("name") or name)
+        if "defaults" in meta:
+            if isinstance(meta["defaults"], dict):
+                defaults = dict(meta["defaults"])
+            else:
+                raise SystemExit(f"'defaults' in {yaml_path} must be an object.")
+    else:
+        if not py_path.exists():
+            # not a valid agent folder by our rules
+            return None
+        # agent.py exists; infer minimal metadata
+        display = name
+        defaults = {}
+
+    blob = blob_path if blob_path.exists() else None
+    return AgentSpec(name=name, display=display, dir=agent_dir, blob=blob, defaults=defaults)
+
+
+def discover_agents(root: Path) -> Dict[str, AgentSpec]:
+    base = _agents_root(root)
+    if not base.exists():
+        return {}
+    specs: Dict[str, AgentSpec] = {}
+    for child in sorted(base.iterdir()):
+        if not child.is_dir():
+            continue
+        spec = _spec_from_dir(child)
+        if spec:
+            specs[spec.name] = spec
+    return specs
+
+
+def resolve_agent(root: Path, name: str) -> AgentSpec:
+    if not name or not name.strip():
+        raise SystemExit("Agent name cannot be empty.")
+    agent_dir = _agents_root(root) / name
+    spec = _spec_from_dir(agent_dir)
+    if spec is None:
+        raise SystemExit(
+            f"Unknown agent '{name}'. Expected a folder {agent_dir} with agent.yaml (JSON) or agent.py"
+        )
+    return spec
