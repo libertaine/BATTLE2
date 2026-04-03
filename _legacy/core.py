@@ -183,13 +183,15 @@ def enc(op: int, imm: int | None = None) -> bytes:
 class Kernel:
     def __init__(
         self,
-        cfg: Config,
+        cfg: Optional[Config] = None,
         sink: Optional[JSONLSink] = None,
         renderer: Optional[object] = None,
+        ticks_per_second: int = 1000,
     ):
-        self.cfg = cfg
-        self.vm = VM(cfg.arena_size)
-        self.instr_per_tick = cfg.instr_per_tick
+        self.cfg = cfg or Config()
+        self.vm = VM(self.cfg.arena_size)
+        self.instr_per_tick = self.cfg.instr_per_tick
+        self.ticks_per_second = ticks_per_second
         self.agents: List[Agent] = []
         self.tick = 0
         self.sink = sink or JSONLSink("replay.jsonl")
@@ -197,7 +199,7 @@ class Kernel:
         self.score: Dict[str, int] = {}
         self._alive_prev: Dict[str, bool] = {}
         self.stats = {}
-        self.rng = random.Random(cfg.seed)
+        self.rng = random.Random(self.cfg.seed)
 
     def spawn(self, agent_id: str, entry: int, code: bytes) -> None:
         s, e = self.vm.load_code(entry, code, owner=agent_id)
@@ -250,7 +252,9 @@ class Kernel:
                     self.score.get(a.agent_id, 0) + buckets * self.cfg.weights.territory
                 )
 
-    def run(self, max_ticks: int = 10000, verbose: bool = True) -> str:
+    def run(
+        self, max_ticks: int = 10000, verbose: bool = True, realtime: bool = True
+    ) -> str:
         header = {"tick": 0, "ver": 6, "config": asdict(self.cfg)}
         self.sink.emit(header)
         if self.renderer:
@@ -331,7 +335,8 @@ class Kernel:
 
             for a in self.agents:
                 self._alive_prev[a.agent_id] = a.alive
-            if sum(1 for a in self.agents if a.alive) <= 1:
+            alive_count = sum(1 for a in self.agents if a.alive)
+            if self.agents and alive_count <= 1:
                 break
 
         if hasattr(self.sink, "close"):
