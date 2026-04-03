@@ -64,6 +64,7 @@ Choose one of the options below:
 
 Environment variable `BATTLE2_ROOT` is automatically set to the data root during installation.
 
+> **Note for Linux/macOS Users:** Install paths and commands may differ. Use `sudo apt install pmars` (or equivalent) for Redcode support.
 
 ### CLI Usage
 
@@ -134,6 +135,7 @@ to see all discovered agents.
 |-----------|------|------|
 | battle-agent-designer.exe | Configure & run matches, open replays | PySide6 (Qt) |
 | match_runner.exe          | Live match visualizer (grid/ticks)     | Pygame |
+| battle-replay-viewer.exe  | View and analyze match replays         | Pygame |
 
 
 
@@ -172,7 +174,7 @@ battle-cli --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 
 4. Optional: launch viewer to inspect results:
 
    ```bash
-   battle-replay-viewer path/to/replay.json
+   python -m battle_client.cli --replay path/to/replay.jsonl
    ```
 
 ---
@@ -280,6 +282,9 @@ BATTLE2/
 │   ├── installer.iss          # Inno Setup installer definition
 │   └── smoke_after_install.ps1
 ├── examples/                  # Sample agents and match configs
+├── agents/                    # Agent definitions and binaries
+├── warriors/                  # Sample Redcode (.red) files
+├── pmars/                     # pMARS binaries for Redcode interop
 ├── LICENSE
 ├── README.md
 └── pyproject.toml
