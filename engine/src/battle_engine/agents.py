@@ -50,7 +50,9 @@ def _read_json_like(path: Path) -> Dict[str, Any]:
     except json.JSONDecodeError:
         # 2) Fallback: YAML if available
         try:
-            import yaml  # optional dependency
+            import importlib
+
+            yaml = importlib.import_module("yaml")
         except Exception:
             raise ValueError(
                 f"{path} is not valid JSON. Convert to JSON, or 'pip install pyyaml' to allow YAML."

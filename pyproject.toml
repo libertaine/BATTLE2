@@ -24,6 +24,7 @@ classifiers = [
 dependencies = [
   # CLI/core libs here (example):
   "click>=8.1",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -95,4 +96,3 @@ battle_engine = [
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-
