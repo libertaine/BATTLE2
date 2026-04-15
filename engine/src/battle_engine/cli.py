@@ -1,18 +1,15 @@
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple, Optional
-import subprocess
-import re
+from typing import Any, Dict, Iterable, Optional, Tuple
 
-from battle_engine.core import Kernel, Config, JSONLSink
-from battle_engine.builtins import build_agent, SUPPORTED
-
-
-# Absolute imports so this works whether launched as a module or as a script
+from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.agents import discover_agents, resolve_agent
+from battle_engine.core import Config, JSONLSink, Kernel, Weights
 
 
 # ----------------------------
@@ -31,23 +28,16 @@ def _run_pmars(
     max_len: int,
     min_dist: int,
     rounds: int,
-) -> tuple[str, dict]:
+) -> Tuple[str, Dict[str, Any]]:
     """
-    Run pMARS in batch (no GUI) and try to parse the result from stdout.
+    Run pMARS in batch mode and try to parse a winner from stdout.
 
-    Returns: (winner, extra)
+    Returns:
+      (winner, extra)
+
       winner in {"A", "B", "tie", "unknown"}
-      extra: dict with raw stdout/stderr for debugging and any parsed stats
+      extra contains stdout/stderr/returncode for troubleshooting.
     """
-    # pMARS flags referenced from upstream docs/manpages.
-    # -b : benchmark / batch (no UI)
-    # -r : rounds
-    # -s : core size
-    # -c : max cycles
-    # -p : max processes
-    # -l : max length
-    # -d : min distance
-    # We pass A then B sources directly; pMARS assembles them.
     cmd = [
         pmars_cmd,
         "-b",
@@ -66,18 +56,19 @@ def _run_pmars(
         str(red_a),
         str(red_b),
     ]
+
     proc = subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
+
     out = proc.stdout
     err = proc.stderr
 
-    # Heuristic parser:
-    # Many builds print a result summary or a final line with who survives.
-    # We try a few common patterns; if none match we return 'unknown'.
-    # Tweak these for your local build if needed.
     winner = "unknown"
-    # Common explicit phrases:
+
     if re.search(r"\b[Aa]\s+wins\b", out):
         winner = "A"
     elif re.search(r"\b[Bb]\s+wins\b", out):
@@ -85,11 +76,11 @@ def _run_pmars(
     elif re.search(r"\b[tT]ie\b|\b[dD]raw\b", out):
         winner = "tie"
 
-    # Fallback: look for a final scoreboard like "A: <n>  B: <m>"
     if winner == "unknown":
         m = re.search(r"A\s*[:=]\s*(\d+).+?B\s*[:=]\s*(\d+)", out, re.DOTALL)
         if m:
-            a_score, b_score = int(m.group(1)), int(m.group(2))
+            a_score = int(m.group(1))
+            b_score = int(m.group(2))
             if a_score > b_score:
                 winner = "A"
             elif b_score > a_score:
@@ -105,58 +96,15 @@ def _run_pmars(
     return winner, extra
 
 
-def _final_from_replay(replay_path: Path) -> dict[str, int]:
-    """Return dict with final A_score, B_score, A_alive_ticks, B_alive_ticks if present."""
-    A_last = B_last = None
-    A_alive = B_alive = 0
-    seen_ticks = set()
-
-    with replay_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                ev = json.loads(line)
-            except Exception:
-                continue
-            if not isinstance(ev, dict):
-                continue
-
-            # scores (last wins)
-            sc = ev.get("score")
-            if isinstance(sc, dict):
-                if isinstance(sc.get("A"), int):
-                    A_last = sc["A"]
-                if isinstance(sc.get("B"), int):
-                    B_last = sc["B"]
-
-            # alive ticks (count per tick if agent listed as alive)
-            tick = ev.get("tick")
-            alive_list = ev.get("alive")
-            if isinstance(tick, int) and isinstance(alive_list, list):
-                if tick not in seen_ticks:
-                    seen_ticks.add(tick)
-                    if "A" in alive_list:
-                        A_alive += 1
-                    if "B" in alive_list:
-                        B_alive += 1
-
-    return {
-        "A_score": int(A_last or 0),
-        "B_score": int(B_last or 0),
-        "A_alive_ticks": A_alive,
-        "B_alive_ticks": B_alive,
-    }
-
-
 def _battle_root() -> Path:
     env = os.environ.get("BATTLE_ROOT")
     if env:
         return Path(env).expanduser().resolve()
 
     here = Path(__file__).resolve()
-    # .../engine/src/battle_engine/cli.py
-    # parents[0]=battle_engine, [1]=src, [2]=engine, [3]=BATTLE2 (repo root)
     cand = None
     try:
+        # .../engine/src/battle_engine/cli.py -> repo root at parents[3]
         cand = here.parents[3]
     except IndexError:
         cand = None
@@ -167,104 +115,160 @@ def _battle_root() -> Path:
     if cand and valid(cand):
         return cand
 
-    # Fallback: walk up to find a directory that has engine/ and agents/
     p = here
     for _ in range(8):
         if valid(p):
             return p
         p = p.parent
 
-    # Last resort: current working directory
     return Path.cwd()
 
 
 def _parse_env_json(varname: str) -> Dict[str, Any]:
     """
-    Read JSON object from environment variable. Return {} on empty/missing.
-    Produce a helpful error on malformed input.
+    Read JSON object from environment variable.
+    Return {} on empty/missing.
     """
     raw = os.environ.get(varname, "").strip()
     if not raw:
         return {}
+
     try:
         obj = json.loads(raw)
-    except Exception as e:
-        raise SystemExit(f"Malformed JSON in ${varname}: {e}\nValue: {raw[:200]}...")
+    except Exception as exc:
+        raise SystemExit(f"Malformed JSON in ${varname}: {exc}\nValue: {raw[:200]}...")
+
     if not isinstance(obj, dict):
         raise SystemExit(
             f"${varname} must be a JSON object (got {type(obj).__name__})."
         )
+
     return obj
 
 
 def _merge_params(
     defaults: Dict[str, Any], overrides: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Shallow merge: overrides win on conflicting keys."""
     merged = dict(defaults or {})
     merged.update(overrides or {})
     return merged
 
 
 def _keys_preview(d: Dict[str, Any]) -> str:
-    """For concise logging: show only top-level param keys."""
     return "{" + ", ".join(sorted(map(str, (d or {}).keys()))) + "}"
 
 
 def read_blob(path: str | os.PathLike[str]) -> bytes:
-    """Load raw bytes for model blobs."""
     p = Path(path).expanduser().resolve()
     return p.read_bytes()
 
 
 def _load_agents_spec_from_env() -> Tuple[Dict[str, Any], Optional[Path]]:
     """
-    Back-compat: load a JSON 'agents spec' from env:BATTLE_AGENTS_JSON.
-    Optional keys:
-      {
-        "A": {"type": "blob", "path": "agents/replicator/model.blob", "name": "replicator"},
-        "B": {"type": "builtin", "id": "runner"}
-      }
-    Returns (spec_dict, base_dir_for_relative_paths).
+    Back-compat:
+      BATTLE_AGENTS_JSON='{"A":{"type":"blob","path":"agents/x/model.blob"}}'
     """
     raw = os.environ.get("BATTLE_AGENTS_JSON", "").strip()
     if not raw:
         return {}, None
+
     try:
         spec = json.loads(raw)
-    except Exception as e:
-        raise SystemExit(f"Malformed JSON in $BATTLE_AGENTS_JSON: {e}")
+    except Exception as exc:
+        raise SystemExit(f"Malformed JSON in $BATTLE_AGENTS_JSON: {exc}")
+
     if not isinstance(spec, dict):
         raise SystemExit("$BATTLE_AGENTS_JSON must be a JSON object.")
-    # If the caller also set BATTLE_AGENTS_DIR, use it for resolving relative paths
+
     base = os.environ.get("BATTLE_AGENTS_DIR", "").strip()
     base_dir = Path(base).expanduser().resolve() if base else _battle_root()
     return spec, base_dir
 
 
+def _agent_summary_from_kernel(k: Kernel, name_map: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Build a summary from kernel state/stats instead of replay parsing.
+    """
+    ticks_run = int(getattr(k, "tick", 0) or 0)
+    arena = int(getattr(k.cfg, "arena_size", 0) or 0)
+
+    by_id: Dict[str, Any] = {}
+    for agent in getattr(k, "agents", []):
+        st = k.stats.get(agent.agent_id, {})
+        territory_sum = int(st.get("territory_sum", 0) or 0)
+        avg_terr = territory_sum / max(1, ticks_run)
+
+        by_id[agent.agent_id] = {
+            "name": name_map.get(agent.agent_id, agent.agent_id),
+            "alive": bool(getattr(agent, "alive", False)),
+            "score": int(k.score.get(agent.agent_id, 0) or 0),
+            "alive_ticks": int(st.get("alive_ticks", 0) or 0),
+            "kills": int(st.get("kills", 0) or 0),
+            "deaths": int(st.get("deaths", 0) or 0),
+            "cpu_total": int(st.get("total_cpu", 0) or 0),
+            "mem_writes": int(st.get("total_mem_writes", 0) or 0),
+            "territory_last": int(st.get("territory_last", 0) or 0),
+            "territory_max": int(st.get("territory_max", 0) or 0),
+            "territory_avg": avg_terr,
+            "territory_pct_last": (
+                (int(st.get("territory_last", 0) or 0) * 100.0 / arena)
+                if arena
+                else 0.0
+            ),
+            "territory_pct_max": (
+                (int(st.get("territory_max", 0) or 0) * 100.0 / arena) if arena else 0.0
+            ),
+            "territory_pct_avg": (avg_terr * 100.0 / arena) if arena else 0.0,
+        }
+
+    return by_id
+
+
+def _winner_from_scores_if_needed(
+    kernel_winner: Optional[str],
+    score_map: Dict[str, int],
+    win_mode: str,
+) -> str:
+    if kernel_winner:
+        return kernel_winner
+
+    if win_mode in ("score", "score_fallback"):
+        ranked = sorted(score_map.items(), key=lambda kv: (-kv[1], kv[0]))
+        if not ranked:
+            return "tie"
+        if len(ranked) == 1:
+            return ranked[0][0]
+        if ranked[0][1] > ranked[1][1]:
+            return ranked[0][0]
+        return "tie"
+
+    return "tie"
+
+
 # ----------------------------
 # CLI
 # ----------------------------
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="BATTLE",
         description=(
-            "Battle engine CLI. Choose built-ins or point to discovered agents under <root>/agents/<name>/."
+            "Battle engine CLI. Choose built-ins or point to discovered agents "
+            "under /agents/<name>/."
         ),
     )
 
     # Run/replay basics
     p.add_argument("--ticks", type=int, default=3000)
     p.add_argument("--replay", default="replay.jsonl")
-
-    # kept for backward-compat, but ignored (no client import here)
     p.add_argument(
         "--pygame",
         action="store_true",
         help="(deprecated/no-op) rendering moved to the client; use battle-client",
     )
 
-    # config overrides
+    # Config overrides
     p.add_argument("--seed", type=int)
     p.add_argument("--arena", type=int)
     p.add_argument("--quota", type=int)
@@ -272,7 +276,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--kill-w", type=int)
     p.add_argument("--territory-w", type=int, help="points per territory bucket")
     p.add_argument(
-        "--territory-bucket", type=int, help="cells per bucket for territory scoring"
+        "--territory-bucket",
+        type=int,
+        help="cells per bucket for territory scoring",
     )
     p.add_argument(
         "--win-mode",
@@ -280,45 +286,43 @@ def parse_args() -> argparse.Namespace:
         help="winner resolution mode at timeout",
     )
 
-    # agent types (used if no blob provided and no BATTLE_AGENTS_JSON provided)
-    # NOTE: choices removed; any string is accepted and resolved via discovery or built-ins
+    # Agent selection
     p.add_argument(
         "--a-type",
         type=str,
         default="writer",
-        help="Agent name for side A (folder under <root>/agents/> or builtin)",
+        help="Agent name for side A (folder under /agents/<name> or builtin)",
     )
     p.add_argument(
         "--b-type",
         type=str,
         default="runner",
-        help="Agent name for side B (folder under <root>/agents/> or builtin)",
+        help="Agent name for side B (folder under /agents/<name> or builtin)",
     )
     p.add_argument(
         "--c-type",
         type=str,
         default="",
-        help="Optional agent name for side C (folder under <root>/agents/> or builtin)",
+        help="Optional agent name for side C (folder under /agents/<name> or builtin)",
     )
 
-    # raw blob paths (override type/params for that agent) — used if no agents.json
+    # Direct blob overrides
     p.add_argument("--a-blob")
     p.add_argument("--b-blob")
     p.add_argument("--c-blob")
 
-    # Optional: list discovered agents and exit
     p.add_argument(
         "--list-agents",
         action="store_true",
-        help="List discovered agents under <root>/agents and exit",
+        help="List discovered agents under /agents and exit",
     )
 
-    # agent entry positions (default 0 unless overridden)
+    # Entry positions
     p.add_argument("--a-start", type=int, default=0)
     p.add_argument("--b-start", type=int, default=0)
     p.add_argument("--c-start", type=int, default=0)
 
-    # common agent params (used by built-in assemblers)
+    # Common agent params
     p.add_argument(
         "--byte",
         type=lambda x: int(x, 0),
@@ -342,21 +346,19 @@ def parse_args() -> argparse.Namespace:
         help="optional alias for --byte (overrides it if provided)",
     )
 
-    # --- ICWS'94 / pMARS backend flags ---
+    # ICWS'94 / pMARS backend flags
     p.add_argument(
         "--mode",
         choices=["b2", "redcode94"],
         default="b2",
         help="Engine mode: 'b2' for built-in BATTLE agents (default) or 'redcode94' to run pMARS.",
     )
-
     p.add_argument(
         "--red-a", type=str, help="Warrior A file (.red or .load) for redcode94 mode"
     )
     p.add_argument(
         "--red-b", type=str, help="Warrior B file (.red or .load) for redcode94 mode"
     )
-
     p.add_argument("--core-size", type=int, default=8000, help="ICWS'94 core size")
     p.add_argument("--max-cycles", type=int, default=80000, help="Max cycles per round")
     p.add_argument(
@@ -371,9 +373,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--rounds", type=int, default=1, help="Number of rounds to run")
 
-    # quiet mode
     p.add_argument("--quiet", action="store_true")
-
     return p.parse_args()
 
 
@@ -391,20 +391,22 @@ def _resolve_agent(
     common_kwargs: Dict[str, Any],
 ) -> Tuple[Optional[bytes], str, int]:
     """
-    Resolve an agent for slot letter ('A'/'B'/'C') returning (code_bytes, agent_name, start_pos).
+    Resolve an agent for slot A/B/C.
 
     Precedence:
-      1) spec[letter] from agents.json via env (BATTLE_AGENTS_JSON)   [back-compat]
-      2) --{letter}-blob
-      3) agents/<name> discovery with optional per-side env JSON (BATTLE_AGENT_{A|B|C}_PARAMS_JSON)
-      4) built-in by name (if name matches SUPPORTED)
+      1) BATTLE_AGENTS_JSON
+      2) --a-blob / --b-blob / --c-blob
+      3) discovered agent under /agents
+      4) built-in by name
     """
+    del cfg  # currently unused here, kept for compatibility
     start = getattr(args, f"{letter.lower()}_start")
 
-    # 1) agents.json
+    # 1) env agents spec
     if spec and letter in spec:
         s = spec[letter]
         ttype = s.get("type")
+
         if ttype == "blob":
             path = s["path"]
             if spec_dir is not None and not os.path.isabs(path):
@@ -412,13 +414,14 @@ def _resolve_agent(
             code = read_blob(path)
             name = s.get("name") or f"{letter}_blob"
             return code, name, start
-        elif ttype == "builtin":
+
+        if ttype == "builtin":
             agent_id = s["id"]
             code = build_agent(agent_id, start, **common_kwargs)
             return code, agent_id, start
-        else:
-            print(f"ERROR: unknown agent type for {letter}: {ttype}", file=sys.stderr)
-            sys.exit(2)
+
+        print(f"ERROR: unknown agent type for {letter}: {ttype}", file=sys.stderr)
+        sys.exit(2)
 
     # 2) direct blob flag
     blob = getattr(args, f"{letter.lower()}_blob")
@@ -426,52 +429,55 @@ def _resolve_agent(
         code = read_blob(blob)
         return code, f"{letter}_blob", start
 
-    # 3) discovery
+    # 3) discovery agent
     agent_name = getattr(args, f"{letter.lower()}_type")
     if not agent_name:
         return None, "", start
 
     root = _battle_root()
-    spec_obj = None
+
     try:
         spec_obj = resolve_agent(root, agent_name)
     except SystemExit:
-        spec_obj = None  # allow fallback
+        spec_obj = None
 
     if spec_obj is not None:
         side_env = _parse_env_json(f"BATTLE_AGENT_{letter}_PARAMS_JSON")
-        merged = _merge_params(spec_obj.defaults, side_env)
+        _merged = _merge_params(spec_obj.defaults, side_env)
 
-        blob_path: Optional[Path] = None
         env_blob = side_env.get("blob_path")
         if isinstance(env_blob, str) and env_blob:
-            pth = Path(env_blob).expanduser()
-            blob_path = (
-                (root / pth).resolve() if not pth.is_absolute() else pth.resolve()
-            )
+            blob_path = Path(env_blob).expanduser()
+            if not blob_path.is_absolute():
+                blob_path = (root / blob_path).resolve()
+            else:
+                blob_path = blob_path.resolve()
         else:
             blob_path = spec_obj.blob
 
+        # If no source agent.py exists, require a blob.
         if not (spec_obj.dir / "agent.py").exists():
             if blob_path is None or not blob_path.exists():
                 raise SystemExit(
                     f"No blob specified for agent '{agent_name}'. "
-                    f"Provide model.blob in agents/{agent_name}/ or pass via env JSON key 'blob_path' "
-                    f"in $BATTLE_AGENT_{letter}_PARAMS_JSON or use --{letter.lower()}-blob."
+                    f"Provide model.blob in agents/{agent_name}/ or pass via env JSON "
+                    f"key 'blob_path' in $BATTLE_AGENT_{letter}_PARAMS_JSON or use "
+                    f"--{letter.lower()}-blob."
                 )
 
         if blob_path is not None and blob_path.exists():
             code = read_blob(str(blob_path))
             return code, agent_name, start
 
-    # 4) fall back to built-in
+    # 4) built-in fallback
     if agent_name in SUPPORTED:
         code = build_agent(agent_name, start, **common_kwargs)
         return code, agent_name, start
 
     print(
         f"ERROR: Unknown agent '{agent_name}'. "
-        f"Expected a built-in ({', '.join(SUPPORTED)}) or a folder {root/'agents'/agent_name} with agent.yaml (JSON) or agent.py",
+        f"Expected a built-in ({', '.join(SUPPORTED)}) or a folder "
+        f"{root / 'agents' / agent_name} with agent.yaml (JSON) or agent.py",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -480,48 +486,54 @@ def _resolve_agent(
 # ----------------------------
 # Main
 # ----------------------------
+
+
 def main(argv: Iterable[str] | None = None) -> int:
+    del argv  # current implementation uses parse_args() directly
     args = parse_args()
 
-    # Optional listing mode
     if getattr(args, "list_agents", False):
         root = _battle_root()
         specs = discover_agents(root)
         if not specs:
             print(f"No agents found under {root / 'agents'}")
             return 0
+
         print("Discovered agents:")
         for name, spec in sorted(specs.items()):
             disp = f"{spec.display}" if spec.display and spec.display != name else ""
             blob = spec.blob.name if spec.blob else "—"
-            print(f"  - {name:20} {disp:20} blob={blob}")
+            print(f" - {name:20} {disp:20} blob={blob}")
         return 0
 
-    # config
+    # Build current Config correctly against Config.weights
     cfg_kwargs: Dict[str, Any] = {}
     if args.seed is not None:
         cfg_kwargs["seed"] = args.seed
     if args.arena is not None:
         cfg_kwargs["arena_size"] = args.arena
-    if args.quota is not None:
-        cfg_kwargs["quota"] = args.quota
     if args.win_mode:
         cfg_kwargs["win_mode"] = args.win_mode
-    if args.alive_w is not None:
-        cfg_kwargs["alive_w"] = args.alive_w
-    if args.kill_w is not None:
-        cfg_kwargs["kill_w"] = args.kill_w
-    if args.territory_w is not None:
-        cfg_kwargs["territory_w"] = args.territory_w
-    if args.territory_bucket is not None:
-        cfg_kwargs["territory_bucket"] = args.territory_bucket
 
     cfg = Config(**cfg_kwargs)
 
-    # replay / summary paths
+    # Preserve defaults unless caller overrides them.
+    cfg.weights = Weights(
+        alive=args.alive_w if args.alive_w is not None else cfg.weights.alive,
+        kill=args.kill_w if args.kill_w is not None else cfg.weights.kill,
+        territory=(
+            args.territory_w if args.territory_w is not None else cfg.weights.territory
+        ),
+        territory_bucket=(
+            args.territory_bucket
+            if args.territory_bucket is not None
+            else cfg.weights.territory_bucket
+        ),
+    )
+
     replay_path = Path(args.replay).expanduser().resolve()
     replay_path.parent.mkdir(parents=True, exist_ok=True)
-    sink = JSONLSink(str(replay_path))
+    summary_path = replay_path.with_name("summary.json")
 
     if args.mode == "redcode94":
         if not args.red_a or not args.red_b:
@@ -531,11 +543,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         pmars_cmd = os.environ.get("PMARS_CMD", "pmars")
         a_path = Path(args.red_a)
         b_path = Path(args.red_b)
+
         if not a_path.exists() or not b_path.exists():
-            print(
-                f"Warrior file missing: {a_path if not a_path.exists() else b_path}",
-                file=sys.stderr,
-            )
+            missing = a_path if not a_path.exists() else b_path
+            print(f"Warrior file missing: {missing}", file=sys.stderr)
             return 2
 
         winner, extra = _run_pmars(
@@ -550,15 +561,17 @@ def main(argv: Iterable[str] | None = None) -> int:
             rounds=args.rounds,
         )
 
-        # Write summary.json next to your (planned) replay path
-        summary_path = replay_path.with_name("summary.json")
         summary = {
-            "version": 1,
+            "version": 2,
             "mode": "redcode94",
             "ticks": args.max_cycles,
             "winner": winner or "tie",
-            "A_score": None,  # Unknown unless you enhance parsing
+            "A_score": None,
             "B_score": None,
+            "A_alive_ticks": None,
+            "B_alive_ticks": None,
+            "A_territory": None,
+            "B_territory": None,
             "params": {
                 "core_size": args.core_size,
                 "max_cycles": args.max_cycles,
@@ -568,29 +581,25 @@ def main(argv: Iterable[str] | None = None) -> int:
                 "rounds": args.rounds,
             },
             "agents": {"A": str(a_path), "B": str(b_path)},
-            "backend": {"cmd": pmars_cmd, "returncode": extra.get("returncode")},
+            "backend": {
+                "cmd": pmars_cmd,
+                "returncode": extra.get("returncode"),
+            },
         }
+
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-        # Optional: write a tiny replay.jsonl (so downstream tools don't break)
-        # replay_path.write_text("", encoding="utf-8")
-
-        print(f"Winner: {summary['winner']}; summary: {summary_path}")
-        # If you want verbose troubleshooting, uncomment:
-        # if winner == "unknown":
-        #     print(extra["stdout"])
-        #     print(extra["stderr"], file=sys.stderr)
+        if not args.quiet:
+            print(f"Winner: {summary['winner']}; summary: {summary_path}")
         return 0
 
-    # kernel
+    sink = JSONLSink(str(replay_path))
     k = Kernel(cfg, sink)
 
-    # attack-byte is an alias for byte (if provided)
     byte = args.byte
     if args.attack_byte is not None:
         byte = args.attack_byte
 
-    # Common knobs for built-in codegen (omit None so registry defaults apply)
     common_kwargs = {
         "byte": byte,
         "offset": args.offset,
@@ -599,24 +608,25 @@ def main(argv: Iterable[str] | None = None) -> int:
         "writes": args.writes,
         "step": args.step,
         "delta": args.delta,
-        "target": args.target,  # may be None
+        "target": args.target,
     }
-    common_kwargs = {k: v for k, v in common_kwargs.items() if v is not None}
+    common_kwargs = {
+        key: value for key, value in common_kwargs.items() if value is not None
+    }
 
-    # Resolve agents via env spec or CLI
     spec, spec_dir = _load_agents_spec_from_env()
+
     codeA, nameA, startA = _resolve_agent("A", spec, spec_dir, args, cfg, common_kwargs)
     codeB, nameB, startB = _resolve_agent("B", spec, spec_dir, args, cfg, common_kwargs)
     codeC, nameC, startC = _resolve_agent("C", spec, spec_dir, args, cfg, common_kwargs)
 
-    # Concise startup summary (keys only; best-effort)
     try:
         root = _battle_root()
         a_env = _parse_env_json("BATTLE_AGENT_A_PARAMS_JSON")
         b_env = _parse_env_json("BATTLE_AGENT_B_PARAMS_JSON")
         c_env = _parse_env_json("BATTLE_AGENT_C_PARAMS_JSON")
 
-        def _try_resolve(name: str | None):
+        def _try_resolve(name: Optional[str]):
             if not name:
                 return None
             try:
@@ -628,24 +638,23 @@ def main(argv: Iterable[str] | None = None) -> int:
         b_spec = _try_resolve(args.b_type)
         c_spec = _try_resolve(args.c_type)
 
-        def keys(d):
+        def keys(d: Dict[str, Any]) -> str:
             return _keys_preview(d or {})
 
         print("Agents:")
         print(
-            f"  A: {nameA}  params={keys((a_spec.defaults if a_spec else {}) | (a_env or {}))}"
+            f" A: {nameA} params={keys((a_spec.defaults if a_spec else {}) | (a_env or {}))}"
         )
         print(
-            f"  B: {nameB}  params={keys((b_spec.defaults if b_spec else {}) | (b_env or {}))}"
+            f" B: {nameB} params={keys((b_spec.defaults if b_spec else {}) | (b_env or {}))}"
         )
         if nameC:
             print(
-                f"  C: {nameC}  params={keys((c_spec.defaults if c_spec else {}) | (c_env or {}))}"
+                f" C: {nameC} params={keys((c_spec.defaults if c_spec else {}) | (c_env or {}))}"
             )
     except Exception:
         pass
 
-    # Spawn required agents
     if codeA is None or codeB is None:
         print(
             "ERROR: agents A and B must be specified (builtin or blob)", file=sys.stderr
@@ -659,49 +668,54 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
 
-    # After: winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
+    name_map = {"A": nameA, "B": nameB}
+    if nameC:
+        name_map["C"] = nameC
 
-    # Prefer replay-derived numbers (Kernel attrs may not reflect log state)
-    finals = _final_from_replay(replay_path)
+    agent_stats = _agent_summary_from_kernel(k, name_map)
+    score_map = {agent_id: int(score or 0) for agent_id, score in k.score.items()}
+    effective_winner = _winner_from_scores_if_needed(winner, score_map, cfg.win_mode)
 
-    # If win-mode is score and kernel returned None but scores differ, decide here
-    effective_winner = winner
-    if not effective_winner and args.win_mode in (None, "score", "score_fallback"):
-        if finals["A_score"] > finals["B_score"]:
-            effective_winner = "A"
-        elif finals["B_score"] > finals["A_score"]:
-            effective_winner = "B"
-
-    summary_path = replay_path.with_name("summary.json")
-    params = {
-        "arena": cfg.arena_size,
-        "ticks": args.ticks,
-        "win_mode": cfg.win_mode,
-        "territory_w": getattr(cfg, "territory_w", None),
-        "territory_bucket": getattr(cfg, "territory_bucket", None),
-    }
     summary = {
-        "version": 1,
+        "version": 2,
+        "mode": "b2",
         "seed": getattr(cfg, "seed", None),
-        "ticks": args.ticks,
-        "winner": effective_winner or "tie",
-        "A_score": finals["A_score"],
-        "B_score": finals["B_score"],
-        "A_alive_ticks": finals["A_alive_ticks"],
-        "B_alive_ticks": finals["B_alive_ticks"],
-        "A_territory": getattr(
-            k, "A_territory", 0
-        ),  # keep if kernel provides it; else 0
-        "B_territory": getattr(k, "B_territory", 0),
-        "params": params,
-        "agents": {"A": nameA, "B": nameB, **({"C": nameC} if nameC else {})},
+        "ticks": int(getattr(k, "tick", args.ticks) or 0),
+        "winner": effective_winner,
+        "A_score": score_map.get("A", 0),
+        "B_score": score_map.get("B", 0),
+        "A_alive_ticks": agent_stats.get("A", {}).get("alive_ticks", 0),
+        "B_alive_ticks": agent_stats.get("B", {}).get("alive_ticks", 0),
+        "A_territory": agent_stats.get("A", {}).get("territory_last", 0),
+        "B_territory": agent_stats.get("B", {}).get("territory_last", 0),
+        "params": {
+            "arena": cfg.arena_size,
+            "ticks_requested": args.ticks,
+            "ticks_run": int(getattr(k, "tick", args.ticks) or 0),
+            "win_mode": cfg.win_mode,
+            "alive_w": cfg.weights.alive,
+            "kill_w": cfg.weights.kill,
+            "territory_w": cfg.weights.territory,
+            "territory_bucket": cfg.weights.territory_bucket,
+        },
+        "agents": {
+            "A": nameA,
+            "B": nameB,
+            **({"C": nameC} if nameC else {}),
+        },
+        "score": score_map,
+        "agent_stats": agent_stats,
     }
-    summary_path.write_text(json.dumps(summary, indent=2))
+
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     if not args.quiet:
         print(
-            f"Winner: {winner or 'tie'}; replay: {replay_path}; summary: {summary_path}"
+            f"Winner: {effective_winner}; "
+            f"replay: {replay_path}; "
+            f"summary: {summary_path}"
         )
+
     return 0
 
 
