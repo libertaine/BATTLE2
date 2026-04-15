@@ -25,10 +25,10 @@ class PygameRenderer(AbstractRenderer):
 
     # Color palette
     AGENT_COLORS = {
-        "A": (220, 70, 70),    # red-ish
-        "B": (70, 120, 220),   # blue-ish
-        "C": (80, 200, 120),   # green-ish
-        "D": (200, 180, 70),   # amber
+        "A": (220, 70, 70),  # red-ish
+        "B": (70, 120, 220),  # blue-ish
+        "C": (80, 200, 120),  # green-ish
+        "D": (200, 180, 70),  # amber
     }
     GRID_BG = (12, 12, 14)
     GRID_LINE = (26, 26, 30)
@@ -79,12 +79,13 @@ class PygameRenderer(AbstractRenderer):
 
     # ---------- lifecycle ----------
 
-
     def setup(self, metadata: Optional[Dict[str, Any]] = None) -> None:
         try:
             import pygame  # type: ignore
         except Exception as e:
-            raise RuntimeError("Pygame not available. Install pygame or choose --renderer headless.") from e
+            raise RuntimeError(
+                "Pygame not available. Install pygame or choose --renderer headless."
+            ) from e
 
         self.pg = pygame
         self.pg.init()
@@ -130,7 +131,6 @@ class PygameRenderer(AbstractRenderer):
 
         super().setup(metadata)
 
-
     def teardown(self) -> None:
         if self.pg:
             self.pg.quit()
@@ -167,7 +167,7 @@ class PygameRenderer(AbstractRenderer):
             if not cells:
                 return
             if owner is not None:
-                for (x, y) in cells:
+                for x, y in cells:
                     if 0 <= x < self.arena and 0 <= y < self.arena:
                         self.owner[y][x] = owner
             self._flash(cells, owner)
@@ -253,7 +253,9 @@ class PygameRenderer(AbstractRenderer):
                     out.append(xy)
         return out
 
-    def _blend(self, a: Tuple[int, int, int], b: Tuple[int, int, int], alpha: float) -> Tuple[int, int, int]:
+    def _blend(
+        self, a: Tuple[int, int, int], b: Tuple[int, int, int], alpha: float
+    ) -> Tuple[int, int, int]:
         # alpha in [0..1]
         return (
             int(a[0] * (1 - alpha) + b[0] * alpha),
@@ -316,7 +318,11 @@ class PygameRenderer(AbstractRenderer):
         if self.trails:
             for who, pts in self.trail_pts.items():
                 if len(pts) > 1:
-                    col = self._blend(self.AGENT_COLORS.get(who, (200, 200, 200)), (255, 255, 255), 0.25)
+                    col = self._blend(
+                        self.AGENT_COLORS.get(who, (200, 200, 200)),
+                        (255, 255, 255),
+                        0.25,
+                    )
                     self._draw_polyline(pts[-200:], col)
 
         # 6) HUD
@@ -324,7 +330,9 @@ class PygameRenderer(AbstractRenderer):
 
         pg.display.flip()
 
-    def _draw_agent_marker(self, pos: Tuple[int, int], col: Tuple[int, int, int]) -> None:
+    def _draw_agent_marker(
+        self, pos: Tuple[int, int], col: Tuple[int, int, int]
+    ) -> None:
         x, y = pos
         sx = int((x + 0.5) * self.scale)
         sy = int((y + 0.5) * self.scale)
@@ -344,10 +352,14 @@ class PygameRenderer(AbstractRenderer):
                 rect = ts.get_rect(center=(sx, sy - r - 8))
                 self.screen.blit(ts, rect)
 
-    def _draw_polyline(self, pts: List[Tuple[int, int]], col: Tuple[int, int, int]) -> None:
+    def _draw_polyline(
+        self, pts: List[Tuple[int, int]], col: Tuple[int, int, int]
+    ) -> None:
         if len(pts) < 2:
             return
-        spts = [(int((x + 0.5) * self.scale), int((y + 0.5) * self.scale)) for (x, y) in pts]
+        spts = [
+            (int((x + 0.5) * self.scale), int((y + 0.5) * self.scale)) for (x, y) in pts
+        ]
         self.pg.draw.lines(self.screen, col, False, spts, max(1, self.scale // 3))
 
     def _draw_overlay(self, tick: int) -> None:
@@ -377,9 +389,15 @@ class PygameRenderer(AbstractRenderer):
         bar_y = hud_h - 8
         bar_w = w - 2 * bar_margin
         bar_h = 4
-        self.pg.draw.rect(hud, (70, 70, 80, 220), (bar_margin, bar_y, bar_w, bar_h), border_radius=2)
-        self.pg.draw.rect(hud, (120, 190, 255, 255),
-                          (bar_margin, bar_y, int(bar_w * pct), bar_h), border_radius=2)
+        self.pg.draw.rect(
+            hud, (70, 70, 80, 220), (bar_margin, bar_y, bar_w, bar_h), border_radius=2
+        )
+        self.pg.draw.rect(
+            hud,
+            (120, 190, 255, 255),
+            (bar_margin, bar_y, int(bar_w * pct), bar_h),
+            border_radius=2,
+        )
 
         self.screen.blit(hud, (0, 0))
 
@@ -444,7 +462,10 @@ class PygameRenderer(AbstractRenderer):
                     self._fit_to_display()
 
             # Handle OS/window resizes (keep it square and within monitor)
-            if ev.type in (self.pg.VIDEORESIZE, getattr(self.pg, "WINDOWRESIZED", 32769)):
+            if ev.type in (
+                self.pg.VIDEORESIZE,
+                getattr(self.pg, "WINDOWRESIZED", 32769),
+            ):
                 # Compute a new integer scale that fits the resized window
                 w, h = getattr(ev, "size", self.screen.get_size())
                 new_scale = max(1, min(w // self.arena, h // self.arena))
@@ -452,8 +473,6 @@ class PygameRenderer(AbstractRenderer):
                     self.scale = new_scale
                     self._resize_window()
 
-
-     
     def _resize_window(self) -> None:
         size = (self.arena * self.scale, self.arena * self.scale)
         self.screen = self.pg.display.set_mode(size, self.pg.RESIZABLE)
@@ -469,3 +488,27 @@ class PygameRenderer(AbstractRenderer):
         if self.scale != old:
             self._resize_window()
 
+
+def hold_open(self) -> None:
+    import pygame
+
+    font = pygame.font.SysFont(None, 24)
+    clock = pygame.time.Clock()
+    waiting = True
+
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                waiting = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_SPACE, pygame.K_ESCAPE):
+                    waiting = False
+
+        # redraw final frame if your renderer requires it
+        # or just draw overlay on top of existing frame
+        text = font.render(
+            "Match complete - Press SPACE to close", True, (255, 255, 255)
+        )
+        self.screen.blit(text, (20, 20))
+        pygame.display.flip()
+        clock.tick(30)
