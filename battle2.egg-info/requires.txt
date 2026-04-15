@@ -1,4 +1,5 @@
 click>=8.1
+PyYAML>=6.0
 
 [dev]
 ruff>=0.6

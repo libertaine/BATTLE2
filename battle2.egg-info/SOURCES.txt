@@ -7,6 +7,8 @@ app/main.py
 app/match_runner.py
 app/replay_viewer.py
 app/services/__init__.py
+app/services/agent_catalog.py
+app/services/agent_meta.py
 app/services/agents.py
 app/services/engine.py
 app/services/osutil.py
@@ -24,8 +26,10 @@ battle2.egg-info/top_level.txt
 client/src/battle_client/__init__.py
 client/src/battle_client/cli.py
 client/src/battle_client/utils.py
+client/src/battle_client/renderers/__init__.py
 client/src/battle_client/renderers/base.py
 client/src/battle_client/renderers/headless.py
+client/src/battle_client/renderers/pygame_canvas.py
 client/src/battle_client/renderers/pygame_renderer.py
 engine/src/battle_engine/__init__.py
 engine/src/battle_engine/_entry.py
