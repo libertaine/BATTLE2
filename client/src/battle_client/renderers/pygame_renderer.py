@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple, List
+import math
 import time
 
 from .base import AbstractRenderer
@@ -57,6 +58,8 @@ class PygameRenderer(AbstractRenderer):
 
         # world state
         self.arena: int = 0
+        self.grid_cols: int = 0
+        self.grid_rows: int = 0
         self.owner: List[List[Optional[str]]] = []
         self.agents_pos: Dict[str, Tuple[int, int]] = {}
         self.trail_pts: Dict[str, List[Tuple[int, int]]] = {}
@@ -79,6 +82,37 @@ class PygameRenderer(AbstractRenderer):
 
     # ---------- lifecycle ----------
 
+    def _resolve_grid_dims(
+        self, metadata: Optional[Dict[str, Any]], arena_cells: int
+    ) -> Tuple[int, int]:
+        """Pick cols/rows for 1D arena indices; prefer explicit metadata first."""
+        params = ((metadata or {}).get("params", {}) or {}) if metadata else {}
+
+        cols = (metadata or {}).get("grid_cols") or params.get("grid_cols")
+        rows = (metadata or {}).get("grid_rows") or params.get("grid_rows")
+        if cols and rows:
+            try:
+                c, r = int(cols), int(rows)
+                if c > 0 and r > 0 and c * r >= arena_cells:
+                    return c, r
+            except Exception:
+                pass
+
+        if arena_cells <= 0:
+            return 1, 1
+
+        root = int(math.sqrt(arena_cells))
+        for c in range(root, 0, -1):
+            if arena_cells % c == 0:
+                r = arena_cells // c
+                return max(c, r), min(c, r)
+
+        c = int(math.ceil(math.sqrt(arena_cells)))
+        r = int(math.ceil(arena_cells / c))
+        return c, r
+
+    # ---------- lifecycle ----------
+
     def setup(self, metadata: Optional[Dict[str, Any]] = None) -> None:
         try:
             import pygame  # type: ignore
@@ -95,6 +129,7 @@ class PygameRenderer(AbstractRenderer):
             (metadata or {}).get("arena")
             or ((metadata or {}).get("params", {}) or {}).get("arena", 512)
         )
+        self.grid_cols, self.grid_rows = self._resolve_grid_dims(metadata, self.arena)
         self.total_ticks = int(
             (metadata or {}).get("ticks")
             or ((metadata or {}).get("params", {}) or {}).get("ticks", 0)
@@ -108,8 +143,8 @@ class PygameRenderer(AbstractRenderer):
             # Fallback for headless or display-less environments
             max_w, max_h = 1920, 1080
 
-        logical_w = self.arena
-        logical_h = self.arena
+        logical_w = self.grid_cols
+        logical_h = self.grid_rows
 
         # Choose an integer scale that fits; clamp any pre-set scale to fit
         fit_scale = max(1, min(max_w // logical_w, max_h // logical_h))
@@ -127,7 +162,9 @@ class PygameRenderer(AbstractRenderer):
         self.font_big = self.pg.font.SysFont("consolas", 18)
 
         # Ownership grid + base gridlines
-        self.owner = [[None for _ in range(self.arena)] for _ in range(self.arena)]
+        self.owner = [
+            [None for _ in range(self.grid_cols)] for _ in range(self.grid_rows)
+        ]
         self._draw_full_grid()
 
         # HUD timing
@@ -172,7 +209,7 @@ class PygameRenderer(AbstractRenderer):
                 return
             if owner is not None:
                 for x, y in cells:
-                    if 0 <= x < self.arena and 0 <= y < self.arena:
+                    if 0 <= x < self.grid_cols and 0 <= y < self.grid_rows:
                         self.owner[y][x] = owner
             self._flash(cells, owner)
 
@@ -240,6 +277,11 @@ class PygameRenderer(AbstractRenderer):
     # ---------- drawing helpers ----------
 
     def _to_xy(self, p) -> Optional[Tuple[int, int]]:
+        if isinstance(p, int):
+            if self.arena <= 0 or self.grid_cols <= 0:
+                return None
+            a = p % self.arena
+            return (a % self.grid_cols, a // self.grid_cols)
         if not isinstance(p, (list, tuple)) or len(p) != 2:
             return None
         try:
@@ -274,12 +316,13 @@ class PygameRenderer(AbstractRenderer):
         pg = self.pg
         gs.fill(self.GRID_BG)
 
-        step = max(16, self.arena // 32)  # avoid too many lines for large arenas
+        max_dim = max(self.grid_cols, self.grid_rows)
+        step = max(1, max_dim // 32)  # avoid too many lines for large grids
         line_color = self.GRID_LINE
-        for x in range(0, self.arena, step):
-            pg.draw.line(gs, line_color, (x, 0), (x, self.arena - 1))
-        for y in range(0, self.arena, step):
-            pg.draw.line(gs, line_color, (0, y), (self.arena - 1, y))
+        for x in range(0, self.grid_cols, step):
+            pg.draw.line(gs, line_color, (x, 0), (x, self.grid_rows - 1))
+        for y in range(0, self.grid_rows, step):
+            pg.draw.line(gs, line_color, (0, y), (self.grid_cols - 1, y))
 
     def _redraw(self, tick: int) -> None:
         pg = self.pg
@@ -287,9 +330,9 @@ class PygameRenderer(AbstractRenderer):
 
         # 1) Ownership fill
         tint_alpha = 0.65
-        for y in range(self.arena):
+        for y in range(self.grid_rows):
             row = self.owner[y]
-            for x in range(self.arena):
+            for x in range(self.grid_cols):
                 who = row[x]
                 if who is None:
                     continue
@@ -299,7 +342,7 @@ class PygameRenderer(AbstractRenderer):
         # 2) Processing flashes (fade)
         to_del = []
         for (x, y), (color, ttl) in self.flash.items():
-            if 0 <= x < self.arena and 0 <= y < self.arena:
+            if 0 <= x < self.grid_cols and 0 <= y < self.grid_rows:
                 gs.set_at((x, y), color)
             ttl -= 1
             if ttl <= 0:
@@ -447,13 +490,13 @@ class PygameRenderer(AbstractRenderer):
             ):
                 # Compute a new integer scale that fits the resized window
                 w, h = getattr(ev, "size", self.screen.get_size())
-                new_scale = max(1, min(w // self.arena, h // self.arena))
+                new_scale = max(1, min(w // self.grid_cols, h // self.grid_rows))
                 if new_scale != self.scale:
                     self.scale = new_scale
                     self._resize_window()
 
     def _resize_window(self) -> None:
-        size = (self.arena * self.scale, self.arena * self.scale)
+        size = (self.grid_cols * self.scale, self.grid_rows * self.scale)
         self.screen = self.pg.display.set_mode(size, self.pg.RESIZABLE)
         self.pg.display.set_caption(self.title)
 
@@ -465,7 +508,7 @@ class PygameRenderer(AbstractRenderer):
         except Exception:
             # Fallback for headless or display-less environments
             max_w, max_h = 1920, 1080
-        fit_scale = max(1, min(max_w // self.arena, max_h // self.arena))
+        fit_scale = max(1, min(max_w // self.grid_cols, max_h // self.grid_rows))
         old = self.scale
         self.scale = max(1, min(self.scale, fit_scale))
         if self.scale != old:
