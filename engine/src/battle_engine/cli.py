@@ -446,6 +446,7 @@ def _resolve_agent(
         _merged = _merge_params(spec_obj.defaults, side_env)
 
         env_blob = side_env.get("blob_path")
+        blob_path: Optional[Path]
         if isinstance(env_blob, str) and env_blob:
             blob_path = Path(env_blob).expanduser()
             if not blob_path.is_absolute():
@@ -614,11 +615,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         key: value for key, value in common_kwargs.items() if value is not None
     }
 
-    spec, spec_dir = _load_agents_spec_from_env()
+    env_spec, spec_dir = _load_agents_spec_from_env()
 
-    codeA, nameA, startA = _resolve_agent("A", spec, spec_dir, args, cfg, common_kwargs)
-    codeB, nameB, startB = _resolve_agent("B", spec, spec_dir, args, cfg, common_kwargs)
-    codeC, nameC, startC = _resolve_agent("C", spec, spec_dir, args, cfg, common_kwargs)
+    codeA, nameA, startA = _resolve_agent("A", env_spec, spec_dir, args, cfg, common_kwargs)
+    codeB, nameB, startB = _resolve_agent("B", env_spec, spec_dir, args, cfg, common_kwargs)
+    codeC, nameC, startC = _resolve_agent("C", env_spec, spec_dir, args, cfg, common_kwargs)
 
     try:
         root = _battle_root()

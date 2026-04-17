@@ -51,9 +51,9 @@ class PygameRenderer(AbstractRenderer):
         self.title = title
 
         # pygame handles
-        self.pg = None
-        self.screen = None
-        self.grid_surf = None
+        self.pg: Any = None
+        self.screen: Any = None
+        self.grid_surf: Any = None
 
         # world state
         self.arena: int = 0
@@ -74,8 +74,8 @@ class PygameRenderer(AbstractRenderer):
         self.start_wall: float = 0.0
 
         # fonts
-        self.font = None
-        self.font_big = None
+        self.font: Any = None
+        self.font_big: Any = None
 
     # ---------- lifecycle ----------
 
@@ -101,8 +101,12 @@ class PygameRenderer(AbstractRenderer):
         )
 
         # Windowed + resizable, auto-fit to ~90% of current display
-        di = self.pg.display.Info()
-        max_w, max_h = int(di.current_w * 0.90), int(di.current_h * 0.90)
+        try:
+            di = self.pg.display.Info()
+            max_w, max_h = int(di.current_w * 0.90), int(di.current_h * 0.90)
+        except Exception:
+            # Fallback for headless or display-less environments
+            max_w, max_h = 1920, 1080
 
         logical_w = self.arena
         logical_h = self.arena
@@ -174,7 +178,7 @@ class PygameRenderer(AbstractRenderer):
 
         if et == "spawn":
             pos = self._to_xy(event.get("pos"))
-            if pos:
+            if pos and isinstance(who, str):
                 self.agents_pos[who] = pos
                 if self.trails:
                     self.trail_pts.setdefault(who, []).append(pos)
@@ -182,7 +186,7 @@ class PygameRenderer(AbstractRenderer):
 
         elif et == "move":
             to_pos = self._to_xy(event.get("to"))
-            if to_pos:
+            if to_pos and isinstance(who, str):
                 self.agents_pos[who] = to_pos
                 if self.trails:
                     self.trail_pts.setdefault(who, []).append(to_pos)
@@ -193,9 +197,10 @@ class PygameRenderer(AbstractRenderer):
             _apply_cells(cells, who)
 
         elif et in ("death", "die"):
-            pos = self.agents_pos.get(who)
-            if pos:
-                self._flash([pos], who)
+            if isinstance(who, str):
+                pos = self.agents_pos.get(who)
+                if pos:
+                    self._flash([pos], who)
 
         elif et == "tick":
             # optional positions map
@@ -409,32 +414,6 @@ class PygameRenderer(AbstractRenderer):
     # ---------- input ----------
 
     def _pump_events(self) -> None:
-        """Process window and keyboard; resize window if scale changes."""
-        for ev in self.pg.event.get():
-            if ev.type == self.pg.QUIT:
-                raise SystemExit(0)
-            if ev.type == self.pg.KEYDOWN:
-                k = ev.key
-                if k in (self.pg.K_ESCAPE, self.pg.K_q):
-                    raise SystemExit(0)
-                elif k == self.pg.K_SPACE:
-                    self.paused = not self.paused
-                elif k == self.pg.K_n:
-                    self.step_once = True
-                elif k in (self.pg.K_PLUS, self.pg.K_EQUALS):  # '+' or '='
-                    old = self.scale
-                    self.scale = min(16, self.scale + 1)
-                    if self.scale != old:
-                        self._resize_window()
-                elif k in (self.pg.K_MINUS, self.pg.K_UNDERSCORE):
-                    old = self.scale
-                    self.scale = max(1, self.scale - 1)
-                    if self.scale != old:
-                        self._resize_window()
-                elif k == self.pg.K_t:
-                    self.trails = not self.trails
-
-    def _pump_events(self) -> None:
         for ev in self.pg.event.get():
             if ev.type == self.pg.QUIT:
                 raise SystemExit(0)
@@ -480,8 +459,12 @@ class PygameRenderer(AbstractRenderer):
 
     def _fit_to_display(self) -> None:
         """Clamp self.scale so arena*scale fits within ~90% of the current display, then resize."""
-        di = self.pg.display.Info()
-        max_w, max_h = int(di.current_w * 0.90), int(di.current_h * 0.90)
+        try:
+            di = self.pg.display.Info()
+            max_w, max_h = int(di.current_w * 0.90), int(di.current_h * 0.90)
+        except Exception:
+            # Fallback for headless or display-less environments
+            max_w, max_h = 1920, 1080
         fit_scale = max(1, min(max_w // self.arena, max_h // self.arena))
         old = self.scale
         self.scale = max(1, min(self.scale, fit_scale))

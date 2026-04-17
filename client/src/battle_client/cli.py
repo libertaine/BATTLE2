@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional, Type
+from typing import Dict, Any, Optional, Type, Union, Callable
 
 from battle_client.renderers.base import AbstractRenderer
 from battle_client.renderers.headless import HeadlessRenderer
@@ -21,7 +21,7 @@ def _get_pygame_renderer_cls() -> Type[AbstractRenderer]:
     return _PYGAME_CLASS  # type: ignore[return-value]
 
 
-RENDERERS: Dict[str, Type[AbstractRenderer]] = {
+RENDERERS: Dict[str, Union[Type[AbstractRenderer], Callable[[], Type[AbstractRenderer]]]] = {
     "headless": HeadlessRenderer,
     "pygame": _get_pygame_renderer_cls,  # resolved when selected
 }
@@ -33,12 +33,10 @@ def _resolve_renderer(name: str) -> Type[AbstractRenderer]:
             f"Unknown renderer '{name}'. Choose from: {', '.join(sorted(RENDERERS))}"
         )
     cls_or_factory = RENDERERS[name]
-    if (
-        callable(cls_or_factory)
-        and getattr(cls_or_factory, "__name__", "") == "_get_pygame_renderer_cls"
-    ):
-        return cls_or_factory()  # type: ignore[misc]
-    return cls_or_factory  # type: ignore[return-value]
+    if isinstance(cls_or_factory, type):
+        return cls_or_factory
+    else:
+        return cls_or_factory()
 
 
 def main(argv: Optional[list[str]] = None) -> int:
