@@ -216,12 +216,12 @@ class PygameRenderer(AbstractRenderer):
             # optional batched writes/claims
             batch = event.get("writes") or event.get("claims")
             if isinstance(batch, list):
-                cells: List[Tuple[int, int]] = []
+                batch_cells: List[Tuple[int, int]] = []
                 for c in batch:
                     xy = self._to_xy(c)
                     if xy:
-                        cells.append(xy)
-                _apply_cells(cells, event.get("who"))
+                        batch_cells.append(xy)
+                _apply_cells(batch_cells, event.get("who"))
 
             # fallback: single-letter agent keys with [x,y]
             for k, v in list(event.items()):

@@ -3,6 +3,7 @@ import sys
 from typing import Any, Dict, Optional
 from .base import AbstractRenderer
 
+
 class HeadlessRenderer(AbstractRenderer):
     """
     Minimal text renderer for debugging/logging.
@@ -13,7 +14,7 @@ class HeadlessRenderer(AbstractRenderer):
         super().__init__()
         self._out = stream or sys.stdout
         self._arena = None
-        self._agents = {}
+        self._agents: Dict[str, Any] = {}
 
     def setup(self, metadata: Optional[Dict[str, Any]] = None) -> None:
         super().setup(metadata)
