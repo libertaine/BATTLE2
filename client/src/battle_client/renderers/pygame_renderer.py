@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Tuple
+
 import math
 import time
+from typing import Any, ClassVar
 
 from .base import AbstractRenderer
 
@@ -25,21 +26,21 @@ class PygameRenderer(AbstractRenderer):
     """
 
     # Color palette
-    AGENT_COLORS = {
+    AGENT_COLORS: ClassVar[dict[str, tuple[int, int, int]]] = {
         "A": (220, 70, 70),  # red-ish
         "B": (70, 120, 220),  # blue-ish
         "C": (80, 200, 120),  # green-ish
         "D": (200, 180, 70),  # amber
     }
-    GRID_BG = (12, 12, 14)
-    GRID_LINE = (26, 26, 30)
-    OWNERSHIP_TINT = {
+    GRID_BG: ClassVar[tuple[int, int, int]] = (12, 12, 14)
+    GRID_LINE: ClassVar[tuple[int, int, int]] = (26, 26, 30)
+    OWNERSHIP_TINT: ClassVar[dict[str, tuple[int, int, int]]] = {
         "A": (120, 30, 30),
         "B": (30, 60, 120),
         "C": (30, 110, 70),
         "D": (110, 95, 30),
     }
-    PROCESS_FLASH = {
+    PROCESS_FLASH: ClassVar[dict[str, tuple[int, int, int]]] = {
         "A": (255, 80, 80),
         "B": (80, 140, 255),
         "C": (90, 255, 170),
@@ -60,10 +61,10 @@ class PygameRenderer(AbstractRenderer):
         self.arena: int = 0
         self.grid_cols: int = 0
         self.grid_rows: int = 0
-        self.owner: List[List[Optional[str]]] = []
-        self.agents_pos: Dict[str, Tuple[int, int]] = {}
-        self.trail_pts: Dict[str, List[Tuple[int, int]]] = {}
-        self.flash: Dict[Tuple[int, int], Tuple[Tuple[int, int, int], int]] = {}
+        self.owner: list[list[str | None]] = []
+        self.agents_pos: dict[str, tuple[int, int]] = {}
+        self.trail_pts: dict[str, list[tuple[int, int]]] = {}
+        self.flash: dict[tuple[int, int], tuple[tuple[int, int, int], int]] = {}
 
         # runtime
         self.paused: bool = False
@@ -83,8 +84,8 @@ class PygameRenderer(AbstractRenderer):
     # ---------- lifecycle ----------
 
     def _resolve_grid_dims(
-        self, metadata: Optional[Dict[str, Any]], arena_cells: int
-    ) -> Tuple[int, int]:
+        self, metadata: dict[str, Any] | None, arena_cells: int
+    ) -> tuple[int, int]:
         """Pick cols/rows for 1D arena indices; prefer explicit metadata first."""
         params = ((metadata or {}).get("params", {}) or {}) if metadata else {}
 
@@ -95,7 +96,8 @@ class PygameRenderer(AbstractRenderer):
                 c, r = int(cols), int(rows)
                 if c > 0 and r > 0 and c * r >= arena_cells:
                     return c, r
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
+                # Invalid explicit dimensions fall back to inferred dimensions.
                 pass
 
         if arena_cells <= 0:
@@ -107,16 +109,16 @@ class PygameRenderer(AbstractRenderer):
                 r = arena_cells // c
                 return max(c, r), min(c, r)
 
-        c = int(math.ceil(math.sqrt(arena_cells)))
-        r = int(math.ceil(arena_cells / c))
+        c = math.ceil(math.sqrt(arena_cells))
+        r = math.ceil(arena_cells / c)
         return c, r
 
     # ---------- lifecycle ----------
 
-    def setup(self, metadata: Optional[Dict[str, Any]] = None) -> None:
+    def setup(self, metadata: dict[str, Any] | None = None) -> None:
         try:
             import pygame  # type: ignore
-        except Exception as e:
+        except ImportError as e:
             raise RuntimeError(
                 "Pygame not available. Install pygame or choose --renderer headless."
             ) from e
@@ -140,7 +142,7 @@ class PygameRenderer(AbstractRenderer):
         try:
             di = self.pg.display.Info()
             max_w, max_h = int(di.current_w * 0.90), int(di.current_h * 0.90)
-        except Exception:
+        except (pygame.error, AttributeError, TypeError, ValueError):
             # Fallback for headless or display-less environments
             max_w, max_h = 1920, 1080
 
@@ -179,7 +181,7 @@ class PygameRenderer(AbstractRenderer):
 
     # ---------- event ingestion ----------
 
-    def on_event(self, event: Dict[str, Any]) -> None:
+    def on_event(self, event: dict[str, Any]) -> None:
         """
         Supported shapes:
           {"type":"spawn","tick":t,"who":"A","pos":[x,y]}
@@ -216,7 +218,7 @@ class PygameRenderer(AbstractRenderer):
             return
         self.step_once = False
 
-        def _apply_cells(cells: List[Tuple[int, int]], owner: Optional[str]) -> None:
+        def _apply_cells(cells: list[tuple[int, int]], owner: str | None) -> None:
             if not cells:
                 return
             if owner is not None:
@@ -269,7 +271,7 @@ class PygameRenderer(AbstractRenderer):
             # optional batched writes/claims
             batch = event.get("writes") or event.get("claims")
             if isinstance(batch, list):
-                batch_cells: List[Tuple[int, int]] = []
+                batch_cells: list[tuple[int, int]] = []
                 for c in batch:
                     xy = self._to_xy(c)
                     if xy:
@@ -298,7 +300,7 @@ class PygameRenderer(AbstractRenderer):
         self.grid_surf = self.pg.Surface((self.grid_cols, self.grid_rows))
         self._fit_to_display()
 
-    def _apply_snapshot(self, event: Dict[str, Any]) -> None:
+    def _apply_snapshot(self, event: dict[str, Any]) -> None:
         for agent in event.get("agents", []):
             if not isinstance(agent, dict) or not isinstance(agent.get("id"), str):
                 continue
@@ -340,7 +342,7 @@ class PygameRenderer(AbstractRenderer):
 
     # ---------- drawing helpers ----------
 
-    def _to_xy(self, p) -> Optional[Tuple[int, int]]:
+    def _to_xy(self, p) -> tuple[int, int] | None:
         if isinstance(p, int):
             if self.arena <= 0 or self.grid_cols <= 0:
                 return None
@@ -350,13 +352,13 @@ class PygameRenderer(AbstractRenderer):
             return None
         try:
             x, y = int(p[0]), int(p[1])
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return None
         return (x, y)
 
-    def _cells_from_event(self, event: Dict[str, Any]) -> List[Tuple[int, int]]:
+    def _cells_from_event(self, event: dict[str, Any]) -> list[tuple[int, int]]:
         cells = event.get("cells")
-        out: List[Tuple[int, int]] = []
+        out: list[tuple[int, int]] = []
         if isinstance(cells, list):
             for c in cells:
                 xy = self._to_xy(c)
@@ -365,8 +367,8 @@ class PygameRenderer(AbstractRenderer):
         return out
 
     def _blend(
-        self, a: Tuple[int, int, int], b: Tuple[int, int, int], alpha: float
-    ) -> Tuple[int, int, int]:
+        self, a: tuple[int, int, int], b: tuple[int, int, int], alpha: float
+    ) -> tuple[int, int, int]:
         # alpha in [0..1]
         return (
             int(a[0] * (1 - alpha) + b[0] * alpha),
@@ -446,7 +448,7 @@ class PygameRenderer(AbstractRenderer):
         pg.display.flip()
 
     def _draw_agent_marker(
-        self, pos: Tuple[int, int], col: Tuple[int, int, int]
+        self, pos: tuple[int, int], col: tuple[int, int, int]
     ) -> None:
         x, y = pos
         sx, sy = self._screen_xy(x, y)
@@ -471,7 +473,7 @@ class PygameRenderer(AbstractRenderer):
                 self.screen.blit(ts, rect)
 
     def _draw_polyline(
-        self, pts: List[Tuple[int, int]], col: Tuple[int, int, int]
+        self, pts: list[tuple[int, int]], col: tuple[int, int, int]
     ) -> None:
         if len(pts) < 2:
             return
@@ -479,7 +481,7 @@ class PygameRenderer(AbstractRenderer):
         width = max(1, min(self.screen.get_size()) // max(self.grid_cols, self.grid_rows) // 3)
         self.pg.draw.lines(self.screen, col, False, spts, width)
 
-    def _screen_xy(self, x: int, y: int) -> Tuple[int, int]:
+    def _screen_xy(self, x: int, y: int) -> tuple[int, int]:
         w, h = self.screen.get_size()
         return (
             int((x + 0.5) * w / self.grid_cols),
@@ -525,7 +527,7 @@ class PygameRenderer(AbstractRenderer):
 
         self.screen.blit(hud, (0, 0))
 
-    def _flash(self, cells: List[Tuple[int, int]], who: Optional[str]) -> None:
+    def _flash(self, cells: list[tuple[int, int]], who: str | None) -> None:
         color = self.PROCESS_FLASH.get(who or "", (255, 255, 255))
         for xy in cells:
             self.flash[xy] = (color, 6)  # ~6 frames
@@ -586,7 +588,7 @@ class PygameRenderer(AbstractRenderer):
         try:
             di = self.pg.display.Info()
             max_w, max_h = int(di.current_w * 0.90), int(di.current_h * 0.90)
-        except Exception:
+        except (self.pg.error, AttributeError, TypeError, ValueError):
             # Fallback for headless or display-less environments
             max_w, max_h = 1920, 1080
         fit_scale = max(1, min(max_w // self.grid_cols, max_h // self.grid_rows))
@@ -604,9 +606,7 @@ class PygameRenderer(AbstractRenderer):
         waiting = True
         while waiting:
             for event in self.pg.event.get():
-                if event.type == self.pg.QUIT:
-                    waiting = False
-                elif event.type == self.pg.KEYDOWN and event.key in (
+                if event.type == self.pg.QUIT or event.type == self.pg.KEYDOWN and event.key in (
                     self.pg.K_SPACE,
                     self.pg.K_ESCAPE,
                 ):
