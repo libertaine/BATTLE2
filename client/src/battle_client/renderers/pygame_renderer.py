@@ -183,6 +183,40 @@ class PygameRenderer(AbstractRenderer):
         if self.pg:
             self.pg.quit()
 
+    def wait_for_start(self) -> None:
+        """Show an initial prompt and wait before replay events are consumed."""
+        clock = self.pg.time.Clock()
+        prompt_font = self.pg.font.SysFont("consolas", 28, bold=True)
+        hint_font = self.pg.font.SysFont("consolas", 16)
+
+        while True:
+            for event in self.pg.event.get():
+                if event.type == self.pg.QUIT:
+                    raise SystemExit(0)
+                if event.type == self.pg.KEYDOWN:
+                    if event.key == self.pg.K_SPACE:
+                        self.start_wall = time.time()
+                        return
+                    if event.key in (self.pg.K_ESCAPE, self.pg.K_q):
+                        raise SystemExit(0)
+
+            self._draw_full_grid()
+            scaled = self.pg.transform.scale(self.grid_surf, self.screen.get_size())
+            self.screen.blit(scaled, (0, 0))
+
+            shade = self.pg.Surface(self.screen.get_size(), flags=self.pg.SRCALPHA)
+            shade.fill((0, 0, 0, 150))
+            self.screen.blit(shade, (0, 0))
+
+            prompt = prompt_font.render("HIT SPACEBAR TO START MATCH", True, (255, 255, 255))
+            hint = hint_font.render("ESC or Q to close", True, (190, 200, 215))
+            center_x, center_y = self.screen.get_rect().center
+            self.screen.blit(prompt, prompt.get_rect(center=(center_x, center_y - 12)))
+            self.screen.blit(hint, hint.get_rect(center=(center_x, center_y + 22)))
+
+            self.pg.display.flip()
+            clock.tick(30)
+
     # ---------- event ingestion ----------
 
     def on_event(self, event: dict[str, Any]) -> None:

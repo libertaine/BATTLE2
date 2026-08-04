@@ -1,18 +1,19 @@
 from __future__ import annotations
+
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Dict, Any, Optional, Type, Union, Callable
 
 from battle_client.renderers.base import AbstractRenderer
 from battle_client.renderers.headless import HeadlessRenderer
 from battle_client.utils import iter_jsonl, maybe_load_summary, paced
 
 # Pygame renderer is optional; import lazily.
-_PYGAME_CLASS: Optional[Type[AbstractRenderer]] = None
+_PYGAME_CLASS: type[AbstractRenderer] | None = None
 
 
-def _get_pygame_renderer_cls() -> Type[AbstractRenderer]:
+def _get_pygame_renderer_cls() -> type[AbstractRenderer]:
     global _PYGAME_CLASS
     if _PYGAME_CLASS is None:
         from battle_client.renderers.pygame_renderer import PygameRenderer
@@ -21,13 +22,13 @@ def _get_pygame_renderer_cls() -> Type[AbstractRenderer]:
     return _PYGAME_CLASS  # type: ignore[return-value]
 
 
-RENDERERS: Dict[str, Union[Type[AbstractRenderer], Callable[[], Type[AbstractRenderer]]]] = {
+RENDERERS: dict[str, type[AbstractRenderer] | Callable[[], type[AbstractRenderer]]] = {
     "headless": HeadlessRenderer,
     "pygame": _get_pygame_renderer_cls,  # resolved when selected
 }
 
 
-def _resolve_renderer(name: str) -> Type[AbstractRenderer]:
+def _resolve_renderer(name: str) -> type[AbstractRenderer]:
     if name not in RENDERERS:
         raise SystemExit(
             f"Unknown renderer '{name}'. Choose from: {', '.join(sorted(RENDERERS))}"
@@ -39,7 +40,7 @@ def _resolve_renderer(name: str) -> Type[AbstractRenderer]:
         return cls_or_factory()
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="battle_client",
         description="BATTLE Client — presentation only (replay visualizer)",
@@ -70,6 +71,13 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     try:
         renderer.setup(metadata)
+
+        # Interactive renderers may wait for the viewer before consuming the
+        # first replay record. Headless and other renderers start immediately.
+        wait_for_start = getattr(renderer, "wait_for_start", None)
+        if callable(wait_for_start):
+            wait_for_start()
+
         stream = iter_jsonl(replay_path)
         for ev in paced(stream, args.tick_delay):
             renderer.on_event(ev)
@@ -88,12 +96,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             pass
     except SystemExit:
         raise
-    except Exception as e:
-        try:
-            renderer.teardown()
-        finally:
-            print(f"[battle_client] error: {e}", file=sys.stderr)
-            return 1
+    except Exception as e:  # noqa: BLE001 - CLI boundary reports renderer/runtime failures
+        renderer.teardown()
+        print(f"[battle_client] error: {e}", file=sys.stderr)
+        return 1
 
     return 0
 
