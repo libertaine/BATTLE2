@@ -13,9 +13,9 @@ MOVP, ADDP, LOADI, STOREI = 8, 9, 10, 11
 # ----- Config -----
 @dataclass
 class Weights:
-    alive: int = 1
-    kill: int = 5
-    territory: int = 1
+    alive: float = 1.0
+    kill: float = 5.0
+    territory: float = 1.0
     territory_bucket: int = 64
 
 
@@ -36,9 +36,9 @@ class Config:
             seed=int(d.get("seed", 1337)),
             win_mode=str(d.get("win_mode", "score_fallback")),
             weights=Weights(
-                alive=int(w.get("alive", 1)),
-                kill=int(w.get("kill", 5)),
-                territory=int(w.get("territory", 1)),
+                alive=float(w.get("alive", 1.0)),
+                kill=float(w.get("kill", 5.0)),
+                territory=float(w.get("territory", 1.0)),
                 territory_bucket=int(w.get("territory_bucket", 64)),
             ),
         )

@@ -272,9 +272,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int)
     p.add_argument("--arena", type=int)
     p.add_argument("--quota", type=int)
-    p.add_argument("--alive-w", type=int)
-    p.add_argument("--kill-w", type=int)
-    p.add_argument("--territory-w", type=int, help="points per territory bucket")
+    p.add_argument("--alive-w", type=float)
+    p.add_argument("--kill-w", type=float)
+    p.add_argument("--territory-w", type=float, help="points per territory bucket")
     p.add_argument(
         "--territory-bucket",
         type=int,

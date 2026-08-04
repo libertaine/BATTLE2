@@ -154,6 +154,10 @@ class PygameRenderer(AbstractRenderer):
         self.scale = max(1, min(self.scale, fit_scale))
 
         window_size = (logical_w * self.scale, logical_h * self.scale)
+        self.screen = self.pg.display.set_mode(
+            (0, 0),
+            self.pg.FULLSCREEN,
+        )
         self.screen = self.pg.display.set_mode(window_size, self.pg.RESIZABLE)
         self.pg.display.set_caption(self.title)
 
@@ -296,7 +300,9 @@ class PygameRenderer(AbstractRenderer):
         """Rebuild logical surfaces when replay metadata arrives in-band."""
         self.arena = max(1, arena)
         self.grid_cols, self.grid_rows = self._resolve_grid_dims(None, self.arena)
-        self.owner = [[None for _ in range(self.grid_cols)] for _ in range(self.grid_rows)]
+        self.owner = [
+            [None for _ in range(self.grid_cols)] for _ in range(self.grid_rows)
+        ]
         self.grid_surf = self.pg.Surface((self.grid_cols, self.grid_rows))
         self._fit_to_display()
 
@@ -334,7 +340,11 @@ class PygameRenderer(AbstractRenderer):
         for nested in event.get("events", []):
             if not isinstance(nested, dict):
                 continue
-            dead = nested.get("victim") if nested.get("type") in ("death", "kill") else None
+            dead = (
+                nested.get("victim")
+                if nested.get("type") in ("death", "kill")
+                else None
+            )
             if isinstance(dead, str):
                 pos = self.agents_pos.pop(dead, None)
                 if pos:
@@ -478,7 +488,9 @@ class PygameRenderer(AbstractRenderer):
         if len(pts) < 2:
             return
         spts = [self._screen_xy(x, y) for (x, y) in pts]
-        width = max(1, min(self.screen.get_size()) // max(self.grid_cols, self.grid_rows) // 3)
+        width = max(
+            1, min(self.screen.get_size()) // max(self.grid_cols, self.grid_rows) // 3
+        )
         self.pg.draw.lines(self.screen, col, False, spts, width)
 
     def _screen_xy(self, x: int, y: int) -> tuple[int, int]:
@@ -606,9 +618,14 @@ class PygameRenderer(AbstractRenderer):
         waiting = True
         while waiting:
             for event in self.pg.event.get():
-                if event.type == self.pg.QUIT or event.type == self.pg.KEYDOWN and event.key in (
-                    self.pg.K_SPACE,
-                    self.pg.K_ESCAPE,
+                if (
+                    event.type == self.pg.QUIT
+                    or event.type == self.pg.KEYDOWN
+                    and event.key
+                    in (
+                        self.pg.K_SPACE,
+                        self.pg.K_ESCAPE,
+                    )
                 ):
                     waiting = False
             self._redraw(self.last_tick)
