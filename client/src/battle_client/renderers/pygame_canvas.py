@@ -17,6 +17,7 @@ class PygameCanvas(QtWidgets.QWidget):
             pygame.display.init()
             from battle_client.renderers.pygame_renderer import PygameRenderer
             self.renderer = PygameRenderer()
+            self.renderer.setup()
             self._timer = QtCore.QTimer(self)
             self._timer.timeout.connect(self._tick)
             self._timer.start(16)  # ~60 FPS

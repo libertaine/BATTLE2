@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, List, Optional, Tuple
 import math
 import time
 
@@ -127,6 +127,7 @@ class PygameRenderer(AbstractRenderer):
         # Arena/ticks from summary (prefer top-level, then params.*)
         self.arena = int(
             (metadata or {}).get("arena")
+            or (metadata or {}).get("arena_size")
             or ((metadata or {}).get("params", {}) or {}).get("arena", 512)
         )
         self.grid_cols, self.grid_rows = self._resolve_grid_dims(metadata, self.arena)
@@ -188,12 +189,23 @@ class PygameRenderer(AbstractRenderer):
           {"type":"death","tick":t,"who":"A"}
           {"type":"tick","tick":t, "positions":{"A":[x,y],...}, "writes":[[x,y],...]}  # optional
         """
-        # keep window responsive
+        # Keep the replay iterator parked while paused.  Merely returning here
+        # would cause the caller to consume and permanently lose replay records.
         self._pump_events()
+        while self.paused and not self.step_once:
+            self.pg.time.wait(10)
+            self._pump_events()
 
         et = event.get("type")
         who = event.get("who")
         tick = int(event.get("tick", 0))
+
+        # Native engine replay records are snapshots rather than the older
+        # one-event-per-record shape documented below.
+        config = event.get("config") or {}
+        arena_size = config.get("arena_size") if isinstance(config, dict) else None
+        if arena_size and int(arena_size) != self.arena:
+            self._configure_arena(int(arena_size))
 
         # HUD counters
         self.processed_events += 1
@@ -233,11 +245,15 @@ class PygameRenderer(AbstractRenderer):
             cells = self._cells_from_event(event)  # expects "cells": [[x,y],...]
             _apply_cells(cells, who)
 
-        elif et in ("death", "die"):
-            if isinstance(who, str):
-                pos = self.agents_pos.get(who)
+        elif et in ("death", "die", "kill"):
+            dead = event.get("victim", who)
+            if isinstance(dead, str):
+                pos = self.agents_pos.pop(dead, None)
                 if pos:
-                    self._flash([pos], who)
+                    self._flash([pos], dead)
+
+        elif isinstance(event.get("agents"), list):
+            self._apply_snapshot(event)
 
         elif et == "tick":
             # optional positions map
@@ -273,6 +289,54 @@ class PygameRenderer(AbstractRenderer):
 
         # redraw after processing
         self._redraw(tick)
+
+    def _configure_arena(self, arena: int) -> None:
+        """Rebuild logical surfaces when replay metadata arrives in-band."""
+        self.arena = max(1, arena)
+        self.grid_cols, self.grid_rows = self._resolve_grid_dims(None, self.arena)
+        self.owner = [[None for _ in range(self.grid_cols)] for _ in range(self.grid_rows)]
+        self.grid_surf = self.pg.Surface((self.grid_cols, self.grid_rows))
+        self._fit_to_display()
+
+    def _apply_snapshot(self, event: Dict[str, Any]) -> None:
+        for agent in event.get("agents", []):
+            if not isinstance(agent, dict) or not isinstance(agent.get("id"), str):
+                continue
+            agent_id = agent["id"]
+            if not agent.get("alive", True):
+                self.agents_pos.pop(agent_id, None)
+                continue
+            xy = self._to_xy(agent.get("pc"))
+            if xy:
+                self.agents_pos[agent_id] = xy
+                if self.trails:
+                    pts = self.trail_pts.setdefault(agent_id, [])
+                    if not pts or pts[-1] != xy:
+                        pts.append(xy)
+
+        for diff in event.get("memory_diffs", []):
+            if not isinstance(diff, dict):
+                continue
+            owner = diff.get("owner")
+            try:
+                addr, length = int(diff["addr"]), int(diff.get("len", 1))
+            except (KeyError, TypeError, ValueError):
+                continue
+            cells = [self._to_xy(addr + offset) for offset in range(max(0, length))]
+            valid = [xy for xy in cells if xy is not None]
+            if isinstance(owner, str):
+                for x, y in valid:
+                    self.owner[y][x] = owner
+            self._flash(valid, owner if isinstance(owner, str) else None)
+
+        for nested in event.get("events", []):
+            if not isinstance(nested, dict):
+                continue
+            dead = nested.get("victim") if nested.get("type") in ("death", "kill") else None
+            if isinstance(dead, str):
+                pos = self.agents_pos.pop(dead, None)
+                if pos:
+                    self._flash([pos], dead)
 
     # ---------- drawing helpers ----------
 
@@ -328,6 +392,9 @@ class PygameRenderer(AbstractRenderer):
         pg = self.pg
         gs = self.grid_surf
 
+        # Rebuild the logical surface so expired flashes do not burn in.
+        self._draw_full_grid()
+
         # 1) Ownership fill
         tint_alpha = 0.65
         for y in range(self.grid_rows):
@@ -382,9 +449,12 @@ class PygameRenderer(AbstractRenderer):
         self, pos: Tuple[int, int], col: Tuple[int, int, int]
     ) -> None:
         x, y = pos
-        sx = int((x + 0.5) * self.scale)
-        sy = int((y + 0.5) * self.scale)
-        r = max(3, int(0.7 * self.scale))
+        sx, sy = self._screen_xy(x, y)
+        cell_scale = min(
+            self.screen.get_width() / self.grid_cols,
+            self.screen.get_height() / self.grid_rows,
+        )
+        r = max(3, int(0.7 * cell_scale))
         self.pg.draw.circle(self.screen, col, (sx, sy), r)
         self.pg.draw.circle(self.screen, (0, 0, 0), (sx, sy), r, 1)  # outline
 
@@ -405,10 +475,16 @@ class PygameRenderer(AbstractRenderer):
     ) -> None:
         if len(pts) < 2:
             return
-        spts = [
-            (int((x + 0.5) * self.scale), int((y + 0.5) * self.scale)) for (x, y) in pts
-        ]
-        self.pg.draw.lines(self.screen, col, False, spts, max(1, self.scale // 3))
+        spts = [self._screen_xy(x, y) for (x, y) in pts]
+        width = max(1, min(self.screen.get_size()) // max(self.grid_cols, self.grid_rows) // 3)
+        self.pg.draw.lines(self.screen, col, False, spts, width)
+
+    def _screen_xy(self, x: int, y: int) -> Tuple[int, int]:
+        w, h = self.screen.get_size()
+        return (
+            int((x + 0.5) * w / self.grid_cols),
+            int((y + 0.5) * h / self.grid_rows),
+        )
 
     def _draw_overlay(self, tick: int) -> None:
         # simple top-left HUD with tick/progress
@@ -495,6 +571,11 @@ class PygameRenderer(AbstractRenderer):
                     self.scale = new_scale
                     self._resize_window()
 
+    def update(self) -> None:
+        """Pump input and refresh the current frame for GUI integrations."""
+        self._pump_events()
+        self._redraw(self.last_tick)
+
     def _resize_window(self) -> None:
         size = (self.grid_cols * self.scale, self.grid_rows * self.scale)
         self.screen = self.pg.display.set_mode(size, self.pg.RESIZABLE)
@@ -511,30 +592,29 @@ class PygameRenderer(AbstractRenderer):
         fit_scale = max(1, min(max_w // self.grid_cols, max_h // self.grid_rows))
         old = self.scale
         self.scale = max(1, min(self.scale, fit_scale))
-        if self.scale != old:
+        if self.scale != old or self.screen.get_size() != (
+            self.grid_cols * self.scale,
+            self.grid_rows * self.scale,
+        ):
             self._resize_window()
 
-
-def hold_open(self) -> None:
-    import pygame
-
-    font = pygame.font.SysFont(None, 24)
-    clock = pygame.time.Clock()
-    waiting = True
-
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                waiting = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_SPACE, pygame.K_ESCAPE):
+    def hold_open(self) -> None:
+        font = self.pg.font.SysFont(None, 24)
+        clock = self.pg.time.Clock()
+        waiting = True
+        while waiting:
+            for event in self.pg.event.get():
+                if event.type == self.pg.QUIT:
                     waiting = False
-
-        # redraw final frame if your renderer requires it
-        # or just draw overlay on top of existing frame
-        text = font.render(
-            "Match complete - Press SPACE to close", True, (255, 255, 255)
-        )
-        self.screen.blit(text, (20, 20))
-        pygame.display.flip()
-        clock.tick(30)
+                elif event.type == self.pg.KEYDOWN and event.key in (
+                    self.pg.K_SPACE,
+                    self.pg.K_ESCAPE,
+                ):
+                    waiting = False
+            self._redraw(self.last_tick)
+            text = font.render(
+                "Match complete - Press SPACE to close", True, (255, 255, 255)
+            )
+            self.screen.blit(text, (20, 50))
+            self.pg.display.flip()
+            clock.tick(30)
