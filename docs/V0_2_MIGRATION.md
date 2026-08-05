@@ -54,6 +54,9 @@ new internals so existing imports remain valid.
   not change unintentionally.
 - Replay version 6 JSONL remains readable. New writers must either preserve it or
   introduce an explicitly versioned format while readers accept both.
+- Canonical v0.2 replay records use schema `battle2.replay`, schema version `2`,
+  and explicit `header`, `tick`, or `result` record types. Future incompatible
+  changes require a new schema version and a reader compatibility decision.
 - Version 2 CLI summaries remain readable and retain established keys.
 - Existing `agents/<name>` directories, JSON-or-YAML manifests, blobs, default
   parameters, and environment overrides remain usable.
@@ -77,11 +80,26 @@ Introduce typed match requests/results, event and summary models, agent adapter
 protocols, and replay reader/writer interfaces. Adapt current code without moving
 public names or changing serialized output.
 
+Replay/event portion completed: `battle_engine.replay` now defines schema
+`battle2.replay` version 2, typed replay records, serializers, useful validation
+errors, and the v0.1 compatibility adapter. Replay clients consume canonical
+models internally while the v0.1 engine writer remains unchanged. Match request
+and agent adapter contracts remain future Phase 1 work. See
+[`REPLAY_SCHEMA.md`](REPLAY_SCHEMA.md).
+
 ### Phase 2 — Extract deterministic runtime
 
 Move ISA and VM implementation behind internal modules. Keep
 `battle_engine.core` as a compatibility facade and compare behavior against the
 v0.1 characterization suite and fixed fixtures.
+
+Completed for the initial runtime boundary: configuration and weights now live in
+`battle_engine.config`, ISA constants and bytecode encoding in
+`battle_engine.instructions`, mutable execution state in
+`battle_engine.agent_state`, and the VM in `battle_engine.vm`. `core` re-exports
+the same objects and retains `Kernel` and scoring orchestration. A serialized
+fixed-seed comparison covering result, stats, replay records, arena bytes, and
+ownership was byte-for-byte identical before and after extraction.
 
 ### Phase 3 — Extract match policy
 
@@ -89,20 +107,51 @@ Separate scheduling, statistics, scoring, and winner resolution from the VM.
 Remove implicit filesystem writes from the new service while retaining them in
 the compatibility facade where required.
 
+Completed while preserving `Kernel` as a facade: `battle_engine.match` schedules
+ticks, `battle_engine.scoring` applies policy, `battle_engine.statistics` collects
+in-memory counters, and `battle_engine.results` resolves winners and builds plain
+summary data. `battle_engine.telemetry` supplies injected replay/summary ports and
+the legacy renderer adapter. The compatibility facade still supplies default
+`replay.jsonl` and `summary.json` adapters, while callers may inject both sinks.
+Representative survival, tie, kill, unattributed-death, and territory matches
+were byte-for-byte identical before and after extraction.
+
 ### Phase 4 — Isolate adapters and persistence
 
 Move agent discovery/execution, pMARS invocation, replay I/O, and summary I/O to
 adapters. Add explicit backward-compatible readers before any writer evolves.
+
+Replay and kernel-summary persistence adapters are now isolated in
+`battle_engine.telemetry`. CLI-specific summary persistence, agent execution
+adapters, and pMARS isolation remain Phase 4 work.
 
 ### Phase 5 — Rewire CLI and presentation
 
 Make CLI and desktop tools consume the application boundary. Consolidate renderer
 event contracts and retain the headless/Pygame separation.
 
+Replay presentation lifecycle completed: `AbstractRenderer` now defines setup,
+interactive start, delivery readiness, canonical event ingestion, frame update,
+completion, hold-open, and teardown. `ReplayPlayer` owns iteration and guarantees
+ordering/cleanup. The replay CLI no longer probes optional methods, headless mode
+keeps Pygame lazy, and the Qt canvas uses the same lifecycle for updates and
+closure. Broader desktop-tool consolidation remains Phase 5 work.
+
 ### Phase 6 — Packaging cleanup
 
 Only after runtime compatibility is demonstrated, reconcile package metadata,
 entry-point ownership, defaults, build inputs, and historical/generated layout.
+
+Initial normalization completed: `battle2 run|replay|design|agents` is the v0.2
+primary interface, with lazy optional UI imports and a `python -m battle_engine`
+equivalent. Dependencies are split into core, replay, designer, development, and
+Windows-build groups; runtime support is consistently Python 3.10+.
+
+Legacy-command deprecation policy: `battle-cli`, `match-runner`, and
+`battle-agent-designer` remain installed compatibility wrappers for all v0.2
+releases. Documentation may prefer `battle2`, but v0.2 must not warn, remove, or
+change the legacy commands' exit behavior. Removal may only be considered in a
+future major release after a separately announced deprecation period.
 
 ## Out of scope for the initial migration
 

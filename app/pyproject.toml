@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "battle-agent-designer"
-version = "0.1.0"
+version = "0.2.0"
 description = "PySide6 desktop editor/launcher for Battle engine"
 authors = [{name = "Your Name"}]
 requires-python = ">=3.10"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-battle-agent-designer = "app.main:main"
+battle-agent-designer = "app.agent_designer:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

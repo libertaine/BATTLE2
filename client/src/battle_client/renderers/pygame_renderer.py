@@ -4,7 +4,16 @@ import math
 import time
 from typing import Any, ClassVar
 
-from .base import AbstractRenderer
+from battle_engine.replay import (
+    AgentEvent,
+    KillDeathEvent,
+    MatchResult,
+    ReplayHeader,
+    ReplayRecord,
+    TickSnapshot,
+)
+
+from .base import AbstractRenderer, RendererDependencyError
 
 
 class PygameRenderer(AbstractRenderer):
@@ -119,24 +128,17 @@ class PygameRenderer(AbstractRenderer):
         try:
             import pygame  # type: ignore
         except ImportError as e:
-            raise RuntimeError(
+            raise RendererDependencyError(
                 "Pygame not available. Install pygame or choose --renderer headless."
             ) from e
 
         self.pg = pygame
         self.pg.init()
 
-        # Arena/ticks from summary (prefer top-level, then params.*)
-        self.arena = int(
-            (metadata or {}).get("arena")
-            or (metadata or {}).get("arena_size")
-            or ((metadata or {}).get("params", {}) or {}).get("arena", 512)
-        )
+        # Summary metadata is normalized by the reader boundary.
+        self.arena = int((metadata or {}).get("arena") or 512)
         self.grid_cols, self.grid_rows = self._resolve_grid_dims(metadata, self.arena)
-        self.total_ticks = int(
-            (metadata or {}).get("ticks")
-            or ((metadata or {}).get("params", {}) or {}).get("ticks", 0)
-        )
+        self.total_ticks = int((metadata or {}).get("ticks") or 0)
 
         # Windowed + resizable, auto-fit to ~90% of current display
         try:
@@ -217,44 +219,44 @@ class PygameRenderer(AbstractRenderer):
             self.pg.display.flip()
             clock.tick(30)
 
-    # ---------- event ingestion ----------
-
-    def on_event(self, event: dict[str, Any]) -> None:
-        """
-        Supported shapes:
-          {"type":"spawn","tick":t,"who":"A","pos":[x,y]}
-          {"type":"move","tick":t,"who":"A","from":..., "to":[x,y]}
-          {"type":"territory","tick":t,"who":"A","cells":[[x,y],...]}
-          {"type":"claim", ...}
-          {"type":"death","tick":t,"who":"A"}
-          {"type":"tick","tick":t, "positions":{"A":[x,y],...}, "writes":[[x,y],...]}  # optional
-        """
-        # Keep the replay iterator parked while paused.  Merely returning here
-        # would cause the caller to consume and permanently lose replay records.
+    def wait_until_ready(self) -> None:
+        """Park replay delivery while paused; allow one record for a step."""
         self._pump_events()
         while self.paused and not self.step_once:
             self.pg.time.wait(10)
             self._pump_events()
 
+    # ---------- event ingestion ----------
+
+    def on_event(self, record: ReplayRecord) -> None:
+        """
+        Consume only canonical replay models. Legacy/native dictionaries are
+        normalized by ``battle_engine.replay`` before this method is called.
+        """
+        # ``app.match_runner`` historically forwards raw window-system events to
+        # this method. They are live UI input, not replay data; its outer event
+        # loop already handles them.
+        if isinstance(record, dict):
+            return
+        # A step permit applies to exactly one record, including headers/results.
+        self.step_once = False
+
+        if isinstance(record, ReplayHeader):
+            if record.config.arena_size != self.arena:
+                self._configure_arena(record.config.arena_size)
+            return
+        if isinstance(record, MatchResult):
+            self.last_tick = record.ticks
+            return
+
+        event = self._snapshot_dict(record)
         et = event.get("type")
         who = event.get("who")
-        tick = int(event.get("tick", 0))
-
-        # Native engine replay records are snapshots rather than the older
-        # one-event-per-record shape documented below.
-        config = event.get("config") or {}
-        arena_size = config.get("arena_size") if isinstance(config, dict) else None
-        if arena_size and int(arena_size) != self.arena:
-            self._configure_arena(int(arena_size))
+        tick = record.tick
 
         # HUD counters
         self.processed_events += 1
         self.last_tick = tick
-
-        # pause gating
-        if self.paused and not self.step_once:
-            return
-        self.step_once = False
 
         def _apply_cells(cells: list[tuple[int, int]], owner: str | None) -> None:
             if not cells:
@@ -327,8 +329,46 @@ class PygameRenderer(AbstractRenderer):
                         if self.trails:
                             self.trail_pts.setdefault(k, []).append(xy)
 
-        # redraw after processing
-        self._redraw(tick)
+    def _snapshot_dict(self, record: TickSnapshot) -> dict[str, Any]:
+        """Translate canonical model values to the renderer's drawing inputs."""
+        event: dict[str, Any] = {
+            "tick": record.tick,
+            "agents": [
+                {
+                    "id": agent.agent_id,
+                    "pc": agent.pc,
+                    "alive": agent.alive,
+                    "cpu_used": agent.cpu_used,
+                    "mem_writes": agent.mem_writes,
+                    "region": agent.region,
+                }
+                for agent in record.agents
+            ],
+            "score": dict(record.score),
+            "memory_diffs": [
+                {"addr": diff.address, "len": diff.length, "owner": diff.owner}
+                for diff in record.memory_diffs
+            ],
+            "events": [],
+        }
+        for item in record.events:
+            if isinstance(item, KillDeathEvent):
+                event["events"].append(
+                    {"type": item.event_type, "victim": item.victim, "by": item.killer}
+                )
+            elif isinstance(item, AgentEvent):
+                # A historical one-event record has no snapshot state. Promote
+                # it to the top-level drawing action after boundary conversion.
+                event.update(
+                    type=item.event_type,
+                    who=item.agent_id,
+                    pos=item.position,
+                    to=item.position,
+                    **{"from": item.previous_position},
+                    cells=list(item.cells),
+                    count=item.cell_count,
+                )
+        return event
 
     def _configure_arena(self, arena: int) -> None:
         """Rebuild logical surfaces when replay metadata arrives in-band."""
@@ -623,6 +663,9 @@ class PygameRenderer(AbstractRenderer):
         """Pump input and refresh the current frame for GUI integrations."""
         self._pump_events()
         self._redraw(self.last_tick)
+
+    def on_complete(self) -> None:
+        """Completion rendering remains in ``hold_open`` for visible parity."""
 
     def _resize_window(self) -> None:
         size = (self.grid_cols * self.scale, self.grid_rows * self.scale)

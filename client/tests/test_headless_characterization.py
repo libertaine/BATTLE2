@@ -25,5 +25,6 @@ def test_headless_client_processes_replay_without_pygame(tmp_path, capsys):
     assert main(["--replay", str(replay), "--renderer", "headless"]) == 0
     output = capsys.readouterr().out
     assert "[BATTLE:HEADLESS] start arena=32" in output
-    assert "EVENT" in output
+    assert "HEADER arena=32" in output
+    assert "TICK score={}" in output
     assert "[    ] END" in output

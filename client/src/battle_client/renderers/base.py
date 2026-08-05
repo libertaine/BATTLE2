@@ -2,6 +2,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
+from battle_engine.replay import ReplayRecord
+
+
+class RendererDependencyError(RuntimeError):
+    """A selected renderer's optional dependency is not installed."""
+
 class AbstractRenderer(ABC):
     """
     Renderer interface for BATTLE Client.
@@ -19,13 +25,28 @@ class AbstractRenderer(ABC):
         """
         self._initialized = True
 
+    def wait_for_start(self) -> None:
+        """Optional interactive gate before replay delivery begins."""
+
+    def wait_until_ready(self) -> None:
+        """Block or pump frames until one logical replay record may be delivered."""
+
     @abstractmethod
-    def on_event(self, event: Dict[str, Any]) -> None:
+    def on_event(self, event: ReplayRecord) -> None:
         """
-        Receive a single decoded event dictionary from replay.jsonl.
-        Typical fields include 'type', 'tick', 'who', 'pos', etc.
+        Receive one canonical replay model. Compatibility conversion has already
+        happened at the replay-reader boundary.
         """
         ...
+
+    def update(self) -> None:
+        """Process one presentation frame for embedded/live integrations."""
+
+    def on_complete(self) -> None:
+        """Notify the renderer that replay iteration completed normally."""
+
+    def hold_open(self) -> None:
+        """Optionally keep an interactive presentation open after completion."""
 
     def teardown(self) -> None:
         """

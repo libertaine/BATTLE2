@@ -1,0 +1,1 @@
+{"schema":"battle2.replay","schema_version":2,"record_type":"tick","tick":1,"agents":[{"id":"A","pc":5,"alive":true,"cpu_used":2,"mem_writes":1,"region":[0,9]}],"score":{"A":2,"B":0},"memory_diffs":[{"address":48,"length":2,"owner":"A"}],"events":[{"event_type":"death","victim":"B","killer":null}]}

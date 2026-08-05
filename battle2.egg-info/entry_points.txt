@@ -1,4 +1,5 @@
 [console_scripts]
-battle-agent-designer = app.agent_designer:main
-battle-cli = battle_engine.cli:main
-match-runner = app.match_runner:main
+battle-agent-designer = battle_engine.legacy:agent_designer
+battle-cli = battle_engine.legacy:battle_cli
+battle2 = battle_engine.command:main
+match-runner = battle_engine.legacy:match_runner

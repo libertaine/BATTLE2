@@ -9,5 +9,5 @@
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements-core.txt -r requirements-client.txt
-python app\main.py
+pip install -e ".[replay,designer]"
+battle2 design

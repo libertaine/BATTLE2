@@ -13,6 +13,15 @@ external executable and are intentionally manual for the v0.1 freeze.
    controls, and exits without leaving a Python process.
 3. Open a newly generated replay with `python -m app.replay_viewer`.
 4. Confirm playback, window resize/fit behavior, final frame, and close controls.
+5. At the start prompt, confirm no replay tick is shown until Space is pressed.
+6. During playback, press Space to pause and leave it paused for several seconds;
+   confirm tick/event counters do not advance.
+7. While paused, press `N` once and confirm exactly one logical replay record
+   advances. Repeat, then resume with Space and confirm no records were skipped.
+8. Close the window from the start prompt, while paused, during playback, and on
+   the completion screen; confirm each path exits without a lingering process.
+9. Let playback finish and confirm the completion screen appears before the
+   window closes; Space or Escape should close it cleanly.
 
 These are not automated because they require a display server and meaningful
 visual/input assertions. Headless JSONL consumption is automated separately.
@@ -26,6 +35,9 @@ visual/input assertions. Headless JSONL consumption is automated separately.
    replay viewer.
 4. Confirm malformed form input produces a usable error and does not corrupt an
    existing manifest.
+5. Where the embedded `PygameCanvas` is available, open and close its containing
+   Qt window repeatedly. Confirm timer updates stop on close, Pygame tears down,
+   and reopening creates a working canvas without terminating the Qt process.
 
 This remains manual because widget layout, native dialogs, and subprocess handoff
 need human inspection across supported desktop environments.

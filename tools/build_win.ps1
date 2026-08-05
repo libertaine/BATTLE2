@@ -45,6 +45,7 @@ Run-PyMod -Module pip -Args @("install","--upgrade","pip","wheel")
 $reqs = @()
 if (Test-Path ".\requirements-core.txt")   { $reqs += ".\requirements-core.txt" }
 if (Test-Path ".\requirements-client.txt") { $reqs += ".\requirements-client.txt" }
+if (Test-Path ".\requirements-designer.txt") { $reqs += ".\requirements-designer.txt" }
 if (Test-Path ".\requirements-dev.txt")    { $reqs += ".\requirements-dev.txt" }
 
 if ($reqs.Count -gt 0) {

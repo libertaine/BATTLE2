@@ -1,5 +1,7 @@
-click>=8.1
 PyYAML>=6.0
+
+[designer]
+PySide6>=6.5
 
 [dev]
 ruff>=0.6
@@ -7,6 +9,10 @@ mypy>=1.10
 pytest>=8
 
 [gui]
+pygame>=2.5
+PySide6>=6.5
+
+[replay]
 pygame>=2.5
 
 [windows-build]

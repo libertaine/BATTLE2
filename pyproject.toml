@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "battle2"
-version = "0.1.0"
+version = "0.2.0"
 description = "BATTLE2: Core Wars–inspired battle engine, agent designer, and replay viewer."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,23 +16,31 @@ authors = [{ name = "Rod Satterfield" }]
 keywords = ["corewar", "pmars", "ai-agents", "pygame", "simulation"]
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
 
 # ---- Runtime dependencies (keep core minimal; GUI in extras) ----
 dependencies = [
-  # CLI/core libs here (example):
-  "click>=8.1",
   "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
-# Install with: pip install .[gui]
-gui = [
+replay = [
   "pygame>=2.5",
 ]
-# Dev conveniences
+designer = [
+  "PySide6>=6.5",
+]
+# Compatibility aggregate for the v0.1 documented extra.
+gui = [
+  "pygame>=2.5",
+  "PySide6>=6.5",
+]
 dev = [
   "ruff>=0.6",
   "mypy>=1.10",
@@ -45,9 +53,10 @@ windows-build = [
 ]
 
 [project.scripts]
-battle-agent-designer = "app.agent_designer:main"
-match-runner          = "app.match_runner:main"
-battle-cli             = "battle_engine.cli:main"
+battle2               = "battle_engine.command:main"
+battle-agent-designer = "battle_engine.legacy:agent_designer"
+match-runner          = "battle_engine.legacy:match_runner"
+battle-cli            = "battle_engine.legacy:battle_cli"
 
 
 [project.urls]
@@ -70,16 +79,15 @@ battle_engine = "engine/src/battle_engine"
 battle_client = "client/src/battle_client"
 app = "app"
 
-# Package data bundled inside the wheels (installed alongside Python modules).
-# Adjust globs to your actual asset dirs.
+# Only package-local runtime data belongs here. Repository-level agents are user
+# data discovered at runtime; pMARS binaries and third-party licenses are release
+# inputs and are deliberately not folded into the Python wheel.
 [tool.setuptools.package-data]
-# Ship replay icons/assets, if any
 app = [
   "assets/**/*",
   "images/**/*",
   "sounds/**/*",
 ]
-# If the engine needs embedded reference files (e.g., default warriors/config)
 battle_engine = [
   "data/**/*",
   "warriors/**/*",

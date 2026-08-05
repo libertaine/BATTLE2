@@ -250,7 +250,7 @@ def _winner_from_scores_if_needed(
 # ----------------------------
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="BATTLE",
         description=(
@@ -374,7 +374,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rounds", type=int, default=1, help="Number of rounds to run")
 
     p.add_argument("--quiet", action="store_true")
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
 # ----------------------------
@@ -490,8 +490,7 @@ def _resolve_agent(
 
 
 def main(argv: Iterable[str] | None = None) -> int:
-    del argv  # current implementation uses parse_args() directly
-    args = parse_args()
+    args = parse_args(argv)
 
     if getattr(args, "list_agents", False):
         root = _battle_root()

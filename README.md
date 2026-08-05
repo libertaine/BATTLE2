@@ -30,7 +30,9 @@ git clone https://github.com/libertaine/BATTLE2.git
 cd BATTLE2
 python -m venv venv
 source venv/bin/activate     # or `.\venv\Scripts\activate` on Windows
-pip install -e .[gui]        # gui extra includes pygame
+pip install -e .             # engine, headless replay, and agent discovery
+pip install -e ".[replay]"  # optional Pygame replay viewer
+pip install -e ".[designer]" # optional PySide6 designer
 ````
 
 > If you don’t need GUI tools, you can install just the core with:
@@ -69,7 +71,8 @@ Environment variable `BATTLE2_ROOT` is automatically set to the data root during
 ### CLI Usage
 
 ```bash
-battle-cli --help
+battle2 --help
+battle2 run --help
 ```
 
 Key options:
@@ -81,10 +84,21 @@ Key options:
 * `--mode redcode94`: engage pMARS mode (requires `--red-a` and `--red-b`)
 * Other flags control agent selection, instruction quotas, weighting, etc.
 
-You can also run:
+Primary commands are:
 
 ```bash
-python -m battle_engine.cli --help
+battle2 run       # execute a match
+battle2 replay    # consume an existing replay
+battle2 design    # launch the optional PySide6 designer
+battle2 agents    # list discovered agents
+```
+
+The v0.1 command names `battle-cli`, `match-runner`, and
+`battle-agent-designer` remain compatibility wrappers throughout v0.2. Module
+execution is also available:
+
+```bash
+python -m battle_engine --help
 ```
 
 ---
@@ -122,7 +136,7 @@ The `agent.yaml` defines metadata (name, display name, required blobs, dependenc
 Use:
 
 ```bash
-battle-cli --list-agents
+battle2 agents
 ```
 
 to see all discovered agents.
@@ -148,7 +162,7 @@ to see all discovered agents.
 BATTLE2 supports pMARS (Redcode) for interoperability:
 
 ```bash
-battle-cli --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
+battle2 run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
 ```
 
 * The backend spawns `pmars` with appropriate flags to evaluate the match.
@@ -164,26 +178,27 @@ battle-cli --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 
 2. View available agents:
 
    ```bash
-   battle-cli --list-agents
+   battle2 agents
    ```
 
 3. Run a match with default agents:
 
    ```bash
-   battle-cli --ticks 500 --arena 2048 --a-type my_agent --b-type other_agent
+   battle2 run --ticks 500 --arena 2048 --a-type my_agent --b-type other_agent
    ```
 
 4. Optional: launch viewer to inspect results:
 
    ```bash
-   python -m battle_client.cli --replay path/to/replay.jsonl
+   battle2 replay --replay path/to/replay.jsonl --renderer pygame
    ```
 
 ---
 
 ## 🚀 Packaging for Windows
 
-We use a wrapper entry point (`battle_engine._entry:main`) to surface `battle-cli` without modifying `cli.py` directly.
+The root package exposes the primary `battle2` dispatcher and retains legacy
+commands through `battle_engine.legacy` compatibility wrappers.
 For Windows packaging, two approaches are viable:
 
 * **PyInstaller + Inno Setup**
@@ -212,7 +227,8 @@ In both cases, rely on the `console_scripts` wrappers and package metadata from 
 
 * Keep asset/dataset files in package directories (e.g. `warriors/`, `data/`) so they get included in installs.
 
-* CI (GitHub Actions) should at least run `battle-cli --help`, build tests, and optionally GUI smoke tests.
+* CI installs the project with its test/build extras, runs the complete suite,
+  and builds the existing Windows executables.
 
 If you are migrating from the prior version, check the following:
 
@@ -235,19 +251,19 @@ git clone https://github.com/libertaine/BATTLE2.git
 cd BATTLE2
 
 # 2️⃣ Create and activate a virtual environment
-py -3.11 -m venv .venv
+py -3.10 -m venv .venv        # any supported Python 3.10+
 .venv\Scripts\activate        # Windows PowerShell
 # or
 source .venv/bin/activate     # Linux / macOS
 
 # 3️⃣ Install dependencies
 pip install -U pip setuptools wheel
-pip install -e .
+pip install -e ".[dev,replay,designer]"
 
 # 4️⃣ Run the engine or GUI directly
 python -m app.match_runner     # Pygame match window
 python -m app.agent_designer   # PySide6 designer GUI
-python -m battle_engine.cli --help
+python -m battle_engine --help
 
 # 5️⃣ (Optional) Build executables
 pyinstaller -y --clean --name battle-cli --console ^
@@ -264,6 +280,10 @@ pyinstaller -y --clean --name battle-agent-designer --windowed ^
 > `tools\installer.iss` to create `BATTLE2-Setup-x.y.z.exe`.
 > This installer copies executables to `C:\Program Files\BATTLE2`
 > and shared data to `%ProgramData%\BATTLE2`.
+
+The legacy executable helper scripts use Python 3.11 as the reproducible release
+build interpreter. This does not change the package runtime requirement of
+Python 3.10 or newer; CI validates the minimum version on Python 3.10.
 
 ---
 

@@ -9,17 +9,35 @@ the repository. Proposed v0.2 boundaries are in
 
 ### Engine package (`engine/src/battle_engine`)
 
-`battle_engine.core` is the simulation implementation and the primary public
-compatibility surface. It contains:
+`battle_engine.core` remains the primary public compatibility surface and owns
+the `Kernel` facade and its established mutable attributes. Match responsibilities
+now delegate to focused services:
 
-- the byte-oriented ISA constants and `enc` assembler helper;
-- `Config` and `Weights` dataclasses;
-- `Agent`, the mutable execution state;
-- `VM`, including circular arena memory, ownership, instruction decoding, and
-  per-tick memory differences;
-- `Kernel`, including scheduling, match lifecycle, statistics, scoring, kill
-  attribution, winner resolution, renderer callbacks, and summary creation; and
-- `JSONLSink`, the replay writer.
+- `battle_engine.match.MatchRunner` owns tick scheduling, instruction quotas,
+  termination, and the established per-tick operation order.
+- `battle_engine.scoring.ScoringPolicy` owns alive, territory-bucket, and kill
+  point application without executing instructions.
+- `battle_engine.statistics.StatisticsCollector` owns in-memory counters and
+  territory accumulation without persistence.
+- `battle_engine.results` owns winner resolution and persistence-neutral summary
+  construction.
+- `battle_engine.telemetry` defines replay/summary sink protocols, the v0.1 JSONL
+  publisher, JSON summary adapter, and legacy renderer boundary adapter.
+
+`Kernel.run()` delegates scheduling to `MatchRunner`, resolves/builds the result,
+and preserves the default working-directory `summary.json` through an injectable
+`SummarySink`. `JSONLSink` is re-exported from `core`. Lower-level implementations
+remain extracted:
+
+- `battle_engine.config` owns the mutable `Config` and `Weights` dataclasses.
+- `battle_engine.instructions` owns byte-oriented ISA constants and `enc`.
+- `battle_engine.agent_state` owns the mutable execution-time `Agent` state.
+- `battle_engine.vm` owns circular arena memory, ownership, instruction decoding,
+  wrapping behavior, and per-tick memory differences.
+
+`core` imports and re-exports these names, so existing imports such as
+`from battle_engine.core import VM, Config, Weights, Agent, enc` resolve to the
+new implementation objects without duplicate compatibility classes.
 
 The VM supports `NOP`, `MOV`, `ADD`, `LOAD`, `STORE`, `JMP`, `JZ`, `HALT`,
 `MOVP`, `ADDP`, `LOADI`, and `STOREI`. Values encoded by `enc` use one opcode byte
@@ -27,6 +45,13 @@ and, where applicable, a four-byte little-endian immediate.
 
 `battle_engine.builtins` assembles the native `runner`, `writer`, `bomber`,
 `flooder`, `spiral`, and `seeker` programs into VM bytecode.
+
+`battle_engine.replay` defines the canonical, standard-library-only v0.2 replay
+contract. Frozen dataclasses model headers, match configuration, agent state,
+memory differences, tick snapshots, engine events, and match results. The module
+also owns JSON serialization, validation, JSONL streaming, and conversion from
+supported v0.1 native and legacy event records. The detailed wire contract is in
+[`docs/REPLAY_SCHEMA.md`](docs/REPLAY_SCHEMA.md).
 
 `battle_engine.agents` discovers directories below `agents/`. A directory is
 valid when it has `agent.yaml` or `agent.py`. Despite its name, `agent.yaml` may
@@ -37,8 +62,14 @@ load Python agent code itself.
 
 ### Engine CLI (`battle_engine.cli`)
 
-The `battle-cli` command and `python -m battle_engine.cli` use the same argparse
-entry point. The CLI:
+The primary `battle2` command and `python -m battle_engine` dispatch to four lazy
+subcommands: `run`, `replay`, `design`, and `agents`. `run` reuses
+`battle_engine.cli.main(argv)` directly, `replay` reuses the replay client,
+`agents` reuses engine discovery, and `design` imports the optional PySide6 app
+only when launched. Help paths therefore require no GUI dependencies.
+
+The legacy `battle-cli` command and `python -m battle_engine.cli` continue to use
+the engine argparse entry point. The engine CLI:
 
 1. resolves configuration and agent parameters from flags and environment;
 2. resolves agent slots in this order: `BATTLE_AGENTS_JSON`, direct blob flag,
@@ -47,7 +78,7 @@ entry point. The CLI:
    `redcode94` mode; and
 4. writes match artifacts.
 
-The native replay is newline-delimited JSON. Its first record is a version 6
+The v0.1 native replay is newline-delimited JSON. Its first record is a version 6
 header containing configuration, followed by one snapshot per executed tick.
 Each snapshot contains agent state, score, events, and memory ownership diffs.
 The CLI writes a sibling `summary.json` with schema version 2. `Kernel.run` also
@@ -55,16 +86,39 @@ attempts to write a summary to `summary.json` in the current working directory;
 the CLI's sibling summary is the user-facing artifact.
 
 The external pMARS mode writes a version 2 summary but no native replay stream.
+The v0.1 engine writer remains active in this migration phase; canonical v0.2
+writing is available through `battle_engine.replay.write_replay` but is not yet
+wired into `Kernel` or the CLI.
 
 ### Replay client (`client/src/battle_client`)
 
 `battle_client.cli` reads existing JSONL streams and optionally reads a sibling
-`summary.json`. Rendering is selected at the client boundary:
+`summary.json`. `battle_client.utils` delegates replay parsing to
+`battle_engine.replay`, so renderers receive only canonical `ReplayRecord`
+dataclasses. It also normalizes historical summary metadata locations before
+renderer setup. `battle_client.player.ReplayPlayer` owns replay iteration and the
+explicit presentation lifecycle:
+
+```text
+setup -> wait_for_start -> [wait_until_ready -> on_event -> update]*
+      -> on_complete -> hold_open -> teardown
+```
+
+`teardown` runs from a `finally` block after setup is attempted. Pausing and
+single-step gating happen before delivery of the pending canonical record, so a
+paused renderer cannot drop records and a step permit processes one record.
+Rendering is selected at the client boundary:
 
 - `HeadlessRenderer` prints stable text and has no Pygame dependency.
 - `PygameRenderer` is imported lazily only when selected.
 
-The client does not run the simulation. The repository also retains older
+`AbstractRenderer` supplies no-op interactive, update, completion, and hold-open
+methods. Concrete renderers therefore share one interface without capability
+probing. `PygameCanvas` uses `update` from a Qt timer, imports Pygame only when the
+widget is shown, and completes/tears down the renderer when the widget closes.
+
+Schema/version and legacy-shape checks are confined to the read boundary rather
+than individual renderers. The client does not run the simulation. The repository also retains older
 renderer modules and a compatibility module at `client/src/renderers.py`.
 
 ### Desktop application (`app`)
@@ -89,9 +143,10 @@ not part of `battle_engine.core`.
 The root `pyproject.toml` uses setuptools and discovers packages from
 `engine/src`, `client/src`, and the repository root. Public commands are:
 
-- `battle-cli` → `battle_engine.cli:main`
-- `match-runner` → `app.match_runner:main`
-- `battle-agent-designer` → `app.agent_designer:main`
+- `battle2` → `battle_engine.command:main`
+- `battle-cli` → compatibility wrapper for `battle_engine.cli:main`
+- `match-runner` → compatibility wrapper for `app.match_runner:main`
+- `battle-agent-designer` → lazy compatibility wrapper for the designer
 
 `app/pyproject.toml` separately describes the desktop designer and maps
 `battle-agent-designer` to `app.main:main`. The root project is the authoritative
@@ -99,6 +154,18 @@ whole-repository package used by the documented install flow.
 
 Windows builds remain implemented by the PowerShell scripts and PyInstaller spec
 files under `tools/`; `tools/build_win.ps1` is invoked by CI.
+
+Runtime Python support is 3.10+. Core installation requires PyYAML. Optional
+extras are `replay` (Pygame), `designer` (PySide6), `dev`, and `windows-build`;
+the v0.1 `gui` aggregate remains as an alias. Some legacy release scripts choose
+Python 3.11 for reproducible executable builds, but this does not raise the
+package runtime minimum.
+
+Wheels contain Python packages and package-local assets only. Repository-level
+agent directories remain runtime/user data. pMARS executables, SDK archives,
+historical builds, and third-party license trees are deliberately excluded from
+the Python wheel; any future binary distribution must preserve the applicable
+pMARS GPLv2 licensing materials.
 
 ## Tests and automation
 
@@ -120,12 +187,43 @@ agent manifests/blobs + built-ins
       battle_engine.cli -----> pMARS (redcode94 only)
               |
               v
-       battle_engine.core ----> replay.jsonl + summary.json
+       battle_engine.core (Kernel facade)
               |
               v
-       app tools / replay client ----> headless or Pygame presentation
+ match -> scoring/statistics -> results
+              |
+              v
+ telemetry adapters -> replay.jsonl / summary.json / legacy renderer
+              |
+              v
+       app tools / replay client
 ```
 
-There is not yet a formal application-service or persistence interface between
-these layers. `core.py` and the CLI are therefore coupled to file formats and
-match orchestration details.
+The extracted low-level dependency direction is acyclic:
+
+```text
+config                 instructions     agent_state
+                            \              /
+                             \            /
+                                  vm
+                         \       |       /
+                          \      v      /
+                           core (Kernel facade)
+                                  |
+                         CLI and consumers
+```
+
+`config`, `instructions`, and `agent_state` use only the standard library. `vm`
+depends on `instructions` and `agent_state`; none imports `core`. Built-in agents
+depend directly on `instructions`.
+
+The VM executes instructions only; it does not calculate scores or statistics.
+Domain statistics and result construction do not write files. Replay dictionary
+construction and serialization live in telemetry, outside the scheduling logic.
+Renderer-specific `__owners__` compatibility remains isolated in
+`LegacyRendererObserver`.
+
+Remaining coupling is intentional for compatibility: `Kernel` remains the public
+mutable match state consumed by `MatchRunner`; the CLI still creates the v0.1
+replay sink and writes its separate version 2 user-facing summary; and the kernel
+facade suppresses default summary-output failures as v0.1 did.

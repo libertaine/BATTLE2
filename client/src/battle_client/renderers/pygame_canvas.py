@@ -1,5 +1,5 @@
 from PySide6 import QtCore, QtWidgets
-import os, pygame
+import os
 
 class PygameCanvas(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -8,12 +8,16 @@ class PygameCanvas(QtWidgets.QWidget):
         self._started = False
         self._timer = None
         self.renderer = None
+        self._pygame = None
 
     def showEvent(self, e):
         super().showEvent(e)
         if not self._started:
             os.environ["SDL_WINDOWID"] = str(int(self.winId()))
             os.environ["SDL_VIDEODRIVER"] = "windib" if os.name == "nt" else "x11"
+            import pygame
+
+            self._pygame = pygame
             pygame.display.init()
             from battle_client.renderers.pygame_renderer import PygameRenderer
             self.renderer = PygameRenderer()
@@ -28,6 +32,17 @@ class PygameCanvas(QtWidgets.QWidget):
             return
         try:
             self.renderer.update()
-            pygame.display.flip()
+            self._pygame.display.flip()
         except Exception as e:
             print("[tick error]", e)
+
+    def closeEvent(self, event):
+        if self._timer:
+            self._timer.stop()
+        if self.renderer:
+            try:
+                self.renderer.on_complete()
+            finally:
+                self.renderer.teardown()
+        self.renderer = None
+        super().closeEvent(event)
