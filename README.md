@@ -76,6 +76,7 @@ Key options:
 
 * `--ticks N`: number of simulation cycles
 * `--arena SIZE`: memory arena size
+* `--a-type NAME` / `--b-type NAME`: select discovered or built-in agents
 * `--list-agents`: show available agents
 * `--mode redcode94`: engage pMARS mode (requires `--red-a` and `--red-b`)
 * Other flags control agent selection, instruction quotas, weighting, etc.
@@ -94,11 +95,12 @@ python -m battle_engine.cli --help
 
 | Type    | File         | Execution Path            | Notes                                    |
 | ------- | ------------ | ------------------------- | ---------------------------------------- |
-| Python  | `agent.py`   | Interpreted at runtime    | Use Python logic & host APIs             |
+| Python  | `agent.py`   | Discovered as source      | Execution is not wired into the v0.1 CLI |
 | Blob    | `model.blob` | Loaded directly by engine | Faster, minimal runtime                  |
 | Redcode | `.red/.asm`  | Via pMARS integration     | Compatible with existing Core War agents |
 
-* The **Python** format is great for experimentation and rapid prototyping.
+* A directory containing **Python** source is discoverable, but native v0.1 CLI
+  matches require a blob or built-in implementation.
 * Use **blob** when you want to ship just the low-level compiled version.
 * The **Redcode** mode allows interop with legacy Core War agents (via pMARS). Use `--mode redcode94`.
 
@@ -168,7 +170,7 @@ battle-cli --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 
 3. Run a match with default agents:
 
    ```bash
-   battle-cli --ticks 500 --arena 2048 --a-agent my_agent --b-agent other_agent
+   battle-cli --ticks 500 --arena 2048 --a-type my_agent --b-type other_agent
    ```
 
 4. Optional: launch viewer to inspect results:
@@ -225,7 +227,7 @@ Contributions welcome — open a PR or issue. Thanks for checking out BATTLE2!
 ## 🧰 Development / Build from Source
 
 Developers can build and test BATTLE2 directly from source.
-Requires **Python 3.11** and **pip >= 24.0**.
+Requires **Python 3.10 or newer** and a current pip.
 
 ```bash
 # 1️⃣ Clone the repository
@@ -311,4 +313,3 @@ This runs a minimal smoke test of all installed executables to ensure:
 ## 📝 Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for version history and upcoming features.
-
