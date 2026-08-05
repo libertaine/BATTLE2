@@ -97,7 +97,9 @@ def _run_pmars(
 
 
 def _battle_root() -> Path:
-    env = os.environ.get("BATTLE_ROOT")
+    # BATTLE2_ROOT is the v0.2 name. BATTLE_ROOT remains a compatibility
+    # fallback and is intentionally ignored when both variables are present.
+    env = os.environ.get("BATTLE2_ROOT") or os.environ.get("BATTLE_ROOT")
     if env:
         return Path(env).expanduser().resolve()
 
@@ -201,7 +203,7 @@ def _agent_summary_from_kernel(k: Kernel, name_map: Dict[str, str]) -> Dict[str,
         by_id[agent.agent_id] = {
             "name": name_map.get(agent.agent_id, agent.agent_id),
             "alive": bool(getattr(agent, "alive", False)),
-            "score": int(k.score.get(agent.agent_id, 0) or 0),
+            "score": k.score.get(agent.agent_id, 0),
             "alive_ticks": int(st.get("alive_ticks", 0) or 0),
             "kills": int(st.get("kills", 0) or 0),
             "deaths": int(st.get("deaths", 0) or 0),
@@ -226,7 +228,7 @@ def _agent_summary_from_kernel(k: Kernel, name_map: Dict[str, str]) -> Dict[str,
 
 def _winner_from_scores_if_needed(
     kernel_winner: Optional[str],
-    score_map: Dict[str, int],
+    score_map: Dict[str, int | float],
     win_mode: str,
 ) -> str:
     if kernel_winner:
@@ -250,6 +252,13 @@ def _winner_from_scores_if_needed(
 # ----------------------------
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="BATTLE",
@@ -271,7 +280,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     # Config overrides
     p.add_argument("--seed", type=int)
     p.add_argument("--arena", type=int)
-    p.add_argument("--quota", type=int)
+    p.add_argument("--quota", type=_positive_int, help="instructions per agent per tick")
     p.add_argument("--alive-w", type=float)
     p.add_argument("--kill-w", type=float)
     p.add_argument("--territory-w", type=float, help="points per territory bucket")
@@ -514,6 +523,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         cfg_kwargs["arena_size"] = args.arena
     if args.win_mode:
         cfg_kwargs["win_mode"] = args.win_mode
+    if args.quota is not None:
+        cfg_kwargs["instr_per_tick"] = args.quota
 
     cfg = Config(**cfg_kwargs)
 
@@ -532,10 +543,10 @@ def main(argv: Iterable[str] | None = None) -> int:
     )
 
     replay_path = Path(args.replay).expanduser().resolve()
-    replay_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path = replay_path.with_name("summary.json")
 
     if args.mode == "redcode94":
+        replay_path.parent.mkdir(parents=True, exist_ok=True)
         if not args.red_a or not args.red_b:
             print("redcode94 mode requires --red-a and --red-b", file=sys.stderr)
             return 2
@@ -592,9 +603,6 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not args.quiet:
             print(f"Winner: {summary['winner']}; summary: {summary_path}")
         return 0
-
-    sink = JSONLSink(str(replay_path))
-    k = Kernel(cfg, sink)
 
     byte = args.byte
     if args.attack_byte is not None:
@@ -661,19 +669,29 @@ def main(argv: Iterable[str] | None = None) -> int:
         )
         return 2
 
-    k.spawn("A", startA % cfg.arena_size, codeA)
-    k.spawn("B", startB % cfg.arena_size, codeB)
-    if codeC is not None and nameC:
-        k.spawn("C", startC % cfg.arena_size, codeC)
+    # Agent validation above must complete before this owned output is opened;
+    # otherwise an invalid invocation could truncate an existing replay.
+    replay_path.parent.mkdir(parents=True, exist_ok=True)
+    sink = JSONLSink(str(replay_path))
+    try:
+        k = Kernel(cfg, sink)
+        k.spawn("A", startA % cfg.arena_size, codeA)
+        k.spawn("B", startB % cfg.arena_size, codeB)
+        if codeC is not None and nameC:
+            k.spawn("C", startC % cfg.arena_size, codeC)
 
-    winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
+        winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
+    finally:
+        # MatchRunner normally closes the sink; closing an already-closed file is
+        # harmless and also covers spawn/setup failures before MatchRunner starts.
+        sink.close()
 
     name_map = {"A": nameA, "B": nameB}
     if nameC:
         name_map["C"] = nameC
 
     agent_stats = _agent_summary_from_kernel(k, name_map)
-    score_map = {agent_id: int(score or 0) for agent_id, score in k.score.items()}
+    score_map = dict(k.score)
     effective_winner = _winner_from_scores_if_needed(winner, score_map, cfg.win_mode)
 
     summary = {

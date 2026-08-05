@@ -1,102 +1,86 @@
-<# 
-Smoke test for BATTLE2 installed apps.
+<#
+Smoke validation for either a BATTLE2 install root or dist\windows build root.
 
-Usage examples:
-  # default path (C:\Program Files\BATTLE2)
-  powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1
-
-  # if you installed to E:\Program Files\BATTLE2
-  powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1 -AppDir "E:\Program Files\BATTLE2"
+Examples:
+  pwsh tools/smoke_after_install.ps1
+  pwsh tools/smoke_after_install.ps1 -AppDir dist\windows -SkipGui
 #>
-
 [CmdletBinding()]
 param(
   [string]$AppDir = "$Env:ProgramFiles\BATTLE2",
-  [int]$GuiHoldSeconds = 6
+  [int]$GuiHoldSeconds = 6,
+  [switch]$SkipGui
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
-function Log($msg) {
-  $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-  $line = "$ts  $msg"
-  Write-Host $line
-  Add-Content -Path $Global:LogFile -Value $line
-}
-function Assert-Exists($path, $what) {
-if (!(Test-Path $path)) { throw "Missing ${what}: ${path}" }
-  Log "OK: $what exists -> $path"
-}
-function Assert-True($cond, $msg) {
-  if (-not $cond) { throw $msg }
-  Log "OK: $msg"
-}
-
-# --- Setup log/output locations ---
 $B2Data = [Environment]::ExpandEnvironmentVariables("%ProgramData%\BATTLE2")
 $LogDir = Join-Path $B2Data "logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $Global:LogFile = Join-Path $LogDir "smoke.log"
 
-Log "=== BATTLE2 Smoke Test ==="
+function Log([string]$Message) {
+  $Line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $Message"
+  Write-Host $Line
+  Add-Content -Path $Global:LogFile -Value $Line
+}
+
+function Resolve-Artifact([string]$Name) {
+  $Candidates = @(
+    (Join-Path $AppDir "$Name\$Name.exe"),
+    (Join-Path $AppDir "bin\$Name\$Name.exe")
+  )
+  foreach ($Candidate in $Candidates) {
+    if (Test-Path $Candidate) { return (Resolve-Path $Candidate).Path }
+  }
+  throw "Missing $Name executable. Checked: $($Candidates -join ', ')"
+}
+
+function Invoke-Checked([string]$Exe, [string[]]$Arguments, [string]$Description) {
+  Log "$Description`: $Exe $($Arguments -join ' ')"
+  & $Exe @Arguments
+  if ($LASTEXITCODE -ne 0) { throw "$Description failed with exit code $LASTEXITCODE" }
+}
+
+function Test-GuiStartup([string]$Exe, [string]$Description) {
+  Log "Launching $Description for $GuiHoldSeconds seconds..."
+  $Process = Start-Process -FilePath $Exe -PassThru
+  Start-Sleep -Seconds $GuiHoldSeconds
+  if ($Process.HasExited) { throw "$Description exited early (ExitCode=$($Process.ExitCode))." }
+  try { $Process.CloseMainWindow() | Out-Null; Start-Sleep -Seconds 1 } catch {}
+  try { if (-not $Process.HasExited) { Stop-Process -Id $Process.Id -Force } } catch {}
+}
+
+Log "=== BATTLE2 Windows smoke test ==="
 Log "AppDir=$AppDir"
-Log "ProgramData=$B2Data"
-Log "LogFile=$LogFile"
 
-# --- Resolve app folders/exes (onedir layout) ---
-$ExeDesigner = Join-Path $AppDir "bin\battle-agent-designer\battle-agent-designer.exe"
-$ExeRunner   = Join-Path $AppDir "bin\match_runner\match_runner.exe"
-$ExeCli      = Join-Path $AppDir "bin\battle-cli\battle-cli.exe"
+$ExeBattle2  = Resolve-Artifact "battle2"
+$ExeCli      = Resolve-Artifact "battle-cli"
+$ExeRunner   = Resolve-Artifact "match-runner"
+$ExeDesigner = Resolve-Artifact "battle-agent-designer"
+$ExeViewer   = Resolve-Artifact "battle-replay-viewer"
 
-Assert-Exists $ExeDesigner "Designer exe"
-Assert-Exists $ExeRunner   "Match runner exe"
-Assert-Exists $ExeCli      "CLI exe"
+# CLI startup and compatibility command validation.
+Invoke-Checked $ExeBattle2 @("--help") "battle2 help"
+Invoke-Checked $ExeCli @("--help") "legacy battle-cli help"
 
-# verify embedded Python runtimes exist (common failure)
-Assert-Exists (Join-Path $AppDir "bin\battle-agent-designer\_internal\python311.dll") "Designer runtime"
-Assert-Exists (Join-Path $AppDir "bin\match_runner\_internal\python311.dll")         "Runner runtime"
-Assert-Exists (Join-Path $AppDir "bin\battle-cli\_internal\python311.dll")           "CLI runtime"
-
-# --- 1) CLI smoke: run short match and create replay ---
+# A short primary-command native match creates the replay consumed below.
 $RunsDir = Join-Path $B2Data "runs\_loose"
 New-Item -ItemType Directory -Force -Path $RunsDir | Out-Null
 $Replay = Join-Path $RunsDir ("smoke_{0:yyyyMMdd_HHmmss}.jsonl" -f (Get-Date))
-$cliArgs = @('--ticks', '100', '--replay', $Replay, '--quiet')
+Invoke-Checked $ExeBattle2 @("run", "--ticks", "10", "--replay", $Replay, "--quiet") "headless native match"
+if (-not (Test-Path $Replay)) { throw "Native match did not create replay: $Replay" }
+if ((Get-Item $Replay).Length -le 0) { throw "Native match replay is empty: $Replay" }
 
-Log "Running CLI: $ExeCli $($cliArgs -join ' ')"
-$cli = Start-Process -FilePath $ExeCli -ArgumentList $cliArgs -NoNewWindow -PassThru -Wait
-Assert-True ($cli.ExitCode -eq 0) "CLI exit code = 0"
+# Both supported viewer argument forms must reach the shared replay service.
+Invoke-Checked $ExeViewer @("--help") "replay viewer help"
+Invoke-Checked $ExeViewer @($Replay, "--renderer", "headless") "replay viewer positional replay"
+Invoke-Checked $ExeViewer @("--replay", $Replay, "--renderer", "headless") "replay viewer named replay"
 
-Assert-Exists $Replay "Replay output"
-$fileInfo = Get-Item $Replay
-Assert-True ($fileInfo.Length -gt 0) "Replay non-empty"
-# peek at first line (JSONL)
-$head = Get-Content $Replay -TotalCount 1
-Assert-True ($head.Length -gt 0) "Replay has at least one JSON line"
-
-# --- 2) GUI smoke: match_runner (Pygame) ---
-Log "Launching match_runner for $GuiHoldSeconds seconds…"
-$pr = Start-Process -FilePath $ExeRunner -PassThru
-Start-Sleep -Seconds $GuiHoldSeconds
-# if it died immediately, ExitCode will be set; if still running, Close it
-if ($pr.HasExited) {
-  throw "match_runner exited early (ExitCode=$($pr.ExitCode))."
+if (-not $SkipGui) {
+  Test-GuiStartup $ExeRunner "match-runner"
+  Test-GuiStartup $ExeDesigner "battle-agent-designer"
 }
-# try to close gracefully; if not, kill
-try { $pr.CloseMainWindow() | Out-Null; Start-Sleep 1 } catch {}
-try { if (-not $pr.HasExited) { Stop-Process -Id $pr.Id -Force } } catch {}
-Log "match_runner stayed up, then closed."
 
-# --- 3) GUI smoke: battle-agent-designer (Qt) ---
-Log "Launching battle-agent-designer for $GuiHoldSeconds seconds…"
-$pd = Start-Process -FilePath $ExeDesigner -PassThru
-Start-Sleep -Seconds $GuiHoldSeconds
-if ($pd.HasExited) {
-  throw "battle-agent-designer exited early (ExitCode=$($pd.ExitCode))."
-}
-try { $pd.CloseMainWindow() | Out-Null; Start-Sleep 1 } catch {}
-try { if (-not $pd.HasExited) { Stop-Process -Id $pd.Id -Force } } catch {}
-Log "battle-agent-designer stayed up, then closed."
-
-Log "=== SUCCESS: All smokes passed ==="
-"OK"
+Log "=== SUCCESS: all requested Windows smokes passed ==="

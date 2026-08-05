@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import random
-from typing import Dict, List, Optional
+from typing import Any
 
 from battle_engine.agent_state import Agent
 from battle_engine.config import Config, Weights
@@ -24,13 +24,14 @@ from battle_engine.instructions import (
 from battle_engine.vm import VM
 from battle_engine.match import MatchRunner
 from battle_engine.results import build_summary, resolve_winner
-from battle_engine.scoring import ScoringPolicy
-from battle_engine.statistics import StatisticsCollector
+from battle_engine.scoring import ScoreMap, ScoringPolicy
+from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import (
     JSONLSink,
     JSONSummarySink,
     LegacyRendererObserver,
     ReplayPublisher,
+    ReplaySink,
     SummarySink,
     build_snapshot,
 )
@@ -41,23 +42,23 @@ class Kernel:
     def __init__(
         self,
         cfg: Config,
-        sink: Optional[JSONLSink] = None,
-        renderer: Optional[object] = None,
-        summary_sink: Optional[SummarySink] = None,
+        sink: ReplaySink | None = None,
+        renderer: object | None = None,
+        summary_sink: SummarySink | None = None,
     ):
         self.cfg = cfg
         self.vm = VM(cfg.arena_size)
         self.instr_per_tick = cfg.instr_per_tick
-        self.agents: List[Agent] = []
+        self.agents: list[Agent] = []
         self.tick = 0
         self.sink = sink or JSONLSink("replay.jsonl")
         self.renderer = renderer
         self.summary_sink = (
             summary_sink if summary_sink is not None else JSONSummarySink("summary.json")
         )
-        self.score: Dict[str, int] = {}
-        self._alive_prev: Dict[str, bool] = {}
-        self.stats = {}
+        self.score: ScoreMap = {}
+        self._alive_prev: dict[str, bool] = {}
+        self.stats: StatisticsMap = {}
         self.rng = random.Random(cfg.seed)
         self.statistics = StatisticsCollector()
         self.scoring = ScoringPolicy(cfg.weights)
@@ -70,7 +71,7 @@ class Kernel:
         self._alive_prev[agent_id] = a.alive
         self.statistics.initialize_agent(self.stats, agent_id)
 
-    def _snapshot(self, events: List[Dict]) -> Dict:
+    def _snapshot(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         return build_snapshot(self.tick, self.agents, self.score, self.vm, events)
 
     def _apply_territory_scoring(self) -> None:

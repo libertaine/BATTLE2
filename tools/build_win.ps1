@@ -41,22 +41,7 @@ function Run-PyMod {
 
 # --- Dependencies -------------------------------------------------------------
 Run-PyMod -Module pip -Args @("install","--upgrade","pip","wheel")
-
-$reqs = @()
-if (Test-Path ".\requirements-core.txt")   { $reqs += ".\requirements-core.txt" }
-if (Test-Path ".\requirements-client.txt") { $reqs += ".\requirements-client.txt" }
-if (Test-Path ".\requirements-designer.txt") { $reqs += ".\requirements-designer.txt" }
-if (Test-Path ".\requirements-dev.txt")    { $reqs += ".\requirements-dev.txt" }
-
-if ($reqs.Count -gt 0) {
-  Write-Host "[build] Installing requirements: $($reqs -join ', ')"
-  $reqArgs = @("install")
-  foreach ($r in $reqs) { $reqArgs += @("-r", $r) }
-  Run-PyMod -Module pip -Args $reqArgs
-} else {
-  Write-Host "[build] No requirements files found. Installing minimal build deps..."
-  Run-PyMod -Module pip -Args @("install","pyinstaller")
-}
+Run-PyMod -Module pip -Args @("install", "-e", ".[replay,designer,windows-build]")
 
 # Ensure PyInstaller available (from venv)
 Run-PyMod -Module pip -Args @("show","pyinstaller") | Out-Null
@@ -69,23 +54,30 @@ Remove-Item -Recurse -Force $DistDir  -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $DistDir  | Out-Null
 
-# Spec files
-$SpecEditor = Join-Path $RepoRoot "tools\agent_designer.spec"
-$SpecViewer = Join-Path $RepoRoot "tools\replay_viewer.spec"
-if (-not (Test-Path $SpecEditor)) { throw "Missing spec: tools\agent_designer.spec" }
-if (-not (Test-Path $SpecViewer)) { throw "Missing spec: tools\replay_viewer.spec" }
+# Required v0.2 artifacts. Keep each app in its own onedir folder so the same
+# layout can be copied beneath an installer's bin directory without renaming.
+$Artifacts = @(
+  @{ Name = "battle2";                 Spec = "tools\battle2.spec" },
+  @{ Name = "battle-cli";              Spec = "tools\battle_cli.spec" },
+  @{ Name = "match-runner";            Spec = "tools\match_runner.spec" },
+  @{ Name = "battle-agent-designer";   Spec = "tools\agent_designer.spec" },
+  @{ Name = "battle-replay-viewer";    Spec = "tools\replay_viewer.spec" }
+)
 
-# Build using venv's PyInstaller
-Write-Host "[build] Building BattleAgentDesigner..."
-& $PyExe -m PyInstaller --noconfirm --clean --workpath $BuildDir --distpath $DistDir $SpecEditor
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller build (editor) failed." }
+foreach ($Artifact in $Artifacts) {
+  $SpecPath = Join-Path $RepoRoot $Artifact.Spec
+  if (-not (Test-Path $SpecPath)) { throw "Missing spec: $($Artifact.Spec)" }
+  Write-Host "[build] Building $($Artifact.Name)..."
+  & $PyExe -m PyInstaller --noconfirm --clean --workpath $BuildDir --distpath $DistDir $SpecPath
+  if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed: $($Artifact.Name)" }
 
-Write-Host "[build] Building BattleReplayViewer..."
-& $PyExe -m PyInstaller --noconfirm --clean --workpath $BuildDir --distpath $DistDir $SpecViewer
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller build (viewer) failed." }
+  $ExePath = Join-Path $DistDir "$($Artifact.Name)\$($Artifact.Name).exe"
+  if (-not (Test-Path $ExePath)) { throw "Expected artifact was not produced: $ExePath" }
+}
 
 Write-Host ""
 Write-Host "[build] Success."
-Write-Host ("[build] Editor:   {0}" -f (Join-Path $DistDir "BattleAgentDesigner\BattleAgentDesigner.exe"))
-Write-Host ("[build] Viewer:   {0}" -f (Join-Path $DistDir "BattleReplayViewer\BattleReplayViewer.exe"))
+foreach ($Artifact in $Artifacts) {
+  Write-Host ("[build] {0}: {1}" -f $Artifact.Name, (Join-Path $DistDir "$($Artifact.Name)\$($Artifact.Name).exe"))
+}
 Write-Host ("[build] Dist dir: {0}" -f $DistDir)

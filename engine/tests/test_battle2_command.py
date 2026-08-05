@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from battle_engine import command, legacy
+from battle_engine import cli, command, legacy
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,6 +53,13 @@ def test_invalid_run_arguments_use_standard_exit_code_two():
     assert "unrecognized arguments" in result.stderr
 
 
+@pytest.mark.parametrize("quota", ["0", "-1"])
+def test_run_rejects_nonpositive_quota(quota):
+    result = _run("run", "--quota", quota)
+    assert result.returncode == 2
+    assert "must be greater than zero" in result.stderr
+
+
 def test_successful_headless_match_invocation(tmp_path):
     replay = tmp_path / "artifacts" / "replay.jsonl"
     result = _run(
@@ -79,6 +86,77 @@ def test_successful_headless_match_invocation(tmp_path):
     summary = json.loads((replay.parent / "summary.json").read_text())
     assert summary["seed"] == 17
     assert summary["params"]["ticks_requested"] == 3
+
+
+def test_quota_and_fractional_scores_reach_replay_and_summary(tmp_path):
+    replay = tmp_path / "fractional" / "replay.jsonl"
+    result = _run(
+        "run",
+        "--ticks",
+        "1",
+        "--arena",
+        "128",
+        "--quota",
+        "3",
+        "--alive-w",
+        "0.25",
+        "--kill-w",
+        "0.5",
+        "--territory-w",
+        "0",
+        "--a-type",
+        "writer",
+        "--b-type",
+        "runner",
+        "--b-start",
+        "64",
+        "--replay",
+        str(replay),
+        "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+
+    records = [json.loads(line) for line in replay.read_text().splitlines()]
+    assert records[0]["config"]["instr_per_tick"] == 3
+    assert records[1]["score"] == {"A": 0.25, "B": 0.25}
+
+    summary = json.loads((replay.parent / "summary.json").read_text())
+    assert summary["score"] == {"A": 0.25, "B": 0.25}
+    assert summary["agent_stats"]["A"]["score"] == 0.25
+    assert summary["agent_stats"]["B"]["score"] == 0.25
+    assert summary["winner"] == "tie"
+
+
+def test_invalid_agent_does_not_create_or_truncate_replay(tmp_path):
+    replay = tmp_path / "existing.jsonl"
+    replay.write_text("keep me\n", encoding="utf-8")
+    result = _run(
+        "run",
+        "--a-type",
+        "not-a-real-agent",
+        "--replay",
+        str(replay),
+        "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2
+    assert replay.read_text(encoding="utf-8") == "keep me\n"
+
+
+def test_battle2_root_precedes_legacy_battle_root(monkeypatch, tmp_path):
+    preferred = tmp_path / "preferred"
+    legacy_root = tmp_path / "legacy"
+    monkeypatch.setenv("BATTLE2_ROOT", str(preferred))
+    monkeypatch.setenv("BATTLE_ROOT", str(legacy_root))
+    assert cli._battle_root() == preferred.resolve()
+
+
+def test_legacy_battle_root_remains_a_fallback(monkeypatch, tmp_path):
+    legacy_root = tmp_path / "legacy"
+    monkeypatch.delenv("BATTLE2_ROOT", raising=False)
+    monkeypatch.setenv("BATTLE_ROOT", str(legacy_root))
+    assert cli._battle_root() == legacy_root.resolve()
 
 
 def test_missing_designer_dependency_has_actionable_error(monkeypatch, capsys):

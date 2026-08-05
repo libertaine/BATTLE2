@@ -6,18 +6,19 @@ from PyInstaller.building.api import EXE, COLLECT
 
 project_root = os.path.abspath(".")
 engine_src   = os.path.join(project_root, "engine", "src")
+client_src   = os.path.join(project_root, "client", "src")
 assets_dir   = os.path.join(project_root, "assets")
 script_path  = os.path.join(project_root, "app", "replay_viewer.py")  # ABSOLUTE
 
 block_cipher = None
-hiddenimports = collect_submodules("battle_engine")
+hiddenimports = collect_submodules("battle_engine") + collect_submodules("battle_client")
 datas = []
 if os.path.isdir(assets_dir):
     datas.append((assets_dir, "assets"))
 
 a = Analysis(
     [script_path],
-    pathex=[project_root, engine_src],
+    pathex=[project_root, engine_src, client_src],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
@@ -30,8 +31,8 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz, a.scripts, a.binaries, a.zipfiles, a.datas,
-    name='battlereplayviewer',
+    name='battle-replay-viewer',
     console=False,
     icon=None,
 )
-coll = COLLECT(exe, name='battlereplayviewer')
+coll = COLLECT(exe, name='battle-replay-viewer')

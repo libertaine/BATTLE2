@@ -65,6 +65,8 @@ Choose one of the options below:
 | Agents | `%ProgramData%\BATTLE2\resources\agents\` |
 
 Environment variable `BATTLE2_ROOT` is automatically set to the data root during installation.
+The legacy `BATTLE_ROOT` name remains supported when `BATTLE2_ROOT` is unset. If
+both are defined, `BATTLE2_ROOT` takes precedence.
 
 > **Note for Linux/macOS Users:** Install paths and commands may differ. Use `sudo apt install pmars` (or equivalent) for Redcode support.
 

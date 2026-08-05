@@ -23,7 +23,8 @@ def maybe_load_summary(replay_path: Path) -> Optional[Dict[str, Any]]:
             raw = json.loads(candidate.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):
                 return None
-            params = raw.get("params") if isinstance(raw.get("params"), dict) else {}
+            params_value = raw.get("params")
+            params: dict[str, Any] = params_value if isinstance(params_value, dict) else {}
             # Normalize historical metadata locations once, before presentation.
             return {
                 "arena": raw.get("arena") or raw.get("arena_size") or params.get("arena"),
