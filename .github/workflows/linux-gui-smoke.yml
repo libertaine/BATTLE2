@@ -2,8 +2,11 @@ name: Optional Linux GUI smoke
 on:
   workflow_dispatch:
   push:
+
     branches:
       - v0.2-linux
+      - v0.2-integration
+
     paths:
       - ".github/workflows/linux-gui-smoke.yml"
       - "client/tests/test_linux_pygame_smoke.py"

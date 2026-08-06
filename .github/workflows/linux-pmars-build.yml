@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - v0.2-linux
+      - v0.2-integration
     paths:
       - ".github/workflows/linux-pmars-build.yml"
       - "tools/build_pmars_linux.sh"
