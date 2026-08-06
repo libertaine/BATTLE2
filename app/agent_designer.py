@@ -1,13 +1,14 @@
 # app/agent_designer.py
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 from battle_engine.launchers import build_designer_match_arguments, build_match_command
 from battle_engine.paths import get_data_root
 from battle_engine.starters import ensure_starter_agents
-from PySide6.QtCore import QProcess, QProcessEnvironment, Slot
+from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, Slot
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QTabWidget
 
 from app.services.agent_catalog import AgentCatalog
@@ -319,6 +320,9 @@ def main() -> int:
     app = QApplication(sys.argv)
     win = AgentDesigner()
     win.show()
+    smoke_exit_ms = os.environ.get("BATTLE2_GUI_SMOKE_EXIT_MS", "").strip()
+    if smoke_exit_ms:
+        QTimer.singleShot(max(0, int(smoke_exit_ms)), app.quit)
     return app.exec()
 
 

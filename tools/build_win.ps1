@@ -75,6 +75,30 @@ foreach ($Artifact in $Artifacts) {
   if (-not (Test-Path $ExePath)) { throw "Expected artifact was not produced: $ExePath" }
 }
 
+# Exercise the dynamically imported Designer from the unified dispatcher and
+# the standalone Designer. The internal timeout enters the Qt event loop and
+# closes deterministically without requiring desktop automation.
+$PreviousSmokeExit = $env:BATTLE2_GUI_SMOKE_EXIT_MS
+try {
+  $env:BATTLE2_GUI_SMOKE_EXIT_MS = "750"
+  foreach ($Smoke in @(
+    @{ Path = (Join-Path $DistDir "battle2\battle2.exe"); Args = @("design") },
+    @{ Path = (Join-Path $DistDir "battle-agent-designer\battle-agent-designer.exe"); Args = @() }
+  )) {
+    Write-Host ("[build] GUI import/startup smoke: {0}" -f $Smoke.Path)
+    & $Smoke.Path @($Smoke.Args)
+    if ($LASTEXITCODE -ne 0) {
+      throw "GUI import/startup smoke failed with exit code $LASTEXITCODE`: $($Smoke.Path)"
+    }
+  }
+} finally {
+  if ($null -eq $PreviousSmokeExit) {
+    Remove-Item Env:BATTLE2_GUI_SMOKE_EXIT_MS -ErrorAction SilentlyContinue
+  } else {
+    $env:BATTLE2_GUI_SMOKE_EXIT_MS = $PreviousSmokeExit
+  }
+}
+
 Write-Host ""
 Write-Host "[build] Success."
 foreach ($Artifact in $Artifacts) {
