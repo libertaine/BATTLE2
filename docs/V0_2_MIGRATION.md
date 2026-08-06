@@ -122,9 +122,10 @@ were byte-for-byte identical before and after extraction.
 Move agent discovery/execution, pMARS invocation, replay I/O, and summary I/O to
 adapters. Add explicit backward-compatible readers before any writer evolves.
 
-Replay and kernel-summary persistence adapters are now isolated in
-`battle_engine.telemetry`. CLI-specific summary persistence, agent execution
-adapters, and pMARS isolation remain Phase 4 work.
+Replay and kernel-summary persistence adapters are isolated in
+`battle_engine.telemetry`; pMARS discovery/execution and failure normalization
+are isolated in `battle_engine.pmars`. CLI-specific summary persistence and a
+unified agent execution adapter remain future work.
 
 ### Phase 5 — Rewire CLI and presentation
 
@@ -160,7 +161,7 @@ entry-point ownership, defaults, build inputs, and historical/generated layout.
 Initial normalization completed: `battle2 run|replay|design|agents` is the v0.2
 primary interface, with lazy optional UI imports and a `python -m battle_engine`
 equivalent. Dependencies are split into core, replay, designer, development, and
-Windows-build groups; runtime support is consistently Python 3.10+.
+Windows-build groups; runtime support is consistently Python 3.10 through 3.13.
 
 Legacy-command deprecation policy: `battle-cli`, `match-runner`, and
 `battle-agent-designer` remain installed compatibility wrappers for all v0.2
@@ -174,6 +175,11 @@ These variables do not select PyInstaller's temporary extraction directory:
 frozen resources are resolved independently, installed Windows builds should
 set `BATTLE2_ROOT` to their writable data location, and an unconfigured portable
 build defaults to the directory containing its executable.
+
+Regular installed wheels now have platform defaults independent of the current
+working directory: Linux uses the XDG data location and Windows uses
+`%LOCALAPPDATA%\BATTLE2` with a current-user `AppData\Local` fallback. Source and
+editable checkouts continue to use the repository root.
 
 Desktop child launching follows the same source/frozen boundary. Source tools
 use Python modules, while a frozen Agent Designer launches the packaged sibling

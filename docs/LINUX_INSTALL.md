@@ -21,8 +21,9 @@ python -m pip install 'battle2[replay]'    # Pygame replay viewer
 python -m pip install 'battle2[designer]'  # PySide6 Agent Designer
 ```
 
-PySide6 and Pygame are not required for the core CLI. Linux GUI operation has
-not yet been validated across X11 and Wayland, so the v0.2 Linux wheel should be
+PySide6 and Pygame are not required for the core CLI. CI validates Pygame and
+Designer startup under X11/Xvfb. That is not full visible/input GUI validation,
+and native Wayland remains unvalidated, so the v0.2 Linux wheel should still be
 treated as headless-first.
 
 ## Writable data and starter agents

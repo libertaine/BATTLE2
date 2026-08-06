@@ -4,7 +4,7 @@ The automated characterization suite covers deterministic engine execution,
 basic VM instructions, native match completion, scoring/winners, replay and
 summary creation, agent discovery, CLI help, and headless replay processing.
 The following checks require an interactive desktop, platform toolchain, or
-external executable and are intentionally manual for the v0.1 freeze.
+external executable and remain manual release-candidate checks.
 
 ## Pygame live match and replay viewer
 
@@ -23,8 +23,10 @@ external executable and are intentionally manual for the v0.1 freeze.
 9. Let playback finish and confirm the completion screen appears before the
    window closes; Space or Escape should close it cleanly.
 
-These are not automated because they require a display server and meaningful
-visual/input assertions. Headless JSONL consumption is automated separately.
+Linux CI provides X11/Xvfb startup smoke for this window. Visible rendering,
+input, resizing/scaling, deterministic close behavior, and native Wayland remain
+manual and Wayland is not yet validated. Headless JSONL consumption is automated
+separately.
 
 ## PySide6 agent designer
 
@@ -61,6 +63,12 @@ uses the bundled executable to cover its real output and platform behavior.
 3. Build/run the Inno Setup installer where release validation requires it.
 4. Confirm Start Menu/PATH choices, `%ProgramData%` locations, bundled resources,
    uninstall behavior, and operation from a path containing spaces.
+5. Confirm all five executable trees exist and both CLI executables provide help.
+6. Initialize starters, run native and bundled-pMARS matches, and verify no data
+   is written beneath Program Files.
+7. Close all application processes, uninstall, and confirm program files and
+   shortcuts are removed while user data is preserved.
+8. Reinstall and repeat the CLI and GUI startup checks.
 
 For an isolated install/upgrade/uninstall cycle, compile `tools/installer.iss`
 and run `tools/smoke_after_install.ps1 -Lifecycle` with explicit `-InstallerPath`,

@@ -2,7 +2,6 @@
 Project to determine feasibility of using LLM to assist me in creation of a project.
 
 
-````markdown
 # BATTLE2
 
 **BATTLE2** is a Python-based framework and simulation engine for Core War–style AI competitions. It supports:
@@ -33,7 +32,7 @@ source venv/bin/activate     # or `.\venv\Scripts\activate` on Windows
 pip install -e .             # engine, headless replay, and agent discovery
 pip install -e ".[replay]"  # optional Pygame replay viewer
 pip install -e ".[designer]" # optional PySide6 designer
-````
+```
 
 > If you don’t need GUI tools, you can install just the core with:
 >
@@ -45,14 +44,15 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Latest Release:** [v0.1.0 (Pre-release)](https://github.com/libertaine/BATTLE2/releases/tag/v0.1.0)
+**Release candidate:** v0.2.0 is being prepared from `v0.2-integration`. Existing
+v0.1 downloads are historical and are not the current release candidate.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Installer** | [BATTLE2-Setup-0.1.0.exe](https://github.com/libertaine/BATTLE2/releases/download/v0.1.0/BATTLE2-Setup-0.1.0.exe) | Installs under `C:\Program Files\BATTLE2` (recommended) |
-| 💼 **Portable ZIP** | [BATTLE2-portable.zip](https://github.com/libertaine/BATTLE2/releases/download/v0.1.0/BATTLE2-portable.zip) | Unpack and run from any folder (no installation) |
+| 🧰 **Installer candidate** | `BATTLE2-Setup-0.2.0.exe` | Installs under `C:\Program Files\BATTLE2` |
+| 💼 **CI executable artifact** | `windows-exes` | Contains the five v0.2 onedir applications; a release ZIP has not yet been published |
 
 ---
 
@@ -168,7 +168,7 @@ agent files.
 | Executable | Role | Tech |
 |-----------|------|------|
 | battle-agent-designer.exe | Configure & run matches, open replays | PySide6 (Qt) |
-| match_runner.exe          | Live match visualizer (grid/ticks)     | Pygame |
+| match-runner.exe          | Live match visualizer (grid/ticks)     | Pygame |
 | battle-replay-viewer.exe  | View and analyze match replays         | Pygame |
 
 
@@ -194,7 +194,9 @@ battle2 run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks
   nonzero exits, and unparseable results are failures and do not write a success
   summary.
 * The output includes a `summary.json` indicating winner, return code, and parameters.
-* Windows CLI artifacts bundle `pmars.exe` with its `COPYING` file. pMARS source
+* The `battle2` and `battle-cli` Windows frozen applications bundle
+  `pmars/windows/pmars.exe` with its `COPYING` file. The pure Python wheel never
+  contains pMARS. pMARS source
   is GPL-2.0-or-later; see `third_party_licenses/` for the verified GNU GPL
   version 2 license text.
   The Linux wheel contains no pMARS executable or source. A pinned experimental
@@ -234,8 +236,11 @@ For Windows packaging, two approaches are viable:
 
 * **PyInstaller + Inno Setup**
 
-  * Build executables for `battle-cli`, `battle-agent-designer`, and `replay-viewer`
-  * Use Inno Setup script (`.iss`) to bundle binaries, agents folder, pmars, etc.
+  * Build five onedir applications: `battle2`, `battle-cli`, `match-runner`,
+    `battle-agent-designer`, and `battle-replay-viewer`.
+  * Use the Inno Setup script to install those applications. Bundled pMARS is
+    present only inside the two CLI application resource trees; starter agents
+    are initialized into writable user data from packaged manifests.
   * Add Start Menu shortcuts, add to PATH optionally
 
 * **MSI via WiX Toolset**
@@ -269,12 +274,11 @@ If you are migrating from the prior version, check the following:
 
 Contributions welcome — open a PR or issue. Thanks for checking out BATTLE2!
 
-```
-
 ## 🧰 Development / Build from Source
 
 Developers can build and test BATTLE2 directly from source.
-Requires **Python 3.10 or newer** and a current pip.
+Requires **Python 3.10 through 3.13** and a current pip. CI tests all four
+supported Python versions.
 
 ```bash
 # 1️⃣ Clone the repository
@@ -282,7 +286,7 @@ git clone https://github.com/libertaine/BATTLE2.git
 cd BATTLE2
 
 # 2️⃣ Create and activate a virtual environment
-py -3.10 -m venv .venv        # any supported Python 3.10+
+py -3.10 -m venv .venv        # any supported Python 3.10 through 3.13
 .venv\Scripts\activate        # Windows PowerShell
 # or
 source .venv/bin/activate     # Linux / macOS
@@ -300,7 +304,7 @@ python -m battle_engine --help
 pyinstaller -y --clean --name battle-cli --console ^
   --paths engine\src --collect-all battle_engine -m battle_engine.cli
 
-pyinstaller -y --clean --name match_runner --windowed ^
+pyinstaller -y --clean --name match-runner --windowed ^
   app\match_runner.py
 
 pyinstaller -y --clean --name battle-agent-designer --windowed ^
@@ -358,7 +362,7 @@ powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1 -AppDir "
 This runs a minimal smoke test of all installed executables to ensure:
 
 * `battle-cli.exe` runs headless matches
-* `match_runner.exe` opens the Pygame window
+* `match-runner.exe` opens the Pygame window
 * `battle-agent-designer.exe` opens the Qt interface
 
 ---

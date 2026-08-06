@@ -1,8 +1,8 @@
-# BATTLE2 v0.1 Architecture
+# BATTLE2 v0.2 Architecture
 
-This document records the architecture at the v0.1 baseline. It is descriptive,
-not a proposal: some responsibilities overlap and some historical code remains in
-the repository. Proposed v0.2 boundaries are in
+This document records the implemented v0.2 release-candidate architecture while
+retaining clearly identified v0.1 compatibility boundaries. Some responsibilities
+overlap and historical code remains in the repository. Migration history is in
 [`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md).
 
 ## Runtime components
@@ -168,7 +168,7 @@ whole-repository package used by the documented install flow.
 Windows builds remain implemented by the PowerShell scripts and PyInstaller spec
 files under `tools/`; `tools/build_win.ps1` is invoked by CI.
 
-Runtime Python support is 3.10+. Core installation requires PyYAML. Optional
+Runtime Python support is 3.10 through 3.13. Core installation requires PyYAML. Optional
 extras are `replay` (Pygame), `designer` (PySide6), `dev`, and `windows-build`;
 the v0.1 `gui` aggregate remains as an alias. Some legacy release scripts choose
 Python 3.11 for reproducible executable builds, but this does not raise the
@@ -187,9 +187,11 @@ pMARS GPLv2 licensing materials.
 module. The engine and client characterization tests import the packaged modules
 and freeze v0.1 behavior without starting a visible window.
 
-GitHub Actions runs the full pytest suite on Linux and builds Windows executables
-with the existing scripts on Windows. Dependency installation in CI uses the
-three requirements files.
+GitHub Actions runs the headless suite on Python 3.10, 3.11, 3.12, and 3.13,
+validates the pure wheel, and builds the five Windows executables. Optional
+workflows provide Linux X11/Xvfb startup smoke for Pygame and the Designer and
+Ubuntu 22.04 pMARS build/runtime validation. These startup checks do not replace
+manual visible rendering, input, scaling, close-lifecycle, or native Wayland tests.
 
 ## Dependency direction as implemented
 
@@ -254,6 +256,12 @@ use PyInstaller's `_MEIPASS` extraction directory for read-only bundled files.
 `_MEIPASS` is never a writable data root. Without an explicit root, a frozen
 portable application writes beside its executable; the Windows installer sets
 `BATTLE2_ROOT` to select its writable ProgramData location.
+
+With neither root variable set, a regular installed Linux wheel uses
+`$XDG_DATA_HOME/battle2` or `~/.local/share/battle2`. A regular installed Windows
+wheel uses `%LOCALAPPDATA%\BATTLE2`, falling back beneath the current user's
+`AppData\Local` directory. Source and editable checkouts continue to use the
+repository root.
 
 The v0.2 installer preserves each PyInstaller onedir artifact beneath
 `{app}\bin\<application>`, so the Designer's frozen sibling lookup reaches the
