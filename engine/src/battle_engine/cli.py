@@ -1,45 +1,34 @@
 import argparse
 import json
 import os
-import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
-from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.agents import discover_agents, resolve_agent
+from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.core import Config, JSONLSink, Kernel, Weights
-
+from battle_engine.paths import get_data_root
+from battle_engine.pmars import PMarsError, run_pmars
 
 # ----------------------------
 # Helpers
 # ----------------------------
 
 
-def _run_pmars(
+def _pmars_arguments(
     red_a: Path,
     red_b: Path,
     *,
-    pmars_cmd: str,
     core_size: int,
     max_cycles: int,
     max_processes: int,
     max_len: int,
     min_dist: int,
     rounds: int,
-) -> Tuple[str, Dict[str, Any]]:
-    """
-    Run pMARS in batch mode and try to parse a winner from stdout.
-
-    Returns:
-      (winner, extra)
-
-      winner in {"A", "B", "tie", "unknown"}
-      extra contains stdout/stderr/returncode for troubleshooting.
-    """
-    cmd = [
-        pmars_cmd,
+) -> list[str]:
+    """Build pMARS arguments without resolving or invoking the executable."""
+    return [
         "-b",
         "-r",
         str(rounds),
@@ -57,73 +46,11 @@ def _run_pmars(
         str(red_b),
     ]
 
-    proc = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    out = proc.stdout
-    err = proc.stderr
-
-    winner = "unknown"
-
-    if re.search(r"\b[Aa]\s+wins\b", out):
-        winner = "A"
-    elif re.search(r"\b[Bb]\s+wins\b", out):
-        winner = "B"
-    elif re.search(r"\b[tT]ie\b|\b[dD]raw\b", out):
-        winner = "tie"
-
-    if winner == "unknown":
-        m = re.search(r"A\s*[:=]\s*(\d+).+?B\s*[:=]\s*(\d+)", out, re.DOTALL)
-        if m:
-            a_score = int(m.group(1))
-            b_score = int(m.group(2))
-            if a_score > b_score:
-                winner = "A"
-            elif b_score > a_score:
-                winner = "B"
-            else:
-                winner = "tie"
-
-    extra = {
-        "stdout": out,
-        "stderr": err,
-        "returncode": proc.returncode,
-    }
-    return winner, extra
 
 
 def _battle_root() -> Path:
-    # BATTLE2_ROOT is the v0.2 name. BATTLE_ROOT remains a compatibility
-    # fallback and is intentionally ignored when both variables are present.
-    env = os.environ.get("BATTLE2_ROOT") or os.environ.get("BATTLE_ROOT")
-    if env:
-        return Path(env).expanduser().resolve()
-
-    here = Path(__file__).resolve()
-    cand = None
-    try:
-        # .../engine/src/battle_engine/cli.py -> repo root at parents[3]
-        cand = here.parents[3]
-    except IndexError:
-        cand = None
-
-    def valid(p: Path) -> bool:
-        return (p / "engine").is_dir() and (p / "agents").is_dir()
-
-    if cand and valid(cand):
-        return cand
-
-    p = here
-    for _ in range(8):
-        if valid(p):
-            return p
-        p = p.parent
-
-    return Path.cwd()
+    """Compatibility wrapper for the shared writable data-root resolver."""
+    return get_data_root()
 
 
 def _parse_env_json(varname: str) -> Dict[str, Any]:
@@ -465,15 +392,19 @@ def _resolve_agent(
         else:
             blob_path = spec_obj.blob
 
-        # If no source agent.py exists, require a blob.
-        if not (spec_obj.dir / "agent.py").exists():
-            if blob_path is None or not blob_path.exists():
-                raise SystemExit(
-                    f"No blob specified for agent '{agent_name}'. "
-                    f"Provide model.blob in agents/{agent_name}/ or pass via env JSON "
-                    f"key 'blob_path' in $BATTLE_AGENT_{letter}_PARAMS_JSON or use "
-                    f"--{letter.lower()}-blob."
-                )
+        # Manifest-only starter agents may intentionally select an existing
+        # built-in implementation. Other discovered agents still require code.
+        if (
+            not (spec_obj.dir / "agent.py").exists()
+            and agent_name not in SUPPORTED
+            and (blob_path is None or not blob_path.exists())
+        ):
+            raise SystemExit(
+                f"No blob specified for agent '{agent_name}'. "
+                f"Provide model.blob in agents/{agent_name}/ or pass via env JSON "
+                f"key 'blob_path' in $BATTLE_AGENT_{letter}_PARAMS_JSON or use "
+                f"--{letter.lower()}-blob."
+            )
 
         if blob_path is not None and blob_path.exists():
             code = read_blob(str(blob_path))
@@ -551,7 +482,6 @@ def main(argv: Iterable[str] | None = None) -> int:
             print("redcode94 mode requires --red-a and --red-b", file=sys.stderr)
             return 2
 
-        pmars_cmd = os.environ.get("PMARS_CMD", "pmars")
         a_path = Path(args.red_a)
         b_path = Path(args.red_b)
 
@@ -560,23 +490,28 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(f"Warrior file missing: {missing}", file=sys.stderr)
             return 2
 
-        winner, extra = _run_pmars(
-            a_path,
-            b_path,
-            pmars_cmd=pmars_cmd,
-            core_size=args.core_size,
-            max_cycles=args.max_cycles,
-            max_processes=args.max_processes,
-            max_len=args.max_len,
-            min_dist=args.min_dist,
-            rounds=args.rounds,
-        )
+        try:
+            result = run_pmars(
+                _pmars_arguments(
+                    a_path,
+                    b_path,
+                    core_size=args.core_size,
+                    max_cycles=args.max_cycles,
+                    max_processes=args.max_processes,
+                    max_len=args.max_len,
+                    min_dist=args.min_dist,
+                    rounds=args.rounds,
+                )
+            )
+        except PMarsError as exc:
+            print(f"pMARS error: {exc}", file=sys.stderr)
+            return exc.exit_code
 
         summary = {
             "version": 2,
             "mode": "redcode94",
             "ticks": args.max_cycles,
-            "winner": winner or "tie",
+            "winner": result.winner,
             "A_score": None,
             "B_score": None,
             "A_alive_ticks": None,
@@ -593,8 +528,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             },
             "agents": {"A": str(a_path), "B": str(b_path)},
             "backend": {
-                "cmd": pmars_cmd,
-                "returncode": extra.get("returncode"),
+                "cmd": list(result.command),
+                "returncode": result.returncode,
             },
         }
 

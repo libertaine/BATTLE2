@@ -9,6 +9,7 @@ project_root = os.path.abspath(".")
 engine_src   = os.path.join(project_root, "engine", "src")
 client_src   = os.path.join(project_root, "client", "src")
 assets_dir   = os.path.join(project_root, "assets")
+starter_agents_dir = os.path.join(engine_src, "battle_engine", "data", "starter_agents")
 script_path  = os.path.join(project_root, "app", "agent_designer.py")  # ABSOLUTE
 
 block_cipher = None
@@ -16,6 +17,8 @@ hiddenimports = collect_submodules("battle_engine") + collect_submodules("battle
 datas = []
 if os.path.isdir(assets_dir):
     datas.append((assets_dir, "assets"))
+if os.path.isdir(starter_agents_dir):
+    datas.append((starter_agents_dir, "battle_engine/data/starter_agents"))
 
 a = Analysis(
     [script_path],

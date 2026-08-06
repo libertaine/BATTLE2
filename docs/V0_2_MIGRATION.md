@@ -65,7 +65,8 @@ new internals so existing imports remain valid.
   versioned.
 - Headless processing must not import or initialize Pygame.
 - Existing PowerShell, PyInstaller, installer, and pMARS Windows assets are not
-  removed during the migration.
+  removed during migration. The v0.2 Windows release validation rebuilds all
+  five artifacts and exercises an isolated install/upgrade/uninstall cycle.
 
 ## Migration phases
 
@@ -152,6 +153,25 @@ Legacy-command deprecation policy: `battle-cli`, `match-runner`, and
 releases. Documentation may prefer `battle2`, but v0.2 must not warn, remove, or
 change the legacy commands' exit behavior. Removal may only be considered in a
 future major release after a separately announced deprecation period.
+
+Root handling is centralized in `battle_engine.paths`. `BATTLE2_ROOT` is the
+preferred writable-data setting and `BATTLE_ROOT` remains its legacy fallback.
+These variables do not select PyInstaller's temporary extraction directory:
+frozen resources are resolved independently, installed Windows builds should
+set `BATTLE2_ROOT` to their writable data location, and an unconfigured portable
+build defaults to the directory containing its executable.
+
+Desktop child launching follows the same source/frozen boundary. Source tools
+use Python modules, while a frozen Agent Designer launches the packaged sibling
+`battle2.exe` and `battle-replay-viewer.exe` applications directly. It never
+uses its own frozen executable as a Python interpreter or delegates replay files
+to operating-system file associations.
+
+The Agent Designer also initializes a small starter catalog before its first
+discovery pass. Canonical manifests remain read-only package resources; only
+missing Runner, Writer, Seeker, and Spiral files are copied into the writable
+`agents` directory. Existing files and custom agents are never replaced or
+removed.
 
 ## Out of scope for the initial migration
 

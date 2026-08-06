@@ -44,13 +44,14 @@ need human inspection across supported desktop environments.
 
 ## pMARS / Redcode integration
 
-1. Set `PMARS_CMD` to the supported pMARS executable.
+1. Optionally set `PMARS_CMD` to one pMARS executable path. Windows packaged
+   CLI artifacts otherwise use their bundled `pmars/windows/pmars.exe`.
 2. Run `battle-cli --mode redcode94 --red-a <warrior-a> --red-b <warrior-b>`.
 3. Confirm pMARS launches, the reported winner agrees with its output, and the
    version 2 `summary.json` records parameters and return code.
 
-The repository does not provide one portable pMARS executable for CI, and the
-external program's output/platform behavior is outside the Python process.
+The automated suite mocks process edge cases. Windows release validation also
+uses the bundled executable to cover its real output and platform behavior.
 
 ## Windows packaging and installation
 
@@ -60,6 +61,12 @@ external program's output/platform behavior is outside the Python process.
 3. Build/run the Inno Setup installer where release validation requires it.
 4. Confirm Start Menu/PATH choices, `%ProgramData%` locations, bundled resources,
    uninstall behavior, and operation from a path containing spaces.
+
+For an isolated install/upgrade/uninstall cycle, compile `tools/installer.iss`
+and run `tools/smoke_after_install.ps1 -Lifecycle` with explicit `-InstallerPath`,
+`-AppDir`, and `-DataRoot` values. The smoke retains its data directory after
+uninstall so the preservation checks remain inspectable; remove that test data
+manually after review.
 
 CI builds the executables, but install-shell integration and visible GUI behavior
 require a Windows host and are not reasonably asserted by the unit suite.

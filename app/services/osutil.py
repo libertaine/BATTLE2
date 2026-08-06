@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import json
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from battle_engine.paths import get_data_root, get_resource_root
+
 
 @dataclass
 class DefaultPaths:
@@ -12,32 +15,10 @@ class DefaultPaths:
     replay_path: Path
     summary_path: Path
 
-def get_battle_root() -> Optional[Path]:
-    """Resolve <BATTLE_ROOT>.
 
-    Order:
-      1) PyInstaller bundle root (when frozen)
-      2) env BATTLE_ROOT
-      3) parent of this file's parent (assumes app/* layout)
-      4) CWD
-    """
-    # 1) Frozen bundle (PyInstaller)
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
-
-    # 2) Explicit override
-    env = os.environ.get("BATTLE_ROOT")
-    if env:
-        return Path(env).resolve()
-
-    # 3) Repo root: app/services/osutil.py -> app/ -> <root>
-    here = Path(__file__).resolve()
-    root = here.parents[2]
-    if (root / "engine").exists() and (root / "client").exists():
-        return root
-
-    # 4) Fallback
-    return Path.cwd()
+def get_battle_root() -> Path:
+    """Return the writable data root (legacy public name)."""
+    return get_data_root()
 
 def pythonpath_separator() -> str:
     return ";" if os.name == "nt" else ":"
@@ -47,13 +28,12 @@ def get_client_assets_dir() -> str:
     Return the first existing client assets directory, or empty string if none.
     Supports both classic and src-based layouts.
     """
-    root = get_battle_root()
-    if root is None:
-        return ""
+    root = get_resource_root()
     candidates = [
         root / "client" / "assets",          # classic
         root / "client" / "src" / "assets",  # src-layout
         root / "client" / "resources",       # alt
+        root / "app" / "assets",             # installed app package
         root / "assets",                     # fallback
     ]
     for p in candidates:
@@ -62,6 +42,7 @@ def get_client_assets_dir() -> str:
     return ""
 
 def get_default_paths(root: Path) -> DefaultPaths:
+    root = root.expanduser().resolve()
     replay = root / "runs" / "_loose" / "replay.jsonl"
     summary = root / "runs" / "_loose" / "summary.json"
     return DefaultPaths(root=root, replay_path=replay, summary_path=summary)

@@ -1,0 +1,9 @@
+{
+  "name": "writer",
+  "display": "Writer (Starter)",
+  "description": "Simple stationary baseline that repeatedly writes at a fixed offset.",
+  "defaults": {
+    "offset": 128,
+    "byte": 65
+  }
+}

@@ -60,6 +60,12 @@ recognizes an optional `model.blob`, display metadata, and default parameters.
 The current CLI executes blobs and built-ins; it detects `agent.py` but does not
 load Python agent code itself.
 
+`battle_engine.starters` validates the canonical Runner, Writer, Seeker, and
+Spiral manifests bundled under `battle_engine/data/starter_agents`, then copies
+only missing files into the writable `get_data_root()/agents` catalog. It reads
+resources through `get_resource_root()`, never writes into `_MEIPASS`, and uses
+exclusive file creation so user edits and custom agents remain untouched.
+
 ### Engine CLI (`battle_engine.cli`)
 
 The primary `battle2` command and `python -m battle_engine` dispatch to four lazy
@@ -86,6 +92,11 @@ attempts to write a summary to `summary.json` in the current working directory;
 the CLI's sibling summary is the user-facing artifact.
 
 The external pMARS mode writes a version 2 summary but no native replay stream.
+Executable discovery and execution are owned by `battle_engine.pmars`. It keeps
+commands as argument lists, resolves read-only packaged files through the
+resource root, supports installer/portable files beneath the writable layout,
+and normalizes missing, timeout, process-exit, and output-parsing failures before
+they reach either the CLI or a GUI-launched engine subprocess.
 The v0.1 engine writer remains active in this migration phase; canonical v0.2
 writing is available through `battle_engine.replay.write_replay` but is not yet
 wired into `Kernel` or the CLI.
@@ -227,3 +238,31 @@ Remaining coupling is intentional for compatibility: `Kernel` remains the public
 mutable match state consumed by `MatchRunner`; the CLI still creates the v0.1
 replay sink and writes its separate version 2 user-facing summary; and the kernel
 facade suppresses default summary-output failures as v0.1 did.
+
+## Application roots
+
+`battle_engine.paths` is the shared root-resolution boundary. `BATTLE2_ROOT`
+(with `BATTLE_ROOT` as a legacy fallback) selects the writable data root used
+for agents, replays, logs, generated files, and user configuration. Relative
+configured values are normalized against the current working directory.
+
+The application resource root is separate. Source checkouts use the repository
+root, installed packages use package-local resources, and frozen applications
+use PyInstaller's `_MEIPASS` extraction directory for read-only bundled files.
+`_MEIPASS` is never a writable data root. Without an explicit root, a frozen
+portable application writes beside its executable; the Windows installer sets
+`BATTLE2_ROOT` to select its writable ProgramData location.
+
+The v0.2 installer preserves each PyInstaller onedir artifact beneath
+`{app}\bin\<application>`, so the Designer's frozen sibling lookup reaches the
+installed `battle2` and replay-viewer directories without duplicating their
+internals. Installation is administrative and AMD64-only. It sets the machine
+`BATTLE2_ROOT` to `%ProgramData%\BATTLE2` by default, does not modify `PATH`, and
+retains writable application data during uninstall.
+
+`battle_engine.launchers` owns child command construction. Source and editable
+applications invoke the primary dispatcher or replay client with the current
+Python interpreter. Frozen applications resolve `battle2.exe` and
+`battle-replay-viewer.exe` beside the current executable (including the v0.2
+onedir sibling-folder layout); writable-data settings never redirect executable
+discovery. Commands are always argument lists rather than shell strings.

@@ -59,14 +59,22 @@ Choose one of the options below:
 ### Default Install Paths
 | Component | Location |
 |------------|-----------|
-| Binaries | `C:\Program Files\BATTLE2\bin\` |
+| Binaries | `C:\Program Files\BATTLE2\bin\<application>\` |
 | Data root | `%ProgramData%\BATTLE2\` |
 | Replays | `%ProgramData%\BATTLE2\runs\_loose\` |
-| Agents | `%ProgramData%\BATTLE2\resources\agents\` |
+| Agents | `%ProgramData%\BATTLE2\agents\` |
 
 Environment variable `BATTLE2_ROOT` is automatically set to the data root during installation.
 The legacy `BATTLE_ROOT` name remains supported when `BATTLE2_ROOT` is unset. If
 both are defined, `BATTLE2_ROOT` takes precedence.
+This writable data root is separate from bundled read-only application
+resources; PyInstaller's temporary `_MEIPASS` directory is never used for
+replays, logs, generated files, or user configuration.
+The installer deliberately does not modify `PATH`; console applications remain
+available at `bin\battle2\battle2.exe` and `bin\battle-cli\battle-cli.exe`.
+Uninstall removes installed programs and shortcuts but retains `%ProgramData%\BATTLE2`.
+Remove that directory manually only when its agents, replays, logs, and settings
+are no longer needed.
 
 > **Note for Linux/macOS Users:** Install paths and commands may differ. Use `sudo apt install pmars` (or equivalent) for Redcode support.
 
@@ -143,6 +151,12 @@ battle2 agents
 
 to see all discovered agents.
 
+Fresh desktop and portable installations initialize four clearly labeled
+starter agents in the writable `agents/` directory: Runner, Writer, Seeker, and
+Spiral. Their canonical manifests are bundled as read-only package resources.
+Initialization copies only missing files and never overwrites custom or edited
+agent files.
+
 ---
 
 ## 🎮 GUI Tools (optional)
@@ -167,9 +181,18 @@ BATTLE2 supports pMARS (Redcode) for interoperability:
 battle2 run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
 ```
 
-* The backend spawns `pmars` with appropriate flags to evaluate the match.
+* The backend resolves pMARS in this order: non-empty `PMARS_CMD`, a frozen
+  bundled resource, the configured BATTLE2 data/application layout, the source
+  checkout's `pmars/windows` directory, then `pmars.exe` or `pmars` on `PATH`.
+  `PMARS_CMD` denotes one executable path (including paths with spaces), not a
+  shell command. An invalid explicit value is reported without silent fallback.
+* The backend invokes pMARS without a shell. Missing executables, timeouts,
+  nonzero exits, and unparseable results are failures and do not write a success
+  summary.
 * The output includes a `summary.json` indicating winner, return code, and parameters.
-* You need to install `pmars` binaries (bundled or via your system). The license of pMARS must be respected (typically GPLv2). See `third_party_licenses/` in this repo for full details.
+* Windows CLI artifacts bundle `pmars.exe` with its `COPYING` file. External
+  installations must also preserve the pMARS GPLv2 license; see
+  `third_party_licenses/` for the repository copy.
 
 ---
 
@@ -280,8 +303,10 @@ pyinstaller -y --clean --name battle-agent-designer --windowed ^
 
 > 💡 *Note:* For Windows packaging, use **Inno Setup 6** and compile
 > `tools\installer.iss` to create `BATTLE2-Setup-x.y.z.exe`.
-> This installer copies executables to `C:\Program Files\BATTLE2`
-> and shared data to `%ProgramData%\BATTLE2`.
+> This installer preserves the five PyInstaller application directories beneath
+> `C:\Program Files\BATTLE2\bin` and uses `%ProgramData%\BATTLE2` for writable
+> shared data. It requires administrative installation and supports Windows
+> AMD64/x64; it does not claim ARM64 support.
 
 The legacy executable helper scripts use Python 3.11 as the reproducible release
 build interpreter. This does not change the package runtime requirement of
