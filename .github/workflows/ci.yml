@@ -23,7 +23,7 @@ jobs:
           if name == 'PySide6' or name.startswith('PySide6.') or name == 'pygame'
           or name.startswith('pygame.')]; assert not forbidden, forbidden"
       - name: Run core and headless tests
-        run: python -m pytest -q
+        run: python -m pytest -q -m "not gui"
 
   build-linux-wheel:
     runs-on: ubuntu-latest

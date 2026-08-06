@@ -1,0 +1,39 @@
+name: Optional Linux GUI smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pygame-x11-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.10' }
+      - run: sudo apt-get update
+      - name: Install virtual X server
+        run: sudo apt-get install --no-install-recommends xvfb
+      - run: python -m pip install -U pip
+      - name: Install replay and test dependencies
+        run: python -m pip install -e ".[replay,dev]"
+      - name: Exercise one display-backed replay frame and deterministic quit
+        run: xvfb-run -a python -m pytest -q client/tests/test_linux_pygame_smoke.py
+
+  designer-x11-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.10' }
+      - run: sudo apt-get update
+      - name: Install virtual X server and Qt runtime libraries
+        run: >-
+          sudo apt-get install --no-install-recommends xvfb libegl1
+          libxkbcommon-x11-0 libxcb-cursor0
+      - run: python -m pip install -U pip
+      - name: Install Designer and test dependencies
+        run: python -m pip install -e ".[designer,dev]"
+      - name: Exercise X11 startup, primary window creation, and deterministic shutdown
+        env:
+          QT_OPENGL: software
+        run: xvfb-run -a python -m pytest -q tests/test_linux_designer_smoke.py
