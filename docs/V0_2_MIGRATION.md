@@ -13,8 +13,8 @@
   blobs or built-ins and does not define one execution protocol for every format.
 - The engine has a renderer callback while the replay client separately defines
   a presentation interface.
-- `Kernel.run` writes `summary.json` to the working directory while the CLI writes
-  a second, different summary beside the replay.
+- Direct `Kernel.run` callers retain an injectable compatibility summary sink;
+  the CLI suppresses that sink and writes one canonical summary beside the replay.
 - Active, compatibility, historical, generated, and prebuilt content coexist at
   the repository root, making supported ownership boundaries difficult to see.
 - Root packaging and `app/pyproject.toml` expose differing designer entry points.

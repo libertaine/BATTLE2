@@ -76,7 +76,9 @@ Uninstall removes installed programs and shortcuts but retains `%ProgramData%\BA
 Remove that directory manually only when its agents, replays, logs, and settings
 are no longer needed.
 
-> **Note for Linux/macOS Users:** Install paths and commands may differ. Use `sudo apt install pmars` (or equivalent) for Redcode support.
+> **Linux:** The v0.2 wheel is headless-first. See
+> [Linux wheel installation](docs/LINUX_INSTALL.md) for virtual-environment,
+> XDG data, starter-agent, optional GUI, and current pMARS guidance.
 
 ### CLI Usage
 

@@ -42,6 +42,13 @@ class JSONSummarySink:
             json.dump(summary, stream, indent=2)
 
 
+class NullSummarySink:
+    """Accept an in-memory match summary without persisting another artifact."""
+
+    def write(self, summary: dict[str, Any]) -> None:
+        del summary
+
+
 def build_snapshot(
     tick: int,
     agents: list[Agent],

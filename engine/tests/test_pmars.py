@@ -147,6 +147,9 @@ def test_cli_failure_is_nonzero_stderr_and_does_not_write_summary(
     warrior_a.write_text(";redcode", encoding="utf-8")
     warrior_b.write_text(";redcode", encoding="utf-8")
     replay = tmp_path / "output" / "replay.jsonl"
+    replay.parent.mkdir()
+    summary = replay.with_name("summary.json")
+    summary.write_text("stale summary\n", encoding="utf-8")
     monkeypatch.setattr(
         cli,
         "run_pmars",
@@ -168,7 +171,7 @@ def test_cli_failure_is_nonzero_stderr_and_does_not_write_summary(
     )
     assert exit_code == 2
     assert "pMARS error: configured pMARS is missing" in capsys.readouterr().err
-    assert not (replay.parent / "summary.json").exists()
+    assert not summary.exists()
 
 
 def test_gui_service_subprocess_receives_same_traceback_free_failure(tmp_path):
