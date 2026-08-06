@@ -52,6 +52,14 @@ versions. The current Ubuntu 26.04 audit binary requires symbols through
 `GLIBC_2.38` and is not a portable release binary; the script must still be run
 and validated on the oldest intended release runner, currently Ubuntu 22.04.
 
+The manual GitHub Actions workflow `.github/workflows/linux-pmars-build.yml`
+performs that Ubuntu 22.04 validation. It verifies the source archive checksum,
+extracts two clean copies, compares two same-toolchain builds byte-for-byte,
+checks the highest referenced GLIBC symbol version against the runner's glibc,
+and exercises successful and failing BATTLE2 matches. It uploads and retains no
+pMARS source or executable artifact. A successful run establishes reproducibility
+for that runner toolchain only, not universal cross-toolchain reproducibility.
+
 Select it explicitly when testing BATTLE2:
 
 ```bash
@@ -62,6 +70,9 @@ PMARS_CMD="$PWD/build/pmars-linux/pmars" battle2 run \
 `PMARS_CMD` denotes exactly one executable path. Fixed arguments in the
 environment variable are intentionally unsupported; BATTLE2 supplies and
 owns the pMARS argument list.
+
+`--quota` remains a native BATTLE engine setting. It is accepted in pMARS mode
+but does not replace pMARS's `--max-processes`/`-p` process limit.
 
 ## Licensing and possible redistribution
 

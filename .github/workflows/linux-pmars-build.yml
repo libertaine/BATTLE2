@@ -1,0 +1,236 @@
+name: Ubuntu 22.04 pMARS build validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - v0.2-linux
+    paths:
+      - ".github/workflows/linux-pmars-build.yml"
+      - "tools/build_pmars_linux.sh"
+      - "tools/pmars/README.md"
+      - "engine/src/battle_engine/cli.py"
+      - "engine/src/battle_engine/pmars.py"
+      - "engine/tests/test_pmars.py"
+
+env:
+  PMARS_URL: https://sourceforge.net/projects/corewar/files/pMARS/0.9.5/pmars-0.9.5.zip/download
+  PMARS_SHA256: 6c7c72dbd2a6670d36ba7a96b113d2b54557508afdd99573dfa1da6557700d37
+
+jobs:
+  validate-console-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Install confirmed build requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            build-essential \
+            binutils \
+            curl \
+            file \
+            libc-bin \
+            unzip
+
+      - name: Record runner and toolchain
+        run: |
+          cat /etc/os-release
+          uname -a
+          gcc --version | head -n 1
+          make --version | head -n 1
+          getconf GNU_LIBC_VERSION
+          echo "BATTLE2 commit: $(git rev-parse HEAD)"
+          echo "Build script SHA-256: $(sha256sum tools/build_pmars_linux.sh | awk '{print $1}')"
+          echo "Expected archive SHA-256: $PMARS_SHA256"
+
+      - name: Download and verify authoritative source archive
+        run: |
+          set -euo pipefail
+          download_dir="$RUNNER_TEMP/pmars-download"
+          mkdir -p "$download_dir"
+          archive="$download_dir/pmars-0.9.5.zip"
+          resolved_url="$(
+            curl \
+              --fail \
+              --location \
+              --proto '=https' \
+              --proto-redir '=https' \
+              --show-error \
+              --silent \
+              --tlsv1.2 \
+              --output "$archive" \
+              --write-out '%{url_effective}' \
+              "$PMARS_URL"
+          )"
+          echo "Requested download URL: $PMARS_URL"
+          echo "Resolved download URL: $resolved_url"
+          actual_sha256="$(sha256sum "$archive" | awk '{print $1}')"
+          echo "Downloaded archive SHA-256: $actual_sha256"
+          test "$actual_sha256" = "$PMARS_SHA256"
+
+      - name: Extract two independent source copies
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/pmars-download/pmars-0.9.5.zip"
+          unzip -q "$archive" -d "$RUNNER_TEMP/pmars-source-one"
+          unzip -q "$archive" -d "$RUNNER_TEMP/pmars-source-two"
+
+      - name: Build twice and compare bytes
+        run: |
+          set -euo pipefail
+          tools/build_pmars_linux.sh \
+            "$RUNNER_TEMP/pmars-source-one" \
+            "$RUNNER_TEMP/pmars-output-one"
+          tools/build_pmars_linux.sh \
+            "$RUNNER_TEMP/pmars-source-two" \
+            "$RUNNER_TEMP/pmars-output-two"
+
+          binary_one="$RUNNER_TEMP/pmars-output-one/pmars"
+          binary_two="$RUNNER_TEMP/pmars-output-two/pmars"
+          test -x "$binary_one"
+          test -x "$binary_two"
+          stat -c 'First binary: mode=%a size=%s path=%n' "$binary_one"
+          stat -c 'Second binary: mode=%a size=%s path=%n' "$binary_two"
+          sha256sum "$binary_one" "$binary_two"
+          cmp "$binary_one" "$binary_two"
+
+      - name: Inspect ELF dependencies and display isolation
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/pmars-output-one/pmars"
+          file "$binary"
+          readelf -d "$binary" | tee "$RUNNER_TEMP/pmars-readelf-dynamic.txt"
+          ldd "$binary" | tee "$RUNNER_TEMP/pmars-ldd.txt"
+
+          needed="$(
+            sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' \
+              "$RUNNER_TEMP/pmars-readelf-dynamic.txt"
+          )"
+          echo "ELF NEEDED entries:"
+          printf '%s\n' "$needed"
+          test "$needed" = "libc.so.6"
+
+          if grep -Eiq \
+            'libX|X11|SDL|Qt|curses|ncurses|RPATH|RUNPATH' \
+            "$RUNNER_TEMP/pmars-readelf-dynamic.txt" \
+            "$RUNNER_TEMP/pmars-ldd.txt"; then
+            echo "Unexpected graphical, terminal-UI, RPATH, or RUNPATH dependency" >&2
+            exit 1
+          fi
+
+      - name: Verify GLIBC compatibility floor
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/pmars-output-one/pmars"
+          versions="$(
+            readelf --version-info "$binary" \
+              | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' \
+              | sort -Vu
+          )"
+          test -n "$versions"
+          echo "Referenced GLIBC symbol versions:"
+          printf '%s\n' "$versions"
+
+          maximum="$(
+            printf '%s\n' "$versions" \
+              | sed 's/^GLIBC_//' \
+              | sort -V \
+              | tail -n 1
+          )"
+          baseline="$(getconf GNU_LIBC_VERSION | awk '{print $2}')"
+          echo "Maximum required GLIBC version: $maximum"
+          echo "Ubuntu 22.04 runner GLIBC ceiling: $baseline"
+          highest="$(printf '%s\n%s\n' "$maximum" "$baseline" | sort -V | tail -n 1)"
+          test "$highest" = "$baseline"
+
+      - name: Install current BATTLE2 checkout in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/battle2-venv"
+          "$RUNNER_TEMP/battle2-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/battle2-venv/bin/python" -m pip install .
+
+      - name: Validate pMARS runtime integration and cleanup
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/pmars-output-one/pmars"
+          battle2="$RUNNER_TEMP/battle2-venv/bin/battle2"
+          warrior="$RUNNER_TEMP/pmars-source-one/warriors/validate.red"
+          unrelated="$RUNNER_TEMP/unrelated-working-directory"
+          runtime="$RUNNER_TEMP/pmars-runtime"
+          mkdir -p "$unrelated" "$runtime"
+          cd "$unrelated"
+          unset DISPLAY WAYLAND_DISPLAY
+
+          "$binary" -b -r 2 "$warrior" "$warrior"
+
+          absolute_root="$runtime/absolute"
+          PMARS_CMD="$binary" BATTLE2_ROOT="$absolute_root" "$battle2" run \
+            --mode redcode94 \
+            --red-a "$warrior" \
+            --red-b "$warrior" \
+            --rounds 3 \
+            --replay "$absolute_root/replay.jsonl" \
+            --quiet
+          test -f "$absolute_root/summary.json"
+          test ! -e "$absolute_root/replay.jsonl"
+
+          quota_root="$runtime/quota"
+          PMARS_CMD="$binary" BATTLE2_ROOT="$quota_root" "$battle2" run \
+            --mode redcode94 \
+            --red-a "$warrior" \
+            --red-b "$warrior" \
+            --rounds 2 \
+            --quota 2 \
+            --replay "$quota_root/replay.jsonl" \
+            --quiet
+          test -f "$quota_root/summary.json"
+          test ! -e "$quota_root/replay.jsonl"
+          "$RUNNER_TEMP/battle2-venv/bin/python" - "$quota_root/summary.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          summary = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          command = summary["backend"]["cmd"]
+          process_limit = command[command.index("-p") + 1]
+          assert process_limit == "8000", command
+          assert summary["params"]["max_processes"] == 8000
+          PY
+
+          invalid="$runtime/invalid.red"
+          printf '%s\n' ';redcode-94' 'mov.i #0, @not-valid!' > "$invalid"
+          failure_root="$runtime/failure"
+          mkdir -p "$failure_root"
+          printf 'stale replay\n' > "$failure_root/replay.jsonl"
+          printf 'stale summary\n' > "$failure_root/summary.json"
+
+          set +e
+          PMARS_CMD="$binary" BATTLE2_ROOT="$failure_root" "$battle2" run \
+            --mode redcode94 \
+            --red-a "$invalid" \
+            --red-b "$warrior" \
+            --replay "$failure_root/replay.jsonl" \
+            --quiet > "$runtime/failure-output.txt" 2>&1
+          failure_status=$?
+          set -e
+          cat "$runtime/failure-output.txt"
+          test "$failure_status" -ne 0
+          grep -q 'pMARS error:' "$runtime/failure-output.txt"
+          if grep -q 'Traceback' "$runtime/failure-output.txt"; then
+            echo "Operational failure exposed a traceback" >&2
+            exit 1
+          fi
+          test ! -e "$failure_root/replay.jsonl"
+          test ! -e "$failure_root/summary.json"
+
+          test ! -e "$unrelated/replay.jsonl"
+          test ! -e "$unrelated/summary.json"
+          echo "No pMARS source or binary is retained or uploaded by this workflow."
