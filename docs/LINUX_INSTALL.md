@@ -33,11 +33,11 @@ uses `$XDG_DATA_HOME/battle2`, or `~/.local/share/battle2` when
 `XDG_DATA_HOME` is unset. Recognized source and editable checkouts continue to
 use the repository root.
 
-Packaged starter manifests are read-only resources. Initialize missing Runner,
-Writer, Seeker, and Spiral manifests without overwriting user files:
+Packaged starter manifests are read-only resources. `battle2 agents` initializes
+missing Runner, Writer, Seeker, and Spiral manifests before listing the catalog,
+without overwriting user files:
 
 ```bash
-python -c 'from battle_engine.starters import ensure_starter_agents; ensure_starter_agents()'
 battle2 agents
 ```
 
@@ -56,7 +56,13 @@ battle2 replay --replay ~/.local/share/battle2/runs/_loose/replay.jsonl \
   --renderer headless
 ```
 
-The wheel does not bundle a Linux pMARS executable. `PMARS_CMD` remains
-authoritative and a system `pmars` may be discovered through `PATH`, but the
-currently audited Ubuntu pMARS build attempts to open an X display. Reliable
-headless Linux Redcode operation is therefore not yet supported.
+The wheel does not bundle a Linux pMARS executable or select the repository's
+Windows PE executables on Linux. `PMARS_CMD` remains authoritative and an
+executable `pmars` may be discovered through `PATH`. Upstream supports a
+console-only build, but the audited Ubuntu 0.9.5 package is compiled with X11;
+`-b` means brief output and does not disable its display. Until a reproducible,
+licensed console build is supplied, Linux Redcode operation is supported only
+with a user-provided console-only executable and is not part of wheel validation.
+Any future bundled pMARS build must comply with GPL-2-or-later distribution
+requirements, including the license notice and corresponding source offer or
+delivery; the current wheel deliberately contains neither pMARS nor its source.
