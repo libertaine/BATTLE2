@@ -32,6 +32,12 @@ def test_explicit_quoted_path_with_spaces_is_preserved(tmp_path):
     assert command == [str(executable)]
 
 
+def test_explicit_pmars_command_does_not_accept_fixed_arguments(tmp_path):
+    executable = _executable(tmp_path / "tools", name="pmars")
+    with pytest.raises(pmars.PMarsNotFoundError, match="does not fall back"):
+        pmars.resolve_pmars_command(environ={"PMARS_CMD": f"{executable} -Q"})
+
+
 def test_invalid_explicit_command_does_not_fall_through(monkeypatch, tmp_path):
     fallback = _executable(tmp_path / "resource" / "pmars" / "windows")
     monkeypatch.setattr(
@@ -181,6 +187,13 @@ def test_unparseable_success_is_failure(monkeypatch):
         pmars.run_pmars([], command=["pmars.exe"])
     assert error.value.stdout == "unexpected output"
     assert error.value.stderr == "diagnostic"
+
+
+def test_success_without_output_is_normalized(monkeypatch):
+    completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+    monkeypatch.setattr(pmars.subprocess, "run", lambda *args, **kwargs: completed)
+    with pytest.raises(pmars.PMarsOutputError, match="no process output"):
+        pmars.run_pmars([], command=["pmars"])
 
 
 def test_cli_failure_is_nonzero_stderr_and_does_not_write_summary(

@@ -23,6 +23,7 @@ EXPECTED_SCRIPTS = {
     "battle-cli",
     "match-runner",
 }
+ALLOWED_PMARS_PATHS = {"battle_engine/pmars.py"}
 
 
 def validate_wheel(wheel: Path) -> None:
@@ -31,6 +32,17 @@ def validate_wheel(wheel: Path) -> None:
         missing_files = sorted(EXPECTED_FILES - names)
         if missing_files:
             raise ValueError(f"Wheel is missing expected files: {missing_files}")
+
+        unexpected_pmars = sorted(
+            name
+            for name in names
+            if "pmars" in name.casefold() and name not in ALLOWED_PMARS_PATHS
+        )
+        if unexpected_pmars:
+            raise ValueError(
+                "Wheel unexpectedly contains pMARS distribution material: "
+                f"{unexpected_pmars}"
+            )
 
         entry_points_name = next(
             (name for name in names if name.endswith(".dist-info/entry_points.txt")),
