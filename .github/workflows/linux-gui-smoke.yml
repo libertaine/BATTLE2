@@ -1,7 +1,14 @@
 name: Optional Linux GUI smoke
-
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - v0.2-linux
+    paths:
+      - ".github/workflows/linux-gui-smoke.yml"
+      - "client/tests/test_linux_pygame_smoke.py"
+      - "tests/test_linux_designer_smoke.py"
+      - "pytest.ini"
 
 jobs:
   pygame-x11-smoke:
