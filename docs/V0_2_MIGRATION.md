@@ -138,6 +138,20 @@ ordering/cleanup. The replay CLI no longer probes optional methods, headless mod
 keeps Pygame lazy, and the Qt canvas uses the same lifecycle for updates and
 closure. Broader desktop-tool consolidation remains Phase 5 work.
 
+## Linux pMARS release boundary
+
+The platform-neutral Python wheel does not contain pMARS. Linux discovery skips
+the repository's Windows PE resources and accepts an explicit executable through
+`PMARS_CMD`, an executable in the Linux data/resource layout, or `pmars` on
+`PATH`. The Ubuntu pMARS 0.9.5 package is an X11 build and is not a headless
+release dependency.
+
+`tools/build_pmars_linux.sh` is experimental release-engineering support for the
+checksum-pinned authoritative pMARS 0.9.5 source. It builds a console-only,
+libc-only executable without a source patch, but does not install, bundle, or
+publish it. Any later portable artifact must define and validate a separate
+GPL-2.0-or-later corresponding-source bundle before adding that executable.
+
 ### Phase 6 — Packaging cleanup
 
 Only after runtime compatibility is demonstrated, reconcile package metadata,

@@ -60,9 +60,20 @@ The wheel does not bundle a Linux pMARS executable or select the repository's
 Windows PE executables on Linux. `PMARS_CMD` remains authoritative and an
 executable `pmars` may be discovered through `PATH`. Upstream supports a
 console-only build, but the audited Ubuntu 0.9.5 package is compiled with X11;
-`-b` means brief output and does not disable its display. Until a reproducible,
-licensed console build is supplied, Linux Redcode operation is supported only
-with a user-provided console-only executable and is not part of wheel validation.
-Any future bundled pMARS build must comply with GPL-2-or-later distribution
+`-b` means brief output and does not disable its display. BATTLE2 now provides a
+pinned, experimental build script for the authoritative pMARS 0.9.5 source in
+`tools/build_pmars_linux.sh`; it produces a libc-only console executable without
+patching or modifying the supplied source. Linux Redcode operation still requires
+a user-provided executable and is not part of wheel validation.
+Any future bundled pMARS build must comply with GPL-2.0-or-later distribution
 requirements, including the license notice and corresponding source offer or
 delivery; the current wheel deliberately contains neither pMARS nor its source.
+The corresponding-source and separately licensed documentation layout for a
+future binary release remains a release-policy task; see `tools/pmars/README.md`.
+
+Select one console-only executable path without fixed arguments:
+
+```bash
+PMARS_CMD=/absolute/path/to/pmars battle2 run --mode redcode94 \
+  --red-a path/to/a.red --red-b path/to/b.red
+```
