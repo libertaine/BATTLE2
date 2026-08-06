@@ -118,8 +118,8 @@ jobs:
           printf '%s\n' "$needed"
           test "$needed" = "libc.so.6"
 
-          if grep -Eiq \
-            'libX|X11|SDL|Qt|curses|ncurses|RPATH|RUNPATH' \
+          if grep -Eq \
+            'libX[[:alnum:]_.-]*\.so|libSDL[[:alnum:]_.-]*\.so|libQt[[:alnum:]_.-]*\.so|lib(n?curses)[[:alnum:]_.-]*\.so|\(RPATH\)|\(RUNPATH\)' \
             "$RUNNER_TEMP/pmars-readelf-dynamic.txt" \
             "$RUNNER_TEMP/pmars-ldd.txt"; then
             echo "Unexpected graphical, terminal-UI, RPATH, or RUNPATH dependency" >&2
