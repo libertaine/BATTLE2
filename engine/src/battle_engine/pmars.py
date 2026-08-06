@@ -15,6 +15,10 @@ from battle_engine.paths import get_data_root, get_resource_root, normalize_root
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 class PMarsError(RuntimeError):
     """Base class for errors safe to display in CLI and GUI surfaces."""
 
@@ -74,17 +78,16 @@ class PMarsResult:
 
 
 def _executable_names() -> tuple[str, ...]:
-    return ("pmars.exe", "pmars") if os.name == "nt" else ("pmars", "pmars.exe")
+    return ("pmars.exe", "pmars") if _is_windows() else ("pmars",)
 
 
 def _candidate_directories(resource_root: Path, data_root: Path) -> list[Path]:
-    directories = [
-        resource_root / "pmars" / "windows",
-        resource_root / "pmars",
-        data_root / "pmars" / "windows",
-        data_root / "pmars",
-        data_root / "bin",
-    ]
+    directories: list[Path] = []
+    if _is_windows():
+        directories.extend(
+            (resource_root / "pmars" / "windows", data_root / "pmars" / "windows")
+        )
+    directories.extend((resource_root / "pmars", data_root / "pmars", data_root / "bin"))
     result: list[Path] = []
     for directory in directories:
         normalized = normalize_root(directory)
@@ -95,7 +98,7 @@ def _candidate_directories(resource_root: Path, data_root: Path) -> list[Path]:
 
 def _resolve_file_or_path_command(value: str) -> Path | None:
     candidate = Path(value).expanduser()
-    if candidate.is_file():
+    if candidate.is_file() and (_is_windows() or os.access(candidate, os.X_OK)):
         return candidate.resolve()
     found = shutil.which(value)
     return Path(found).resolve() if found else None
@@ -114,7 +117,11 @@ def resolve_pmars_command(
         # A surrounding quote pair is accepted for compatibility with common
         # Windows environment-variable configuration. Fixed arguments are not
         # split: PMARS_CMD has historically represented one executable.
-        value = explicit[1:-1] if len(explicit) >= 2 and explicit[0] == explicit[-1] == '"' else explicit
+        value = (
+            explicit[1:-1]
+            if len(explicit) >= 2 and explicit[0] == explicit[-1] == '"'
+            else explicit
+        )
         resolved = _resolve_file_or_path_command(value)
         if resolved is None:
             raise PMarsNotFoundError(
@@ -130,7 +137,7 @@ def resolve_pmars_command(
         for name in _executable_names():
             candidate = (directory / name).resolve()
             searched.append(candidate)
-            if candidate.is_file():
+            if candidate.is_file() and (_is_windows() or os.access(candidate, os.X_OK)):
                 return [str(candidate)]
 
     for name in _executable_names():
@@ -163,7 +170,9 @@ def parse_pmars_winner(stdout: str) -> str:
     if re.search(r"\b(?:tie|draw)\b", stdout, re.IGNORECASE):
         return "tie"
 
-    results = re.search(r"^Results:\s*(\d+)\s+(\d+)\s+(\d+)\s*$", stdout, re.MULTILINE | re.IGNORECASE)
+    results = re.search(
+        r"^Results:\s*(\d+)\s+(\d+)\s+(\d+)\s*$", stdout, re.MULTILINE | re.IGNORECASE
+    )
     if results:
         a_wins, b_wins = int(results.group(1)), int(results.group(2))
         return "A" if a_wins > b_wins else "B" if b_wins > a_wins else "tie"

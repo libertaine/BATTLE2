@@ -10,6 +10,7 @@ from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.core import Config, JSONLSink, Kernel, Weights
 from battle_engine.paths import get_data_root
 from battle_engine.pmars import PMarsError, run_pmars
+from battle_engine.starters import ensure_starter_agents
 from battle_engine.telemetry import NullSummarySink
 
 DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
@@ -451,6 +452,11 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     if getattr(args, "list_agents", False):
         root = _battle_root()
+        try:
+            ensure_starter_agents(data_root=root)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            print(f"ERROR: Could not initialize starter agents: {exc}", file=sys.stderr)
+            return 2
         specs = discover_agents(root)
         if not specs:
             print(f"No agents found under {root / 'agents'}")
@@ -507,6 +513,9 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(f"Warrior file missing: {missing}", file=sys.stderr)
             return 2
 
+        # Redcode mode currently produces a summary but no BATTLE replay.
+        # Remove an artifact from an earlier invocation before starting pMARS.
+        replay_path.unlink(missing_ok=True)
         try:
             result = run_pmars(
                 _pmars_arguments(
@@ -521,6 +530,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 )
             )
         except PMarsError as exc:
+            replay_path.unlink(missing_ok=True)
             summary_path.unlink(missing_ok=True)
             print(f"pMARS error: {exc}", file=sys.stderr)
             return exc.exit_code
