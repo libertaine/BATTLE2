@@ -4,7 +4,7 @@ The automated characterization suite covers deterministic engine execution,
 basic VM instructions, native match completion, scoring/winners, replay and
 summary creation, agent discovery, CLI help, and headless replay processing.
 The following checks require an interactive desktop, platform toolchain, or
-external executable and remain manual release-candidate checks.
+external executable and remain manual release checks.
 
 ## Pygame live match and replay viewer
 

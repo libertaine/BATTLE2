@@ -1,6 +1,6 @@
 # BATTLE2 v0.2 Architecture
 
-This document records the implemented v0.2 release-candidate architecture while
+This document records the released v0.2.0 architecture while
 retaining clearly identified v0.1 compatibility boundaries. Some responsibilities
 overlap and historical code remains in the repository. Migration history is in
 [`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md).
@@ -167,6 +167,11 @@ whole-repository package used by the documented install flow.
 
 Windows builds remain implemented by the PowerShell scripts and PyInstaller spec
 files under `tools/`; `tools/build_win.ps1` is invoked by CI.
+The unified Windows `battle2.exe` explicitly collects the dynamically loaded
+`app` package and Qt dependencies, so all four dispatcher commands are available.
+The Windows build runs deterministic frozen startup smoke for both
+`battle2.exe design` and the standalone Designer; this is startup coverage, not
+a substitute for manual visible/input GUI testing.
 
 Runtime Python support is 3.10 through 3.13. Core installation requires PyYAML. Optional
 extras are `replay` (Pygame), `designer` (PySide6), `dev`, and `windows-build`;

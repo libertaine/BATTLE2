@@ -1,6 +1,6 @@
-# Linux wheel installation
+# BATTLE2 v0.2.0 Linux wheel installation
 
-BATTLE2 v0.2 supports Python 3.10 through 3.13. The first Linux artifact is a
+BATTLE2 v0.2.0 supports Python 3.10 through 3.13. The Linux release artifact is a
 Python wheel; no PyInstaller, AppImage, Debian, or Flatpak artifact is currently
 provided.
 
@@ -23,7 +23,7 @@ python -m pip install 'battle2[designer]'  # PySide6 Agent Designer
 
 PySide6 and Pygame are not required for the core CLI. CI validates Pygame and
 Designer startup under X11/Xvfb. That is not full visible/input GUI validation,
-and native Wayland remains unvalidated, so the v0.2 Linux wheel should still be
+and native Wayland remains unvalidated, so the v0.2.0 Linux wheel should still be
 treated as headless-first.
 
 ## Writable data and starter agents

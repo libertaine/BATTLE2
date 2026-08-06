@@ -1,12 +1,16 @@
 # Installation Guide
 
-## Windows installer candidate
+## Windows installer
 
-The v0.2 installer candidate is `BATTLE2-Setup-0.2.0.exe`. It installs five
+Download `BATTLE2-Setup-0.2.0.exe` from the
+[v0.2.0 release](https://github.com/libertaine/BATTLE2/releases/tag/v0.2.0).
+It installs five
 onedir applications beneath `C:\Program Files\BATTLE2\bin`: `battle2`,
 `battle-cli`, `match-runner`, `battle-agent-designer`, and
-`battle-replay-viewer`. The CI artifact containing the corresponding portable
-application trees is named `windows-exes`.
+`battle-replay-viewer`. The release archive containing the corresponding portable
+application trees is `BATTLE2-0.2.0-windows-exes.zip`. Extract the entire ZIP
+for portable use; do not copy only the top-level executables because their
+adjacent DLLs, Qt plugins, resources, and pMARS files are required.
 
 The installer sets `BATTLE2_ROOT` to `%ProgramData%\BATTLE2` and does not modify
 `PATH`. Uninstall removes programs, shortcuts, and the installed environment
@@ -22,6 +26,15 @@ The installed executables remain available by their full paths, for example:
 ```
 
 ## Python wheel on Windows
+
+Python users can install the release wheel into an isolated environment:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install .\battle2-0.2.0-py3-none-any.whl
+battle2 --help
+```
 
 A normal, non-editable wheel installation uses `%LOCALAPPDATA%\BATTLE2` for
 writable data. If `LOCALAPPDATA` is unavailable, it falls back to

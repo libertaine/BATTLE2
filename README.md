@@ -44,15 +44,17 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Release candidate:** v0.2.0 is being prepared from `v0.2-integration`. Existing
-v0.1 downloads are historical and are not the current release candidate.
+**Current release:** [BATTLE2 v0.2.0](https://github.com/libertaine/BATTLE2/releases/tag/v0.2.0).
+The v0.1 downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Installer candidate** | `BATTLE2-Setup-0.2.0.exe` | Installs under `C:\Program Files\BATTLE2` |
-| 💼 **CI executable artifact** | `windows-exes` | Contains the five v0.2 onedir applications; a release ZIP has not yet been published |
+| 🧰 **Windows installer** | [BATTLE2-Setup-0.2.0.exe](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/BATTLE2-Setup-0.2.0.exe) | Installs under `C:\Program Files\BATTLE2` |
+| 💼 **Portable Windows applications** | [BATTLE2-0.2.0-windows-exes.zip](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/BATTLE2-0.2.0-windows-exes.zip) | Complete onedir layouts for all five executables |
+| 🐍 **Python wheel** | [battle2-0.2.0-py3-none-any.whl](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/battle2-0.2.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---
 
@@ -63,6 +65,12 @@ Choose one of the options below:
 | Data root | `%ProgramData%\BATTLE2\` |
 | Replays | `%ProgramData%\BATTLE2\runs\_loose\` |
 | Agents | `%ProgramData%\BATTLE2\agents\` |
+
+A regular Windows wheel installation instead defaults to
+`%LOCALAPPDATA%\BATTLE2`. Explicit `BATTLE2_ROOT`, then legacy `BATTLE_ROOT`,
+take precedence. Frozen installer/portable behavior and recognized source or
+editable checkouts retain their documented roots before the installed-platform
+default is considered.
 
 Environment variable `BATTLE2_ROOT` is automatically set to the data root during installation.
 The legacy `BATTLE_ROOT` name remains supported when `BATTLE2_ROOT` is unset. If
@@ -241,7 +249,9 @@ For Windows packaging, two approaches are viable:
   * Use the Inno Setup script to install those applications. Bundled pMARS is
     present only inside the two CLI application resource trees; starter agents
     are initialized into writable user data from packaged manifests.
-  * Add Start Menu shortcuts, add to PATH optionally
+  * The unified `battle2.exe design` and standalone Designer are exercised by
+    deterministic frozen startup smoke during the Windows build.
+  * Add Start Menu shortcuts without modifying `PATH`.
 
 * **MSI via WiX Toolset**
 

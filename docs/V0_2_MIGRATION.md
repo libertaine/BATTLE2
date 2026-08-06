@@ -1,5 +1,13 @@
 # BATTLE2 v0.2 Migration Plan
 
+## Release status
+
+The scoped v0.2 work described as completed below shipped in BATTLE2 v0.2.0.
+Remaining contract consolidation and cleanup items are future improvements and
+are not claims about missing v0.2.0 release functionality. The Windows release
+includes all four unified dispatcher paths, including the dynamically packaged
+Agent Designer; the Linux wheel remains pure Python with external pMARS policy.
+
 ## Current architectural limitations
 
 - `battle_engine.core` combines ISA, VM state, scheduling, scoring, match policy,
