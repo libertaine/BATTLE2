@@ -91,6 +91,50 @@ def test_regular_install_uses_package_container_for_resources(monkeypatch):
     assert paths.get_resource_root() == Path(paths.__file__).resolve().parent.parent
 
 
+def test_installed_linux_uses_xdg_data_home(monkeypatch, tmp_path):
+    working = tmp_path / "working directory"
+    xdg_data = tmp_path / "xdg data"
+    working.mkdir()
+    monkeypatch.chdir(working)
+    monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    resolved = paths.get_data_root(
+        {"XDG_DATA_HOME": str(xdg_data), "HOME": str(tmp_path / "unused home")}
+    )
+
+    assert resolved == (xdg_data / "battle2").resolve()
+    assert resolved != working.resolve()
+
+
+def test_installed_linux_defaults_under_isolated_home(monkeypatch, tmp_path):
+    home = tmp_path / "isolated home"
+    monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    resolved = paths.get_data_root({"HOME": str(home)})
+
+    assert resolved == (home / ".local" / "share" / "battle2").resolve()
+
+
+def test_source_checkout_ignores_xdg_default(monkeypatch, tmp_path):
+    repository = tmp_path / "source checkout"
+    monkeypatch.setattr(paths, "_source_checkout_root", lambda: repository)
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    assert paths.get_data_root({"XDG_DATA_HOME": str(tmp_path / "xdg")}) == repository
+
+
+def test_regular_windows_install_keeps_working_directory_fallback(monkeypatch, tmp_path):
+    working = tmp_path / "windows working directory"
+    working.mkdir()
+    monkeypatch.chdir(working)
+    monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    assert paths.get_data_root({"XDG_DATA_HOME": str(tmp_path / "ignored")}) == working
+
+
 def test_default_paths_normalize_their_writable_root(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 

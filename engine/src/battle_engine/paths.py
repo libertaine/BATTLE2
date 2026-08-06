@@ -38,6 +38,17 @@ def is_frozen_application() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def _linux_data_root(environ: Mapping[str, str]) -> Path:
+    """Return the XDG data directory used by a regular Linux installation."""
+    xdg_data_home = environ.get("XDG_DATA_HOME", "").strip()
+    if xdg_data_home:
+        return normalize_root(Path(xdg_data_home) / "battle2")
+
+    configured_home = environ.get("HOME", "").strip()
+    home = normalize_root(configured_home) if configured_home else Path.home().resolve()
+    return home / ".local" / "share" / "battle2"
+
+
 def get_resource_root() -> Path:
     """Return the read-only application resource root for the current context."""
     if is_frozen_application():
@@ -56,7 +67,8 @@ def get_resource_root() -> Path:
 
 def get_data_root(environ: Mapping[str, str] | None = None) -> Path:
     """Return the writable root for agents, replays, logs, and user config."""
-    configured = configured_data_root(environ)
+    values = os.environ if environ is None else environ
+    configured = configured_data_root(values)
     if configured is not None:
         return configured
 
@@ -68,6 +80,9 @@ def get_data_root(environ: Mapping[str, str] | None = None) -> Path:
     checkout_root = _source_checkout_root()
     if checkout_root is not None:
         return checkout_root
+
+    if sys.platform.startswith("linux"):
+        return _linux_data_root(values)
     return Path.cwd().resolve()
 
 
