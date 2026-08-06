@@ -1,2 +1,3 @@
-pytest
-pyinstaller==6.10.0
+pytest>=8
+ruff>=0.6
+mypy>=1.10

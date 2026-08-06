@@ -1,6 +1,14 @@
 from __future__ import annotations
 import sys
 from typing import Any, Dict, Optional
+from battle_engine.replay import (
+    AgentEvent,
+    KillDeathEvent,
+    MatchResult,
+    ReplayHeader,
+    ReplayRecord,
+    TickSnapshot,
+)
 from .base import AbstractRenderer
 
 
@@ -31,30 +39,21 @@ class HeadlessRenderer(AbstractRenderer):
         self._out.write("\n")
         self._out.flush()
 
-    def on_event(self, event: Dict[str, Any]) -> None:
-        et = event.get("type")
-        tick = event.get("tick")
-        who = event.get("who")
-        if et == "spawn":
-            pos = event.get("pos")
-            self._println(tick, f"SPAWN who={who} pos={pos}")
-        elif et == "move":
-            frm = event.get("from")
-            to = event.get("to")
-            self._println(tick, f"MOVE  who={who} {frm}->{to}")
-        elif et in ("death", "die"):
-            cause = event.get("cause")
-            self._println(tick, f"DEATH who={who} cause={cause}")
-        elif et in ("territory", "claim"):
-            cells = event.get("cells") or event.get("count")
-            self._println(tick, f"TERR  who={who} +cells={cells}")
-        elif et in ("score", "tick"):
-            # Some engines emit periodic score or heartbeat events
-            payload = {k: v for k, v in event.items() if k not in ("type", "tick")}
-            self._println(tick, f"{et.upper()} {payload}")
-        else:
-            # Unknown event type: keep visible for debugging
-            self._println(tick, f"EVENT {event}")
+    def on_event(self, record: ReplayRecord) -> None:
+        if isinstance(record, ReplayHeader):
+            self._println(0, f"HEADER arena={record.config.arena_size}")
+            return
+        if isinstance(record, MatchResult):
+            self._println(record.ticks, f"RESULT winner={record.winner or 'tie'} score={dict(record.score)}")
+            return
+
+        self._println(record.tick, f"TICK score={dict(record.score)} agents={len(record.agents)}")
+        for event in record.events:
+            if isinstance(event, KillDeathEvent):
+                self._println(record.tick, f"{event.event_type.upper()} victim={event.victim} killer={event.killer}")
+            elif isinstance(event, AgentEvent):
+                cells = list(event.cells) if event.cells else event.cell_count
+                self._println(record.tick, f"{event.event_type.upper()} who={event.agent_id} pos={event.position} cells={cells}")
 
     def teardown(self) -> None:
         self._println(None, "END")

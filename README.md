@@ -2,7 +2,6 @@
 Project to determine feasibility of using LLM to assist me in creation of a project.
 
 
-````markdown
 # BATTLE2
 
 **BATTLE2** is a Python-based framework and simulation engine for Core War–style AI competitions. It supports:
@@ -30,8 +29,10 @@ git clone https://github.com/libertaine/BATTLE2.git
 cd BATTLE2
 python -m venv venv
 source venv/bin/activate     # or `.\venv\Scripts\activate` on Windows
-pip install -e .[gui]        # gui extra includes pygame
-````
+pip install -e .             # engine, headless replay, and agent discovery
+pip install -e ".[replay]"  # optional Pygame replay viewer
+pip install -e ".[designer]" # optional PySide6 designer
+```
 
 > If you don’t need GUI tools, you can install just the core with:
 >
@@ -43,47 +44,81 @@ pip install -e .[gui]        # gui extra includes pygame
 
 ## 📦 Downloads
 
-**Latest Release:** [v0.1.0 (Pre-release)](https://github.com/libertaine/BATTLE2/releases/tag/v0.1.0)
+**Current release:** [BATTLE2 v0.2.0](https://github.com/libertaine/BATTLE2/releases/tag/v0.2.0).
+The v0.1 downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Installer** | [BATTLE2-Setup-0.1.0.exe](https://github.com/libertaine/BATTLE2/releases/download/v0.1.0/BATTLE2-Setup-0.1.0.exe) | Installs under `C:\Program Files\BATTLE2` (recommended) |
-| 💼 **Portable ZIP** | [BATTLE2-portable.zip](https://github.com/libertaine/BATTLE2/releases/download/v0.1.0/BATTLE2-portable.zip) | Unpack and run from any folder (no installation) |
+| 🧰 **Windows installer** | [BATTLE2-Setup-0.2.0.exe](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/BATTLE2-Setup-0.2.0.exe) | Installs under `C:\Program Files\BATTLE2` |
+| 💼 **Portable Windows applications** | [BATTLE2-0.2.0-windows-exes.zip](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/BATTLE2-0.2.0-windows-exes.zip) | Complete onedir layouts for all five executables |
+| 🐍 **Python wheel** | [battle2-0.2.0-py3-none-any.whl](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/battle2-0.2.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---
 
 ### Default Install Paths
 | Component | Location |
 |------------|-----------|
-| Binaries | `C:\Program Files\BATTLE2\bin\` |
+| Binaries | `C:\Program Files\BATTLE2\bin\<application>\` |
 | Data root | `%ProgramData%\BATTLE2\` |
 | Replays | `%ProgramData%\BATTLE2\runs\_loose\` |
-| Agents | `%ProgramData%\BATTLE2\resources\agents\` |
+| Agents | `%ProgramData%\BATTLE2\agents\` |
+
+A regular Windows wheel installation instead defaults to
+`%LOCALAPPDATA%\BATTLE2`. Explicit `BATTLE2_ROOT`, then legacy `BATTLE_ROOT`,
+take precedence. Frozen installer/portable behavior and recognized source or
+editable checkouts retain their documented roots before the installed-platform
+default is considered.
 
 Environment variable `BATTLE2_ROOT` is automatically set to the data root during installation.
+The legacy `BATTLE_ROOT` name remains supported when `BATTLE2_ROOT` is unset. If
+both are defined, `BATTLE2_ROOT` takes precedence.
+This writable data root is separate from bundled read-only application
+resources; PyInstaller's temporary `_MEIPASS` directory is never used for
+replays, logs, generated files, or user configuration.
+The installer deliberately does not modify `PATH`; console applications remain
+available at `bin\battle2\battle2.exe` and `bin\battle-cli\battle-cli.exe`.
+Uninstall removes installed programs and shortcuts but retains `%ProgramData%\BATTLE2`.
+Remove that directory manually only when its agents, replays, logs, and settings
+are no longer needed.
 
-> **Note for Linux/macOS Users:** Install paths and commands may differ. Use `sudo apt install pmars` (or equivalent) for Redcode support.
+> **Linux:** The v0.2 wheel is headless-first. See
+> [Linux wheel installation](docs/LINUX_INSTALL.md) for virtual-environment,
+> XDG data, starter-agent, optional GUI, and current pMARS guidance.
 
 ### CLI Usage
 
 ```bash
-battle-cli --help
+battle2 --help
+battle2 run --help
 ```
 
 Key options:
 
 * `--ticks N`: number of simulation cycles
 * `--arena SIZE`: memory arena size
+* `--a-type NAME` / `--b-type NAME`: select discovered or built-in agents
 * `--list-agents`: show available agents
 * `--mode redcode94`: engage pMARS mode (requires `--red-a` and `--red-b`)
 * Other flags control agent selection, instruction quotas, weighting, etc.
 
-You can also run:
+Primary commands are:
 
 ```bash
-python -m battle_engine.cli --help
+battle2 run       # execute a match
+battle2 replay    # consume an existing replay
+battle2 design    # launch the optional PySide6 designer
+battle2 agents    # list discovered agents
+```
+
+The v0.1 command names `battle-cli`, `match-runner`, and
+`battle-agent-designer` remain compatibility wrappers throughout v0.2. Module
+execution is also available:
+
+```bash
+python -m battle_engine --help
 ```
 
 ---
@@ -94,11 +129,12 @@ python -m battle_engine.cli --help
 
 | Type    | File         | Execution Path            | Notes                                    |
 | ------- | ------------ | ------------------------- | ---------------------------------------- |
-| Python  | `agent.py`   | Interpreted at runtime    | Use Python logic & host APIs             |
+| Python  | `agent.py`   | Discovered as source      | Execution is not wired into the v0.1 CLI |
 | Blob    | `model.blob` | Loaded directly by engine | Faster, minimal runtime                  |
 | Redcode | `.red/.asm`  | Via pMARS integration     | Compatible with existing Core War agents |
 
-* The **Python** format is great for experimentation and rapid prototyping.
+* A directory containing **Python** source is discoverable, but native v0.1 CLI
+  matches require a blob or built-in implementation.
 * Use **blob** when you want to ship just the low-level compiled version.
 * The **Redcode** mode allows interop with legacy Core War agents (via pMARS). Use `--mode redcode94`.
 
@@ -120,10 +156,16 @@ The `agent.yaml` defines metadata (name, display name, required blobs, dependenc
 Use:
 
 ```bash
-battle-cli --list-agents
+battle2 agents
 ```
 
 to see all discovered agents.
+
+Fresh desktop and portable installations initialize four clearly labeled
+starter agents in the writable `agents/` directory: Runner, Writer, Seeker, and
+Spiral. Their canonical manifests are bundled as read-only package resources.
+Initialization copies only missing files and never overwrites custom or edited
+agent files.
 
 ---
 
@@ -134,7 +176,7 @@ to see all discovered agents.
 | Executable | Role | Tech |
 |-----------|------|------|
 | battle-agent-designer.exe | Configure & run matches, open replays | PySide6 (Qt) |
-| match_runner.exe          | Live match visualizer (grid/ticks)     | Pygame |
+| match-runner.exe          | Live match visualizer (grid/ticks)     | Pygame |
 | battle-replay-viewer.exe  | View and analyze match replays         | Pygame |
 
 
@@ -146,12 +188,27 @@ to see all discovered agents.
 BATTLE2 supports pMARS (Redcode) for interoperability:
 
 ```bash
-battle-cli --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
+battle2 run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
 ```
 
-* The backend spawns `pmars` with appropriate flags to evaluate the match.
+* The backend resolves pMARS in this order: non-empty `PMARS_CMD`, platform
+  resources, the configured BATTLE2 data/application layout, then `PATH`.
+  Windows considers its bundled `pmars/windows` resources and `pmars.exe`;
+  Linux considers only executable `pmars` files in `pmars`, `bin`, or `PATH`
+  and never selects the repository's Windows PE files. `PMARS_CMD` denotes one
+  executable path (including paths with spaces), not a shell command with fixed
+  arguments. An invalid explicit value is reported without silent fallback.
+* The backend invokes pMARS without a shell. Missing executables, timeouts,
+  nonzero exits, and unparseable results are failures and do not write a success
+  summary.
 * The output includes a `summary.json` indicating winner, return code, and parameters.
-* You need to install `pmars` binaries (bundled or via your system). The license of pMARS must be respected (typically GPLv2). See `third_party_licenses/` in this repo for full details.
+* The `battle2` and `battle-cli` Windows frozen applications bundle
+  `pmars/windows/pmars.exe` with its `COPYING` file. The pure Python wheel never
+  contains pMARS. pMARS source
+  is GPL-2.0-or-later; see `third_party_licenses/` for the verified GNU GPL
+  version 2 license text.
+  The Linux wheel contains no pMARS executable or source. A pinned experimental
+  console-only build procedure is documented in `tools/pmars/README.md`.
 
 ---
 
@@ -162,33 +219,39 @@ battle-cli --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 
 2. View available agents:
 
    ```bash
-   battle-cli --list-agents
+   battle2 agents
    ```
 
 3. Run a match with default agents:
 
    ```bash
-   battle-cli --ticks 500 --arena 2048 --a-agent my_agent --b-agent other_agent
+   battle2 run --ticks 500 --arena 2048 --a-type my_agent --b-type other_agent
    ```
 
 4. Optional: launch viewer to inspect results:
 
    ```bash
-   python -m battle_client.cli --replay path/to/replay.jsonl
+   battle2 replay --replay path/to/replay.jsonl --renderer pygame
    ```
 
 ---
 
 ## 🚀 Packaging for Windows
 
-We use a wrapper entry point (`battle_engine._entry:main`) to surface `battle-cli` without modifying `cli.py` directly.
+The root package exposes the primary `battle2` dispatcher and retains legacy
+commands through `battle_engine.legacy` compatibility wrappers.
 For Windows packaging, two approaches are viable:
 
 * **PyInstaller + Inno Setup**
 
-  * Build executables for `battle-cli`, `battle-agent-designer`, and `replay-viewer`
-  * Use Inno Setup script (`.iss`) to bundle binaries, agents folder, pmars, etc.
-  * Add Start Menu shortcuts, add to PATH optionally
+  * Build five onedir applications: `battle2`, `battle-cli`, `match-runner`,
+    `battle-agent-designer`, and `battle-replay-viewer`.
+  * Use the Inno Setup script to install those applications. Bundled pMARS is
+    present only inside the two CLI application resource trees; starter agents
+    are initialized into writable user data from packaged manifests.
+  * The unified `battle2.exe design` and standalone Designer are exercised by
+    deterministic frozen startup smoke during the Windows build.
+  * Add Start Menu shortcuts without modifying `PATH`.
 
 * **MSI via WiX Toolset**
 
@@ -210,7 +273,8 @@ In both cases, rely on the `console_scripts` wrappers and package metadata from 
 
 * Keep asset/dataset files in package directories (e.g. `warriors/`, `data/`) so they get included in installs.
 
-* CI (GitHub Actions) should at least run `battle-cli --help`, build tests, and optionally GUI smoke tests.
+* CI installs the project with its test/build extras, runs the complete suite,
+  and builds the existing Windows executables.
 
 If you are migrating from the prior version, check the following:
 
@@ -220,12 +284,11 @@ If you are migrating from the prior version, check the following:
 
 Contributions welcome — open a PR or issue. Thanks for checking out BATTLE2!
 
-```
-
 ## 🧰 Development / Build from Source
 
 Developers can build and test BATTLE2 directly from source.
-Requires **Python 3.11** and **pip >= 24.0**.
+Requires **Python 3.10 through 3.13** and a current pip. CI tests all four
+supported Python versions.
 
 ```bash
 # 1️⃣ Clone the repository
@@ -233,25 +296,25 @@ git clone https://github.com/libertaine/BATTLE2.git
 cd BATTLE2
 
 # 2️⃣ Create and activate a virtual environment
-py -3.11 -m venv .venv
+py -3.10 -m venv .venv        # any supported Python 3.10 through 3.13
 .venv\Scripts\activate        # Windows PowerShell
 # or
 source .venv/bin/activate     # Linux / macOS
 
 # 3️⃣ Install dependencies
 pip install -U pip setuptools wheel
-pip install -e .
+pip install -e ".[dev,replay,designer]"
 
 # 4️⃣ Run the engine or GUI directly
 python -m app.match_runner     # Pygame match window
 python -m app.agent_designer   # PySide6 designer GUI
-python -m battle_engine.cli --help
+python -m battle_engine --help
 
 # 5️⃣ (Optional) Build executables
 pyinstaller -y --clean --name battle-cli --console ^
   --paths engine\src --collect-all battle_engine -m battle_engine.cli
 
-pyinstaller -y --clean --name match_runner --windowed ^
+pyinstaller -y --clean --name match-runner --windowed ^
   app\match_runner.py
 
 pyinstaller -y --clean --name battle-agent-designer --windowed ^
@@ -260,8 +323,14 @@ pyinstaller -y --clean --name battle-agent-designer --windowed ^
 
 > 💡 *Note:* For Windows packaging, use **Inno Setup 6** and compile
 > `tools\installer.iss` to create `BATTLE2-Setup-x.y.z.exe`.
-> This installer copies executables to `C:\Program Files\BATTLE2`
-> and shared data to `%ProgramData%\BATTLE2`.
+> This installer preserves the five PyInstaller application directories beneath
+> `C:\Program Files\BATTLE2\bin` and uses `%ProgramData%\BATTLE2` for writable
+> shared data. It requires administrative installation and supports Windows
+> AMD64/x64; it does not claim ARM64 support.
+
+The legacy executable helper scripts use Python 3.11 as the reproducible release
+build interpreter. This does not change the package runtime requirement of
+Python 3.10 or newer; CI validates the minimum version on Python 3.10.
 
 ---
 
@@ -303,7 +372,7 @@ powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1 -AppDir "
 This runs a minimal smoke test of all installed executables to ensure:
 
 * `battle-cli.exe` runs headless matches
-* `match_runner.exe` opens the Pygame window
+* `match-runner.exe` opens the Pygame window
 * `battle-agent-designer.exe` opens the Qt interface
 
 ---
@@ -311,4 +380,3 @@ This runs a minimal smoke test of all installed executables to ensure:
 ## 📝 Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for version history and upcoming features.
-

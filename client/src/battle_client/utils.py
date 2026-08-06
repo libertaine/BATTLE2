@@ -4,31 +4,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Optional
 
-def iter_jsonl(path: Path) -> Iterator[Dict[str, Any]]:
-    """
-    Stream JSONL events from file. If battle_engine provides a helper,
-    we try to use it for compatibility; otherwise fall back to plain JSONL.
-    """
-    # Optional fast-path if engine exposes a JSONL reader
-    try:
-        # Example: engine might export JSONLSink / JSONLSource style APIs.
-        # We only import lazily and fail open to plain JSONL.
-        from battle_engine import jsonl  # type: ignore[attr-defined]
-        # Expect an API like jsonl.iter_events(path) -> Iterator[dict]
-        if hasattr(jsonl, "iter_events"):
-            for ev in jsonl.iter_events(str(path)):
-                yield ev
-            return
-    except Exception:
-        pass
+from battle_engine.replay import ReplayRecord, iter_replay
 
-    # Portable fallback
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            yield json.loads(line)
+def iter_jsonl(path: Path) -> Iterator[ReplayRecord]:
+    """
+    Stream canonical replay records, adapting supported v0.1 shapes at this
+    boundary before renderers see them.
+    """
+    yield from iter_replay(path)
 
 def maybe_load_summary(replay_path: Path) -> Optional[Dict[str, Any]]:
     """
@@ -37,12 +20,22 @@ def maybe_load_summary(replay_path: Path) -> Optional[Dict[str, Any]]:
     candidate = replay_path.parent / "summary.json"
     if candidate.exists():
         try:
-            return json.loads(candidate.read_text(encoding="utf-8"))
+            raw = json.loads(candidate.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return None
+            params_value = raw.get("params")
+            params: dict[str, Any] = params_value if isinstance(params_value, dict) else {}
+            # Normalize historical metadata locations once, before presentation.
+            return {
+                "arena": raw.get("arena") or raw.get("arena_size") or params.get("arena"),
+                "ticks": raw.get("ticks") or params.get("ticks") or params.get("ticks_run"),
+                "agents": raw.get("agents", {}),
+            }
         except Exception:
             return None
     return None
 
-def paced(iterable: Iterable[Dict[str, Any]], tick_delay: float | None) -> Iterator[Dict[str, Any]]:
+def paced(iterable: Iterable[ReplayRecord], tick_delay: float | None) -> Iterator[ReplayRecord]:
     """
     Optionally pace events by sleeping tick_delay seconds per event.
     """

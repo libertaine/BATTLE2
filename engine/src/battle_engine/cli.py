@@ -1,45 +1,38 @@
 import argparse
 import json
 import os
-import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
-from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.agents import discover_agents, resolve_agent
+from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.core import Config, JSONLSink, Kernel, Weights
+from battle_engine.paths import get_data_root
+from battle_engine.pmars import PMarsError, run_pmars
+from battle_engine.starters import ensure_starter_agents
+from battle_engine.telemetry import NullSummarySink
 
+DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
 
 # ----------------------------
 # Helpers
 # ----------------------------
 
 
-def _run_pmars(
+def _pmars_arguments(
     red_a: Path,
     red_b: Path,
     *,
-    pmars_cmd: str,
     core_size: int,
     max_cycles: int,
     max_processes: int,
     max_len: int,
     min_dist: int,
     rounds: int,
-) -> Tuple[str, Dict[str, Any]]:
-    """
-    Run pMARS in batch mode and try to parse a winner from stdout.
-
-    Returns:
-      (winner, extra)
-
-      winner in {"A", "B", "tie", "unknown"}
-      extra contains stdout/stderr/returncode for troubleshooting.
-    """
-    cmd = [
-        pmars_cmd,
+) -> list[str]:
+    """Build pMARS arguments without resolving or invoking the executable."""
+    return [
         "-b",
         "-r",
         str(rounds),
@@ -57,71 +50,18 @@ def _run_pmars(
         str(red_b),
     ]
 
-    proc = subprocess.run(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    out = proc.stdout
-    err = proc.stderr
-
-    winner = "unknown"
-
-    if re.search(r"\b[Aa]\s+wins\b", out):
-        winner = "A"
-    elif re.search(r"\b[Bb]\s+wins\b", out):
-        winner = "B"
-    elif re.search(r"\b[tT]ie\b|\b[dD]raw\b", out):
-        winner = "tie"
-
-    if winner == "unknown":
-        m = re.search(r"A\s*[:=]\s*(\d+).+?B\s*[:=]\s*(\d+)", out, re.DOTALL)
-        if m:
-            a_score = int(m.group(1))
-            b_score = int(m.group(2))
-            if a_score > b_score:
-                winner = "A"
-            elif b_score > a_score:
-                winner = "B"
-            else:
-                winner = "tie"
-
-    extra = {
-        "stdout": out,
-        "stderr": err,
-        "returncode": proc.returncode,
-    }
-    return winner, extra
 
 
 def _battle_root() -> Path:
-    env = os.environ.get("BATTLE_ROOT")
-    if env:
-        return Path(env).expanduser().resolve()
+    """Compatibility wrapper for the shared writable data-root resolver."""
+    return get_data_root()
 
-    here = Path(__file__).resolve()
-    cand = None
-    try:
-        # .../engine/src/battle_engine/cli.py -> repo root at parents[3]
-        cand = here.parents[3]
-    except IndexError:
-        cand = None
 
-    def valid(p: Path) -> bool:
-        return (p / "engine").is_dir() and (p / "agents").is_dir()
-
-    if cand and valid(cand):
-        return cand
-
-    p = here
-    for _ in range(8):
-        if valid(p):
-            return p
-        p = p.parent
-
-    return Path.cwd()
+def _resolve_replay_path(value: str | None) -> Path:
+    """Resolve the default under the data root or an explicit path from the CWD."""
+    if value is None:
+        return (_battle_root() / DEFAULT_REPLAY_RELATIVE_PATH).resolve()
+    return Path(value).expanduser().resolve()
 
 
 def _parse_env_json(varname: str) -> Dict[str, Any]:
@@ -201,7 +141,7 @@ def _agent_summary_from_kernel(k: Kernel, name_map: Dict[str, str]) -> Dict[str,
         by_id[agent.agent_id] = {
             "name": name_map.get(agent.agent_id, agent.agent_id),
             "alive": bool(getattr(agent, "alive", False)),
-            "score": int(k.score.get(agent.agent_id, 0) or 0),
+            "score": k.score.get(agent.agent_id, 0),
             "alive_ticks": int(st.get("alive_ticks", 0) or 0),
             "kills": int(st.get("kills", 0) or 0),
             "deaths": int(st.get("deaths", 0) or 0),
@@ -226,7 +166,7 @@ def _agent_summary_from_kernel(k: Kernel, name_map: Dict[str, str]) -> Dict[str,
 
 def _winner_from_scores_if_needed(
     kernel_winner: Optional[str],
-    score_map: Dict[str, int],
+    score_map: Dict[str, int | float],
     win_mode: str,
 ) -> str:
     if kernel_winner:
@@ -250,7 +190,14 @@ def _winner_from_scores_if_needed(
 # ----------------------------
 
 
-def parse_args() -> argparse.Namespace:
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="BATTLE",
         description=(
@@ -261,7 +208,14 @@ def parse_args() -> argparse.Namespace:
 
     # Run/replay basics
     p.add_argument("--ticks", type=int, default=3000)
-    p.add_argument("--replay", default="replay.jsonl")
+    p.add_argument(
+        "--replay",
+        default=None,
+        help=(
+            "replay output path; explicit relative paths use the current working "
+            "directory (default: <data-root>/runs/_loose/replay.jsonl)"
+        ),
+    )
     p.add_argument(
         "--pygame",
         action="store_true",
@@ -271,7 +225,7 @@ def parse_args() -> argparse.Namespace:
     # Config overrides
     p.add_argument("--seed", type=int)
     p.add_argument("--arena", type=int)
-    p.add_argument("--quota", type=int)
+    p.add_argument("--quota", type=_positive_int, help="instructions per agent per tick")
     p.add_argument("--alive-w", type=float)
     p.add_argument("--kill-w", type=float)
     p.add_argument("--territory-w", type=float, help="points per territory bucket")
@@ -374,7 +328,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rounds", type=int, default=1, help="Number of rounds to run")
 
     p.add_argument("--quiet", action="store_true")
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
 # ----------------------------
@@ -456,15 +410,19 @@ def _resolve_agent(
         else:
             blob_path = spec_obj.blob
 
-        # If no source agent.py exists, require a blob.
-        if not (spec_obj.dir / "agent.py").exists():
-            if blob_path is None or not blob_path.exists():
-                raise SystemExit(
-                    f"No blob specified for agent '{agent_name}'. "
-                    f"Provide model.blob in agents/{agent_name}/ or pass via env JSON "
-                    f"key 'blob_path' in $BATTLE_AGENT_{letter}_PARAMS_JSON or use "
-                    f"--{letter.lower()}-blob."
-                )
+        # Manifest-only starter agents may intentionally select an existing
+        # built-in implementation. Other discovered agents still require code.
+        if (
+            not (spec_obj.dir / "agent.py").exists()
+            and agent_name not in SUPPORTED
+            and (blob_path is None or not blob_path.exists())
+        ):
+            raise SystemExit(
+                f"No blob specified for agent '{agent_name}'. "
+                f"Provide model.blob in agents/{agent_name}/ or pass via env JSON "
+                f"key 'blob_path' in $BATTLE_AGENT_{letter}_PARAMS_JSON or use "
+                f"--{letter.lower()}-blob."
+            )
 
         if blob_path is not None and blob_path.exists():
             code = read_blob(str(blob_path))
@@ -490,11 +448,15 @@ def _resolve_agent(
 
 
 def main(argv: Iterable[str] | None = None) -> int:
-    del argv  # current implementation uses parse_args() directly
-    args = parse_args()
+    args = parse_args(argv)
 
     if getattr(args, "list_agents", False):
         root = _battle_root()
+        try:
+            ensure_starter_agents(data_root=root)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            print(f"ERROR: Could not initialize starter agents: {exc}", file=sys.stderr)
+            return 2
         specs = discover_agents(root)
         if not specs:
             print(f"No agents found under {root / 'agents'}")
@@ -515,6 +477,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         cfg_kwargs["arena_size"] = args.arena
     if args.win_mode:
         cfg_kwargs["win_mode"] = args.win_mode
+    if args.quota is not None:
+        cfg_kwargs["instr_per_tick"] = args.quota
 
     cfg = Config(**cfg_kwargs)
 
@@ -532,16 +496,15 @@ def main(argv: Iterable[str] | None = None) -> int:
         ),
     )
 
-    replay_path = Path(args.replay).expanduser().resolve()
-    replay_path.parent.mkdir(parents=True, exist_ok=True)
+    replay_path = _resolve_replay_path(args.replay)
     summary_path = replay_path.with_name("summary.json")
 
     if args.mode == "redcode94":
+        replay_path.parent.mkdir(parents=True, exist_ok=True)
         if not args.red_a or not args.red_b:
             print("redcode94 mode requires --red-a and --red-b", file=sys.stderr)
             return 2
 
-        pmars_cmd = os.environ.get("PMARS_CMD", "pmars")
         a_path = Path(args.red_a)
         b_path = Path(args.red_b)
 
@@ -550,23 +513,33 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(f"Warrior file missing: {missing}", file=sys.stderr)
             return 2
 
-        winner, extra = _run_pmars(
-            a_path,
-            b_path,
-            pmars_cmd=pmars_cmd,
-            core_size=args.core_size,
-            max_cycles=args.max_cycles,
-            max_processes=args.max_processes,
-            max_len=args.max_len,
-            min_dist=args.min_dist,
-            rounds=args.rounds,
-        )
+        # Redcode mode currently produces a summary but no BATTLE replay.
+        # Remove an artifact from an earlier invocation before starting pMARS.
+        replay_path.unlink(missing_ok=True)
+        try:
+            result = run_pmars(
+                _pmars_arguments(
+                    a_path,
+                    b_path,
+                    core_size=args.core_size,
+                    max_cycles=args.max_cycles,
+                    max_processes=args.max_processes,
+                    max_len=args.max_len,
+                    min_dist=args.min_dist,
+                    rounds=args.rounds,
+                )
+            )
+        except PMarsError as exc:
+            replay_path.unlink(missing_ok=True)
+            summary_path.unlink(missing_ok=True)
+            print(f"pMARS error: {exc}", file=sys.stderr)
+            return exc.exit_code
 
         summary = {
             "version": 2,
             "mode": "redcode94",
             "ticks": args.max_cycles,
-            "winner": winner or "tie",
+            "winner": result.winner,
             "A_score": None,
             "B_score": None,
             "A_alive_ticks": None,
@@ -583,8 +556,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             },
             "agents": {"A": str(a_path), "B": str(b_path)},
             "backend": {
-                "cmd": pmars_cmd,
-                "returncode": extra.get("returncode"),
+                "cmd": list(result.command),
+                "returncode": result.returncode,
             },
         }
 
@@ -593,9 +566,6 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not args.quiet:
             print(f"Winner: {summary['winner']}; summary: {summary_path}")
         return 0
-
-    sink = JSONLSink(str(replay_path))
-    k = Kernel(cfg, sink)
 
     byte = args.byte
     if args.attack_byte is not None:
@@ -662,19 +632,36 @@ def main(argv: Iterable[str] | None = None) -> int:
         )
         return 2
 
-    k.spawn("A", startA % cfg.arena_size, codeA)
-    k.spawn("B", startB % cfg.arena_size, codeB)
-    if codeC is not None and nameC:
-        k.spawn("C", startC % cfg.arena_size, codeC)
+    # Agent validation above must complete before this owned output is opened;
+    # otherwise an invalid invocation could truncate an existing replay.
+    replay_path.parent.mkdir(parents=True, exist_ok=True)
+    sink = JSONLSink(str(replay_path))
+    try:
+        k = Kernel(cfg, sink, summary_sink=NullSummarySink())
+        k.spawn("A", startA % cfg.arena_size, codeA)
+        k.spawn("B", startB % cfg.arena_size, codeB)
+        if codeC is not None and nameC:
+            k.spawn("C", startC % cfg.arena_size, codeC)
 
-    winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
+        winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
+    except BaseException:
+        # A partial replay cannot be paired safely with an older summary. Both
+        # paths are owned by this invocation once the replay sink is opened.
+        sink.close()
+        replay_path.unlink(missing_ok=True)
+        summary_path.unlink(missing_ok=True)
+        raise
+    finally:
+        # MatchRunner normally closes the sink; closing an already-closed file is
+        # harmless and also covers spawn/setup failures before MatchRunner starts.
+        sink.close()
 
     name_map = {"A": nameA, "B": nameB}
     if nameC:
         name_map["C"] = nameC
 
     agent_stats = _agent_summary_from_kernel(k, name_map)
-    score_map = {agent_id: int(score or 0) for agent_id, score in k.score.items()}
+    score_map = dict(k.score)
     effective_winner = _winner_from_scores_if_needed(winner, score_map, cfg.win_mode)
 
     summary = {

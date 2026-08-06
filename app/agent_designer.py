@@ -1,25 +1,25 @@
 # app/agent_designer.py
 from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
-from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QMessageBox
-from app.views.simple import SimplePanel
-from app.views.advanced import AdvancedPanel
-from app.services.agent_catalog import AgentCatalog
-from PySide6.QtCore import Slot, QProcess, QProcessEnvironment
-from PySide6.QtWidgets import QFileDialog
 
+from battle_engine.launchers import build_designer_match_arguments, build_match_command
+from battle_engine.paths import get_data_root
+from battle_engine.starters import ensure_starter_agents
+from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, Slot
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QTabWidget
+
+from app.services.agent_catalog import AgentCatalog
+from app.services.engine import open_pygame_client_direct
+from app.views.advanced import AdvancedPanel
+from app.views.simple import SimplePanel
 
 
 def _resolve_battle_root() -> Path:
-    # 1) allow override via env
-    env = os.getenv("BATTLE2_ROOT")
-    if env:
-        return Path(env).resolve()
-    # 2) default to project root (parent of app/)
-    return Path(__file__).resolve().parent.parent
+    """Compatibility wrapper for the shared writable data-root resolver."""
+    return get_data_root()
 
 
 class AgentDesigner(QMainWindow):
@@ -30,6 +30,14 @@ class AgentDesigner(QMainWindow):
 
         # Build battle_root and shared catalog
         battle_root = _resolve_battle_root()
+        try:
+            ensure_starter_agents(data_root=battle_root)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            QMessageBox.critical(
+                self,
+                "Starter Agents Unavailable",
+                f"BATTLE2 could not initialize its starter agents.\n\n{exc}",
+            )
         self.battle_root = battle_root            # <-- keep for later
         self._proc = None                         # <-- init process handle
         self._last_replay = None                  # <-- init replay capture
@@ -133,22 +141,24 @@ class AgentDesigner(QMainWindow):
         a_type = (rowA.meta.get("name") if isinstance(getattr(rowA, "meta", None), dict) else None) or Path(rowA.path).name or a_name
         b_type = (rowB.meta.get("name") if isinstance(getattr(rowB, "meta", None), dict) else None) or Path(rowB.path).name or b_name
 
-        args = [
-            "-m", "battle_engine.cli",
-            "--ticks", str(ticks),
-            "--arena", str(arena),
-            "--a-type", a_type,
-            "--b-type", b_type,
-        ]
-        if getattr(rowA, "blob_path", None):
-            args += ["--a-blob", str(rowA.blob_path)]
-        if getattr(rowB, "blob_path", None):
-            args += ["--b-blob", str(rowB.blob_path)]
-        if alive_w is not None: args += ["--alive-w", str(alive_w)]
-        if kill_w  is not None: args += ["--kill-w",  str(kill_w)]
-        if terr_w  is not None: args += ["--territory-w", str(terr_w)]
-        if bucket  is not None: args += ["--territory-bucket", str(bucket)]
-        if seed    is not None: args += ["--seed", str(seed)]
+        match_arguments = build_designer_match_arguments(
+            ticks=ticks,
+            arena=arena,
+            a_type=a_type,
+            b_type=b_type,
+            a_blob=getattr(rowA, "blob_path", None),
+            b_blob=getattr(rowB, "blob_path", None),
+            alive_w=alive_w,
+            kill_w=kill_w,
+            territory_w=terr_w,
+            territory_bucket=bucket,
+            seed=seed,
+        )
+        try:
+            command = build_match_command(match_arguments)
+        except FileNotFoundError as exc:
+            self.advanced.appendLog(f"[RunMatch] {exc}\n")
+            return
 
         # disable controls; set log target (again, just to be explicit)
         self.simple.setBusy(True)
@@ -161,7 +171,7 @@ class AgentDesigner(QMainWindow):
         root = self.battle_root
         eng = str(root / "engine" / "src")
         cli = str(root / "client" / "src")
-        sep = ";" if os.name == "nt" else ":"
+        sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
         env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
@@ -170,13 +180,17 @@ class AgentDesigner(QMainWindow):
         self._proc = QProcess(self)
         self._proc.setProcessEnvironment(env)
         self._proc.setWorkingDirectory(str(root))
-        self._proc.setProgram(sys.executable)
-        self._proc.setArguments(args)
+        self._proc.setProgram(command[0])
+        self._proc.setArguments(command[1:])
 
         self._proc.readyReadStandardOutput.connect(self._pipe_proc_output)
         self._proc.readyReadStandardError.connect(self._pipe_proc_output)
         self._proc.finished.connect(self._on_proc_finished)
-        self._proc.errorOccurred.connect(lambda e: self.advanced.appendLog(f"[RunMatch] process error: {e}\n"))
+        self._proc.errorOccurred.connect(
+            lambda error: self.advanced.appendLog(
+                f"[RunMatch] failed to start '{command[0]}': {error}\n"
+            )
+        )
 
         self.advanced.appendLog(
             f"[RunMatch] A={a_name} -> type='{a_type}' blob='{getattr(rowA,'blob_path',None)}'  "
@@ -217,18 +231,19 @@ class AgentDesigner(QMainWindow):
         b_type = (rowB.meta.get("name") if hasattr(rowB, "meta") and isinstance(rowB.meta, dict) else None) or Path(rowB.path).name or cfg.b_type
 
         # Build CLI args with the correct flags
-        args = [
-            "-m", "battle_engine.cli",
-            "--ticks", str(cfg.ticks),
-            "--arena", str(cfg.arena),
-            "--a-type", a_type,
-            "--b-type", b_type,
-        ]
-        # If blobs exist, pass them (optional)
-        if getattr(rowA, "blob_path", None):
-            args += ["--a-blob", str(rowA.blob_path)]
-        if getattr(rowB, "blob_path", None):
-            args += ["--b-blob", str(rowB.blob_path)]
+        match_arguments = build_designer_match_arguments(
+            ticks=cfg.ticks,
+            arena=cfg.arena,
+            a_type=a_type,
+            b_type=b_type,
+            a_blob=getattr(rowA, "blob_path", None),
+            b_blob=getattr(rowB, "blob_path", None),
+        )
+        try:
+            command = build_match_command(match_arguments)
+        except FileNotFoundError as exc:
+            self.simple.appendLog(f"[RunMatch] {exc}\n")
+            return
 
         # disable controls while running
         self.simple.setBusy(True)
@@ -239,7 +254,7 @@ class AgentDesigner(QMainWindow):
         root = self.battle_root
         eng = str(root / "engine" / "src")
         cli = str(root / "client" / "src")
-        sep = ";" if os.name == "nt" else ":"
+        sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
         env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
@@ -248,13 +263,18 @@ class AgentDesigner(QMainWindow):
         self._proc = QProcess(self)
         self._proc.setProcessEnvironment(env)
         self._proc.setWorkingDirectory(str(root))
-        self._proc.setProgram(sys.executable)
-        self._proc.setArguments(args)
+        self._proc.setProgram(command[0])
+        self._proc.setArguments(command[1:])
 
         # wire logs & finish
         self._proc.readyReadStandardOutput.connect(self._pipe_proc_output)
         self._proc.readyReadStandardError.connect(self._pipe_proc_output)
         self._proc.finished.connect(self._on_proc_finished)
+        self._proc.errorOccurred.connect(
+            lambda error: self.simple.appendLog(
+                f"[RunMatch] failed to start '{command[0]}': {error}\n"
+            )
+        )
 
         # start
         self.simple.appendLog(
@@ -286,20 +306,23 @@ class AgentDesigner(QMainWindow):
     def _on_open_replay(self):
         # try the captured path; else let the user pick
         path = None
-        if self._last_replay and os.path.exists(self._last_replay):
+        if self._last_replay and Path(self._last_replay).exists():
             path = self._last_replay
         if not path:
             path, _ = QFileDialog.getOpenFileName(self, "Open Replay", str(self.battle_root), "All Files (*.*)")
         if path:
-            if os.name == "nt":
-                os.startfile(path)  # nosec
-            else:
-                QProcess.startDetached("xdg-open", [path])                
+            try:
+                open_pygame_client_direct(self.battle_root, Path(path))
+            except (FileNotFoundError, OSError) as exc:
+                QMessageBox.critical(self, "Replay Launch Failed", str(exc))
 
 def main() -> int:
     app = QApplication(sys.argv)
     win = AgentDesigner()
     win.show()
+    smoke_exit_ms = os.environ.get("BATTLE2_GUI_SMOKE_EXIT_MS", "").strip()
+    if smoke_exit_ms:
+        QTimer.singleShot(max(0, int(smoke_exit_ms)), app.quit)
     return app.exec()
 
 

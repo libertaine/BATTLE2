@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from battle_engine import cli
+
+
+def _match_arguments(replay: str | Path | None = None) -> list[str]:
+    arguments = [
+        "--ticks", "2",
+        "--arena", "128",
+        "--a-type", "writer",
+        "--b-type", "runner",
+        "--b-start", "64",
+        "--quiet",
+    ]
+    if replay is not None:
+        arguments.extend(("--replay", str(replay)))
+    return arguments
+
+
+def test_default_replay_and_summary_use_the_data_root(monkeypatch, tmp_path):
+    data_root = tmp_path / "xdg data" / "battle2"
+    working = tmp_path / "unrelated working directory"
+    working.mkdir()
+    monkeypatch.chdir(working)
+    monkeypatch.setattr(cli, "get_data_root", lambda: data_root)
+
+    assert cli.main(_match_arguments()) == 0
+
+    replay = data_root / "runs" / "_loose" / "replay.jsonl"
+    assert replay.is_file()
+    assert replay.with_name("summary.json").is_file()
+    assert not (working / "replay.jsonl").exists()
+    assert not (working / "summary.json").exists()
+
+
+def test_explicit_relative_replay_remains_relative_to_working_directory(
+    monkeypatch, tmp_path
+):
+    working = tmp_path / "working"
+    working.mkdir()
+    monkeypatch.chdir(working)
+    monkeypatch.setattr(cli, "get_data_root", lambda: tmp_path / "data")
+
+    assert cli.main(_match_arguments(Path("chosen") / "relative.jsonl")) == 0
+
+    replay = working / "chosen" / "relative.jsonl"
+    assert replay.is_file()
+    assert replay.with_name("summary.json").is_file()
+    assert not (working / "summary.json").exists()
+
+
+def test_explicit_absolute_replay_keeps_canonical_summary_beside_it(
+    monkeypatch, tmp_path
+):
+    working = tmp_path / "working"
+    replay = tmp_path / "absolute output" / "match.jsonl"
+    working.mkdir()
+    monkeypatch.chdir(working)
+
+    assert cli.main(_match_arguments(replay)) == 0
+
+    assert replay.is_file()
+    assert replay.with_name("summary.json").is_file()
+    assert not (working / "summary.json").exists()
+
+
+def test_controlled_match_failure_removes_replay_and_stale_summary(
+    monkeypatch, tmp_path
+):
+    replay = tmp_path / "failed" / "replay.jsonl"
+    summary = replay.with_name("summary.json")
+    replay.parent.mkdir()
+    replay.write_text("old replay\n", encoding="utf-8")
+    summary.write_text("old summary\n", encoding="utf-8")
+
+    def fail_run(self, max_ticks=10000, verbose=True):
+        del self, max_ticks, verbose
+        raise RuntimeError("controlled match failure")
+
+    monkeypatch.setattr(cli.Kernel, "run", fail_run)
+
+    with pytest.raises(RuntimeError, match="controlled match failure"):
+        cli.main(_match_arguments(replay))
+
+    assert not replay.exists()
+    assert not summary.exists()

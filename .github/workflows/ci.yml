@@ -3,15 +3,39 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  test-linux:
+  test-linux-core:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: "${{ matrix.python-version }}" }
+      - run: python -m pip install -U pip
+      - name: Install core and test dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Confirm pure launcher import isolation
+        run: >-
+          python -c "import sys; import battle_engine.launchers,
+          app.services.engine_commands; forbidden = [name for name in sys.modules
+          if name == 'PySide6' or name.startswith('PySide6.') or name == 'pygame'
+          or name.startswith('pygame.')]; assert not forbidden, forbidden"
+      - name: Run core and headless tests
+        run: python -m pytest -q -m "not gui"
+
+  build-linux-wheel:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with: { python-version: '3.10' }
-      - run: python -m pip install -U pip
-      - run: pip install -r requirements-core.txt -r requirements-client.txt -r requirements-dev.txt
-      - run: pytest -q
+      - run: python -m pip install -U pip build
+      - name: Build wheel
+        run: python -m build --wheel
+      - name: Inspect wheel contents and entry points
+        run: python tools/check_wheel.py dist/battle2-*.whl
 
   build-windows-exe:
     runs-on: windows-latest
@@ -20,7 +44,7 @@ jobs:
       - uses: actions/setup-python@v6
         with: { python-version: '3.10' }
       - run: python -m pip install -U pip
-      - run: pip install -r requirements-core.txt -r requirements-client.txt -r requirements-dev.txt
+      - run: pip install -e ".[replay,designer,dev,windows-build]"
       - name: Build EXEs
         shell: pwsh
         run: pwsh tools/build_win.ps1

@@ -5,8 +5,9 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from battle_client.renderers.base import AbstractRenderer
+from battle_client.renderers.base import AbstractRenderer, RendererDependencyError
 from battle_client.renderers.headless import HeadlessRenderer
+from battle_client.player import ReplayPlayer
 from battle_client.utils import iter_jsonl, maybe_load_summary, paced
 
 # Pygame renderer is optional; import lazily.
@@ -62,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
 
     replay_path = Path(args.replay).expanduser().resolve()
     if not replay_path.exists():
-        raise SystemExit(f"Replay not found: {replay_path}")
+        p.error(f"Replay not found: {replay_path}")
 
     metadata = maybe_load_summary(replay_path)
 
@@ -70,34 +71,15 @@ def main(argv: list[str] | None = None) -> int:
     renderer = RendererClass()  # type: ignore[call-arg]
 
     try:
-        renderer.setup(metadata)
-
-        # Interactive renderers may wait for the viewer before consuming the
-        # first replay record. Headless and other renderers start immediately.
-        wait_for_start = getattr(renderer, "wait_for_start", None)
-        if callable(wait_for_start):
-            wait_for_start()
-
-        stream = iter_jsonl(replay_path)
-        for ev in paced(stream, args.tick_delay):
-            renderer.on_event(ev)
-
-        # Optional post-replay hold for interactive renderers like pygame.
-        hold_open = getattr(renderer, "hold_open", None)
-        if callable(hold_open):
-            hold_open()
-
-        renderer.teardown()
-
+        ReplayPlayer(renderer).play(paced(iter_jsonl(replay_path), args.tick_delay), metadata)
     except KeyboardInterrupt:
-        try:
-            renderer.teardown()
-        finally:
-            pass
+        pass
     except SystemExit:
         raise
+    except RendererDependencyError as e:
+        print(f"[battle_client] dependency error: {e}", file=sys.stderr)
+        return 2
     except Exception as e:  # noqa: BLE001 - CLI boundary reports renderer/runtime failures
-        renderer.teardown()
         print(f"[battle_client] error: {e}", file=sys.stderr)
         return 1
 
