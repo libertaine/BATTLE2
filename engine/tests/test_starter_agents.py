@@ -63,15 +63,16 @@ def test_installed_linux_initializes_starters_in_xdg_data_home(
     monkeypatch, tmp_path
 ):
     xdg_data = tmp_path / "isolated xdg data"
-    monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
-    monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setenv("XDG_DATA_HOME", str(xdg_data))
-    monkeypatch.setenv("HOME", str(tmp_path / "unused home"))
+    data_root = paths.installed_data_root(
+        {"XDG_DATA_HOME": str(xdg_data), "HOME": str(tmp_path / "unused home")},
+        platform="linux",
+    )
+    monkeypatch.setattr(paths, "get_data_root", lambda environ=None: data_root)
+    monkeypatch.setattr("battle_engine.starters.get_data_root", lambda: data_root)
 
     first = ensure_starter_agents(resource_root=_resource_root())
     second = ensure_starter_agents(resource_root=_resource_root())
 
-    data_root = xdg_data / "battle2"
     assert set(first) == {
         (data_root / "agents" / name / "agent.yaml").resolve()
         for name in STARTER_AGENT_NAMES

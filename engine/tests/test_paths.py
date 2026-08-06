@@ -97,10 +97,9 @@ def test_installed_linux_uses_xdg_data_home(monkeypatch, tmp_path):
     working.mkdir()
     monkeypatch.chdir(working)
     monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
-    monkeypatch.setattr(sys, "platform", "linux")
-
-    resolved = paths.get_data_root(
-        {"XDG_DATA_HOME": str(xdg_data), "HOME": str(tmp_path / "unused home")}
+    resolved = paths.installed_data_root(
+        {"XDG_DATA_HOME": str(xdg_data), "HOME": str(tmp_path / "unused home")},
+        platform="linux",
     )
 
     assert resolved == (xdg_data / "battle2").resolve()
@@ -109,10 +108,7 @@ def test_installed_linux_uses_xdg_data_home(monkeypatch, tmp_path):
 
 def test_installed_linux_defaults_under_isolated_home(monkeypatch, tmp_path):
     home = tmp_path / "isolated home"
-    monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
-    monkeypatch.setattr(sys, "platform", "linux")
-
-    resolved = paths.get_data_root({"HOME": str(home)})
+    resolved = paths.installed_data_root({"HOME": str(home)}, platform="linux")
 
     assert resolved == (home / ".local" / "share" / "battle2").resolve()
 
@@ -125,14 +121,28 @@ def test_source_checkout_ignores_xdg_default(monkeypatch, tmp_path):
     assert paths.get_data_root({"XDG_DATA_HOME": str(tmp_path / "xdg")}) == repository
 
 
-def test_regular_windows_install_keeps_working_directory_fallback(monkeypatch, tmp_path):
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows installed-wheel policy")
+def test_regular_windows_install_uses_local_app_data(monkeypatch, tmp_path):
     working = tmp_path / "windows working directory"
+    local_app_data = tmp_path / "local application data"
     working.mkdir()
     monkeypatch.chdir(working)
     monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
-    monkeypatch.setattr(sys, "platform", "win32")
 
-    assert paths.get_data_root({"XDG_DATA_HOME": str(tmp_path / "ignored")}) == working
+    resolved = paths.get_data_root(
+        {"LOCALAPPDATA": str(local_app_data), "XDG_DATA_HOME": str(tmp_path / "ignored")}
+    )
+
+    assert resolved == (local_app_data / "BATTLE2").resolve()
+    assert resolved != working.resolve()
+
+
+def test_regular_windows_install_falls_back_under_user_profile(tmp_path):
+    profile = tmp_path / "user profile"
+
+    resolved = paths.installed_data_root({"USERPROFILE": str(profile)}, platform="win32")
+
+    assert resolved == (profile / "AppData" / "Local" / "BATTLE2").resolve()
 
 
 def test_default_paths_normalize_their_writable_root(monkeypatch, tmp_path):

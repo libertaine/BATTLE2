@@ -49,6 +49,29 @@ def _linux_data_root(environ: Mapping[str, str]) -> Path:
     return home / ".local" / "share" / "battle2"
 
 
+def _windows_data_root(environ: Mapping[str, str]) -> Path:
+    """Return the per-user data directory used by a regular Windows installation."""
+    local_app_data = environ.get("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        return normalize_root(Path(local_app_data) / "BATTLE2")
+
+    configured_home = environ.get("USERPROFILE", "").strip()
+    home = normalize_root(configured_home) if configured_home else Path.home().resolve()
+    return home / "AppData" / "Local" / "BATTLE2"
+
+
+def installed_data_root(
+    environ: Mapping[str, str], *, platform: str | None = None
+) -> Path:
+    """Return the platform default for a regular, non-editable installation."""
+    platform_name = sys.platform if platform is None else platform
+    if platform_name.startswith("linux"):
+        return _linux_data_root(environ)
+    if platform_name == "win32":
+        return _windows_data_root(environ)
+    return Path.cwd().resolve()
+
+
 def get_resource_root() -> Path:
     """Return the read-only application resource root for the current context."""
     if is_frozen_application():
@@ -81,9 +104,7 @@ def get_data_root(environ: Mapping[str, str] | None = None) -> Path:
     if checkout_root is not None:
         return checkout_root
 
-    if sys.platform.startswith("linux"):
-        return _linux_data_root(values)
-    return Path.cwd().resolve()
+    return installed_data_root(values)
 
 
 # Compatibility name retained for v0.1 callers that treated "battle root" as
