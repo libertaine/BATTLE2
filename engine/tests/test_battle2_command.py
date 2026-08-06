@@ -9,9 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from battle_engine import cli, command, legacy
-
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -86,6 +84,40 @@ def test_successful_headless_match_invocation(tmp_path):
     summary = json.loads((replay.parent / "summary.json").read_text())
     assert summary["seed"] == 17
     assert summary["params"]["ticks_requested"] == 3
+
+
+def test_agents_command_initializes_starters_idempotently(tmp_path):
+    data_root = tmp_path / "empty-data-root"
+    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env.pop("BATTLE_ROOT", None)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
+    )
+
+    first = subprocess.run(
+        [sys.executable, "-m", "battle_engine", "agents"],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode == 0, first.stderr
+    manifests = sorted(path.parent.name for path in (data_root / "agents").glob("*/agent.yaml"))
+    assert manifests == ["runner", "seeker", "spiral", "writer"]
+    runner = data_root / "agents" / "runner" / "agent.yaml"
+    runner.write_text('{"name": "runner", "user_note": "keep"}\n', encoding="utf-8")
+
+    second = subprocess.run(
+        [sys.executable, "-m", "battle_engine", "agents"],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert second.returncode == 0, second.stderr
+    assert runner.read_text(encoding="utf-8") == '{"name": "runner", "user_note": "keep"}\n'
 
 
 def test_quota_and_fractional_scores_reach_replay_and_summary(tmp_path):

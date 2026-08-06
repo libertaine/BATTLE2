@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from battle_engine import cli
+from battle_engine import cli, paths
 from battle_engine.agents import discover_agents
 from battle_engine.starters import STARTER_AGENT_NAMES, ensure_starter_agents
 
@@ -57,6 +57,26 @@ def test_source_resource_lookup_uses_repository_resources(tmp_path):
     created = ensure_starter_agents(data_root=tmp_path)
 
     assert len(created) == len(STARTER_AGENT_NAMES)
+
+
+def test_installed_linux_initializes_starters_in_xdg_data_home(
+    monkeypatch, tmp_path
+):
+    xdg_data = tmp_path / "isolated xdg data"
+    monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg_data))
+    monkeypatch.setenv("HOME", str(tmp_path / "unused home"))
+
+    first = ensure_starter_agents(resource_root=_resource_root())
+    second = ensure_starter_agents(resource_root=_resource_root())
+
+    data_root = xdg_data / "battle2"
+    assert set(first) == {
+        (data_root / "agents" / name / "agent.yaml").resolve()
+        for name in STARTER_AGENT_NAMES
+    }
+    assert second == []
 
 
 def test_frozen_lookup_reads_meipass_and_writes_beside_executable(monkeypatch, tmp_path):

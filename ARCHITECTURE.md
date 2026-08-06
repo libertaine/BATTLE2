@@ -25,9 +25,10 @@ now delegate to focused services:
   publisher, JSON summary adapter, and legacy renderer boundary adapter.
 
 `Kernel.run()` delegates scheduling to `MatchRunner`, resolves/builds the result,
-and preserves the default working-directory `summary.json` through an injectable
-`SummarySink`. `JSONLSink` is re-exported from `core`. Lower-level implementations
-remain extracted:
+and preserves its direct-caller compatibility summary through an injectable
+`SummarySink`. CLI callers inject a null sink and persist only the canonical
+replay-adjacent summary. `JSONLSink` is re-exported from `core`. Lower-level
+implementations remain extracted:
 
 - `battle_engine.config` owns the mutable `Config` and `Weights` dataclasses.
 - `battle_engine.instructions` owns byte-oriented ISA constants and `enc`.
@@ -87,9 +88,10 @@ the engine argparse entry point. The engine CLI:
 The v0.1 native replay is newline-delimited JSON. Its first record is a version 6
 header containing configuration, followed by one snapshot per executed tick.
 Each snapshot contains agent state, score, events, and memory ownership diffs.
-The CLI writes a sibling `summary.json` with schema version 2. `Kernel.run` also
-attempts to write a summary to `summary.json` in the current working directory;
-the CLI's sibling summary is the user-facing artifact.
+The CLI writes one sibling `summary.json` with schema version 2. Its default
+replay is `<data-root>/runs/_loose/replay.jsonl`; explicitly supplied relative
+paths remain relative to the current working directory. Direct `Kernel` callers
+retain the injectable compatibility summary sink.
 
 The external pMARS mode writes a version 2 summary but no native replay stream.
 Executable discovery and execution are owned by `battle_engine.pmars`. It keeps

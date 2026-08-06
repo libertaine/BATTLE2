@@ -31,6 +31,43 @@ def build_match_command(arguments: Sequence[str]) -> list[str]:
     return [str(normalize_root(sys.executable)), "-m", "battle_engine", "run", *options]
 
 
+def build_designer_match_arguments(
+    *,
+    ticks: object,
+    arena: object,
+    a_type: object,
+    b_type: object,
+    a_blob: object | None = None,
+    b_blob: object | None = None,
+    alive_w: object | None = None,
+    kill_w: object | None = None,
+    territory_w: object | None = None,
+    territory_bucket: object | None = None,
+    seed: object | None = None,
+) -> list[str]:
+    """Build Designer match options without importing a GUI toolkit."""
+    arguments = [
+        "--ticks", str(ticks),
+        "--arena", str(arena),
+        "--a-type", str(a_type),
+        "--b-type", str(b_type),
+    ]
+    for flag, value in (("--a-blob", a_blob), ("--b-blob", b_blob)):
+        if value:
+            arguments.extend((flag, str(value)))
+    optional = (
+        ("--alive-w", alive_w),
+        ("--kill-w", kill_w),
+        ("--territory-w", territory_w),
+        ("--territory-bucket", territory_bucket),
+        ("--seed", seed),
+    )
+    for flag, value in optional:
+        if value is not None:
+            arguments.extend((flag, str(value)))
+    return arguments
+
+
 def build_replay_command(
     replay_path: Path, arguments: Sequence[str] = ()
 ) -> list[str]:

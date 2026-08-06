@@ -10,6 +10,10 @@ from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.core import Config, JSONLSink, Kernel, Weights
 from battle_engine.paths import get_data_root
 from battle_engine.pmars import PMarsError, run_pmars
+from battle_engine.starters import ensure_starter_agents
+from battle_engine.telemetry import NullSummarySink
+
+DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
 
 # ----------------------------
 # Helpers
@@ -51,6 +55,13 @@ def _pmars_arguments(
 def _battle_root() -> Path:
     """Compatibility wrapper for the shared writable data-root resolver."""
     return get_data_root()
+
+
+def _resolve_replay_path(value: str | None) -> Path:
+    """Resolve the default under the data root or an explicit path from the CWD."""
+    if value is None:
+        return (_battle_root() / DEFAULT_REPLAY_RELATIVE_PATH).resolve()
+    return Path(value).expanduser().resolve()
 
 
 def _parse_env_json(varname: str) -> Dict[str, Any]:
@@ -197,7 +208,14 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 
     # Run/replay basics
     p.add_argument("--ticks", type=int, default=3000)
-    p.add_argument("--replay", default="replay.jsonl")
+    p.add_argument(
+        "--replay",
+        default=None,
+        help=(
+            "replay output path; explicit relative paths use the current working "
+            "directory (default: <data-root>/runs/_loose/replay.jsonl)"
+        ),
+    )
     p.add_argument(
         "--pygame",
         action="store_true",
@@ -434,6 +452,11 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     if getattr(args, "list_agents", False):
         root = _battle_root()
+        try:
+            ensure_starter_agents(data_root=root)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            print(f"ERROR: Could not initialize starter agents: {exc}", file=sys.stderr)
+            return 2
         specs = discover_agents(root)
         if not specs:
             print(f"No agents found under {root / 'agents'}")
@@ -473,7 +496,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         ),
     )
 
-    replay_path = Path(args.replay).expanduser().resolve()
+    replay_path = _resolve_replay_path(args.replay)
     summary_path = replay_path.with_name("summary.json")
 
     if args.mode == "redcode94":
@@ -490,6 +513,9 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(f"Warrior file missing: {missing}", file=sys.stderr)
             return 2
 
+        # Redcode mode currently produces a summary but no BATTLE replay.
+        # Remove an artifact from an earlier invocation before starting pMARS.
+        replay_path.unlink(missing_ok=True)
         try:
             result = run_pmars(
                 _pmars_arguments(
@@ -504,6 +530,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                 )
             )
         except PMarsError as exc:
+            replay_path.unlink(missing_ok=True)
+            summary_path.unlink(missing_ok=True)
             print(f"pMARS error: {exc}", file=sys.stderr)
             return exc.exit_code
 
@@ -609,13 +637,20 @@ def main(argv: Iterable[str] | None = None) -> int:
     replay_path.parent.mkdir(parents=True, exist_ok=True)
     sink = JSONLSink(str(replay_path))
     try:
-        k = Kernel(cfg, sink)
+        k = Kernel(cfg, sink, summary_sink=NullSummarySink())
         k.spawn("A", startA % cfg.arena_size, codeA)
         k.spawn("B", startB % cfg.arena_size, codeB)
         if codeC is not None and nameC:
             k.spawn("C", startC % cfg.arena_size, codeC)
 
         winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
+    except BaseException:
+        # A partial replay cannot be paired safely with an older summary. Both
+        # paths are owned by this invocation once the replay sink is opened.
+        sink.close()
+        replay_path.unlink(missing_ok=True)
+        summary_path.unlink(missing_ok=True)
+        raise
     finally:
         # MatchRunner normally closes the sink; closing an already-closed file is
         # harmless and also covers spawn/setup failures before MatchRunner starts.

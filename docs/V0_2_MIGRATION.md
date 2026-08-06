@@ -13,8 +13,8 @@
   blobs or built-ins and does not define one execution protocol for every format.
 - The engine has a renderer callback while the replay client separately defines
   a presentation interface.
-- `Kernel.run` writes `summary.json` to the working directory while the CLI writes
-  a second, different summary beside the replay.
+- Direct `Kernel.run` callers retain an injectable compatibility summary sink;
+  the CLI suppresses that sink and writes one canonical summary beside the replay.
 - Active, compatibility, historical, generated, and prebuilt content coexist at
   the repository root, making supported ownership boundaries difficult to see.
 - Root packaging and `app/pyproject.toml` expose differing designer entry points.
@@ -137,6 +137,20 @@ completion, hold-open, and teardown. `ReplayPlayer` owns iteration and guarantee
 ordering/cleanup. The replay CLI no longer probes optional methods, headless mode
 keeps Pygame lazy, and the Qt canvas uses the same lifecycle for updates and
 closure. Broader desktop-tool consolidation remains Phase 5 work.
+
+## Linux pMARS release boundary
+
+The platform-neutral Python wheel does not contain pMARS. Linux discovery skips
+the repository's Windows PE resources and accepts an explicit executable through
+`PMARS_CMD`, an executable in the Linux data/resource layout, or `pmars` on
+`PATH`. The Ubuntu pMARS 0.9.5 package is an X11 build and is not a headless
+release dependency.
+
+`tools/build_pmars_linux.sh` is experimental release-engineering support for the
+checksum-pinned authoritative pMARS 0.9.5 source. It builds a console-only,
+libc-only executable without a source patch, but does not install, bundle, or
+publish it. Any later portable artifact must define and validate a separate
+GPL-2.0-or-later corresponding-source bundle before adding that executable.
 
 ### Phase 6 — Packaging cleanup
 

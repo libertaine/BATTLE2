@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from battle_engine import launchers
 
-from app.agent_designer import _match_arguments
-from app.services import engine as engine_service
+from app.services import engine_commands
+from app.services.osutil import get_default_paths
 
 
 def _set_source(monkeypatch, executable: Path) -> None:
@@ -118,7 +118,7 @@ def test_designer_match_arguments_preserve_simple_and_advanced_options(tmp_path)
     a_blob = tmp_path / "Agent A" / "model one.blob"
     b_blob = tmp_path / "Agent B" / "model two.blob"
 
-    arguments = _match_arguments(
+    arguments = launchers.build_designer_match_arguments(
         ticks=600,
         arena=512,
         a_type="alpha",
@@ -146,7 +146,7 @@ def test_designer_match_arguments_preserve_simple_and_advanced_options(tmp_path)
         "--seed", "123",
     ]
 
-    assert "--a-blob" not in _match_arguments(
+    assert "--a-blob" not in launchers.build_designer_match_arguments(
         ticks=1, arena=64, a_type="alpha", b_type="beta", a_blob=""
     )
 
@@ -154,8 +154,8 @@ def test_designer_match_arguments_preserve_simple_and_advanced_options(tmp_path)
 def test_engine_runner_uses_shared_match_builder_and_preserves_config(monkeypatch, tmp_path):
     python = tmp_path / "Python With Spaces" / "python.exe"
     _set_source(monkeypatch, python)
-    runner = engine_service.EngineRunner(tmp_path / "Writable Data")
-    config = engine_service.RunConfig(
+    paths = get_default_paths(tmp_path / "Writable Data")
+    config = engine_commands.RunConfig(
         a_type="alpha",
         b_type="beta",
         arena=256,
@@ -167,14 +167,14 @@ def test_engine_runner_uses_shared_match_builder_and_preserves_config(monkeypatc
         seed=99,
     )
 
-    command, _env = runner._build_engine_cmd(config)
+    command, _env = engine_commands.build_engine_command(config, paths)
 
     assert command[:4] == [str(python.resolve()), "-m", "battle_engine", "run"]
     assert command[4:] == [
         "--arena", "256",
         "--ticks", "40",
         "--win-mode", "score_fallback",
-        "--replay", str(runner.paths.replay_path),
+        "--replay", str(paths.replay_path),
         "--a-type", "alpha",
         "--b-type", "beta",
         "--alive-w", "0.5",
@@ -197,9 +197,9 @@ def test_replay_service_starts_shared_command_without_a_shell(monkeypatch, tmp_p
         calls.append((command, kwargs))
         return object()
 
-    monkeypatch.setattr(engine_service, "Popen", fake_popen)
+    monkeypatch.setattr(engine_commands, "Popen", fake_popen)
 
-    engine_service.open_pygame_client_direct(tmp_path, replay)
+    engine_commands.open_pygame_client_direct(tmp_path, replay)
 
     command, kwargs = calls[0]
     assert command == launchers.build_replay_command(

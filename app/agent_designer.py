@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from battle_engine.launchers import build_match_command
+from battle_engine.launchers import build_designer_match_arguments, build_match_command
 from battle_engine.paths import get_data_root
 from battle_engine.starters import ensure_starter_agents
 from PySide6.QtCore import QProcess, QProcessEnvironment, Slot
@@ -19,42 +19,6 @@ from app.views.simple import SimplePanel
 def _resolve_battle_root() -> Path:
     """Compatibility wrapper for the shared writable data-root resolver."""
     return get_data_root()
-
-
-def _match_arguments(
-    *,
-    ticks,
-    arena,
-    a_type,
-    b_type,
-    a_blob=None,
-    b_blob=None,
-    alive_w=None,
-    kill_w=None,
-    territory_w=None,
-    territory_bucket=None,
-    seed=None,
-):
-    arguments = [
-        "--ticks", str(ticks),
-        "--arena", str(arena),
-        "--a-type", str(a_type),
-        "--b-type", str(b_type),
-    ]
-    for flag, value in (("--a-blob", a_blob), ("--b-blob", b_blob)):
-        if value:
-            arguments.extend((flag, str(value)))
-    optional = (
-        ("--alive-w", alive_w),
-        ("--kill-w", kill_w),
-        ("--territory-w", territory_w),
-        ("--territory-bucket", territory_bucket),
-        ("--seed", seed),
-    )
-    for flag, value in optional:
-        if value is not None:
-            arguments.extend((flag, str(value)))
-    return arguments
 
 
 class AgentDesigner(QMainWindow):
@@ -176,7 +140,7 @@ class AgentDesigner(QMainWindow):
         a_type = (rowA.meta.get("name") if isinstance(getattr(rowA, "meta", None), dict) else None) or Path(rowA.path).name or a_name
         b_type = (rowB.meta.get("name") if isinstance(getattr(rowB, "meta", None), dict) else None) or Path(rowB.path).name or b_name
 
-        match_arguments = _match_arguments(
+        match_arguments = build_designer_match_arguments(
             ticks=ticks,
             arena=arena,
             a_type=a_type,
@@ -266,7 +230,7 @@ class AgentDesigner(QMainWindow):
         b_type = (rowB.meta.get("name") if hasattr(rowB, "meta") and isinstance(rowB.meta, dict) else None) or Path(rowB.path).name or cfg.b_type
 
         # Build CLI args with the correct flags
-        match_arguments = _match_arguments(
+        match_arguments = build_designer_match_arguments(
             ticks=cfg.ticks,
             arena=cfg.arena,
             a_type=a_type,

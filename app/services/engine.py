@@ -1,36 +1,21 @@
 from __future__ import annotations
 
-import json
-import os
 import threading
-from dataclasses import dataclass
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
-from typing import Any, Dict, Optional
+from typing import Optional
 
-from battle_engine.launchers import build_match_command, build_replay_command
 from PySide6.QtCore import QObject, Signal
 
+from app.services.engine_commands import (
+    RunConfig,
+    build_engine_command,
+    open_pygame_client_direct,
+)
 from app.services.osutil import (
     ensure_dirs,
     get_default_paths,
-    pythonpath_separator,
 )
-
-
-@dataclass
-class RunConfig:
-    a_type: str
-    b_type: str
-    arena: int = 512
-    ticks: int = 600
-    alive_w: Optional[float] = None
-    kill_w: Optional[float] = None
-    territory_w: Optional[float] = None
-    territory_bucket: Optional[int] = None
-    seed: Optional[int] = None
-    a_params: Optional[Dict[str, Any]] = None
-    b_params: Optional[Dict[str, Any]] = None
 
 
 class EngineRunner(QObject):
@@ -107,50 +92,7 @@ class EngineRunner(QObject):
     # ---- Internal helpers ----
     def _build_engine_cmd(self, cfg: RunConfig) -> tuple[list[str], dict[str, str]]:
         """Build the source or frozen match command and its child environment."""
-        match_arguments: list[str] = [
-            "--arena",
-            str(cfg.arena),
-            "--ticks",
-            str(cfg.ticks),
-            "--win-mode",
-            "score_fallback",
-            "--replay",
-            str(self.paths.replay_path),
-            "--a-type",
-            cfg.a_type,
-            "--b-type",
-            cfg.b_type,
-        ]
-        if cfg.alive_w is not None:
-            match_arguments += ["--alive-w", str(cfg.alive_w)]
-        if cfg.kill_w is not None:
-            match_arguments += ["--kill-w", str(cfg.kill_w)]
-        if cfg.territory_w is not None:
-            match_arguments += ["--territory-w", str(cfg.territory_w)]
-        if cfg.territory_bucket is not None:
-            match_arguments += ["--territory-bucket", str(cfg.territory_bucket)]
-        if cfg.seed is not None and cfg.seed > 0:
-            match_arguments += ["--seed", str(cfg.seed)]
-
-        # Environment: ensure package discovery across repo root, engine/src, client/src
-        env = os.environ.copy()
-        sep = pythonpath_separator()
-        env["PYTHONPATH"] = sep.join(
-            [
-                str(self.paths.root),  # app package visibility
-                str(self.paths.root / "engine" / "src"),  # battle_engine
-                str(self.paths.root / "client" / "src"),  # battle_client
-            ]
-            + ([env["PYTHONPATH"]] if "PYTHONPATH" in env and env["PYTHONPATH"] else [])
-        )
-
-        # Optional agent params via env (if supported by engine)
-        if cfg.a_params is not None:
-            env["BATTLE_AGENT_A_PARAMS_JSON"] = json.dumps(cfg.a_params)
-        if cfg.b_params is not None:
-            env["BATTLE_AGENT_B_PARAMS_JSON"] = json.dumps(cfg.b_params)
-
-        return build_match_command(match_arguments), env
+        return build_engine_command(cfg, self.paths)
 
     def _read_loop(self) -> None:
         assert self._proc is not None
@@ -164,29 +106,3 @@ class EngineRunner(QObject):
         code = self._proc.wait()
         self.finished.emit(int(code))
         self._proc = None
-
-
-def open_pygame_client_direct(battle_root: Path, replay_path: Path) -> None:
-    """Launch the source or packaged replay application without a shell."""
-    if not replay_path.exists():
-        raise FileNotFoundError(f"Replay not found: {replay_path}")
-    module_cmd = build_replay_command(
-        replay_path,
-        ("--renderer", "pygame", "--tick-delay", "0.02"),
-    )
-
-    env = os.environ.copy()
-    sep = pythonpath_separator()
-    env["PYTHONPATH"] = sep.join(
-        [
-            str(battle_root),  # app package visibility
-            str(battle_root / "engine" / "src"),  # battle_engine
-            str(battle_root / "client" / "src"),  # battle_client
-        ]
-        + ([env["PYTHONPATH"]] if "PYTHONPATH" in env and env["PYTHONPATH"] else [])
-    )
-
-    try:
-        Popen(module_cmd, cwd=str(battle_root), env=env)
-    except OSError as exc:
-        raise OSError(f"Failed to start replay command '{module_cmd[0]}': {exc}") from exc

@@ -76,7 +76,9 @@ Uninstall removes installed programs and shortcuts but retains `%ProgramData%\BA
 Remove that directory manually only when its agents, replays, logs, and settings
 are no longer needed.
 
-> **Note for Linux/macOS Users:** Install paths and commands may differ. Use `sudo apt install pmars` (or equivalent) for Redcode support.
+> **Linux:** The v0.2 wheel is headless-first. See
+> [Linux wheel installation](docs/LINUX_INSTALL.md) for virtual-environment,
+> XDG data, starter-agent, optional GUI, and current pMARS guidance.
 
 ### CLI Usage
 
@@ -181,18 +183,22 @@ BATTLE2 supports pMARS (Redcode) for interoperability:
 battle2 run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
 ```
 
-* The backend resolves pMARS in this order: non-empty `PMARS_CMD`, a frozen
-  bundled resource, the configured BATTLE2 data/application layout, the source
-  checkout's `pmars/windows` directory, then `pmars.exe` or `pmars` on `PATH`.
-  `PMARS_CMD` denotes one executable path (including paths with spaces), not a
-  shell command. An invalid explicit value is reported without silent fallback.
+* The backend resolves pMARS in this order: non-empty `PMARS_CMD`, platform
+  resources, the configured BATTLE2 data/application layout, then `PATH`.
+  Windows considers its bundled `pmars/windows` resources and `pmars.exe`;
+  Linux considers only executable `pmars` files in `pmars`, `bin`, or `PATH`
+  and never selects the repository's Windows PE files. `PMARS_CMD` denotes one
+  executable path (including paths with spaces), not a shell command with fixed
+  arguments. An invalid explicit value is reported without silent fallback.
 * The backend invokes pMARS without a shell. Missing executables, timeouts,
   nonzero exits, and unparseable results are failures and do not write a success
   summary.
 * The output includes a `summary.json` indicating winner, return code, and parameters.
-* Windows CLI artifacts bundle `pmars.exe` with its `COPYING` file. External
-  installations must also preserve the pMARS GPLv2 license; see
-  `third_party_licenses/` for the repository copy.
+* Windows CLI artifacts bundle `pmars.exe` with its `COPYING` file. pMARS source
+  is GPL-2.0-or-later; see `third_party_licenses/` for the verified GNU GPL
+  version 2 license text.
+  The Linux wheel contains no pMARS executable or source. A pinned experimental
+  console-only build procedure is documented in `tools/pmars/README.md`.
 
 ---
 
