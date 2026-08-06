@@ -63,16 +63,16 @@ jobs:
       - name: Install Designer dependencies
         run: python -m pip install -e '.[designer,dev]'
 
-    - name: Inspect Qt XCB dependencies
-      run: |
-        plugin="$(python - <<'PY'
-        from pathlib import Path
-        import PySide6
-        print(Path(PySide6.__file__).resolve().parent / "Qt/plugins/platforms/libqxcb.so")
-        PY
-        )"
-        echo "$plugin"
-        ldd "$plugin" || true
+      - name: Inspect Qt XCB dependencies
+        run: |
+          plugin="$(python - <<'PY'
+          from pathlib import Path
+          import PySide6
+          print(Path(PySide6.__file__).resolve().parent / "Qt/plugins/platforms/libqxcb.so")
+          PY
+          )"
+          echo "$plugin"
+          ldd "$plugin" || true
 
-    - name: Exercise X11 startup, primary window creation, and deterministic shutdown
-      run: xvfb-run -a python -m pytest -q tests/test_linux_designer_smoke.py
+      - name: Exercise X11 startup, primary window creation, and deterministic shutdown
+        run: xvfb-run -a python -m pytest -q tests/test_linux_designer_smoke.py
