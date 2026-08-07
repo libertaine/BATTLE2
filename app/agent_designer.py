@@ -462,7 +462,7 @@ class AgentDesigner(QMainWindow):
         self._log_target.appendLog(
             f"[Tournament] {result.tournament_id} ({result.division})\n"
             f"[Tournament] completed={result.completed} failed={result.failed} "
-            f"rejected={result.rejected}\n"
+            f"rejected={result.rejected} corrupted={result.corrupted}\n"
             "[Tournament] standings:\n"
         )
         for row in result.standings:

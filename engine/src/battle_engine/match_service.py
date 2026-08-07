@@ -23,6 +23,7 @@ from battle_engine.python_runtime import (
     PythonRuntimeResult,
     RuntimeDiagnostic,
     TerminationReason,
+    derive_agent_seed,
 )
 from battle_engine.replay import (
     MatchResult as ReplayMatchResult,
@@ -330,7 +331,7 @@ def _run_python_match(
     except PythonEntrantInitializationError:
         _remove_python_artifacts(replay_path, summary_path)
         raise
-    except BaseException as exc:
+    except Exception as exc:
         _remove_python_artifacts(replay_path, summary_path)
         raise PythonMatchExecutionError(
             RuntimeDiagnostic(
@@ -353,9 +354,9 @@ def _run_python_match(
         sink = JSONLSink(str(temporary_path))
         runtime = controller.run(sink, verbose=request.verbose)
         sink = None  # The controller closes the replay publisher.
-        temporary_path.replace(replay_path)
+        recorded_path = temporary_path
         temporary_path = None
-        return _build_python_result(runtime, request.config, replay_path)
+        return _build_python_result(runtime, request.config, recorded_path)
     except OSError as exc:
         raise PythonMatchExecutionError(
             RuntimeDiagnostic(
@@ -367,7 +368,7 @@ def _run_python_match(
         ) from exc
     except PythonMatchExecutionError:
         raise
-    except BaseException as exc:
+    except Exception as exc:
         raise PythonMatchExecutionError(
             RuntimeDiagnostic(
                 code="engine_failed",
@@ -413,9 +414,61 @@ def _identity_safe_diagnostic(diagnostic: Any) -> dict[str, Any] | None:
     return {key: value for key, value in diagnostic.items() if key != "message"}
 
 
+def canonical_match_id(request: MatchRequest) -> str:
+    """Derive canonical match identity entirely from request inputs."""
+
+    entrant_identities = []
+    for slot, entrant in enumerate(request.entrants):
+        if entrant.kind == "vm":
+            metadata = {
+                "kind": "vm",
+                "entry": entrant.start,
+                "code_sha256": hashlib.sha256(entrant.code or b"").hexdigest(),
+            }
+        else:
+            spec = entrant.python_spec
+            source = getattr(spec, "source_path", None)
+            api_version = getattr(spec, "api_version", None) or 1
+            metadata = {
+                "kind": "python",
+                "slot": slot,
+                "derived_seed": derive_agent_seed(
+                    request.config.seed, slot, entrant.agent_id, api_version
+                ),
+                "source_sha256": (
+                    hashlib.sha256(source.read_bytes()).hexdigest()
+                    if isinstance(source, Path) and source.is_file()
+                    else ""
+                ),
+                "api_version": api_version,
+                "agent_version": getattr(spec, "version", None),
+            }
+        entrant_identities.append(
+            {"agent_id": entrant.agent_id, "name": entrant.name, "metadata": metadata}
+        )
+    reproducibility = {
+        "seed": request.config.seed,
+        "arena_size": request.config.arena_size,
+        "tick_limit": request.max_ticks,
+        "action_budget": request.config.instr_per_tick,
+        "win_mode": request.config.win_mode,
+        "weights": asdict(request.config.weights),
+        "entrant_order": [entrant.agent_id for entrant in request.entrants],
+    }
+    return stable_id(
+        "match",
+        {"mode": "b2", "reproducibility": reproducibility, "entrants": entrant_identities},
+    )
+
+
 def _finalize_native_artifacts(
-    request: MatchRequest, result: NativeMatchResult
+    request: MatchRequest,
+    result: NativeMatchResult,
+    *,
+    final_replay_path: Path | None = None,
 ) -> NativeMatchResult:
+    source_replay_path = result.replay_path
+    publish_path = final_replay_path or source_replay_path
     reproducibility = {
         "seed": request.config.seed,
         "arena_size": request.config.arena_size,
@@ -440,19 +493,7 @@ def _finalize_native_artifacts(
         }
         for agent in result.agents
     ]
-    identity = {
-        "mode": "b2",
-        "reproducibility": reproducibility,
-        "entrants": [
-            {
-                "agent_id": entrant["agent_id"],
-                "name": entrant["name"],
-                "metadata": entrant["metadata"],
-            }
-            for entrant in entrants
-        ],
-    }
-    match_id = stable_id("match", identity)
+    match_id = canonical_match_id(request)
     result_identity_entrants = [
         {**entrant, "diagnostic": _identity_safe_diagnostic(entrant["diagnostic"])}
         for entrant in entrants
@@ -478,7 +519,7 @@ def _finalize_native_artifacts(
 
     header: ReplayHeader | None = None
     ticks: list[Any] = []
-    for record in iter_replay(result.replay_path):
+    for record in iter_replay(source_replay_path):
         if isinstance(record, ReplayHeader):
             header = replace(
                 record,
@@ -530,34 +571,48 @@ def _finalize_native_artifacts(
         schema_version=3,
     )
 
-    temporary = result.replay_path.with_name(f".{result.replay_path.name}.canonical.tmp")
+    publish_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{publish_path.name}.", suffix=".canonical.tmp", dir=publish_path.parent
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    result_path = publish_path.with_name("result.json")
+    complete = False
     try:
         write_replay(temporary, [header, *ticks, terminal])
-        temporary.replace(result.replay_path)
+        temporary.replace(publish_path)
+        replay_digest = hashlib.sha256(publish_path.read_bytes()).hexdigest()
+        envelope = ResultEnvelope(
+            result_id=result_id,
+            match_id=match_id,
+            mode="b2",
+            winner=result.winner,
+            termination_reason=result.termination_reason.value,
+            ticks=result.ticks_run,
+            score=result.score,
+            entrants=tuple(entrants),
+            reproducibility=reproducibility,
+            replay=ReplayReference(match_id, replay_digest, publish_path.name),
+        )
+        write_json_atomic(result_path, envelope.as_dict())
+        complete = True
+        return replace(
+            result,
+            replay_path=publish_path,
+            result_id=result_id,
+            match_id=match_id,
+            replay_sha256=replay_digest,
+            result_path=result_path,
+        )
     finally:
         temporary.unlink(missing_ok=True)
-    replay_digest = hashlib.sha256(result.replay_path.read_bytes()).hexdigest()
-    envelope = ResultEnvelope(
-        result_id=result_id,
-        match_id=match_id,
-        mode="b2",
-        winner=result.winner,
-        termination_reason=result.termination_reason.value,
-        ticks=result.ticks_run,
-        score=result.score,
-        entrants=tuple(entrants),
-        reproducibility=reproducibility,
-        replay=ReplayReference(match_id, replay_digest, result.replay_path.name),
-    )
-    result_path = result.replay_path.with_name("result.json")
-    write_json_atomic(result_path, envelope.as_dict())
-    return replace(
-        result,
-        result_id=result_id,
-        match_id=match_id,
-        replay_sha256=replay_digest,
-        result_path=result_path,
-    )
+        if source_replay_path != publish_path:
+            source_replay_path.unlink(missing_ok=True)
+        if not complete:
+            publish_path.unlink(missing_ok=True)
+            result_path.unlink(missing_ok=True)
+            publish_path.with_name("summary.json").unlink(missing_ok=True)
 
 
 def _run_vm_match(
@@ -600,9 +655,9 @@ def _run_vm_match(
         kernel_winner = kernel.run(max_ticks=request.max_ticks, verbose=request.verbose)
         sink.close()
         sink = None  # Closed successfully; avoid a redundant close in finally.
-        temporary_path.replace(replay_path)
+        recorded_path = temporary_path
         temporary_path = None
-        return _build_result(kernel, request.entrants, kernel_winner, replay_path)
+        return _build_result(kernel, request.entrants, kernel_winner, recorded_path)
     finally:
         if sink is not None:
             try:
@@ -644,12 +699,20 @@ class NativeMatchService:
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
         if "python" in kinds:
+            recorded = _run_python_match(request, replay_path, summary_path)
+            try:
+                return _finalize_native_artifacts(
+                    request, recorded, final_replay_path=replay_path
+                )
+            finally:
+                recorded.replay_path.unlink(missing_ok=True)
+        recorded = _run_vm_match(request, replay_path, summary_path)
+        try:
             return _finalize_native_artifacts(
-                request, _run_python_match(request, replay_path, summary_path)
+                request, recorded, final_replay_path=replay_path
             )
-        return _finalize_native_artifacts(
-            request, _run_vm_match(request, replay_path, summary_path)
-        )
+        finally:
+            recorded.replay_path.unlink(missing_ok=True)
 
 
 __all__ = [
@@ -661,4 +724,5 @@ __all__ = [
     "PythonMatchExecutionError",
     "RuntimeDiagnostic",
     "UnsupportedMatchCompositionError",
+    "canonical_match_id",
 ]

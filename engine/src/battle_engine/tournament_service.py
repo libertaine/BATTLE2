@@ -10,7 +10,13 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from battle_engine.config import Config
-from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
+from battle_engine.match_service import (
+    MatchEntrant,
+    MatchRequest,
+    NativeMatchService,
+    canonical_match_id,
+)
+from battle_engine.replay import ReplayHeader, iter_replay
 from battle_engine.result_model import (
     ReplayIntegrityError,
     ResultEnvelope,
@@ -133,7 +139,10 @@ def _safe_name(value: str) -> str:
 
 
 def _resumed_result_mismatch(
-    envelope: ResultEnvelope, item: "TournamentMatch", replay_path: Path
+    envelope: ResultEnvelope,
+    item: "TournamentMatch",
+    replay_path: Path,
+    expected_match_id: str,
 ) -> str | None:
     """Return why a resumed ``result.json`` cannot be trusted, or ``None`` if it checks out.
 
@@ -162,6 +171,11 @@ def _resumed_result_mismatch(
     actual_seed = envelope.reproducibility.get("seed")
     if actual_seed != item.seed:
         return f"seed {actual_seed!r} does not match the scheduled match's {item.seed!r}"
+    if envelope.match_id != expected_match_id:
+        return (
+            f"match ID {envelope.match_id!r} does not match the scheduled "
+            f"match's expected ID {expected_match_id!r}"
+        )
     if envelope.replay is None:
         # Every tournament division is native VM-only or Python-only (pMARS
         # divisions are unsupported), and every native result carries a
@@ -171,8 +185,20 @@ def _resumed_result_mismatch(
         return "result has no replay reference, but a native match result always has one"
     try:
         verify_replay_digest(envelope, replay_path)
+        header = next(
+            (record for record in iter_replay(replay_path) if isinstance(record, ReplayHeader)),
+            None,
+        )
     except ReplayIntegrityError as exc:
         return f"replay verification failed ({exc.code}): {exc}"
+    except (OSError, ValueError) as exc:
+        return f"replay header could not be read: {exc}"
+    if header is None:
+        return "replay has no header"
+    if header.match_id != envelope.match_id:
+        return "replay header match ID does not match result envelope"
+    if header.result_id != envelope.result_id:
+        return "replay header result ID does not match result envelope"
     return None
 
 
@@ -207,10 +233,22 @@ class TournamentService:
             result_path = item.artifact_dir / "result.json"
             replay_path = item.artifact_dir / "replay.jsonl"
             if previous and previous.get("status") == "completed" and result_path.is_file():
+                scheduled_request = MatchRequest(
+                    config=replace(request.config, seed=item.seed),
+                    entrants=entrants,
+                    max_ticks=request.max_ticks,
+                    replay_path=replay_path,
+                    verbose=request.verbose,
+                )
                 mismatch: str | None
                 try:
                     envelope = read_result(result_path)
-                    mismatch = _resumed_result_mismatch(envelope, item, replay_path)
+                    mismatch = _resumed_result_mismatch(
+                        envelope,
+                        item,
+                        replay_path,
+                        canonical_match_id(scheduled_request),
+                    )
                 except (OSError, ValueError, KeyError) as exc:
                     envelope = None
                     mismatch = f"result.json could not be read: {exc}"
@@ -231,16 +269,17 @@ class TournamentService:
                 # inspectable status so the operator can see why, and only
                 # actually retry it if they explicitly ask (--retry-failed),
                 # the same as any other non-completed match.
-                completed.append(
-                    replace(
-                        item,
-                        status="corrupted",
-                        error_code="resumed_result_mismatch",
-                        error_message=mismatch[:240],
+                if not request.retry_failures:
+                    completed.append(
+                        replace(
+                            item,
+                            status="corrupted",
+                            error_code="resumed_result_mismatch",
+                            error_message=mismatch[:240],
+                        )
                     )
-                )
-                self._write_state(state_path, tournament_id, division, completed)
-                continue
+                    self._write_state(state_path, tournament_id, division, completed)
+                    continue
             if (
                 previous
                 and previous.get("status") in {"failed", "rejected", "corrupted"}

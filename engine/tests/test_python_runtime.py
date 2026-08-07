@@ -376,6 +376,72 @@ def create_agent(): return Agent()
         PythonEntrantController(Config(arena_size=64, instr_per_tick=1), entrants, 3)
 
 
+@pytest.mark.parametrize(
+    ("callback", "raised"),
+    [
+        ("def reset(self, context): raise KeyboardInterrupt()\n    def act(self, observation): pass", KeyboardInterrupt),
+        ("def reset(self, context): raise SystemExit(2)\n    def act(self, observation): pass", SystemExit),
+    ],
+)
+def test_service_propagates_operator_abort_during_reset(tmp_path, callback, raised):
+    source = f"class Agent:\n    {callback}\ndef create_agent(): return Agent()\n"
+    entrants = _entrants(tmp_path, {"aborting": source, "passive": PASSIVE_SOURCE})
+    replay = tmp_path / "service-reset.jsonl"
+
+    with pytest.raises(raised):
+        NativeMatchService().run(
+            MatchRequest(Config(arena_size=64), entrants, 2, replay, False)
+        )
+
+    assert not replay.exists()
+
+
+@pytest.mark.parametrize(("statement", "raised"), [
+    ("raise KeyboardInterrupt()", KeyboardInterrupt),
+    ("raise SystemExit(2)", SystemExit),
+])
+def test_service_propagates_operator_abort_during_act(tmp_path, statement, raised):
+    source = f"""
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): {statement}
+def create_agent(): return Agent()
+"""
+    entrants = _entrants(tmp_path, {"aborting": source, "passive": PASSIVE_SOURCE})
+    replay = tmp_path / "service-act.jsonl"
+
+    with pytest.raises(raised):
+        NativeMatchService().run(
+            MatchRequest(Config(arena_size=64), entrants, 2, replay, False)
+        )
+
+    assert not replay.exists()
+    assert not list(tmp_path.glob(".service-act.jsonl.*.tmp"))
+
+
+def test_python_canonicalization_failure_leaves_no_artifacts(tmp_path, monkeypatch):
+    entrants = _entrants(
+        tmp_path, {"first": PASSIVE_SOURCE, "second": PASSIVE_SOURCE}
+    )
+    replay = tmp_path / "canonical-failure.jsonl"
+
+    def fail_write(_path, _records):
+        raise OSError("canonical write failed")
+
+    monkeypatch.setattr("battle_engine.match_service.write_replay", fail_write)
+
+    with pytest.raises(OSError, match="canonical write failed"):
+        NativeMatchService().run(
+            MatchRequest(Config(arena_size=64), entrants, 2, replay, False)
+        )
+
+    assert not replay.exists()
+    assert not replay.with_name("result.json").exists()
+    assert not replay.with_name("summary.json").exists()
+    assert not list(tmp_path.glob(".canonical-failure.jsonl.*.tmp"))
+    assert not list(tmp_path.glob(".canonical-failure.jsonl.*.canonical.tmp"))
+
+
 def test_ordinary_exceptions_still_forfeit_after_narrowing_to_exception(tmp_path):
     """Confirms narrowing BaseException -> Exception did not regress the
     normal forfeit path for ordinary (non-interrupt) failures."""

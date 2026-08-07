@@ -14,6 +14,7 @@ from battle_engine.replay import (
     MemoryDiff,
     ReplayFormatError,
     ReplayHeader,
+    RuntimeEvent,
     TickSnapshot,
     deserialize_record,
     serialize_record,
@@ -70,6 +71,44 @@ def test_legacy_spatial_event_is_normalized():
 )
 def test_current_records_round_trip(record):
     assert deserialize_record(serialize_record(record)) == record
+
+
+def test_fully_populated_v3_records_round_trip_without_field_loss():
+    header = ReplayHeader(
+        MatchConfiguration(128, 4, 42, "score", {"alive": 1.5}),
+        {"A": "Alpha"},
+        replay_id="replay_1",
+        match_id="match_1",
+        result_id="result_1",
+        runtime_kind="python",
+        reproducibility={"seed": 42, "entrant_order": ["A"]},
+        entrants=({"agent_id": "A", "metadata": {"kind": "python"}},),
+    )
+    agent = AgentState(
+        "A", 7, False, 3, 2, (0, 15), 11, 12, True, 9, "forfeit"
+    )
+    tick = TickSnapshot(
+        3,
+        agents=(agent,),
+        score={"A": 2.5},
+        memory_diffs=(MemoryDiff(127, 2, "A", (0xAA, 0xBB)),),
+        events=(RuntimeEvent("forfeit", "A", "agent_action_failed", "action", 3, 1),),
+    )
+    result = MatchResult(
+        None,
+        "score",
+        3,
+        {"A": 2.5},
+        (agent,),
+        "replay_1",
+        "match_1",
+        "result_1",
+        "all_agents_dead",
+        ({"agent_id": "A", "diagnostic": {"code": "agent_action_failed"}},),
+    )
+
+    for record in (header, tick, result):
+        assert deserialize_record(serialize_record(record)) == record
 
 
 @pytest.mark.parametrize(

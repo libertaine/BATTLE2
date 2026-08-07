@@ -96,12 +96,16 @@ def test_tournament_state_is_adapted_to_status_and_standings(tmp_path):
     state.write_text(json.dumps({
         "schema": "battle2.tournament", "schema_version": 1,
         "tournament_id": "tournament_1", "division": "vm",
-        "matches": [{"status": "completed"}, {"status": "failed"}],
+        "matches": [
+            {"status": "completed"},
+            {"status": "failed"},
+            {"status": "corrupted"},
+        ],
         "standings": [{"agent_id": "alpha", "wins": 1, "losses": 0,
                        "ties": 0, "score_total": 4}],
     }), encoding="utf-8")
     shown = read_tournament_presentation(state)
-    assert (shown.completed, shown.failed, shown.rejected) == (1, 1, 0)
+    assert (shown.completed, shown.failed, shown.rejected, shown.corrupted) == (1, 1, 0, 1)
     assert shown.standings[0]["agent_id"] == "alpha"
 
 

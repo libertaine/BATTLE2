@@ -15,8 +15,15 @@ import pytest
 from battle_engine.agent_state import Agent
 from battle_engine.builtins import build_agent
 from battle_engine.config import Config, Weights
+from battle_engine.core import HALT, NOP, enc
 from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
-from battle_engine.replay import MatchResult, ReplayHeader, TickSnapshot, iter_replay
+from battle_engine.replay import (
+    KillDeathEvent,
+    MatchResult,
+    ReplayHeader,
+    TickSnapshot,
+    iter_replay,
+)
 from battle_engine.result_model import (
     ReplayIntegrityError,
     read_result,
@@ -149,7 +156,11 @@ def test_vm_match_state_is_reconstructable_from_replay_alone(tmp_path):
     ground_truth = {
         0: {
             "arena": bytes(vm.arena),
-            "agents": {a.agent_id: (a.pc, a.alive, dict(a.regs)) for a in live_agents},
+            "owners": tuple(vm.writer),
+            "agents": {
+                a.agent_id: (a.pc, a.alive, dict(a.regs), a.cpu_used, a.mem_writes, a.region)
+                for a in live_agents
+            },
         }
     }
     for tick in range(1, 7):
@@ -165,7 +176,11 @@ def test_vm_match_state_is_reconstructable_from_replay_alone(tmp_path):
                 agent.cpu_used += 1
         ground_truth[tick] = {
             "arena": bytes(vm.arena),
-            "agents": {a.agent_id: (a.pc, a.alive, dict(a.regs)) for a in live_agents},
+            "owners": tuple(vm.writer),
+            "agents": {
+                a.agent_id: (a.pc, a.alive, dict(a.regs), a.cpu_used, a.mem_writes, a.region)
+                for a in live_agents
+            },
         }
         if sum(1 for a in live_agents if a.alive) <= 1:
             break
@@ -178,13 +193,19 @@ def test_vm_match_state_is_reconstructable_from_replay_alone(tmp_path):
     for tick, expected in ground_truth.items():
         actual = reconstructed[tick]
         assert actual["arena"] == expected["arena"], f"arena mismatch at tick {tick}"
-        for agent_id, (pc, alive, regs) in expected["agents"].items():
+        assert actual["owners"] == expected["owners"], f"ownership mismatch at tick {tick}"
+        for agent_id, (pc, alive, regs, cpu_used, mem_writes, region) in expected[
+            "agents"
+        ].items():
             state = actual["agents"][agent_id]
             assert state.pc == pc, f"pc mismatch for {agent_id} at tick {tick}"
             assert state.alive == alive, f"alive mismatch for {agent_id} at tick {tick}"
             assert state.register_a == regs["A"], f"A mismatch for {agent_id} at tick {tick}"
             assert state.register_p == regs["P"], f"P mismatch for {agent_id} at tick {tick}"
             assert state.zero_flag == bool(regs["Z"]), f"Z mismatch for {agent_id} at tick {tick}"
+            assert state.cpu_used == cpu_used
+            assert state.mem_writes == mem_writes
+            assert state.region == region
 
     # The terminal record independently confirms winner/termination/score,
     # matching the canonical result envelope built from the same run.
@@ -231,6 +252,13 @@ def test_python_match_state_is_reconstructable_from_replay_alone(tmp_path):
         assert reader_state.register_a == 0xAB
         assert reader_state.last_read == 0xAB
         assert reader_state.zero_flag is False
+        assert writer_state.cpu_used == 1
+        assert reader_state.cpu_used == 1
+        assert reconstructed[tick]["agents"]["A"].region == (0, 0)
+
+    records = list(iter_replay(replay_path))
+    ticks = {record.tick: record for record in records if isinstance(record, TickSnapshot)}
+    assert dict(ticks[3].score) == {"A": 3, "B": 3}
 
     terminal = list(iter_replay(replay_path))[-1]
     assert isinstance(terminal, MatchResult)
@@ -240,6 +268,23 @@ def test_python_match_state_is_reconstructable_from_replay_alone(tmp_path):
     assert terminal.winner is None
     envelope = read_result(result.result_path)
     assert envelope.winner == "tie"
+
+
+def test_replay_preserves_representative_vm_death_event(tmp_path):
+    entrants = (
+        MatchEntrant("A", "halts", 0, enc(HALT)),
+        MatchEntrant("B", "waits", 16, enc(NOP)),
+    )
+    result = NativeMatchService().run(
+        MatchRequest(_config(arena_size=32), entrants, 2, tmp_path / "events.jsonl", False)
+    )
+    tick_one = next(
+        record
+        for record in iter_replay(result.replay_path)
+        if isinstance(record, TickSnapshot) and record.tick == 1
+    )
+
+    assert tick_one.events == (KillDeathEvent("death", "A", None),)
 
 
 # ---------------------------------------------------------------------------

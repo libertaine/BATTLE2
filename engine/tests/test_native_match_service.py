@@ -275,3 +275,24 @@ def test_vm_replay_publication_is_atomic_on_success(tmp_path):
     # No leftover temporary file from the write-then-rename sequence.
     assert not list(tmp_path.glob(".replay.jsonl.*.tmp"))
     assert not list(tmp_path.glob(".replay.jsonl.*.canonical.tmp"))
+
+
+def test_vm_canonicalization_failure_leaves_no_artifacts(tmp_path, monkeypatch):
+    replay = tmp_path / "replay.jsonl"
+    summary = tmp_path / "summary.json"
+
+    def fail_write(_path, _records):
+        raise OSError("canonical write failed")
+
+    monkeypatch.setattr("battle_engine.match_service.write_replay", fail_write)
+
+    with pytest.raises(OSError, match="canonical write failed"):
+        NativeMatchService().run(
+            MatchRequest(_config(), _entrants(), 5, replay, False)
+        )
+
+    assert not replay.exists()
+    assert not summary.exists()
+    assert not replay.with_name("result.json").exists()
+    assert not list(tmp_path.glob(".replay.jsonl.*.tmp"))
+    assert not list(tmp_path.glob(".replay.jsonl.*.canonical.tmp"))

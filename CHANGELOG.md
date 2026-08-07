@@ -104,6 +104,14 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 
 ### Fixed
 
+- Kept native intermediate replays private until canonical v3 serialization
+  succeeds, with failed publication removing replay, result, summary, and
+  temporary artifacts.
+- Bound resumed tournament results to the expected canonical match identity
+  and replay-header IDs, retried newly detected corruption immediately when
+  requested, and surfaced corrupted counts in CLI and Designer status.
+- Allowed `KeyboardInterrupt` and `SystemExit` from Python-agent callbacks to
+  propagate through `NativeMatchService` while retaining artifact cleanup.
 - Fixed the canonical replay's terminal result record always recording an
   empty final-agent list regardless of what actually happened in the match.
 - Fixed `VM.load_code` bypassing the same write-tracking path every other
@@ -129,10 +137,8 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 - Python source and controller logic are not stored in, or corruptible through,
   arena memory.
 - Python agents are trusted in-process code. Hard timeouts and process isolation
-  for non-returning callbacks are not implemented; a `KeyboardInterrupt` raised
-  while an agent callback is executing is currently caught by the same
-  handler as an agent exception, so it forfeits that entrant rather than
-  reliably aborting the process.
+  for non-returning callbacks are not implemented; operator abort exceptions
+  propagate, but they cannot interrupt a callback that never returns control.
 - Canonical replay reconstruction requires a linear scan of memory diffs from
   tick 0; there is no snapshot/checkpoint shortcut for seeking directly to a
   late tick in a long match.

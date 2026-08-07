@@ -84,13 +84,14 @@ def _resolve_entrant(root: Path, name: str, start: int) -> MatchEntrant:
 
 
 def _print_result(result) -> None:
-    counts = {status: 0 for status in ("completed", "failed", "rejected")}
+    counts = {status: 0 for status in ("completed", "failed", "rejected", "corrupted")}
     for match in result.matches:
         counts[match.status] = counts.get(match.status, 0) + 1
     print(f"Tournament: {result.tournament_id}")
     print(
         f"Matches: completed={counts['completed']} "
-        f"failed={counts['failed']} rejected={counts['rejected']}"
+        f"failed={counts['failed']} rejected={counts['rejected']} "
+        f"corrupted={counts['corrupted']}"
     )
     print("Standings:")
     print("entrant              played  wins  losses  ties  score")

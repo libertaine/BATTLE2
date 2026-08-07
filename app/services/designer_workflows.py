@@ -35,6 +35,7 @@ class TournamentPresentation:
     completed: int
     failed: int
     rejected: int
+    corrupted: int
     standings: tuple[dict[str, object], ...]
 
 
@@ -124,7 +125,7 @@ def read_tournament_presentation(state_path: Path) -> TournamentPresentation:
     if data.get("schema") != "battle2.tournament" or data.get("schema_version") != 1:
         raise DesignerValidationError("Unsupported tournament state format.")
     matches = data.get("matches", ())
-    counts = {"completed": 0, "failed": 0, "rejected": 0}
+    counts = {"completed": 0, "failed": 0, "rejected": 0, "corrupted": 0}
     for match in matches:
         status = match.get("status")
         if status in counts:
@@ -136,5 +137,6 @@ def read_tournament_presentation(state_path: Path) -> TournamentPresentation:
         completed=counts["completed"],
         failed=counts["failed"],
         rejected=counts["rejected"],
+        corrupted=counts["corrupted"],
         standings=tuple(data.get("standings", ())),
     )
