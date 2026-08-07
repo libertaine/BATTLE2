@@ -8,6 +8,7 @@ from battle_engine.config import Config, Weights
 from battle_engine.core import Kernel
 from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
 from battle_engine.results import build_summary
+from battle_engine.replay import TickSnapshot, iter_replay, record_to_dict
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
 
@@ -73,7 +74,19 @@ def test_service_is_identical_to_former_direct_kernel_orchestration(tmp_path):
         )
     )
 
-    assert service_replay.read_bytes() == legacy_replay.read_bytes()
+    legacy_ticks = [record for record in iter_replay(legacy_replay) if isinstance(record, TickSnapshot)]
+    service_ticks = [record for record in iter_replay(service_replay) if isinstance(record, TickSnapshot)]
+    def payload(record):
+        value = record_to_dict(record)
+        value.pop("schema_version")
+        return value
+
+    assert [payload(record) for record in service_ticks] == [
+        payload(record) for record in legacy_ticks
+    ]
+    assert result.result_path == service_replay.with_name("result.json")
+    assert result.result_path.is_file()
+    assert result.match_id and result.result_id and len(result.replay_sha256) == 64
     assert result.ticks_run == legacy_kernel.tick
     assert dict(result.score) == legacy_kernel.score
     assert result.winner == _legacy_effective_winner(

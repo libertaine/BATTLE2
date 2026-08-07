@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ from battle_engine.match_service import (
 )
 from battle_engine.paths import get_data_root
 from battle_engine.pmars import PMarsError, run_pmars
+from battle_engine.result_model import ResultEnvelope, stable_id, write_json_atomic
 from battle_engine.python_runtime import PythonEntrantInitializationError
 from battle_engine.starters import ensure_starter_agents
 
@@ -477,6 +479,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         # Redcode mode currently produces a summary but no BATTLE replay.
         # Remove an artifact from an earlier invocation before starting pMARS.
         replay_path.unlink(missing_ok=True)
+        summary_path.with_name("result.json").unlink(missing_ok=True)
         try:
             result = run_pmars(
                 _pmars_arguments(
@@ -493,6 +496,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         except PMarsError as exc:
             replay_path.unlink(missing_ok=True)
             summary_path.unlink(missing_ok=True)
+            summary_path.with_name("result.json").unlink(missing_ok=True)
             print(f"pMARS error: {exc}", file=sys.stderr)
             return exc.exit_code
 
@@ -523,6 +527,34 @@ def main(argv: Iterable[str] | None = None) -> int:
         }
 
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        reproducibility = {
+            **summary["params"],
+            "entrants": [
+                {
+                    "agent_id": "A",
+                    "source_sha256": hashlib.sha256(a_path.read_bytes()).hexdigest(),
+                },
+                {
+                    "agent_id": "B",
+                    "source_sha256": hashlib.sha256(b_path.read_bytes()).hexdigest(),
+                },
+            ],
+        }
+        match_id = stable_id("match", {"mode": "redcode94", **reproducibility})
+        result_id = stable_id("result", {"match_id": match_id, "winner": result.winner})
+        envelope = ResultEnvelope(
+            result_id=result_id,
+            match_id=match_id,
+            mode="redcode94",
+            winner=result.winner,
+            termination_reason="backend_completed",
+            ticks=args.max_cycles,
+            entrants=tuple(reproducibility["entrants"]),
+            reproducibility=reproducibility,
+            replay=None,
+            backend={"name": "pMARS", "returncode": result.returncode},
+        )
+        write_json_atomic(summary_path.with_name("result.json"), envelope.as_dict())
 
         if not args.quiet:
             print(f"Winner: {summary['winner']}; summary: {summary_path}")

@@ -307,7 +307,7 @@ def create_agent(): return Agent()
     assert result.agents_by_id["A"].kills == 0
     records = [json.loads(line) for line in replay.read_text().splitlines()]
     assert records[1]["events"][0] == {
-        "type": "forfeit",
+        "event_type": "forfeit",
         "victim": "A",
         "reason": code,
         "stage": "action",
@@ -315,6 +315,13 @@ def create_agent(): return Agent()
         "action_slot": 0,
     }
     assert "Traceback" not in replay.read_text()
+    canonical_result = json.loads(result.result_path.read_text())
+    assert canonical_result["schema"] == "battle2.result"
+    assert canonical_result["result_id"] == result.result_id
+    assert canonical_result["match_id"] == records[0]["match_id"]
+    assert canonical_result["replay"]["sha256"] == result.replay_sha256
+    assert canonical_result["entrants"][0]["diagnostic"]["code"] == code
+    assert canonical_result["entrants"][0]["metadata"]["source_sha256"]
 
 
 def test_reset_failure_rejects_match_before_artifacts(tmp_path):

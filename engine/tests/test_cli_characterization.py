@@ -65,7 +65,13 @@ def test_cli_creates_replay_and_summary_json(tmp_path):
     assert replay.exists()
     records = [json.loads(line) for line in replay.read_text().splitlines()]
     summary = json.loads((replay.parent / "summary.json").read_text())
-    assert records[0]["ver"] == 6
+    assert records[0]["schema"] == "battle2.replay"
+    assert records[0]["schema_version"] == 3
+    assert records[0]["record_type"] == "header"
+    assert records[-1]["record_type"] == "result"
+    canonical = json.loads((replay.parent / "result.json").read_text())
+    assert canonical["schema"] == "battle2.result"
+    assert canonical["replay"]["sha256"]
     assert summary["version"] == 2
     assert summary["mode"] == "b2"
     assert summary["seed"] == 7

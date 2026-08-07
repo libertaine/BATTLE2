@@ -25,6 +25,8 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 - Added Agent API, agent-authoring, and native-rules documentation.
 - Added structured Python runtime diagnostics, internal match and entrant
   termination reasons, and internal source-digest and derived-seed metadata.
+- Added `battle2.result` schema v1 and `battle2.replay` schema v3 with stable
+  match/result IDs, replay digests, and reproducibility metadata.
 
 ### Changed
 
@@ -41,6 +43,8 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
   keeping display-dependent tests outside ordinary headless pytest discovery.
 - Made Python module reload behavior explicit: every entrant load executes a
   fresh private module and constructs a fresh instance.
+- Unified VM, Python, and pMARS outcomes behind one canonical result envelope;
+  pMARS records use `replay: null`, while `summary.json` remains compatible.
 
 ### Fixed
 

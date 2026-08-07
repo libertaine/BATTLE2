@@ -8,7 +8,9 @@ remain outside this native boundary.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field, replace
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 from types import MappingProxyType
@@ -24,6 +26,13 @@ from battle_engine.python_runtime import (
     TerminationReason,
 )
 from battle_engine.scoring import ScoreMap
+from battle_engine.replay import iter_replay, record_to_dict
+from battle_engine.result_model import (
+    ReplayReference,
+    ResultEnvelope,
+    stable_id,
+    write_json_atomic,
+)
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
 
@@ -75,6 +84,9 @@ class NativeAgentResult:
     territory_pct_avg: float
     diagnostic: RuntimeDiagnostic | None = None
     termination_reason: str | None = None
+    metadata: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     def as_legacy_statistics(self) -> dict[str, object]:
         """Return the v0.2 CLI agent-statistics shape during migration."""
@@ -107,6 +119,10 @@ class NativeMatchResult:
     agents: tuple[NativeAgentResult, ...]
     replay_path: Path
     termination_reason: TerminationReason
+    result_id: str = ""
+    match_id: str = ""
+    replay_sha256: str = ""
+    result_path: Path | None = None
 
     @property
     def agents_by_id(self) -> Mapping[str, NativeAgentResult]:
@@ -184,6 +200,22 @@ def _build_result(
                 territory_pct_last=(territory_last * 100.0 / arena_size if arena_size else 0.0),
                 territory_pct_max=(territory_max * 100.0 / arena_size if arena_size else 0.0),
                 territory_pct_avg=(territory_avg * 100.0 / arena_size if arena_size else 0.0),
+                metadata=MappingProxyType(
+                    {
+                        "kind": "vm",
+                        "entry": next(
+                            (entry.start for entry in entrants if entry.agent_id == agent.agent_id),
+                            0,
+                        ),
+                        "code_sha256": hashlib.sha256(
+                            next(
+                                entry.code or b""
+                                for entry in entrants
+                                if entry.agent_id == agent.agent_id
+                            )
+                        ).hexdigest(),
+                    }
+                ),
             )
         )
     score = MappingProxyType(dict(kernel.score))
@@ -241,6 +273,16 @@ def _build_python_result(
                 ),
                 diagnostic=state.diagnostic,
                 termination_reason=state.entrant_termination,
+                metadata=MappingProxyType(
+                    {
+                        "kind": "python",
+                        "slot": state.slot,
+                        "derived_seed": state.derived_seed,
+                        "source_sha256": state.source_digest,
+                        "api_version": state.loaded.metadata.api_version,
+                        "agent_version": state.loaded.metadata.version,
+                    }
+                ),
             )
         )
     return NativeMatchResult(
@@ -256,7 +298,7 @@ def _build_python_result(
 def _remove_python_artifacts(replay_path: Path, summary_path: Path) -> None:
     """Remove outputs that could otherwise be mistaken for this match's success."""
 
-    for path in (replay_path, summary_path):
+    for path in (replay_path, summary_path, replay_path.with_name("result.json")):
         try:
             path.unlink(missing_ok=True)
         except OSError as exc:
@@ -345,6 +387,122 @@ def _run_python_match(
                 pass
 
 
+def _finalize_native_artifacts(
+    request: MatchRequest, result: NativeMatchResult
+) -> NativeMatchResult:
+    reproducibility = {
+        "seed": request.config.seed,
+        "arena_size": request.config.arena_size,
+        "tick_limit": request.max_ticks,
+        "action_budget": request.config.instr_per_tick,
+        "win_mode": request.config.win_mode,
+        "weights": asdict(request.config.weights),
+        "entrant_order": [entrant.agent_id for entrant in request.entrants],
+    }
+    entrants = [
+        {
+            "agent_id": agent.agent_id,
+            "name": agent.name,
+            "alive": agent.alive,
+            "score": agent.score,
+            "termination_reason": agent.termination_reason,
+            "diagnostic": (
+                None if agent.diagnostic is None else asdict(agent.diagnostic)
+            ),
+            "statistics": agent.as_legacy_statistics(),
+            "metadata": dict(agent.metadata),
+        }
+        for agent in result.agents
+    ]
+    identity = {
+        "mode": "b2",
+        "reproducibility": reproducibility,
+        "entrants": [
+            {
+                "agent_id": entrant["agent_id"],
+                "name": entrant["name"],
+                "metadata": entrant["metadata"],
+            }
+            for entrant in entrants
+        ],
+    }
+    match_id = stable_id("match", identity)
+    result_id = stable_id(
+        "result",
+        {
+            "match_id": match_id,
+            "winner": result.winner,
+            "termination_reason": result.termination_reason.value,
+            "ticks": result.ticks_run,
+            "score": dict(result.score),
+            "entrants": entrants,
+        },
+    )
+
+    records = list(iter_replay(result.replay_path))
+    canonical: list[dict[str, Any]] = []
+    for index, record in enumerate(records):
+        data = record_to_dict(record)
+        data["schema_version"] = 3
+        if index == 0:
+            data.update(
+                replay_id=match_id,
+                match_id=match_id,
+                result_id=result_id,
+                reproducibility=reproducibility,
+                entrants=[
+                    {"agent_id": item["agent_id"], "name": item["name"], **item["metadata"]}
+                    for item in entrants
+                ],
+            )
+        canonical.append(data)
+    canonical.append(
+        {
+            "schema": "battle2.replay",
+            "schema_version": 3,
+            "record_type": "result",
+            "replay_id": match_id,
+            "match_id": match_id,
+            "result_id": result_id,
+            "winner": result.winner,
+            "win_mode": request.config.win_mode,
+            "termination_reason": result.termination_reason.value,
+            "ticks": result.ticks_run,
+            "score": dict(result.score),
+            "entrants": entrants,
+            "agents": [],
+        }
+    )
+    temporary = result.replay_path.with_name(f".{result.replay_path.name}.canonical.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+            for record in canonical:
+                stream.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
+        temporary.replace(result.replay_path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    replay_digest = hashlib.sha256(result.replay_path.read_bytes()).hexdigest()
+    envelope = ResultEnvelope(
+        result_id=result_id,
+        match_id=match_id,
+        mode="b2",
+        winner=result.winner,
+        termination_reason=result.termination_reason.value,
+        ticks=result.ticks_run,
+        score=result.score,
+        entrants=tuple(entrants),
+        reproducibility=reproducibility,
+        replay=ReplayReference(match_id, replay_digest, result.replay_path.name),
+    )
+    result_path = result.replay_path.with_name("result.json")
+    write_json_atomic(result_path, envelope.as_dict())
+    return replace(
+        result,
+        result_id=result_id,
+        match_id=match_id,
+        replay_sha256=replay_digest,
+        result_path=result_path,
+    )
 class NativeMatchService:
     """Route homogeneous VM or Python entrants through their native controller."""
 
@@ -368,7 +526,10 @@ class NativeMatchService:
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
         if "python" in kinds:
-            return _run_python_match(request, replay_path, summary_path)
+            return _finalize_native_artifacts(
+                request, _run_python_match(request, replay_path, summary_path)
+            )
+        replay_path.with_name("result.json").unlink(missing_ok=True)
         replay_path.parent.mkdir(parents=True, exist_ok=True)
         sink = JSONLSink(str(replay_path))
         try:
@@ -385,10 +546,13 @@ class NativeMatchService:
             sink.close()
             replay_path.unlink(missing_ok=True)
             summary_path.unlink(missing_ok=True)
+            replay_path.with_name("result.json").unlink(missing_ok=True)
             raise
         finally:
             sink.close()
-        return _build_result(kernel, request.entrants, kernel_winner, replay_path)
+        return _finalize_native_artifacts(
+            request, _build_result(kernel, request.entrants, kernel_winner, replay_path)
+        )
 
 
 __all__ = [

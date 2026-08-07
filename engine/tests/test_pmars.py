@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -257,6 +258,11 @@ def test_successful_pmars_match_writes_summary_but_no_replay(monkeypatch, tmp_pa
     ) == 0
     assert not replay.exists()
     assert replay.with_name("summary.json").is_file()
+    canonical = json.loads(replay.with_name("result.json").read_text())
+    assert canonical["schema"] == "battle2.result"
+    assert canonical["schema_version"] == 1
+    assert canonical["mode"] == "redcode94"
+    assert canonical["replay"] is None
 
 
 def test_gui_service_subprocess_receives_same_traceback_free_failure(tmp_path):

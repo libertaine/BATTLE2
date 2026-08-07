@@ -1,5 +1,18 @@
 # BATTLE2 Replay and Event Contract
 
+## v0.3 canonical writer
+
+New native matches use `battle2.replay` schema version 3. One authoritative
+finalization path converts VM and Python runtime events into header, tick, and
+terminal result records. The header carries `replay_id`, `match_id`, `result_id`,
+reproducibility settings, ordered entrant identity, and code/source digests. The
+terminal result carries winner, termination reason, score, entrant statistics,
+and structured Python diagnostics where applicable.
+
+The sibling `result.json` references the replay by ID and SHA-256 digest. Readers
+continue accepting schema version 2 and the historical unversioned v0.1/native
+formats. See [RESULT_SCHEMA.md](RESULT_SCHEMA.md).
+
 ## Supported input shapes
 
 The replay reader accepts the following historical and current records. All are

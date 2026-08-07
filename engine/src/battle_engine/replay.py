@@ -1,8 +1,4 @@
-"""Versioned replay records and v0.1 compatibility conversion.
-
-The engine still writes the v0.1 stream in ``core.py``.  This module is the
-read/serialization boundary used by v0.2 consumers.
-"""
+"""Versioned replay records with v0.1/v0.2 compatibility conversion."""
 
 from __future__ import annotations
 
@@ -13,7 +9,8 @@ from typing import Any, Iterable, Iterator, Literal, Mapping, TypeAlias
 
 
 SCHEMA_NAME = "battle2.replay"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = (2, 3)
 
 
 class ReplayFormatError(ValueError):
@@ -68,7 +65,17 @@ class AgentEvent:
     cell_count: int | None = None
 
 
-EngineEvent: TypeAlias = KillDeathEvent | AgentEvent
+@dataclass(frozen=True)
+class RuntimeEvent:
+    event_type: Literal["forfeit"]
+    victim: str
+    reason: str
+    stage: str | None = None
+    tick: int | None = None
+    action_slot: int | None = None
+
+
+EngineEvent: TypeAlias = KillDeathEvent | AgentEvent | RuntimeEvent
 
 
 @dataclass(frozen=True)
@@ -193,6 +200,23 @@ def _event_from_dict(value: Any) -> EngineEvent:
         if killer is not None and not isinstance(killer, str):
             raise ReplayFormatError("event killer must be a string or null")
         return KillDeathEvent(kind, victim, killer)
+    if kind == "forfeit":
+        victim = data.get("victim")
+        reason = data.get("reason")
+        if not isinstance(victim, str) or not isinstance(reason, str):
+            raise ReplayFormatError("forfeit event requires victim and reason")
+        return RuntimeEvent(
+            "forfeit",
+            victim,
+            reason,
+            str(data["stage"]) if data.get("stage") is not None else None,
+            None if data.get("tick") is None else _as_int(data["tick"], "event.tick"),
+            (
+                None
+                if data.get("action_slot") is None
+                else _as_int(data["action_slot"], "event.action_slot")
+            ),
+        )
     if kind in ("spawn", "move", "territory", "claim"):
         agent_id = data.get("agent_id", data.get("who"))
         if agent_id is not None and not isinstance(agent_id, str):
@@ -208,8 +232,16 @@ def _event_from_dict(value: Any) -> EngineEvent:
         return AgentEvent(
             event_type=kind,
             agent_id=agent_id,
-            position=(None if position_value is None else _position(position_value, "event position")),
-            previous_position=(None if previous_value is None else _position(previous_value, "event previous_position")),
+            position=(
+                None
+                if position_value is None
+                else _position(position_value, "event position")
+            ),
+            previous_position=(
+                None
+                if previous_value is None
+                else _position(previous_value, "event previous_position")
+            ),
             cells=tuple(_position(cell, "event cell") for cell in cells_value),
             cell_count=(None if cell_count is None else _as_int(cell_count, "event cell_count")),
         )
@@ -219,7 +251,7 @@ def _event_from_dict(value: Any) -> EngineEvent:
 def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
     base: dict[str, Any] = {
         "schema": SCHEMA_NAME,
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": record.schema_version,
         "record_type": record.record_type,
     }
     if isinstance(record, ReplayHeader):
@@ -273,11 +305,24 @@ def _event_to_dict(event: EngineEvent) -> dict[str, Any]:
             "victim": event.victim,
             "killer": event.killer,
         }
+    if isinstance(event, RuntimeEvent):
+        return {
+            "event_type": event.event_type,
+            "victim": event.victim,
+            "reason": event.reason,
+            "stage": event.stage,
+            "tick": event.tick,
+            "action_slot": event.action_slot,
+        }
     return {
         "event_type": event.event_type,
         "agent_id": event.agent_id,
         "position": list(event.position) if isinstance(event.position, tuple) else event.position,
-        "previous_position": (list(event.previous_position) if isinstance(event.previous_position, tuple) else event.previous_position),
+        "previous_position": (
+            list(event.previous_position)
+            if isinstance(event.previous_position, tuple)
+            else event.previous_position
+        ),
         "cells": [list(cell) if isinstance(cell, tuple) else cell for cell in event.cells],
         "cell_count": event.cell_count,
     }
@@ -302,15 +347,20 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
     if data.get("schema") != SCHEMA_NAME:
         raise ReplayFormatError(f"unsupported replay schema: {data.get('schema')!r}")
     version = data.get("schema_version")
-    if version != SCHEMA_VERSION:
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ReplayFormatError(
-            f"unsupported {SCHEMA_NAME} schema version {version!r}; supported version is {SCHEMA_VERSION}"
+            f"unsupported {SCHEMA_NAME} schema version {version!r}; "
+            f"supported versions are {SUPPORTED_SCHEMA_VERSIONS}"
         )
 
     record_type = data.get("record_type")
     if record_type == "header":
         agents = _require_mapping(data.get("agents", {}), "header.agents")
-        return ReplayHeader(_config_from_dict(data.get("config")), {str(k): str(v) for k, v in agents.items()})
+        return ReplayHeader(
+            _config_from_dict(data.get("config")),
+            {str(k): str(v) for k, v in agents.items()},
+            schema_version=version,
+        )
     if record_type == "tick":
         return TickSnapshot(
             tick=_as_int(data.get("tick"), "tick.tick"),
@@ -318,6 +368,7 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
             score=dict(_require_mapping(data.get("score", {}), "tick.score")),
             memory_diffs=tuple(_diff_from_dict(item) for item in data.get("memory_diffs", ())),
             events=tuple(_event_from_dict(item) for item in data.get("events", ())),
+            schema_version=version,
         )
     if record_type == "result":
         winner = data.get("winner")
@@ -329,6 +380,7 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
             ticks=_as_int(data.get("ticks"), "result.ticks"),
             score=dict(_require_mapping(data.get("score", {}), "result.score")),
             agents=tuple(_agent_from_dict(item) for item in data.get("agents", ())),
+            schema_version=version,
         )
     raise ReplayFormatError(f"unsupported record_type: {record_type!r}")
 
@@ -336,7 +388,7 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
 def adapt_v01_record(data: Mapping[str, Any]) -> ReplayRecord:
     """Convert a supported v0.1/native or legacy record to the v0.2 model."""
     if "ver" in data and "config" in data:
-        return ReplayHeader(config=_config_from_dict(data["config"]))
+        return ReplayHeader(config=_config_from_dict(data["config"]), schema_version=2)
 
     if isinstance(data.get("agents"), list):
         return TickSnapshot(
@@ -345,6 +397,7 @@ def adapt_v01_record(data: Mapping[str, Any]) -> ReplayRecord:
             score=dict(_require_mapping(data.get("score", {}), "snapshot.score")),
             memory_diffs=tuple(_diff_from_dict(item) for item in data.get("memory_diffs", ())),
             events=tuple(_event_from_dict(item) for item in data.get("events", ())),
+            schema_version=2,
         )
 
     kind = data.get("type")
@@ -352,6 +405,7 @@ def adapt_v01_record(data: Mapping[str, Any]) -> ReplayRecord:
         return TickSnapshot(
             tick=_as_int(data.get("tick", 0), "event.tick"),
             events=(_event_from_dict(data),),
+            schema_version=2,
         )
     if kind == "tick":
         positions = _require_mapping(data.get("positions", {}), "tick.positions")
@@ -364,7 +418,10 @@ def adapt_v01_record(data: Mapping[str, Any]) -> ReplayRecord:
                 and key not in normalized_positions
             ):
                 normalized_positions[key] = value
-        agents = tuple(AgentState(str(agent_id), _position(position, "tick position")) for agent_id, position in normalized_positions.items())
+        agents = tuple(
+            AgentState(str(agent_id), _position(position, "tick position"))
+            for agent_id, position in normalized_positions.items()
+        )
         writes = data.get("writes", data.get("claims", ()))
         events: tuple[EngineEvent, ...] = ()
         if writes:
@@ -381,14 +438,18 @@ def adapt_v01_record(data: Mapping[str, Any]) -> ReplayRecord:
             tick=_as_int(data.get("tick", 0), "tick.tick"),
             agents=agents,
             events=events,
+            schema_version=2,
         )
     if kind == "score":
         score_value = data.get("score", {})
         return TickSnapshot(
             tick=_as_int(data.get("tick", 0), "score.tick"),
             score=dict(_require_mapping(score_value, "score.score")),
+            schema_version=2,
         )
-    raise ReplayFormatError("unrecognized replay record: expected a v0.1 header, snapshot, or legacy event")
+    raise ReplayFormatError(
+        "unrecognized replay record: expected a v0.1 header, snapshot, or legacy event"
+    )
 
 
 def iter_replay(path: str | Path) -> Iterator[ReplayRecord]:

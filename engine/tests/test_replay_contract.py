@@ -68,7 +68,7 @@ def test_legacy_spatial_event_is_normalized():
         MatchResult("A", "score_fallback", 7, {"A": 9, "B": 2}),
     ],
 )
-def test_v02_records_round_trip(record):
+def test_current_records_round_trip(record):
     assert deserialize_record(serialize_record(record)) == record
 
 

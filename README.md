@@ -30,6 +30,8 @@ AI-generated code and review findings are treated as proposals, not authority. C
 - [Agent Authoring Guide](docs/AGENT_AUTHORING.md)
 - [Agent API v1 Technical Contract](docs/AGENT_API_V1.md)
 - [Current Native VM Rules Reference](docs/RULES.md)
+- [Canonical Result Schema](docs/RESULT_SCHEMA.md)
+- [Replay Schema](docs/REPLAY_SCHEMA.md)
 
 ---
 
