@@ -8,7 +8,7 @@ import sys
 from collections.abc import Sequence
 
 
-COMMANDS = ("run", "replay", "design", "agents")
+COMMANDS = ("run", "tournament", "replay", "design", "agents")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -19,6 +19,9 @@ def _parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command")
     subcommands.add_parser(
         "run", add_help=False, help="run a native BATTLE2 or pMARS match"
+    )
+    subcommands.add_parser(
+        "tournament", add_help=False, help="run or resume a native round-robin tournament"
     )
     subcommands.add_parser(
         "replay", add_help=False, help="play a replay using headless or Pygame output"
@@ -42,7 +45,8 @@ def _design(argv: list[str]) -> int:
     if argv == ["--help"] or argv == ["-h"]:
         return _simple_help(
             "design",
-            "Open the optional PySide6 agent designer. Install with: pip install 'battle2[designer]'",
+            "Open the optional PySide6 agent designer. Install with: "
+            "pip install 'battle2[designer]'",
         )
     if argv:
         parser = argparse.ArgumentParser(prog="battle2 design", add_help=False)
@@ -74,6 +78,12 @@ def _agents(argv: list[str]) -> int:
     return engine_main(["--list-agents"])
 
 
+def _tournament(argv: list[str]) -> int:
+    from battle_engine.tournament_cli import main as tournament_main
+
+    return tournament_main(argv)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     parser = _parser()
@@ -86,6 +96,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         from battle_engine.cli import main as engine_main
 
         return engine_main(remainder)
+    if namespace.command == "tournament":
+        return _tournament(remainder)
     if namespace.command == "replay":
         from battle_client.cli import main as replay_main
 

@@ -557,7 +557,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         write_json_atomic(summary_path.with_name("result.json"), envelope.as_dict())
 
         if not args.quiet:
-            print(f"Winner: {summary['winner']}; summary: {summary_path}")
+            print(
+                f"Winner: {summary['winner']}; "
+                f"result: {summary_path.with_name('result.json')}; "
+                f"summary: {summary_path}; replay: none"
+            )
         return 0
 
     byte = args.byte
@@ -711,6 +715,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     if not args.quiet:
         print(
             f"Winner: {effective_winner}; "
+            f"result: {match_result.result_path}; "
             f"replay: {replay_path}; "
             f"summary: {summary_path}"
         )

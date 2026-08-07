@@ -29,6 +29,10 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
   match/result IDs, replay digests, and reproducibility metadata.
 - Added a resumable headless round-robin tournament service with deterministic
   seeds, canonical-result standings, and per-match artifact directories.
+- Added the supported `battle2 tournament` headless workflow with canonical
+  agent resolution, resume/retry controls, standings output, and stable exits.
+- Added a minimal Designer tournament launcher and About surface using shared,
+  package-safe runtime and schema metadata.
 
 ### Changed
 
@@ -47,6 +51,10 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
   fresh private module and constructs a fresh instance.
 - Unified VM, Python, and pMARS outcomes behind one canonical result envelope;
   pMARS records use `replay: null`, while `summary.json` remains compatible.
+- Updated `battle2 run` terminal output to identify canonical `result.json` and
+  replay artifacts alongside the compatibility summary.
+- Routed Designer match completion through canonical result/replay artifacts,
+  with explicit homogeneous-runtime preflight and concise result presentation.
 
 ### Fixed
 

@@ -31,6 +31,20 @@ def build_match_command(arguments: Sequence[str]) -> list[str]:
     return [str(normalize_root(sys.executable)), "-m", "battle_engine", "run", *options]
 
 
+def build_tournament_command(arguments: Sequence[str]) -> list[str]:
+    """Build a non-shell command for the supported tournament interface."""
+    options = list(arguments)
+    if is_frozen_application():
+        return [str(_packaged_executable("battle2")), "tournament", *options]
+    return [
+        str(normalize_root(sys.executable)),
+        "-m",
+        "battle_engine",
+        "tournament",
+        *options,
+    ]
+
+
 def build_designer_match_arguments(
     *,
     ticks: object,

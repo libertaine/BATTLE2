@@ -124,6 +124,7 @@ Primary commands are:
 
 ```bash
 battle2 run       # execute a match
+battle2 tournament runner writer seeker --rounds 2  # headless round robin
 battle2 replay    # consume an existing replay
 battle2 design    # launch the optional PySide6 designer
 battle2 agents    # list discovered agents
@@ -136,6 +137,18 @@ execution is also available:
 ```bash
 python -m battle_engine --help
 ```
+
+Native single-match output reports canonical `result.json` and replay paths as
+well as the compatibility `summary.json`. See the tournament guide for output,
+resume, and standings behavior.
+
+The optional Designer uses the same supported commands. Its Simple and Advanced
+tabs can run VM-vs-VM or Python-vs-Python matches, show the canonical winner and
+termination reason, and hand canonical replays to the existing viewer. Mixed
+VM/Python selections are rejected explicitly. **Tools → Run Tournament…** opens
+a minimal homogeneous round-robin launcher; tournament artifacts are written to
+the selected directory. **Help → About BATTLE2** reports the installed version
+and the active Agent API, result, and replay schema versions.
 
 ---
 

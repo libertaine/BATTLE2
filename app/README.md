@@ -2,13 +2,16 @@
 ```markdown
 # Battle Agent Designer (PySide6)
 
-A small PySide6 desktop app that lets you pick agents, run the **headless engine** to write a replay and summary, then open the **Pygame** renderer to view the replay.
+A small PySide6 desktop app that lets you pick agents, run the supported **headless engine** workflow, inspect its canonical result/replay artifacts, and open the **Pygame** renderer to view the replay.
 
 ## Features
 - **Simple / Advanced** modes with a toolbar toggle.
 - Simple mode: quick agent pickers, grid/tick presets, live log, Run/Stop/Open.
-- Advanced mode tabs: Match Setup, Agent Params (per-agent JSON), Replay Browser, Results (loads `summary.json`).
-- **File-only workflow**: engine writes `runs/_loose/replay.jsonl` and `runs/_loose/summary.json`.
+- Advanced mode tabs: Match Setup, Agent Params (per-agent JSON), Replay Browser, Results (shows canonical result status).
+- **File-only workflow**: engine writes `runs/_loose/result.json` and `replay.jsonl`, plus compatibility `summary.json`.
+- VM-vs-VM and Python-vs-Python matches; mixed runtime selections are rejected.
+- Minimal homogeneous round-robin launcher under **Tools → Run Tournament…**.
+- Runtime/API/schema details under **Help → About BATTLE2**.
 - Cross‑platform: sets `PYTHONPATH` using `:` (POSIX) / `;` (Windows).
 
 ## Requirements

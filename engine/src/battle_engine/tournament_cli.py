@@ -1,0 +1,156 @@
+"""Headless CLI adapter for ``TournamentService``."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from battle_engine.agent_api import AgentValidationError
+from battle_engine.agents import resolve_agent
+from battle_engine.builtins import SUPPORTED, build_agent
+from battle_engine.config import Config, Weights
+from battle_engine.match_service import MatchEntrant
+from battle_engine.paths import get_data_root
+from battle_engine.starters import ensure_starter_agents
+from battle_engine.tournament_service import (
+    TournamentConfigurationError,
+    TournamentRequest,
+    TournamentService,
+)
+
+
+def _positive(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="battle2 tournament",
+        description="Run or resume a homogeneous native round-robin tournament.",
+    )
+    parser.add_argument("agents", nargs="+", help="two or more discovered or built-in agents")
+    parser.add_argument("--rounds", type=_positive, default=1)
+    parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--ticks", type=_positive, default=3000)
+    parser.add_argument("--arena", type=_positive, default=4096)
+    parser.add_argument("--quota", type=_positive, default=8)
+    parser.add_argument(
+        "--win-mode",
+        choices=["survival", "score", "score_fallback"],
+        default="score_fallback",
+    )
+    parser.add_argument("--alive-w", type=float, default=1.0)
+    parser.add_argument("--kill-w", type=float, default=5.0)
+    parser.add_argument("--territory-w", type=float, default=1.0)
+    parser.add_argument("--territory-bucket", type=_positive, default=64)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--retry-failed", action="store_true")
+    parser.add_argument("--quiet", action="store_true")
+    return parser
+
+
+def _default_output(root: Path, names: list[str], seed: int) -> Path:
+    label = "-vs-".join(names)
+    safe = "".join(
+        character if character.isalnum() or character in "-_." else "_"
+        for character in label
+    )
+    return root / "runs" / "tournaments" / f"{safe}-seed-{seed}"
+
+
+def _resolve_entrant(root: Path, name: str, start: int) -> MatchEntrant:
+    try:
+        spec = resolve_agent(root, name)
+    except SystemExit:
+        spec = None
+    if spec is not None and spec.kind == "python":
+        return MatchEntrant.python(name, spec.display or name, start, spec)
+    if spec is not None and spec.blob is not None and spec.blob.is_file():
+        return MatchEntrant(name, spec.display or name, start, spec.blob.read_bytes())
+    if name in SUPPORTED:
+        return MatchEntrant(
+            name,
+            spec.display if spec is not None else name,
+            start,
+            build_agent(name, start),
+        )
+    raise TournamentConfigurationError(
+        f"Agent {name!r} is not an executable Python agent, blob, or built-in."
+    )
+
+
+def _print_result(result) -> None:
+    counts = {status: 0 for status in ("completed", "failed", "rejected")}
+    for match in result.matches:
+        counts[match.status] = counts.get(match.status, 0) + 1
+    print(f"Tournament: {result.tournament_id}")
+    print(
+        f"Matches: completed={counts['completed']} "
+        f"failed={counts['failed']} rejected={counts['rejected']}"
+    )
+    print("Standings:")
+    print("entrant              played  wins  losses  ties  score")
+    for row in result.standings:
+        print(
+            f"{row.agent_id:20} {row.played:6} {row.wins:5} "
+            f"{row.losses:7} {row.ties:5} {row.score_total:g}"
+        )
+    print(f"State: {result.state_path}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    if len(args.agents) < 2:
+        print("ERROR: tournament requires at least two agents", file=sys.stderr)
+        return 2
+    if len(set(args.agents)) != len(args.agents):
+        print("ERROR: tournament agent names must be unique", file=sys.stderr)
+        return 2
+
+    root = get_data_root()
+    try:
+        ensure_starter_agents(data_root=root)
+        spacing = max(1, args.arena // len(args.agents))
+        entrants = tuple(
+            _resolve_entrant(root, name, index * spacing)
+            for index, name in enumerate(args.agents)
+        )
+        output = (
+            args.output.expanduser().resolve()
+            if args.output is not None
+            else _default_output(root, args.agents, args.seed).resolve()
+        )
+        result = TournamentService().run(
+            TournamentRequest(
+                entrants=entrants,
+                config=Config(
+                    arena_size=args.arena,
+                    instr_per_tick=args.quota,
+                    seed=args.seed,
+                    win_mode=args.win_mode,
+                    weights=Weights(
+                        alive=args.alive_w,
+                        kill=args.kill_w,
+                        territory=args.territory_w,
+                        territory_bucket=args.territory_bucket,
+                    ),
+                ),
+                rounds=args.rounds,
+                max_ticks=args.ticks,
+                output_dir=output,
+                seed=args.seed,
+                retry_failures=args.retry_failed,
+                verbose=False,
+            )
+        )
+    except (AgentValidationError, TournamentConfigurationError, OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if not args.quiet:
+        _print_result(result)
+    return 1 if any(match.status != "completed" for match in result.matches) else 0

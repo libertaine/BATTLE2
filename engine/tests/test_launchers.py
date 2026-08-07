@@ -48,6 +48,18 @@ def test_source_replay_uses_client_module_and_keeps_path_one_argument(monkeypatc
     ]
 
 
+def test_source_tournament_uses_primary_dispatcher(monkeypatch, tmp_path):
+    python = tmp_path / "Python With Spaces" / "python.exe"
+    _set_source(monkeypatch, python)
+
+    command = launchers.build_tournament_command(["alpha", "beta", "--rounds", "2"])
+
+    assert command == [
+        str(python.resolve()), "-m", "battle_engine", "tournament",
+        "alpha", "beta", "--rounds", "2",
+    ]
+
+
 def test_frozen_commands_use_packaged_sibling_executables(monkeypatch, tmp_path):
     app_dir = tmp_path / "BATTLE2 Portable"
     designer = app_dir / "battle-agent-designer.exe"
@@ -59,9 +71,11 @@ def test_frozen_commands_use_packaged_sibling_executables(monkeypatch, tmp_path)
     _set_frozen(monkeypatch, designer)
 
     match_command = launchers.build_match_command(["--ticks", "5"])
+    tournament_command = launchers.build_tournament_command(["alpha", "beta"])
     replay_command = launchers.build_replay_command(tmp_path / "Replay One.jsonl")
 
     assert match_command == [str(battle2.resolve()), "run", "--ticks", "5"]
+    assert tournament_command == [str(battle2.resolve()), "tournament", "alpha", "beta"]
     assert replay_command[:3] == [
         str(viewer.resolve()),
         "--replay",

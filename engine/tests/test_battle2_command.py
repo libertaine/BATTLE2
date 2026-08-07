@@ -33,7 +33,7 @@ def _run(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
 def test_primary_help_lists_all_subcommands():
     result = _run("--help")
     assert result.returncode == 0
-    assert "{run,replay,design,agents}" in result.stdout
+    assert "{run,tournament,replay,design,agents}" in result.stdout
     for name in command.COMMANDS:
         assert name in result.stdout
 
@@ -84,6 +84,137 @@ def test_successful_headless_match_invocation(tmp_path):
     summary = json.loads((replay.parent / "summary.json").read_text())
     assert summary["seed"] == 17
     assert summary["params"]["ticks_requested"] == 3
+
+
+def _run_with_root(data_root: Path, cwd: Path, *arguments: str):
+    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
+    )
+    return subprocess.run(
+        [sys.executable, "-m", "battle_engine", *arguments],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("agents", "matches"),
+    [(["runner", "writer"], 1), (["runner", "writer", "seeker"], 3)],
+)
+def test_tournament_cli_vm_round_robin_and_output(tmp_path, agents, matches):
+    output = tmp_path / "tournament"
+    result = _run_with_root(
+        tmp_path / "data",
+        tmp_path,
+        "tournament",
+        *agents,
+        "--ticks",
+        "2",
+        "--arena",
+        "256",
+        "--output",
+        str(output),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Tournament:" in result.stdout
+    assert "Standings:" in result.stdout
+    assert f"completed={matches}" in result.stdout
+    state = json.loads((output / "tournament.json").read_text())
+    assert len(state["matches"]) == matches
+    assert len(list((output / "matches").glob("*/result.json"))) == matches
+    assert len(list((output / "matches").glob("*/replay.jsonl"))) == matches
+
+
+def test_tournament_cli_multi_round_resume_has_stable_ids(tmp_path):
+    output = tmp_path / "resume"
+    arguments = (
+        "tournament",
+        "runner",
+        "writer",
+        "--rounds",
+        "2",
+        "--ticks",
+        "1",
+        "--arena",
+        "128",
+        "--seed",
+        "44",
+        "--output",
+        str(output),
+        "--quiet",
+    )
+    first = _run_with_root(tmp_path / "data", tmp_path, *arguments)
+    before = json.loads((output / "tournament.json").read_text())
+    second = _run_with_root(tmp_path / "data", tmp_path, *arguments)
+    after = json.loads((output / "tournament.json").read_text())
+
+    assert first.returncode == second.returncode == 0
+    assert before["tournament_id"] == after["tournament_id"]
+    assert [item["match_id"] for item in before["matches"]] == [
+        item["match_id"] for item in after["matches"]
+    ]
+    assert len(after["matches"]) == 2
+
+
+def test_tournament_cli_python_division_and_mixed_rejection(tmp_path):
+    data_root = tmp_path / "data"
+    _write_cli_python_agent(data_root, "py_one", "AgentAction(ActionKind.NOP)")
+    _write_cli_python_agent(data_root, "py_two", "AgentAction(ActionKind.NOP)")
+    python_output = tmp_path / "python"
+    success = _run_with_root(
+        data_root,
+        tmp_path,
+        "tournament",
+        "py_one",
+        "py_two",
+        "--ticks",
+        "1",
+        "--arena",
+        "64",
+        "--output",
+        str(python_output),
+        "--quiet",
+    )
+    mixed_output = tmp_path / "mixed"
+    mixed = _run_with_root(
+        data_root,
+        tmp_path,
+        "tournament",
+        "py_one",
+        "runner",
+        "--output",
+        str(mixed_output),
+    )
+
+    assert success.returncode == 0, success.stderr
+    assert json.loads((python_output / "tournament.json").read_text())["division"] == "python"
+    assert mixed.returncode == 2
+    assert "mixed groups are unsupported" in mixed.stderr
+    assert "Traceback" not in mixed.stdout + mixed.stderr
+    assert not mixed_output.exists()
+
+
+def test_single_match_output_names_canonical_and_compatibility_artifacts(tmp_path):
+    replay = tmp_path / "single" / "replay.jsonl"
+    result = _run(
+        "run",
+        "--ticks",
+        "1",
+        "--arena",
+        "128",
+        "--replay",
+        str(replay),
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"result: {replay.with_name('result.json')}" in result.stdout
+    assert f"replay: {replay}" in result.stdout
+    assert f"summary: {replay.with_name('summary.json')}" in result.stdout
 
 
 def _write_cli_python_agent(root: Path, name: str, action: str) -> None:

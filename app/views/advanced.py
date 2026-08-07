@@ -211,6 +211,21 @@ class AdvancedPanel(QWidget):
                 self.table.setItem(r, 0, QTableWidgetItem(k))
                 self.table.setItem(r, 1, QTableWidgetItem(str(data[k])))
 
+    def show_result(self, result) -> None:
+        """Display the small canonical-result subset useful during normal runs."""
+        values = (
+            ("winner", result.winner),
+            ("termination_reason", result.termination_reason),
+            ("result", result.result_path),
+            ("replay", result.replay_path or "not available"),
+        )
+        self.table.setRowCount(0)
+        for key, value in values:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(key))
+            self.table.setItem(row, 1, QTableWidgetItem(str(value)))
+
     # Helpers
     def _emit_run(self) -> None:
         cfg = RunConfig(
