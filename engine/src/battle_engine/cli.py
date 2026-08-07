@@ -13,6 +13,7 @@ from battle_engine.match_service import (
     MatchEntrant,
     MatchRequest,
     NativeMatchService,
+    PythonMatchExecutionError,
     UnsupportedMatchCompositionError,
 )
 from battle_engine.paths import get_data_root
@@ -629,7 +630,11 @@ def main(argv: Iterable[str] | None = None) -> int:
                 verbose=not args.quiet,
             )
         )
-    except (UnsupportedMatchCompositionError, PythonEntrantInitializationError) as exc:
+    except (
+        UnsupportedMatchCompositionError,
+        PythonEntrantInitializationError,
+        PythonMatchExecutionError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     agent_stats = {

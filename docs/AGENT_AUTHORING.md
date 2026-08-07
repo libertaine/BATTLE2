@@ -65,6 +65,10 @@ The factory is called once per load and must return an object with callable
 instance and independent deterministic RNG for each entrant, calls `reset`
 exactly once, then permits up to `--quota` actions per tick.
 
+Each load also executes a fresh private module. Module globals persist within
+one entrant's match, but they are not reused by a later match or another entrant,
+even when the same source file is selected again.
+
 Entrants execute sequentially in slot order. A completes its quota before B,
 so A's writes are visible to B later in that tick. Internal Python computation
 is not charged or sandboxed; fairness is defined as equal charged battlefield
@@ -86,10 +90,12 @@ semantics, deterministic seed derivation, and typed failures.
 
 ## Failure behavior
 
-A reset exception rejects the match before runtime output begins. An act
+Import, factory, contract, and reset failures reject the match before tick zero
+and leave no replay or summary that can be mistaken for success. An act
 exception, malformed action, unsupported action, or invalid operand forfeits
 that entrant; a normal `HALT` simply ends it. The match continues while another
-entrant remains. Raw tracebacks are not part of normal CLI diagnostics.
+entrant remains. Forfeits produce stable structured replay events without raw
+exception text or tracebacks and do not create opponent kills.
 
 ## Not yet implemented
 

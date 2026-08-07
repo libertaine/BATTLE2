@@ -7,8 +7,10 @@ remain outside this native boundary.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
+import tempfile
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -16,8 +18,10 @@ from battle_engine.config import Config
 from battle_engine.core import Kernel
 from battle_engine.python_runtime import (
     PythonEntrantController,
+    PythonEntrantInitializationError,
     PythonRuntimeResult,
     RuntimeDiagnostic,
+    TerminationReason,
 )
 from battle_engine.scoring import ScoreMap
 from battle_engine.telemetry import JSONLSink, NullSummarySink
@@ -70,6 +74,7 @@ class NativeAgentResult:
     territory_pct_max: float
     territory_pct_avg: float
     diagnostic: RuntimeDiagnostic | None = None
+    termination_reason: str | None = None
 
     def as_legacy_statistics(self) -> dict[str, object]:
         """Return the v0.2 CLI agent-statistics shape during migration."""
@@ -101,6 +106,7 @@ class NativeMatchResult:
     score: Mapping[str, int | float]
     agents: tuple[NativeAgentResult, ...]
     replay_path: Path
+    termination_reason: TerminationReason
 
     @property
     def agents_by_id(self) -> Mapping[str, NativeAgentResult]:
@@ -110,7 +116,25 @@ class NativeMatchResult:
 class UnsupportedMatchCompositionError(ValueError):
     """Native matches must be homogeneous until mixed scheduling is defined."""
 
+    # Preserve the Phase 3a exception attribute for callers while using the
+    # normalized Phase 3b diagnostic code internally.
     code = "native_match_composition_unsupported"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.diagnostic = RuntimeDiagnostic(
+            code="unsupported_match_composition",
+            stage="configuration",
+            message=message,
+        )
+
+
+class PythonMatchExecutionError(RuntimeError):
+    """A Python match failed outside an entrant's controlled forfeit path."""
+
+    def __init__(self, diagnostic: RuntimeDiagnostic):
+        super().__init__(diagnostic.message)
+        self.diagnostic = diagnostic
 
 
 def _effective_winner(kernel_winner: str | None, score: ScoreMap, win_mode: str) -> str:
@@ -169,6 +193,13 @@ def _build_result(
         score=score,
         agents=tuple(agent_results),
         replay_path=replay_path,
+        termination_reason=(
+            TerminationReason.ALL_AGENTS_DEAD
+            if not any(agent.alive for agent in kernel.agents)
+            else TerminationReason.LAST_AGENT_STANDING
+            if sum(agent.alive for agent in kernel.agents) == 1
+            else TerminationReason.TICK_LIMIT
+        ),
     )
 
 
@@ -209,6 +240,7 @@ def _build_python_result(
                     territory_avg * 100.0 / arena_size if arena_size else 0.0
                 ),
                 diagnostic=state.diagnostic,
+                termination_reason=state.entrant_termination,
             )
         )
     return NativeMatchResult(
@@ -217,7 +249,100 @@ def _build_python_result(
         score=MappingProxyType(dict(runtime.score)),
         agents=tuple(results),
         replay_path=replay_path,
+        termination_reason=runtime.termination_reason,
     )
+
+
+def _remove_python_artifacts(replay_path: Path, summary_path: Path) -> None:
+    """Remove outputs that could otherwise be mistaken for this match's success."""
+
+    for path in (replay_path, summary_path):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise PythonMatchExecutionError(
+                RuntimeDiagnostic(
+                    code="artifact_write_failed",
+                    stage="artifact",
+                    message=f"Could not clear Python match artifact {path.name}: {exc}",
+                    exception_type=type(exc).__name__,
+                )
+            ) from exc
+
+
+def _run_python_match(
+    request: MatchRequest, replay_path: Path, summary_path: Path
+) -> NativeMatchResult:
+    _remove_python_artifacts(replay_path, summary_path)
+    try:
+        controller = PythonEntrantController(
+            request.config, request.entrants, request.max_ticks
+        )
+    except PythonEntrantInitializationError:
+        _remove_python_artifacts(replay_path, summary_path)
+        raise
+    except BaseException as exc:
+        _remove_python_artifacts(replay_path, summary_path)
+        raise PythonMatchExecutionError(
+            RuntimeDiagnostic(
+                code="engine_failed",
+                stage="initialization",
+                message=f"Python match initialization failed: {type(exc).__name__}: {exc}",
+                exception_type=type(exc).__name__,
+            )
+        ) from exc
+
+    temporary_path: Path | None = None
+    sink: JSONLSink | None = None
+    try:
+        replay_path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{replay_path.name}.", suffix=".tmp", dir=replay_path.parent
+        )
+        os.close(descriptor)
+        temporary_path = Path(temporary_name)
+        sink = JSONLSink(str(temporary_path))
+        runtime = controller.run(sink, verbose=request.verbose)
+        sink = None  # The controller closes the replay publisher.
+        temporary_path.replace(replay_path)
+        temporary_path = None
+        return _build_python_result(runtime, request.config, replay_path)
+    except OSError as exc:
+        raise PythonMatchExecutionError(
+            RuntimeDiagnostic(
+                code="artifact_write_failed",
+                stage="artifact",
+                message=f"Python replay could not be written: {type(exc).__name__}: {exc}",
+                exception_type=type(exc).__name__,
+            )
+        ) from exc
+    except PythonMatchExecutionError:
+        raise
+    except BaseException as exc:
+        raise PythonMatchExecutionError(
+            RuntimeDiagnostic(
+                code="engine_failed",
+                stage="execution",
+                message=f"Python match engine failed: {type(exc).__name__}: {exc}",
+                exception_type=type(exc).__name__,
+            )
+        ) from exc
+    finally:
+        if sink is not None:
+            try:
+                sink.close()
+            except OSError:
+                pass
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if temporary_path is not None or not replay_path.exists():
+            try:
+                summary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 class NativeMatchService:
@@ -242,17 +367,11 @@ class NativeMatchService:
 
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
-        controller = (
-            PythonEntrantController(request.config, request.entrants, request.max_ticks)
-            if "python" in kinds
-            else None
-        )
+        if "python" in kinds:
+            return _run_python_match(request, replay_path, summary_path)
         replay_path.parent.mkdir(parents=True, exist_ok=True)
         sink = JSONLSink(str(replay_path))
         try:
-            if controller is not None:
-                runtime = controller.run(sink, verbose=request.verbose)
-                return _build_python_result(runtime, request.config, replay_path)
             kernel = Kernel(request.config, sink, summary_sink=NullSummarySink())
             for entrant in request.entrants:
                 assert entrant.code is not None
@@ -278,6 +397,7 @@ __all__ = [
     "NativeAgentResult",
     "NativeMatchResult",
     "NativeMatchService",
+    "PythonMatchExecutionError",
     "RuntimeDiagnostic",
     "UnsupportedMatchCompositionError",
 ]

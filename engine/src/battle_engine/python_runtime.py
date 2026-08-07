@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -12,6 +13,7 @@ from battle_engine.agent_api import (
     AGENT_API_VERSION,
     ActionKind,
     AgentAction,
+    AgentValidationError,
     LoadedPythonAgent,
     MatchContext,
     Observation,
@@ -25,17 +27,39 @@ from battle_engine.telemetry import ReplayPublisher, ReplaySink
 from battle_engine.vm import VM
 
 
+class TerminationReason(str, Enum):
+    """Internal reason that a completed native match stopped."""
+
+    LAST_AGENT_STANDING = "last_agent_standing"
+    ALL_AGENTS_DEAD = "all_agents_dead"
+    TICK_LIMIT = "tick_limit"
+
+
 @dataclass(frozen=True)
 class RuntimeDiagnostic:
+    """Structured failure detail kept separate from winner resolution."""
+
     code: str
-    agent_id: str
+    stage: str
     message: str
+    agent_id: str | None = None
+    slot: int | None = None
+    exception_type: str | None = None
+    tick: int | None = None
+    action_slot: int | None = None
+
+
+def _safe_message(value: object, *, limit: int = 240) -> str:
+    """Normalize callback text for concise diagnostics and deterministic replay."""
+
+    message = " ".join(str(value).split())
+    return message[:limit] if message else "No error message was provided."
 
 
 class PythonEntrantInitializationError(ValueError):
     """A Python entrant could not be reset before tick zero."""
 
-    code = "python_reset_failed"
+    code = "agent_initialization_failed"
 
     def __init__(self, diagnostic: RuntimeDiagnostic):
         super().__init__(diagnostic.message)
@@ -52,6 +76,9 @@ class PythonEntrantState:
     name: str
     loaded: LoadedPythonAgent
     rng: random.Random
+    slot: int = 0
+    derived_seed: int = 0
+    source_digest: str = ""
     pc: int = 0
     register_a: int = 0
     register_p: int = 0
@@ -63,6 +90,7 @@ class PythonEntrantState:
     mem_writes: int = 0
     region: tuple[int, int] = (0, 0)
     diagnostic: RuntimeDiagnostic | None = None
+    entrant_termination: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +100,7 @@ class PythonRuntimeResult:
     score: Mapping[str, int | float]
     states: tuple[PythonEntrantState, ...]
     statistics: StatisticsMap
+    termination_reason: TerminationReason
 
 
 def derive_agent_seed(
@@ -176,6 +205,13 @@ class PythonEntrantController:
 
     def __init__(self, config: Config, entrants: tuple[Any, ...], max_ticks: int):
         self.config = config
+        if config.arena_size <= 0 or config.instr_per_tick <= 0 or max_ticks <= 0:
+            diagnostic = RuntimeDiagnostic(
+                code="match_configuration_invalid",
+                stage="configuration",
+                message="Python matches require positive arena, action budget, and tick limit.",
+            )
+            raise PythonEntrantInitializationError(diagnostic)
         self.vm = VM(config.arena_size)
         self.max_ticks = max_ticks
         self.states: list[PythonEntrantState] = []
@@ -185,7 +221,18 @@ class PythonEntrantController:
         self.scoring = ScoringPolicy(config.weights)
 
         for slot, entrant in enumerate(entrants):
-            loaded = load_python_agent(entrant.python_spec)
+            try:
+                loaded = load_python_agent(entrant.python_spec)
+            except AgentValidationError as exc:
+                diagnostic = RuntimeDiagnostic(
+                    code=exc.code,
+                    stage="load",
+                    message=_safe_message(exc),
+                    agent_id=entrant.agent_id,
+                    slot=slot,
+                    exception_type=type(exc).__name__,
+                )
+                raise PythonEntrantInitializationError(diagnostic) from exc
             seed = derive_agent_seed(
                 config.seed, slot, entrant.agent_id, loaded.metadata.api_version
             )
@@ -194,6 +241,9 @@ class PythonEntrantController:
                 name=entrant.name,
                 loaded=loaded,
                 rng=random.Random(seed),
+                slot=slot,
+                derived_seed=seed,
+                source_digest=hashlib.sha256(loaded.source_path.read_bytes()).hexdigest(),
                 pc=entrant.start & 0xFFFFFFFF,
                 region=(entrant.start % config.arena_size,) * 2,
             )
@@ -209,9 +259,15 @@ class PythonEntrantController:
                 loaded.instance.reset(context)
             except BaseException as exc:
                 diagnostic = RuntimeDiagnostic(
-                    "python_reset_failed",
-                    entrant.agent_id,
-                    f"Python agent {entrant.agent_id} reset failed: {type(exc).__name__}: {exc}",
+                    code="agent_reset_failed",
+                    stage="reset",
+                    message=(
+                        f"Python agent {entrant.agent_id} reset failed: "
+                        f"{type(exc).__name__}: {_safe_message(exc)}"
+                    ),
+                    agent_id=entrant.agent_id,
+                    slot=slot,
+                    exception_type=type(exc).__name__,
                 )
                 raise PythonEntrantInitializationError(diagnostic) from exc
             self.states.append(state)
@@ -221,11 +277,35 @@ class PythonEntrantController:
             )
 
     def _forfeit(
-        self, state: PythonEntrantState, code: str, message: str
-    ) -> dict[str, str]:
+        self,
+        state: PythonEntrantState,
+        code: str,
+        message: str,
+        *,
+        tick: int,
+        action_slot: int,
+        exception_type: str | None = None,
+    ) -> dict[str, Any]:
         state.alive = False
-        state.diagnostic = RuntimeDiagnostic(code, state.agent_id, message)
-        return {"type": "forfeit", "victim": state.agent_id, "reason": code, "message": message}
+        state.entrant_termination = "forfeit"
+        state.diagnostic = RuntimeDiagnostic(
+            code=code,
+            stage="action",
+            message=message,
+            agent_id=state.agent_id,
+            slot=state.slot,
+            exception_type=exception_type,
+            tick=tick,
+            action_slot=action_slot,
+        )
+        return {
+            "type": "forfeit",
+            "victim": state.agent_id,
+            "reason": code,
+            "stage": "action",
+            "tick": tick,
+            "action_slot": action_slot,
+        }
 
     def run(self, sink: ReplaySink, *, verbose: bool) -> PythonRuntimeResult:
         replay = ReplayPublisher(sink)
@@ -241,7 +321,7 @@ class PythonEntrantController:
                 for state in self.states:
                     if not state.alive:
                         continue
-                    for _ in range(self.config.instr_per_tick):
+                    for action_slot in range(self.config.instr_per_tick):
                         if not state.alive:
                             break
                         try:
@@ -250,14 +330,18 @@ class PythonEntrantController:
                             state.total_actions += 1
                             apply_action(action, state, self.vm)
                             if action.kind is ActionKind.HALT:
+                                state.entrant_termination = "normal_halt"
                                 events.append({"type": "death", "victim": state.agent_id})
                         except InvalidPythonActionError as exc:
                             events.append(
                                 self._forfeit(
                                     state,
-                                    "python_action_invalid",
+                                    "agent_action_invalid",
                                     f"Python agent {state.agent_id} returned an "
-                                    f"invalid action: {exc}",
+                                    f"invalid action: {_safe_message(exc)}",
+                                    tick=tick,
+                                    action_slot=action_slot,
+                                    exception_type=type(exc).__name__,
                                 )
                             )
                         except BaseException as exc:
@@ -266,9 +350,12 @@ class PythonEntrantController:
                             events.append(
                                 self._forfeit(
                                     state,
-                                    "python_act_failed",
+                                    "agent_action_failed",
                                     f"Python agent {state.agent_id} act failed: "
-                                    f"{type(exc).__name__}: {exc}",
+                                    f"{type(exc).__name__}: {_safe_message(exc)}",
+                                    tick=tick,
+                                    action_slot=action_slot,
+                                    exception_type=type(exc).__name__,
                                 )
                             )
 
@@ -294,6 +381,13 @@ class PythonEntrantController:
         finally:
             replay.close()
 
+        alive_count = sum(state.alive for state in self.states)
+        if alive_count == 0:
+            termination_reason = TerminationReason.ALL_AGENTS_DEAD
+        elif alive_count == 1:
+            termination_reason = TerminationReason.LAST_AGENT_STANDING
+        else:
+            termination_reason = TerminationReason.TICK_LIMIT
         winner = resolve_winner(  # type: ignore[arg-type]
             self.states, self.score, self.config.win_mode
         )
@@ -303,6 +397,7 @@ class PythonEntrantController:
             score=MappingProxyType(dict(self.score)),
             states=tuple(self.states),
             statistics=self.statistics,
+            termination_reason=termination_reason,
         )
 
 
@@ -313,6 +408,7 @@ __all__ = [
     "PythonEntrantState",
     "PythonRuntimeResult",
     "RuntimeDiagnostic",
+    "TerminationReason",
     "apply_action",
     "derive_agent_seed",
     "validate_action",

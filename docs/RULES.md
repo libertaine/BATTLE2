@@ -153,8 +153,9 @@ Redcode does not execute BATTLE VM opcodes, use BATTLE registers, participate in
 
 ## Experimental Python-only runtime
 
-Phase 3a permits homogeneous Python-versus-Python matches. Python entrants use
-the same circular arena, ownership array, survival scoring, territory scoring,
+The current runtime permits homogeneous Python-versus-Python matches. Python
+entrants use the same circular arena, ownership array, survival scoring,
+territory scoring,
 tick limit, and winner rules where those concepts apply. They execute in request
 order with `instr_per_tick` charged actions per living entrant, so earlier
 entrants' writes are visible later in the same tick.
@@ -162,11 +163,16 @@ entrants' writes are visible later in the same tick.
 Python source is not stored in the arena and cannot currently be corrupted by
 arena writes. Python mortality is limited to `HALT`, invalid actions, callback
 failure, and match termination. Such deaths have no invented kill attribution.
+Internal results distinguish normal halt from forfeit and distinguish last-agent,
+all-dead, and tick-limit match termination without changing compatibility output.
 
 Replay headers and tick records retain the current schema. Python arena writes
 appear in `memory_diffs`; agent `pc` is controller state rather than a VM
 instruction address, and the reported one-cell region is only the configured
-start marker. Forfeits use structured replay events.
+start marker. Forfeits use deterministic structured replay events containing a
+stable reason, stage, tick, and action slot, without exception text or traceback.
+Final Python replays are published atomically; rejected or failed matches remove
+stale replay and summary artifacts at the requested output location.
 
 Python agents do not see the complete arena, ownership, score, opponents, or
 engine objects. `READ` is the only arena-read operation and `WRITE` is the only
@@ -175,3 +181,6 @@ and observation contracts.
 
 Mixed Python/VM execution, corruptible Python cores, hard callback containment,
 replication designs, and tournament execution are not implemented.
+Python modules and instances are freshly constructed for every entrant load;
+module globals persist only for that entrant's match. Python agents remain
+trusted in-process code.

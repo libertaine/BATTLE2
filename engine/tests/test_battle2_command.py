@@ -239,7 +239,7 @@ def test_cli_python_act_failure_is_structured_without_traceback(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "Traceback" not in result.stdout + result.stderr
     records = [json.loads(line) for line in replay.read_text().splitlines()]
-    assert records[1]["events"][0]["reason"] == "python_act_failed"
+    assert records[1]["events"][0]["reason"] == "agent_action_failed"
 
 
 def test_agents_command_initializes_starters_idempotently(tmp_path):

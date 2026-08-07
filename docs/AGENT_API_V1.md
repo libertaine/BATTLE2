@@ -1,8 +1,8 @@
 # Agent API v1 Technical Contract
 
-This document describes the implemented BATTLE2 Python Agent API v1. Phase 3a
-supports deterministic Python-versus-Python matches through the native match
-service. VM/Python mixed matches remain unsupported.
+This document describes the implemented BATTLE2 Python Agent API v1. The current
+runtime supports deterministic Python-versus-Python matches through the native
+match service. VM/Python mixed matches remain unsupported.
 
 ## Loading contract
 
@@ -11,6 +11,11 @@ point in `relative/path.py:factory` form. `load_python_agent()` contains the
 source path within the agent directory, imports it under a path-derived private
 module name, calls the zero-argument factory, and requires callable `reset` and
 `act` methods. Every load constructs a fresh module and agent instance.
+
+The loader deliberately executes a fresh module for every entrant load, including
+repeated matches and two entrants that use the same source. Module globals are
+therefore fresh at match construction rather than shared through Python's import
+cache. Globals still persist for that entrant for the duration of its match.
 
 Loading failures use the existing typed `AgentValidationError` hierarchy:
 
@@ -92,27 +97,50 @@ unsupported, batched, or non-`AgentAction` results are invalid. Agents may do
 unrestricted in-process computation while choosing an action, but only this
 validated one-operation interface can read or mutate battlefield state.
 
-## Scheduling and failures
+## Scheduling, failures, and termination
 
 Python-only scheduling is sequential in request/spawn order. Each living
 entrant receives up to `Config.instr_per_tick` callbacks, and A completes its
 quota before B begins. Writes are therefore visible to later entrants in the
 same tick, preserving the native scheduler's first-mover characteristic.
 
-- A reset exception rejects initialization before replay creation.
-- An act exception forfeits the entrant with `python_act_failed`.
-- An invalid action forfeits the entrant with `python_action_invalid`.
+- Import, factory, contract, and reset failures reject initialization before
+  tick zero and before a final replay is published.
+- An act exception forfeits the entrant with `agent_action_failed`.
+- An invalid or unsupported action forfeits it with `agent_action_invalid`.
 - `HALT` is a normal unattributed death.
 
-Runtime forfeits are available as structured internal result diagnostics and
-replay events. Normal CLI failures do not expose tracebacks.
+Runtime diagnostics carry a stable code and stage plus applicable entrant ID,
+slot, exception type, tick, and zero-based action slot. Human-readable exception
+text is whitespace-normalized and bounded; replay failure events use stable
+fields rather than exception text or tracebacks. A forfeit is never attributed
+as an opponent kill.
+
+Completed internal match results distinguish `last_agent_standing`,
+`all_agents_dead`, and `tick_limit`. Entrants separately distinguish a normal
+`HALT` from a forfeit. These fields remain internal while the v0.2 summary and
+replay compatibility formats are in use.
+
+Python replays are written to a sibling temporary file and atomically published
+after successful runtime completion. Preflight, engine, or replay-write failure
+removes stale replay and summary outputs at the requested location. An action
+forfeit is a completed match outcome, so its replay is published normally.
+
+Internally, each entrant retains the effective match seed, independently derived
+entrant seed, request slot, canonical agent ID, API and agent versions, source
+SHA-256 digest, arena size, tick limit, and action budget. Absolute source paths
+are not added to portable replay or summary data. Canonical exposure of this
+metadata belongs with later result/replay normalization.
 
 ## Current limitations
 
 - Python/VM and Python/blob mixed matches are rejected.
 - Python entrants are not vulnerable to arena code corruption.
 - No hard timeout or process isolation can interrupt a non-returning callback.
+  Per-callback workers would require action-level IPC and arena synchronization;
+  whole-match worker containment is the preferred future direction, but requires
+  a Windows-spawn-safe request, replay, cleanup, and packaging protocol.
 - Python replication and vulnerable-core designs are not implemented.
-- Tournament execution is not part of Agent API v1 Phase 3a.
+- Tournament execution is not part of the current Agent API v1 runtime.
 - Type hints and method signatures are not statically enforced at load time;
   incompatible calls become controlled reset or act failures.

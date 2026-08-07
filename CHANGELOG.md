@@ -23,6 +23,8 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 - Added focused Agent API, native-service, reference-agent, scheduler, and Python
   runtime coverage, including deterministic execution and failure behavior.
 - Added Agent API, agent-authoring, and native-rules documentation.
+- Added structured Python runtime diagnostics, internal match and entrant
+  termination reasons, and internal source-digest and derived-seed metadata.
 
 ### Changed
 
@@ -37,6 +39,8 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
   build-tool discovery, source-checkout execution, and a platform-neutral roster.
 - Restored targeted pull-request and main-branch GUI and pMARS validation while
   keeping display-dependent tests outside ordinary headless pytest discovery.
+- Made Python module reload behavior explicit: every entrant load executes a
+  fresh private module and constructs a fresh instance.
 
 ### Fixed
 
@@ -46,6 +50,8 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
   tick usage from being added repeatedly to cumulative statistics.
 - Removed obsolete tournament CLI arguments and machine-specific paths that
   prevented the tournament controller from working with current source trees.
+- Prevented rejected or failed Python matches from leaving stale success
+  artifacts, and published completed Python replays atomically.
 
 ### Known Limitations
 
