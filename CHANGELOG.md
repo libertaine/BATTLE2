@@ -27,6 +27,8 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
   termination reasons, and internal source-digest and derived-seed metadata.
 - Added `battle2.result` schema v1 and `battle2.replay` schema v3 with stable
   match/result IDs, replay digests, and reproducibility metadata.
+- Added a resumable headless round-robin tournament service with deterministic
+  seeds, canonical-result standings, and per-match artifact directories.
 
 ### Changed
 

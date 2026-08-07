@@ -104,7 +104,7 @@ exception text or tracebacks and do not create opponent kills.
 - hard timeout/process containment for callbacks;
 - Python replication or redundant-core architectures;
 - human-controlled entrants; and
-- tournament execution.
+- mixed-runtime or GUI-managed tournament execution.
 
 Python code can perform arbitrary in-process computation and a non-returning
 `act()` cannot yet be interrupted safely. Run only agents you trust.

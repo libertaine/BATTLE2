@@ -180,7 +180,8 @@ arena mutation. See [AGENT_API_V1.md](AGENT_API_V1.md) for the complete action
 and observation contracts.
 
 Mixed Python/VM execution, corruptible Python cores, hard callback containment,
-replication designs, and tournament execution are not implemented.
+and replication designs are not implemented. The headless tournament service
+supports homogeneous Python-only or VM-only divisions.
 Python modules and instances are freshly constructed for every entrant load;
 module globals persist only for that entrant's match. Python agents remain
 trusted in-process code.

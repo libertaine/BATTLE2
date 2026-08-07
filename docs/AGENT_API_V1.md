@@ -141,6 +141,7 @@ metadata belongs with later result/replay normalization.
   whole-match worker containment is the preferred future direction, but requires
   a Windows-spawn-safe request, replay, cleanup, and packaging protocol.
 - Python replication and vulnerable-core designs are not implemented.
-- Tournament execution is not part of the current Agent API v1 runtime.
+- Headless Python-only tournaments orchestrate Agent API v1 matches through the
+  native service; mixed-runtime tournament divisions remain unsupported.
 - Type hints and method signatures are not statically enforced at load time;
   incompatible calls become controlled reset or act failures.
