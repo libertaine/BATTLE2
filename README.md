@@ -6,7 +6,7 @@ Project to determine feasibility of using LLM to assist me in creation of a proj
 
 **BATTLE2** is a Python-based framework and simulation engine for Core War–style AI competitions. It supports:
 
-- Native Python agents  
+- Python agent discovery and Agent API v1 validation (match execution is under development)
 - Precompiled binary “blob” agents  
 - Integration with pMARS (Redcode) for interop  
 - Replay viewing and agent design tools  
@@ -17,6 +17,14 @@ This project is released under the **MIT License**. See the [LICENSE](LICENSE) f
 [![Changelog](https://img.shields.io/badge/Changelog-view-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+
+---
+
+## Documentation
+
+- [Agent Authoring Guide](docs/AGENT_AUTHORING.md)
+- [Agent API v1 Technical Contract](docs/AGENT_API_V1.md)
+- [Current Native VM Rules Reference](docs/RULES.md)
 
 ---
 
@@ -129,12 +137,13 @@ python -m battle_engine --help
 
 | Type    | File         | Execution Path            | Notes                                    |
 | ------- | ------------ | ------------------------- | ---------------------------------------- |
-| Python  | `agent.py`   | Discovered as source      | Execution is not wired into the v0.1 CLI |
+| Python  | `agent.py`   | Imported and validated against Agent API v1 | Match execution is not implemented yet |
 | Blob    | `model.blob` | Loaded directly by engine | Faster, minimal runtime                  |
 | Redcode | `.red/.asm`  | Via pMARS integration     | Compatible with existing Core War agents |
 
-* A directory containing **Python** source is discoverable, but native v0.1 CLI
-  matches require a blob or built-in implementation.
+* A directory containing **Python** source is discoverable and can be loaded and
+  structurally validated through the v0.3 Agent API v1 foundation. Native CLI
+  matches still require a blob or built-in implementation.
 * Use **blob** when you want to ship just the low-level compiled version.
 * The **Redcode** mode allows interop with legacy Core War agents (via pMARS). Use `--mode redcode94`.
 
