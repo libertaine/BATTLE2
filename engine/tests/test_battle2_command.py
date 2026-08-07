@@ -86,6 +86,162 @@ def test_successful_headless_match_invocation(tmp_path):
     assert summary["params"]["ticks_requested"] == 3
 
 
+def _write_cli_python_agent(root: Path, name: str, action: str) -> None:
+    directory = root / "agents" / name
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {
+                "kind": "python",
+                "api_version": 1,
+                "entrypoint": "agent.py:create_agent",
+                "name": name,
+                "version": "1.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        f"""
+from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): return {action}
+def create_agent(): return Agent()
+""",
+        encoding="utf-8",
+    )
+
+
+def test_cli_runs_python_vs_python_match(tmp_path):
+    data_root = tmp_path / "data"
+    replay = tmp_path / "python-match" / "replay.jsonl"
+    _write_cli_python_agent(
+        data_root, "py_writer", "AgentAction(ActionKind.WRITE, 11, 77)"
+    )
+    _write_cli_python_agent(
+        data_root, "py_passive", "AgentAction(ActionKind.NOP)"
+    )
+    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "battle_engine",
+            "run",
+            "--a-type",
+            "py_writer",
+            "--b-type",
+            "py_passive",
+            "--ticks",
+            "2",
+            "--quota",
+            "2",
+            "--arena",
+            "64",
+            "--replay",
+            str(replay),
+            "--quiet",
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert replay.is_file()
+    summary = json.loads(replay.with_name("summary.json").read_text())
+    assert summary["agents"] == {"A": "py_writer", "B": "py_passive"}
+    assert summary["agent_stats"]["A"]["mem_writes"] == 4
+
+
+def test_cli_rejects_mixed_vm_python_without_traceback(tmp_path):
+    data_root = tmp_path / "data"
+    replay = tmp_path / "mixed" / "replay.jsonl"
+    _write_cli_python_agent(
+        data_root, "py_passive", "AgentAction(ActionKind.NOP)"
+    )
+    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "battle_engine",
+            "run",
+            "--a-type",
+            "py_passive",
+            "--b-type",
+            "runner",
+            "--ticks",
+            "1",
+            "--replay",
+            str(replay),
+            "--quiet",
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "Mixed VM/Python matches are not supported" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not replay.exists()
+
+
+def test_cli_python_act_failure_is_structured_without_traceback(tmp_path):
+    data_root = tmp_path / "data"
+    replay = tmp_path / "failure" / "replay.jsonl"
+    _write_cli_python_agent(data_root, "broken", "(_ for _ in ()).throw(RuntimeError('boom'))")
+    _write_cli_python_agent(
+        data_root, "py_passive", "AgentAction(ActionKind.NOP)"
+    )
+    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "battle_engine",
+            "run",
+            "--a-type",
+            "broken",
+            "--b-type",
+            "py_passive",
+            "--ticks",
+            "2",
+            "--replay",
+            str(replay),
+            "--quiet",
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stdout + result.stderr
+    records = [json.loads(line) for line in replay.read_text().splitlines()]
+    assert records[1]["events"][0]["reason"] == "python_act_failed"
+
+
 def test_agents_command_initializes_starters_idempotently(tmp_path):
     data_root = tmp_path / "empty-data-root"
     env = dict(os.environ, BATTLE2_ROOT=str(data_root))

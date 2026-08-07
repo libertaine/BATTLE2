@@ -1,16 +1,13 @@
-"""Public construction contract for BATTLE2 Python agents.
-
-This module establishes loading and lifecycle structure only.  Python agents are
-not connected to the match scheduler yet, and the deliberately small observation
-and action types do not define arena visibility, action budgets, or VM fairness.
-"""
+"""Public loading and Phase 3a runtime contract for BATTLE2 Python agents."""
 
 from __future__ import annotations
 
 import hashlib
 import importlib.util
+import random
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol, runtime_checkable
@@ -64,22 +61,52 @@ class AgentMetadata:
 
 @dataclass(frozen=True)
 class MatchContext:
-    """Minimum stable construction/reset context; gameplay fields come later."""
+    """Engine-controlled immutable match context supplied once at reset."""
 
     agent_id: str
     seed: int
+    arena_size: int
+    tick_limit: int
+    action_budget: int
+    rng: random.Random
 
 
 @dataclass(frozen=True)
 class Observation:
-    """Provisional immutable turn envelope, not yet produced by the engine."""
+    """Restricted immutable state visible before one Python-agent action."""
 
     tick: int
+    agent_id: str
+    pc: int
+    register_a: int
+    register_p: int
+    zero_flag: bool
+    last_read: int | None
+    alive: bool
+
+
+class ActionKind(str, Enum):
+    """Versioned Phase 3a battlefield-operation vocabulary."""
+
+    NOP = "nop"
+    SET_A = "set_a"
+    ADD_A = "add_a"
+    READ = "read"
+    WRITE = "write"
+    SET_P = "set_p"
+    ADD_P = "add_p"
+    JUMP = "jump"
+    JUMP_IF_ZERO = "jump_if_zero"
+    HALT = "halt"
 
 
 @dataclass(frozen=True)
 class AgentAction:
-    """Provisional marker whose gameplay fields are intentionally still undefined."""
+    """Exactly one validated battlefield operation returned by ``act``."""
+
+    kind: ActionKind
+    operand: int | None = None
+    value: int | None = None
 
 
 @runtime_checkable
@@ -223,6 +250,7 @@ def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
 
 __all__ = [
     "AGENT_API_VERSION",
+    "ActionKind",
     "AgentAction",
     "AgentContractError",
     "AgentFactoryError",

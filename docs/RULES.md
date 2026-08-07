@@ -151,8 +151,27 @@ Starter manifests currently initialize Runner, Writer, Seeker, and Spiral in a w
 
 Redcode does not execute BATTLE VM opcodes, use BATTLE registers, participate in native scheduling, or currently produce a native BATTLE replay. It produces a normalized summary on success.
 
-## Python runtime rules are not yet defined
+## Experimental Python-only runtime
 
-Python agent discovery, path-based import, factory construction, fresh instances, structural validation, and typed diagnostics exist. Python agents do not yet participate in native matches.
+Phase 3a permits homogeneous Python-versus-Python matches. Python entrants use
+the same circular arena, ownership array, survival scoring, territory scoring,
+tick limit, and winner rules where those concepts apply. They execute in request
+order with `instr_per_tick` charged actions per living entrant, so earlier
+entrants' writes are visible later in the same tick.
 
-No rules currently define Python observations, actions, arena or ownership visibility, action budgets, VM-equivalent costs, mortality, exception forfeits, timeouts, or Python-versus-VM scheduling. See [AGENT_API_V1.md](AGENT_API_V1.md) for the implemented loading contract without speculative gameplay semantics.
+Python source is not stored in the arena and cannot currently be corrupted by
+arena writes. Python mortality is limited to `HALT`, invalid actions, callback
+failure, and match termination. Such deaths have no invented kill attribution.
+
+Replay headers and tick records retain the current schema. Python arena writes
+appear in `memory_diffs`; agent `pc` is controller state rather than a VM
+instruction address, and the reported one-cell region is only the configured
+start marker. Forfeits use structured replay events.
+
+Python agents do not see the complete arena, ownership, score, opponents, or
+engine objects. `READ` is the only arena-read operation and `WRITE` is the only
+arena mutation. See [AGENT_API_V1.md](AGENT_API_V1.md) for the complete action
+and observation contracts.
+
+Mixed Python/VM execution, corruptible Python cores, hard callback containment,
+replication designs, and tournament execution are not implemented.

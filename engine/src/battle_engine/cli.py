@@ -9,9 +9,15 @@ from battle_engine.agent_api import AgentValidationError
 from battle_engine.agents import discover_agents, resolve_agent
 from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.core import Config, Weights
-from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
+from battle_engine.match_service import (
+    MatchEntrant,
+    MatchRequest,
+    NativeMatchService,
+    UnsupportedMatchCompositionError,
+)
 from battle_engine.paths import get_data_root
 from battle_engine.pmars import PMarsError, run_pmars
+from battle_engine.python_runtime import PythonEntrantInitializationError
 from battle_engine.starters import ensure_starter_agents
 
 DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
@@ -288,7 +294,7 @@ def _resolve_agent(
     args: argparse.Namespace,
     cfg: Config,
     common_kwargs: Dict[str, Any],
-) -> Tuple[Optional[bytes], str, int]:
+) -> Tuple[Optional[bytes], str, int, Any | None]:
     """
     Resolve an agent for slot A/B/C.
 
@@ -312,12 +318,12 @@ def _resolve_agent(
                 path = str((spec_dir / path).resolve())
             code = read_blob(path)
             name = s.get("name") or f"{letter}_blob"
-            return code, name, start
+            return code, name, start, None
 
         if ttype == "builtin":
             agent_id = s["id"]
             code = build_agent(agent_id, start, **common_kwargs)
-            return code, agent_id, start
+            return code, agent_id, start, None
 
         print(f"ERROR: unknown agent type for {letter}: {ttype}", file=sys.stderr)
         sys.exit(2)
@@ -326,12 +332,12 @@ def _resolve_agent(
     blob = getattr(args, f"{letter.lower()}_blob")
     if blob:
         code = read_blob(blob)
-        return code, f"{letter}_blob", start
+        return code, f"{letter}_blob", start, None
 
     # 3) discovery agent
     agent_name = getattr(args, f"{letter.lower()}_type")
     if not agent_name:
-        return None, "", start
+        return None, "", start, None
 
     root = _battle_root()
 
@@ -345,6 +351,9 @@ def _resolve_agent(
     if spec_obj is not None:
         side_env = _parse_env_json(f"BATTLE_AGENT_{letter}_PARAMS_JSON")
         _merged = _merge_params(spec_obj.defaults, side_env)
+
+        if spec_obj.kind == "python":
+            return None, agent_name, start, spec_obj
 
         env_blob = side_env.get("blob_path")
         blob_path: Optional[Path]
@@ -373,12 +382,12 @@ def _resolve_agent(
 
         if blob_path is not None and blob_path.exists():
             code = read_blob(str(blob_path))
-            return code, agent_name, start
+            return code, agent_name, start, None
 
     # 4) built-in fallback
     if agent_name in SUPPORTED:
         code = build_agent(agent_name, start, **common_kwargs)
-        return code, agent_name, start
+        return code, agent_name, start, None
 
     print(
         f"ERROR: Unknown agent '{agent_name}'. "
@@ -538,9 +547,15 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     env_spec, spec_dir = _load_agents_spec_from_env()
 
-    codeA, nameA, startA = _resolve_agent("A", env_spec, spec_dir, args, cfg, common_kwargs)
-    codeB, nameB, startB = _resolve_agent("B", env_spec, spec_dir, args, cfg, common_kwargs)
-    codeC, nameC, startC = _resolve_agent("C", env_spec, spec_dir, args, cfg, common_kwargs)
+    codeA, nameA, startA, pythonA = _resolve_agent(
+        "A", env_spec, spec_dir, args, cfg, common_kwargs
+    )
+    codeB, nameB, startB, pythonB = _resolve_agent(
+        "B", env_spec, spec_dir, args, cfg, common_kwargs
+    )
+    codeC, nameC, startC, pythonC = _resolve_agent(
+        "C", env_spec, spec_dir, args, cfg, common_kwargs
+    )
 
     try:
         root = _battle_root()
@@ -577,29 +592,46 @@ def main(argv: Iterable[str] | None = None) -> int:
     except Exception:
         pass
 
-    if codeA is None or codeB is None:
+    if (codeA is None and pythonA is None) or (codeB is None and pythonB is None):
         print(
-            "ERROR: agents A and B must be specified (builtin or blob)", file=sys.stderr
+            "ERROR: agents A and B must be executable built-in, blob, or Python agents",
+            file=sys.stderr,
         )
         return 2
 
     # Agent validation above must complete before this owned output is opened;
     # otherwise an invalid invocation could truncate an existing replay.
     entrants = [
-        MatchEntrant("A", nameA, startA, codeA),
-        MatchEntrant("B", nameB, startB, codeB),
+        (
+            MatchEntrant.python("A", nameA, startA, pythonA)
+            if pythonA is not None
+            else MatchEntrant("A", nameA, startA, codeA)
+        ),
+        (
+            MatchEntrant.python("B", nameB, startB, pythonB)
+            if pythonB is not None
+            else MatchEntrant("B", nameB, startB, codeB)
+        ),
     ]
-    if codeC is not None and nameC:
-        entrants.append(MatchEntrant("C", nameC, startC, codeC))
-    match_result = NativeMatchService().run(
-        MatchRequest(
-            config=cfg,
-            entrants=tuple(entrants),
-            max_ticks=args.ticks,
-            replay_path=replay_path,
-            verbose=not args.quiet,
+    if nameC and (codeC is not None or pythonC is not None):
+        entrants.append(
+            MatchEntrant.python("C", nameC, startC, pythonC)
+            if pythonC is not None
+            else MatchEntrant("C", nameC, startC, codeC)
         )
-    )
+    try:
+        match_result = NativeMatchService().run(
+            MatchRequest(
+                config=cfg,
+                entrants=tuple(entrants),
+                max_ticks=args.ticks,
+                replay_path=replay_path,
+                verbose=not args.quiet,
+            )
+        )
+    except (UnsupportedMatchCompositionError, PythonEntrantInitializationError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     agent_stats = {
         agent.agent_id: agent.as_legacy_statistics() for agent in match_result.agents
     }

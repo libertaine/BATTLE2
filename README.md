@@ -3,7 +3,7 @@
 
 **BATTLE2** is a Python-based framework and simulation engine for Core War–style AI competitions. It supports:
 
-- Python agent discovery and Agent API v1 validation (match execution is under development)
+- Python agent discovery, Agent API v1 validation, and experimental Python-vs-Python matches
 - Precompiled binary “blob” agents  
 - Integration with pMARS (Redcode) for interop  
 - Replay viewing and agent design tools  
@@ -142,13 +142,13 @@ python -m battle_engine --help
 
 | Type    | File         | Execution Path            | Notes                                    |
 | ------- | ------------ | ------------------------- | ---------------------------------------- |
-| Python  | `agent.py`   | Imported and validated against Agent API v1 | Match execution is not implemented yet |
+| Python  | `agent.py`   | Agent API v1 Python-only runtime | Experimental; mixed VM/Python matches are not implemented |
 | Blob    | `model.blob` | Loaded directly by engine | Faster, minimal runtime                  |
 | Redcode | `.red/.asm`  | Via pMARS integration     | Compatible with existing Core War agents |
 
-* A directory containing **Python** source is discoverable and can be loaded and
-  structurally validated through the v0.3 Agent API v1 foundation. Native CLI
-  matches still require a blob or built-in implementation.
+* A directory containing **Python** source is discoverable, validated, and can
+  execute against another Python agent through the experimental v0.3 runtime.
+  Mixed Python/VM matches remain unsupported.
 * Use **blob** when you want to ship just the low-level compiled version.
 * The **Redcode** mode allows interop with legacy Core War agents (via pMARS). Use `--mode redcode94`.
 

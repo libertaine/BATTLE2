@@ -1,8 +1,8 @@
-"""Application service for resolved native BATTLE2 VM matches.
+"""Application service for resolved native BATTLE2 matches.
 
-The service owns VM construction, spawning, execution, and partial-artifact
-cleanup.  Agent discovery, CLI parsing, pMARS, and external result persistence
-remain outside this native-only boundary.
+The service owns homogeneous VM/Python routing, execution, and partial-artifact
+cleanup. Agent discovery, CLI parsing, pMARS, and external result persistence
+remain outside this native boundary.
 """
 
 from __future__ import annotations
@@ -10,27 +10,38 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
+from typing import Any, Mapping
 
 from battle_engine.config import Config
 from battle_engine.core import Kernel
+from battle_engine.python_runtime import (
+    PythonEntrantController,
+    PythonRuntimeResult,
+    RuntimeDiagnostic,
+)
 from battle_engine.scoring import ScoreMap
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
 
 @dataclass(frozen=True)
 class MatchEntrant:
-    """Resolved VM entrant ready to be spawned without further discovery."""
+    """Explicitly typed resolved entrant for one native execution path."""
 
     agent_id: str
     name: str
     start: int
-    code: bytes
+    code: bytes | None
+    kind: str = "vm"
+    python_spec: Any | None = None
+
+    @classmethod
+    def python(cls, agent_id: str, name: str, start: int, spec: Any) -> "MatchEntrant":
+        return cls(agent_id, name, start, None, "python", spec)
 
 
 @dataclass(frozen=True)
 class MatchRequest:
-    """Complete input required to execute one resolved native VM match."""
+    """Complete input required to execute one homogeneous native match."""
 
     config: Config
     entrants: tuple[MatchEntrant, ...]
@@ -58,6 +69,7 @@ class NativeAgentResult:
     territory_pct_last: float
     territory_pct_max: float
     territory_pct_avg: float
+    diagnostic: RuntimeDiagnostic | None = None
 
     def as_legacy_statistics(self) -> dict[str, object]:
         """Return the v0.2 CLI agent-statistics shape during migration."""
@@ -82,7 +94,7 @@ class NativeAgentResult:
 
 @dataclass(frozen=True)
 class NativeMatchResult:
-    """Canonical internal result of one native VM match."""
+    """Canonical internal result of one native VM or Python match."""
 
     winner: str
     ticks_run: int
@@ -93,6 +105,12 @@ class NativeMatchResult:
     @property
     def agents_by_id(self) -> Mapping[str, NativeAgentResult]:
         return MappingProxyType({agent.agent_id: agent for agent in self.agents})
+
+
+class UnsupportedMatchCompositionError(ValueError):
+    """Native matches must be homogeneous until mixed scheduling is defined."""
+
+    code = "native_match_composition_unsupported"
 
 
 def _effective_winner(kernel_winner: str | None, score: ScoreMap, win_mode: str) -> str:
@@ -154,17 +172,90 @@ def _build_result(
     )
 
 
+def _build_python_result(
+    runtime: PythonRuntimeResult,
+    config: Config,
+    replay_path: Path,
+) -> NativeMatchResult:
+    arena_size = config.arena_size
+    results: list[NativeAgentResult] = []
+    for state in runtime.states:
+        statistics = runtime.statistics[state.agent_id]
+        territory_sum = int(statistics.get("territory_sum", 0) or 0)
+        territory_last = int(statistics.get("territory_last", 0) or 0)
+        territory_max = int(statistics.get("territory_max", 0) or 0)
+        territory_avg = territory_sum / max(1, runtime.ticks_run)
+        results.append(
+            NativeAgentResult(
+                agent_id=state.agent_id,
+                name=state.name,
+                alive=state.alive,
+                score=runtime.score.get(state.agent_id, 0),
+                alive_ticks=int(statistics.get("alive_ticks", 0) or 0),
+                kills=int(statistics.get("kills", 0) or 0),
+                deaths=0 if state.alive else 1,
+                cpu_total=int(statistics.get("total_cpu", 0) or 0),
+                mem_writes=int(statistics.get("total_mem_writes", 0) or 0),
+                territory_last=territory_last,
+                territory_max=territory_max,
+                territory_avg=territory_avg,
+                territory_pct_last=(
+                    territory_last * 100.0 / arena_size if arena_size else 0.0
+                ),
+                territory_pct_max=(
+                    territory_max * 100.0 / arena_size if arena_size else 0.0
+                ),
+                territory_pct_avg=(
+                    territory_avg * 100.0 / arena_size if arena_size else 0.0
+                ),
+                diagnostic=state.diagnostic,
+            )
+        )
+    return NativeMatchResult(
+        winner=_effective_winner(runtime.winner, dict(runtime.score), config.win_mode),
+        ticks_run=runtime.ticks_run,
+        score=MappingProxyType(dict(runtime.score)),
+        agents=tuple(results),
+        replay_path=replay_path,
+    )
+
+
 class NativeMatchService:
-    """Execute resolved bytecode entrants through the existing Kernel unchanged."""
+    """Route homogeneous VM or Python entrants through their native controller."""
 
     def run(self, request: MatchRequest) -> NativeMatchResult:
+        kinds = {entrant.kind for entrant in request.entrants}
+        if not request.entrants or not kinds <= {"vm", "python"} or len(kinds) != 1:
+            values = ", ".join(sorted(kinds)) or "none"
+            raise UnsupportedMatchCompositionError(
+                "Native matches must contain either all VM entrants or all Python "
+                f"entrants; received: {values}. Mixed VM/Python matches are not supported."
+            )
+        if "vm" in kinds and any(entrant.code is None for entrant in request.entrants):
+            raise UnsupportedMatchCompositionError("Every VM entrant requires bytecode.")
+        if "python" in kinds and any(
+            entrant.python_spec is None for entrant in request.entrants
+        ):
+            raise UnsupportedMatchCompositionError(
+                "Every Python entrant requires a resolved Python AgentSpec."
+            )
+
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
+        controller = (
+            PythonEntrantController(request.config, request.entrants, request.max_ticks)
+            if "python" in kinds
+            else None
+        )
         replay_path.parent.mkdir(parents=True, exist_ok=True)
         sink = JSONLSink(str(replay_path))
         try:
+            if controller is not None:
+                runtime = controller.run(sink, verbose=request.verbose)
+                return _build_python_result(runtime, request.config, replay_path)
             kernel = Kernel(request.config, sink, summary_sink=NullSummarySink())
             for entrant in request.entrants:
+                assert entrant.code is not None
                 kernel.spawn(
                     entrant.agent_id,
                     entrant.start % request.config.arena_size,
@@ -187,4 +278,6 @@ __all__ = [
     "NativeAgentResult",
     "NativeMatchResult",
     "NativeMatchService",
+    "RuntimeDiagnostic",
+    "UnsupportedMatchCompositionError",
 ]

@@ -1,185 +1,118 @@
 # Agent API v1 Technical Contract
 
-This document describes `battle_engine.agent_api` as currently implemented. It is a loading and validation contract, not a completed gameplay API.
+This document describes the implemented BATTLE2 Python Agent API v1. Phase 3a
+supports deterministic Python-versus-Python matches through the native match
+service. VM/Python mixed matches remain unsupported.
 
-Status labels used below:
+## Loading contract
 
-- **CURRENT**: implemented and tested now.
-- **PROVISIONAL**: present in the API but intentionally incomplete.
-- **NOT YET IMPLEMENTED**: no match-runtime behavior exists.
+A Python agent manifest declares `kind: python`, `api_version: 1`, and an entry
+point in `relative/path.py:factory` form. `load_python_agent()` contains the
+source path within the agent directory, imports it under a path-derived private
+module name, calls the zero-argument factory, and requires callable `reset` and
+`act` methods. Every load constructs a fresh module and agent instance.
 
-## Version constant
+Loading failures use the existing typed `AgentValidationError` hierarchy:
 
-```python
-AGENT_API_VERSION = 1
-```
+| Exception | Code |
+|---|---|
+| `AgentManifestError` | `agent_manifest_invalid` |
+| `UnsupportedAgentAPIVersionError` | `agent_api_version_unsupported` |
+| `AgentSourceError` | `agent_source_invalid` |
+| `AgentImportError` | `agent_import_failed` |
+| `AgentFactoryError` | `agent_factory_failed` |
+| `AgentContractError` | `agent_contract_invalid` |
 
-**CURRENT.** A Python `AgentSpec` must have `api_version == 1` to load. A missing version is not silently treated as version 1.
-
-## Public types
-
-### `AgentMetadata`
-
-```python
-@dataclass(frozen=True)
-class AgentMetadata:
-    agent_id: str
-    name: str
-    version: str
-    api_version: int = AGENT_API_VERSION
-```
-
-**CURRENT.** The loader creates this immutable value from the resolved `AgentSpec`:
-
-- `agent_id` is the agent directory/discovery name.
-- `name` is the resolved display label.
-- `version` is the manifest version or `"0"` when absent.
-- `api_version` is the validated integer API version.
-
-This is engine-controlled metadata. Metadata attributes supplied by the returned agent instance do not replace it.
-
-### `MatchContext`
+## Lifecycle
 
 ```python
-@dataclass(frozen=True)
-class MatchContext:
-    agent_id: str
-    seed: int
-```
-
-**PROVISIONAL.** The immutable type and these two fields exist. The engine does not construct it for Python agents or call `reset()` during matches yet. Additional context may be required when runtime execution is designed.
-
-### `Observation`
-
-```python
-@dataclass(frozen=True)
-class Observation:
-    tick: int
-```
-
-**PROVISIONAL.** This is only a minimal immutable envelope for structural typing. It does not promise arena bytes, ownership, scores, agent states, visibility, or timing semantics. No match code produces it.
-
-### `AgentAction`
-
-```python
-@dataclass(frozen=True)
-class AgentAction:
-    pass
-```
-
-**PROVISIONAL.** It is an empty marker. No read, write, movement, VM-operation, cost, or scheduling semantics exist.
-
-### `AgentV1`
-
-```python
-@runtime_checkable
 class AgentV1(Protocol):
     def reset(self, context: MatchContext) -> None: ...
     def act(self, observation: Observation) -> AgentAction: ...
 ```
 
-**CURRENT for structural validation; NOT YET IMPLEMENTED for execution.** The factory result must expose attributes named `reset` and `act`. Because validation uses a runtime-checkable structural protocol, inheritance is unnecessary.
+The engine constructs a fresh instance for each match and calls `reset()` once
+before tick zero. Each subsequent `act()` call returns exactly one action and
+costs one unit of the entrant's per-tick action budget.
 
-Runtime protocol checking confirms structural attribute presence. It does not inspect annotations, enforce the exact Python signature, call either method, or validate an `AgentAction` return value in this foundation slice. On the current runtime, non-callable attributes with those names can pass `isinstance(instance, AgentV1)`; real methods are an authoring requirement but are not completely enforced by the loader yet.
+`MatchContext` is frozen and contains:
 
-### `LoadedPythonAgent`
+- `agent_id`: match slot identity such as `A` or `B`;
+- `seed`: the stable, derived seed for this entrant;
+- `arena_size`: shared circular arena size;
+- `tick_limit`: requested maximum ticks;
+- `action_budget`: actions allowed per tick; and
+- `rng`: the entrant's engine-created `random.Random` instance.
+
+The RNG is independent per entrant. Its seed is derived with SHA-256 from the
+match seed, slot/order, canonical slot ID, and Agent API version. Python's
+randomized `hash()` is not used, and one entrant consuming random values cannot
+advance another entrant's stream.
+
+## Observation
+
+`Observation` is frozen and contains only:
 
 ```python
-@dataclass(frozen=True)
-class LoadedPythonAgent:
-    metadata: AgentMetadata
-    instance: AgentV1
-    source_path: Path
-    entry_point: str
+tick: int
+agent_id: str
+pc: int
+register_a: int
+register_p: int
+zero_flag: bool
+last_read: int | None
+alive: bool
 ```
 
-**CURRENT.** This immutable wrapper pairs engine-controlled identity with a fresh validated factory result and its resolved source information.
+The observation exposes the entrant's own engine-controlled state. It does not
+expose the arena, ownership, score, opponent state, kernel, VM, or other engine
+objects. `pc` is Python controller state: it changes only through `JUMP` and a
+taken `JUMP_IF_ZERO`; Python source is not fetched from that address.
 
-## Manifest-to-`AgentSpec` mapping
+## Action vocabulary
 
-A normal explicit Python manifest is:
+An action is `AgentAction(kind, operand=None, value=None)`, where `kind` is an
+`ActionKind` enum member:
 
-```yaml
-kind: python
-api_version: 1
-entrypoint: agent.py:create_agent
-name: example_agent
-display: Example Agent
-version: 1.0.0
-defaults: {}
-```
-
-Discovery stores `kind`, `api_version`, `version`, resolved `source_path`, `entry_point`, `defaults`, and the original manifest mapping on `AgentSpec`.
-
-The current discovery ID is the directory name. Manifest `name` contributes to display fallback and is validated, but does not replace that ID.
-
-When an `agent.py` exists without an explicit entry point, discovery infers `agent.py:create_agent`. This supports legacy discovery; it does not infer API version 1.
-
-## Loading algorithm
-
-`load_python_agent(spec)` performs these steps:
-
-1. Require `spec.kind == "python"`.
-2. Require `spec.api_version == AGENT_API_VERSION`.
-3. Require an entry point.
-4. Parse `relative/path.py:factory`.
-5. Resolve the path against `spec.dir`.
-6. Reject paths outside the agent directory.
-7. Require a `.py` suffix and existing file.
-8. Generate a private module name from the SHA-256 digest of the resolved path.
-9. Import that file using `importlib.util.spec_from_file_location`.
-10. Resolve and call the named zero-argument factory.
-11. Structurally check the result against `AgentV1` (`reset` and `act` attributes).
-12. Return `LoadedPythonAgent` with engine-controlled metadata.
-
-Each call creates a new module object, executes the module, and calls the factory. Each successful call therefore produces a fresh agent instance. The generated module name is path-specific, preventing two separate `agent.py` files from sharing the ordinary global name `agent`.
-
-An import that fails is removed from `sys.modules`. A successful imported module remains registered under its generated private name and may be replaced by a later load from the same path.
-
-## Entry-point restrictions
-
-The entry point must contain exactly the information represented by:
-
-```text
-relative/path.py:factory_name
-```
-
-The implementation splits on the first colon. The factory portion must be a valid Python identifier. The resolved source must remain beneath the agent directory and end in `.py`.
-
-Absolute paths and `..` paths that resolve outside the directory are rejected. Package/module dotted notation such as `package.module:create_agent` is not the current format.
-
-## Validation errors
-
-All loader/discovery validation errors derive from `AgentValidationError`, which derives from `ValueError`. Each instance may carry a `path` attribute.
-
-| Exception | `code` | Current use |
+| Kind | Operands | Semantics |
 |---|---|---|
-| `AgentValidationError` | `agent_validation_failed` | Base diagnostic type. |
-| `AgentManifestError` | `agent_manifest_invalid` | Manifest parsing or field validation. |
-| `UnsupportedAgentAPIVersionError` | `agent_api_version_unsupported` | Missing or unsupported Python API version. |
-| `AgentSourceError` | `agent_source_invalid` | Entry-point syntax, path containment, suffix, or missing source. |
-| `AgentImportError` | `agent_import_failed` | Syntax and import-time failures. |
-| `AgentFactoryError` | `agent_factory_failed` | Missing/non-callable factory or factory exception. |
-| `AgentContractError` | `agent_contract_invalid` | Non-Python spec or result missing lifecycle methods. |
+| `NOP` | none | No battlefield state change. |
+| `SET_A` | `operand` | Set A, wrapping to unsigned 32-bit. Z is unchanged, like VM `MOV`. |
+| `ADD_A` | `operand` | Add to A with 32-bit wrapping and update Z. |
+| `READ` | address in `operand` | Read one wrapped arena byte into `last_read` and A; update Z. |
+| `WRITE` | address in `operand`, byte in `value` | Write the low eight bits at the wrapped address and claim ownership. |
+| `SET_P` | `operand` | Set P with unsigned 32-bit wrapping. |
+| `ADD_P` | `operand` | Add to P with unsigned 32-bit wrapping. |
+| `JUMP` | `operand` | Set controller PC with unsigned 32-bit wrapping. |
+| `JUMP_IF_ZERO` | `operand` | Set controller PC only when Z is true. |
+| `HALT` | none | Normal entrant death. |
 
-Messages include the relevant agent, entry point, source path, and original exception type where applicable. They are intended to be safe for CLI and GUI presentation; callers may also branch on exception class or `code`.
+Operands must be integers; booleans are rejected as operands. Extra, missing,
+unsupported, batched, or non-`AgentAction` results are invalid. Agents may do
+unrestricted in-process computation while choosing an action, but only this
+validated one-operation interface can read or mutate battlefield state.
 
-## Relationship to `NativeMatchService`
+## Scheduling and failures
 
-`NativeMatchService` currently accepts resolved `MatchEntrant` values containing VM bytecode. It does not accept `LoadedPythonAgent`, call `reset()` or `act()`, or define Python scheduling. The two foundation pieces are intentionally separate until gameplay and fairness rules are decided.
+Python-only scheduling is sequential in request/spawn order. Each living
+entrant receives up to `Config.instr_per_tick` callbacks, and A completes its
+quota before B begins. Writes are therefore visible to later entrants in the
+same tick, preserving the native scheduler's first-mover characteristic.
 
-## Compatibility promise during v0.3
+- A reset exception rejects initialization before replay creation.
+- An act exception forfeits the entrant with `python_act_failed`.
+- An invalid action forfeits the entrant with `python_action_invalid`.
+- `HALT` is a normal unattributed death.
 
-The following behavior is intentional and is the part authors may reasonably rely on during v0.3 development:
+Runtime forfeits are available as structured internal result diagnostics and
+replay events. Normal CLI failures do not expose tracebacks.
 
-- explicit API version checking;
-- `relative/path.py:factory` entry points;
-- containment of source paths within an agent directory;
-- path-derived private module names;
-- zero-argument factory construction;
-- a fresh object for every load;
-- structural `reset`/`act` validation;
-- engine-controlled `LoadedPythonAgent.metadata`; and
-- typed diagnostics.
+## Current limitations
 
-Gameplay semantics remain pre-1.0 design work. Do not assume that the placeholder fields of `MatchContext`, `Observation`, or `AgentAction` are complete or final. In particular, their existence does not promise arena visibility, ownership visibility, action budgets, VM cost equivalence, mixed scheduling, exception forfeits, or timeout behavior.
+- Python/VM and Python/blob mixed matches are rejected.
+- Python entrants are not vulnerable to arena code corruption.
+- No hard timeout or process isolation can interrupt a non-returning callback.
+- Python replication and vulnerable-core designs are not implemented.
+- Tournament execution is not part of Agent API v1 Phase 3a.
+- Type hints and method signatures are not statically enforced at load time;
+  incompatible calls become controlled reset or act failures.
