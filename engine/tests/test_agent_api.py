@@ -172,6 +172,30 @@ def test_invalid_factory_result_is_rejected(tmp_path):
     assert "reset, act" in str(caught.value)
 
 
+@pytest.mark.parametrize("attribute", ["reset", "act"])
+def test_noncallable_lifecycle_attribute_is_rejected(tmp_path, attribute):
+    other = "act" if attribute == "reset" else "reset"
+    _write_agent(
+        tmp_path,
+        source=f"""
+class InvalidAgent:
+    {attribute} = None
+
+    def {other}(self, value):
+        return None
+
+def create_agent():
+    return InvalidAgent()
+""",
+    )
+
+    with pytest.raises(AgentContractError) as caught:
+        load_python_agent(resolve_agent(tmp_path, "example"))
+
+    assert caught.value.code == "agent_contract_invalid"
+    assert f"missing callable {attribute}" in str(caught.value)
+
+
 def test_same_source_filename_in_two_agents_does_not_collide(tmp_path):
     first_dir = _write_agent(tmp_path, "alpha", source=VALID_SOURCE + "\nMARKER = 'alpha'\n")
     second_dir = _write_agent(tmp_path, "beta", source=VALID_SOURCE + "\nMARKER = 'beta'\n")

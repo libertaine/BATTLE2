@@ -76,9 +76,10 @@ class MatchRunner:
     def _execute_agents(self) -> None:
         state = self.state
         for agent in state.agents:
+            agent.cpu_used = 0
+        for agent in state.agents:
             if not agent.alive:
                 continue
-            agent.cpu_used = 0
             for _ in range(state.instr_per_tick):
                 if not agent.alive:
                     break

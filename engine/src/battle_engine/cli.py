@@ -230,8 +230,12 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "--ptr", type=int, default=512, help="initial pointer for pointer-based agents"
     )
     p.add_argument("--writes", type=int, help="flooder: writes per loop")
-    p.add_argument("--step", type=int, help="spiral: initial stride step")
-    p.add_argument("--delta", type=int, help="spiral: stride delta per loop")
+    p.add_argument("--step", type=int, help="spiral: fixed pointer step")
+    p.add_argument(
+        "--delta",
+        type=int,
+        help="spiral: A-register delta per loop (does not change pointer step)",
+    )
     p.add_argument(
         "--target", type=lambda x: int(x, 0), help="seeker: target byte to find"
     )

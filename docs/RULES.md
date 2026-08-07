@@ -136,10 +136,12 @@ This does not define future Python-agent RNG behavior. Wall-clock GUI rendering 
 | `writer` | Repeatedly writes a fixed byte to one fixed direct address; one write per three-instruction loop. |
 | `bomber` | Initializes P, then repeatedly writes indirectly and advances it by a fixed stride; one write per three-instruction loop after setup. |
 | `flooder` | Unrolls repeated `STOREI`/`ADDP 1` pairs before jumping back. With the default eight writes per loop, it performs about four writes per eight scheduler instructions after setup, not eight. |
-| `spiral` | Currently performs two writes to the same P address per loop and advances P by a fixed encoded step. Although comments describe a growing stride, changing A does not modify the immediate operand of `ADDP`; the stride does not grow. |
-| `seeker` | Intended to scan for a byte and attack matches. Its current calculated loop/found addresses point into encoded instruction operands rather than the actual instruction boundaries, so its observed control flow does not reliably reach the intended attack sequence. |
+| `spiral` | Performs two writes to the same P address per loop and advances P by a fixed encoded step. The `delta` arithmetic changes A transiently but does not modify the immediate operand of `ADDP`, so the stride does not grow. |
+| `seeker` | Scans from P for a target byte. Nonmatches advance P by one; matches write the attack byte at P, advance by the attack stride, and resume scanning. |
 
-These descriptions document current bytecode, including discrepancies between comments and behavior. They are known implementation issues, not promises that future versions will preserve the defects.
+These descriptions document current bytecode. They characterize the reference
+competitors rather than promising that future rulesets will preserve every
+strategy detail.
 
 Starter manifests currently initialize Runner, Writer, Seeker, and Spiral in a writable data root. A starter manifest selects its same-named built-in implementation; it does not contain executable Python code.
 

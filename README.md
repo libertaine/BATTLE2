@@ -1,7 +1,4 @@
 
-Project to determine feasibility of using LLM to assist me in creation of a project.
-
-
 # BATTLE2
 
 **BATTLE2** is a Python-based framework and simulation engine for Core War–style AI competitions. It supports:
@@ -16,6 +13,14 @@ This project is released under the **MIT License**. See the [LICENSE](LICENSE) f
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/libertaine/BATTLE2?label=latest%20release)](https://github.com/libertaine/BATTLE2/releases)
 [![Changelog](https://img.shields.io/badge/Changelog-view-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+## AI-Assisted Development
+
+BATTLE2 began partly as an experiment in whether large language models could contribute meaningfully to the creation of a real software project. It has evolved into an exploration of AI-assisted, human-directed software development. AI tools are used for implementation, repository exploration, debugging, architecture critique, test generation, documentation, code review, and independent second opinions.
+
+Development is incremental and repository-driven. Goals and architecture are established through human direction and AI-assisted analysis; coding agents work against branches and the current source tree; failures are reproduced; tests are run; and diffs are reviewed before changes are accepted. Different tools and models may also be used independently to challenge implementations or review one another's conclusions.
+
+AI-generated code and review findings are treated as proposals, not authority. Claims are checked against executable behavior, tests, the current repository, and other reproducible evidence; findings that cannot be confirmed are rejected. Human judgment remains responsible for project direction, requirements, architecture, scope, tradeoffs, and deciding when a change is ready to enter the project.
 
 
 ---

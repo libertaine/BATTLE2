@@ -32,7 +32,8 @@ def assemble_flooder(
 ) -> bytes:
     """
     Flooder: unrolled STOREI operations to produce multiple writes per loop.
-    With INSTR_PER_TICK=8, writes_per_loop=8 ≈ up to ~8 writes/tick (subject to scheduling).
+    STOREI alternates with ADDP, so the default loop performs about four writes
+    per eight post-setup instructions.
     """
     seq = [enc(MOV, byte_val), enc(MOVP, ptr)]
     for _ in range(max(1, writes_per_loop)):
@@ -45,24 +46,26 @@ def assemble_spiral(
     start: int, ptr: int, step: int = 7, delta: int = 3, byte_val: int = 0xA5
 ) -> bytes:
     """
-    Spiral: stride grows over time → broad coverage without revisiting too soon.
-    A register holds 'step'; ADD updates step; ADDP uses current step.
+    Spiral: write twice at P, then advance P by the fixed encoded step.
+
+    The A-register arithmetic does not change ADDP's immediate operand, so
+    ``delta`` affects A's transient value but does not grow the pointer stride.
     """
     loop = start + 15  # after MOV/MOVP/MOV step
     return b"".join(
         [
             enc(MOV, byte_val),  # A = byte
             enc(MOVP, ptr),  # P = ptr
-            enc(ADD, step),  # A = step (repurpose A temporarily)
+            enc(ADD, step),  # A = byte_val + step
             # loop:
             enc(STOREI),  # write byte_val? Wait: we overwrote A with step.
             # So reload byte for store:
             enc(MOV, byte_val),  # A = byte again
             enc(STOREI),  # store byte at P
-            enc(ADD, step),  # A = byte + step (we'll overwrite next)
+            enc(ADD, step),  # A = byte + step (overwritten below)
             enc(ADDP, step),  # P += step
             enc(MOV, step),  # A = step (reset A to step)
-            enc(ADD, delta),  # step += delta (A := step+delta)
+            enc(ADD, delta),  # A := step + delta; pointer stride remains fixed
             enc(ADD, 0),  # update Z correctly (no-op for flag consistency)
             enc(JMP, loop),  # repeat
         ]
@@ -80,8 +83,8 @@ def assemble_seeker(
     Seeker: scan from ptr_start for a target byte; when found, write 'byte_val' and hop by attack_stride.
     Uses: LOADI; compare by ADD (-target); JZ found; else ADDP 1 and continue.
     """
-    lbl_loop = start + 10
-    lbl_found = lbl_loop + 10
+    lbl_loop = start + 5
+    lbl_found = start + 26
     return b"".join(
         [
             enc(MOVP, ptr_start),  # set scan pointer

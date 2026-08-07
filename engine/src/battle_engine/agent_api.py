@@ -201,8 +201,10 @@ def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
             f"Python agent factory {entry_point!r} failed: {type(exc).__name__}: {exc}",
             path=source_path,
         ) from exc
-    if not isinstance(instance, AgentV1):
-        missing = [name for name in ("reset", "act") if not callable(getattr(instance, name, None))]
+    missing = [
+        name for name in ("reset", "act") if not callable(getattr(instance, name, None))
+    ]
+    if missing or not isinstance(instance, AgentV1):
         detail = ", ".join(missing) or "AgentV1 lifecycle methods"
         raise AgentContractError(
             f"Python agent factory {entry_point!r} returned {type(instance).__name__}; "
