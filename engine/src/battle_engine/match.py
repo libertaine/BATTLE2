@@ -43,6 +43,16 @@ class MatchRunner:
         try:
             self.replay.publish_header(state.cfg)
             self.renderer.start()
+            # Publish initial arena/agent state as tick 0, before any agent
+            # has acted. Entrants are already spawned (their code is loaded
+            # into the arena) by the time ``run`` is called, so
+            # ``state.vm.tick_diffs`` currently holds the code-placement
+            # diffs from loading -- publishing them now lets a replay
+            # consumer reconstruct starting arena content without a
+            # separate snapshot mechanism. The tick-1 iteration below clears
+            # ``tick_diffs`` before recording its own writes, so this data
+            # is not duplicated into tick 1.
+            self.replay.publish_tick(0, state.agents, state.score, state.vm, [])
             for tick in range(1, max_ticks + 1):
                 state.tick = tick
                 state.vm.clear_tick_diffs()

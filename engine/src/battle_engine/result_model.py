@@ -105,3 +105,70 @@ def read_result(path: str | Path) -> ResultEnvelope:
         ),
         backend=data.get("backend"),
     )
+
+
+class ReplayIntegrityError(ValueError):
+    """A result's referenced replay is missing, unreadable, or digest-mismatched.
+
+    Raised only by explicit verification calls (``verify_replay_digest``,
+    ``verify_result_replay``) -- ``read_result`` itself never verifies the
+    referenced replay, so reading historical results stays unaffected by
+    this check unless a caller opts in at a canonical-artifact boundary.
+    """
+
+    def __init__(self, message: str, *, code: str):
+        super().__init__(message)
+        self.code = code
+
+
+def verify_replay_digest(result: ResultEnvelope, replay_path: str | Path) -> str:
+    """Verify ``replay_path`` matches the digest recorded on ``result``.
+
+    Returns the recomputed digest on success. Raises ``ReplayIntegrityError``
+    (with a stable ``code``) if the result has no replay reference, the file
+    is missing or unreadable, or its digest does not match.
+    """
+
+    if result.replay is None:
+        raise ReplayIntegrityError(
+            "Result has no replay reference to verify (e.g. a pMARS match).",
+            code="replay_reference_missing",
+        )
+    path = Path(replay_path)
+    if not path.is_file():
+        raise ReplayIntegrityError(
+            f"Referenced replay file does not exist: {path}",
+            code="replay_file_missing",
+        )
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise ReplayIntegrityError(
+            f"Referenced replay file could not be read: {path}: {exc}",
+            code="replay_file_unreadable",
+        ) from exc
+    if digest != result.replay.sha256:
+        raise ReplayIntegrityError(
+            f"Replay digest mismatch for {path}: "
+            f"expected {result.replay.sha256}, got {digest}",
+            code="replay_digest_mismatch",
+        )
+    return digest
+
+
+def verify_result_replay(path: str | Path) -> str:
+    """Read a ``result.json`` at ``path`` and verify its replay's digest.
+
+    The replay is resolved relative to ``path``'s parent directory, matching
+    how ``ReplayReference.filename`` is always a bare, portable filename
+    rather than an absolute path (see ``ReplayReference``).
+    """
+
+    result_path = Path(path)
+    envelope = read_result(result_path)
+    if envelope.replay is None:
+        raise ReplayIntegrityError(
+            "Result has no replay reference to verify (e.g. a pMARS match).",
+            code="replay_reference_missing",
+        )
+    return verify_replay_digest(envelope, result_path.parent / envelope.replay.filename)

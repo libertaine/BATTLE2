@@ -100,7 +100,7 @@ def test_vm_groups_adjacent_writes_by_owner_only():
     vm._wr8(1, 0xAA, "A")
     vm._wr8(2, 0xBB, "A")
     vm._wr8(3, 0xCC, "B")
-    assert vm.tick_diffs == [(1, 2, "A"), (3, 1, "B")]
+    assert vm.tick_diffs == [(1, 2, "A", [0xAA, 0xBB]), (3, 1, "B", [0xCC])]
     assert bytes(vm.arena[1:4]) == b"\xaa\xbb\xcc"
 
 

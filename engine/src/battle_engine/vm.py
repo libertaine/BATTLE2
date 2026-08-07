@@ -23,7 +23,10 @@ class VM:
     def __init__(self, arena_size: int):
         self.arena = bytearray([NOP] * arena_size)
         self.writer: list[str | None] = [None] * arena_size
-        self.tick_diffs: list[tuple[int, int, str | None]] = []
+        # (start_address, length, owner, values) -- ``values`` holds the
+        # actual byte written at each address in the run, in order, so a
+        # replay consumer can reconstruct arena content, not just ownership.
+        self.tick_diffs: list[tuple[int, int, str | None, list[int]]] = []
 
     def clear_tick_diffs(self) -> None:
         self.tick_diffs.clear()
@@ -41,26 +44,35 @@ class VM:
     def _wr8(self, pos: int, val: int, owner: str | None) -> None:
         m = len(self.arena)
         i = pos % m
-        self.arena[i] = val & 0xFF
+        byte_value = val & 0xFF
+        self.arena[i] = byte_value
         self.writer[i] = owner
         if (
             self.tick_diffs
             and self.tick_diffs[-1][0] + self.tick_diffs[-1][1] == i
             and self.tick_diffs[-1][2] == owner
         ):
-            a, length, previous_owner = self.tick_diffs[-1]
-            self.tick_diffs[-1] = (a, length + 1, previous_owner)
+            a, length, previous_owner, values = self.tick_diffs[-1]
+            values.append(byte_value)
+            self.tick_diffs[-1] = (a, length + 1, previous_owner, values)
         else:
-            self.tick_diffs.append((i, 1, owner))
+            self.tick_diffs.append((i, 1, owner, [byte_value]))
 
     def load_code(
         self, start: int, code: bytes, owner: str | None
     ) -> tuple[int, int]:
+        """Place initial agent bytecode, recorded as ordinary write diffs.
+
+        Routing through ``_wr8`` (rather than writing ``self.arena``
+        directly) means initial code placement appears in ``tick_diffs``
+        exactly like any other write, so a caller that publishes those
+        diffs as a tick-zero replay record can reconstruct starting arena
+        content without a separate snapshot mechanism.
+        """
         m = len(self.arena)
         s = start % m
         for i, byte in enumerate(code):
-            self.arena[(s + i) % m] = byte
-            self.writer[(s + i) % m] = owner
+            self._wr8(s + i, byte, owner)
         e = (s + max(1, len(code)) - 1) % m
         return s, e
 

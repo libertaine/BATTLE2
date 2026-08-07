@@ -22,6 +22,23 @@ def _entrants(count: int = 3):
     )
 
 
+def test_tie_is_a_reserved_entrant_id(tmp_path):
+    entrants = (
+        MatchEntrant("tie", "Agent 0", 0, enc(NOP)),
+        MatchEntrant("B", "Agent 1", 32, enc(NOP)),
+    )
+    with pytest.raises(TournamentConfigurationError, match="reserved"):
+        TournamentService().run(_request(tmp_path, entrants=entrants))
+
+    # Reservation is case-insensitive: "Tie" is just as ambiguous as "tie".
+    entrants = (
+        MatchEntrant("Tie", "Agent 0", 0, enc(NOP)),
+        MatchEntrant("B", "Agent 1", 32, enc(NOP)),
+    )
+    with pytest.raises(TournamentConfigurationError, match="reserved"):
+        TournamentService().run(_request(tmp_path, entrants=entrants))
+
+
 def _request(tmp_path, **changes):
     values = {
         "entrants": _entrants(),

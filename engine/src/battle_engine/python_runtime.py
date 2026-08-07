@@ -312,6 +312,14 @@ class PythonEntrantController:
         ticks_run = 0
         try:
             replay.publish_header(self.config)
+            # Publish initial entrant state as tick 0, before any act()
+            # call. Python entrants never populate the arena (source is not
+            # loaded into memory), so memory_diffs is empty here, but the
+            # per-entrant starting pc/region/registers are still captured --
+            # see match.py's MatchRunner.run for the VM-side counterpart.
+            replay.publish_tick(
+                0, self.states, self.score, self.vm, []  # type: ignore[arg-type]
+            )
             for tick in range(1, self.max_ticks + 1):
                 ticks_run = tick
                 self.vm.clear_tick_diffs()
@@ -388,9 +396,7 @@ class PythonEntrantController:
             termination_reason = TerminationReason.LAST_AGENT_STANDING
         else:
             termination_reason = TerminationReason.TICK_LIMIT
-        winner = resolve_winner(  # type: ignore[arg-type]
-            self.states, self.score, self.config.win_mode
-        )
+        winner = resolve_winner(self.states, self.score, self.config.win_mode)
         return PythonRuntimeResult(
             winner=winner,
             ticks_run=ticks_run,

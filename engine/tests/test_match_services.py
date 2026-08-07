@@ -74,7 +74,8 @@ def test_kernel_attributes_kill_to_memory_owner():
     assert kernel.score == {"A": 6, "B": 0}
     assert kernel.stats["A"]["kills"] == 1
     assert kernel.stats["B"]["deaths"] == 1
-    assert replay.records[1]["events"] == [{"type": "kill", "victim": "B", "by": "A"}]
+    # records[1] is the tick-0 initial-state snapshot; tick 1 is records[2].
+    assert replay.records[2]["events"] == [{"type": "kill", "victim": "B", "by": "A"}]
 
 
 def test_kernel_records_death_without_attributable_killer():
@@ -88,7 +89,8 @@ def test_kernel_records_death_without_attributable_killer():
     assert kernel.score == {"A": 1, "B": 0}
     assert kernel.stats["A"]["kills"] == 0
     assert kernel.stats["B"]["deaths"] == 1
-    assert replay.records[1]["events"] == [{"type": "death", "victim": "B"}]
+    # records[1] is the tick-0 initial-state snapshot; tick 1 is records[2].
+    assert replay.records[2]["events"] == [{"type": "death", "victim": "B"}]
 
 
 def test_summary_fields_and_agent_statistics_remain_compatible():

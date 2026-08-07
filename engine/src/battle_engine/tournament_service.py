@@ -12,6 +12,7 @@ from typing import Any, Mapping
 from battle_engine.config import Config
 from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
 from battle_engine.result_model import ResultEnvelope, read_result, stable_id, write_json_atomic
+from battle_engine.results import WINNER_TIE_SENTINEL
 
 SCHEMA_NAME = "battle2.tournament"
 SCHEMA_VERSION = 1
@@ -215,6 +216,15 @@ class TournamentService:
         ids = [entrant.agent_id for entrant in request.entrants]
         if len(set(ids)) != len(ids):
             raise TournamentConfigurationError("Tournament entrant IDs must be unique.")
+        if any(agent_id.strip().lower() == WINNER_TIE_SENTINEL for agent_id in ids):
+            # "tie" is reserved: it is the canonical result.json winner
+            # value for "no single winner" (see results.WINNER_TIE_SENTINEL).
+            # An entrant with this ID would be indistinguishable in the
+            # schema from a tied match, whether or not it actually won.
+            raise TournamentConfigurationError(
+                f"Entrant ID {WINNER_TIE_SENTINEL!r} is reserved and cannot be used "
+                "(it is the canonical result winner value for 'no single winner')."
+            )
         kinds = {entrant.kind for entrant in request.entrants}
         if len(kinds) != 1 or not kinds <= {"vm", "python"}:
             raise TournamentConfigurationError(

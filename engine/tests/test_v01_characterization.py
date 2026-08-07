@@ -117,7 +117,8 @@ def test_native_builtin_agents_complete_a_match(tmp_path, monkeypatch):
 
     assert kernel.tick == 8
     assert winner in {"", "A", "B"}
-    assert len(sink.records) == 9
+    # header + tick-0 initial-state snapshot + 8 executed ticks.
+    assert len(sink.records) == 10
     assert sink.closed
 
 
@@ -152,8 +153,12 @@ def test_jsonl_sink_creates_header_and_tick_records(tmp_path, monkeypatch):
     records = [json.loads(line) for line in replay.read_text().splitlines()]
     assert records[0]["tick"] == 0
     assert records[0]["ver"] == 6
-    assert records[1]["tick"] == 1
-    assert records[1]["agents"][1]["alive"] is False
+    # records[1] is the tick-0 initial-state snapshot (captures the loaded
+    # code before any agent acts); the first executed tick is records[2].
+    assert records[1]["tick"] == 0
+    assert records[1]["agents"][1]["alive"] is True
+    assert records[2]["tick"] == 1
+    assert records[2]["agents"][1]["alive"] is False
 
 
 def test_agent_discovery_accepts_existing_manifest_shape(tmp_path):

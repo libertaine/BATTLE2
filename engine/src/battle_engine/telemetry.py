@@ -49,6 +49,49 @@ class NullSummarySink:
         del summary
 
 
+def _agent_snapshot(agent: Any) -> dict[str, Any]:
+    """Build one per-tick agent dict, tolerant of VM ``Agent`` and Python
+    ``PythonEntrantState`` shapes (see ``python_runtime.PythonEntrantState``).
+
+    Both runtimes track A/P/Z-shaped register state; the VM keeps it in a
+    ``regs`` mapping while the Python runtime keeps flat attributes. Only
+    the Python runtime tracks ``last_read`` and a per-entrant termination
+    reason, so those are ``None`` for VM agents.
+    """
+
+    register_a: int | None
+    register_p: int | None
+    zero_flag: bool | None
+    last_read: int | None
+    termination_reason: str | None
+    regs = getattr(agent, "regs", None)
+    if regs is not None:
+        register_a = regs.get("A")
+        register_p = regs.get("P")
+        zero_flag = bool(regs.get("Z", 0))
+        last_read = None
+        termination_reason = None
+    else:
+        register_a = getattr(agent, "register_a", None)
+        register_p = getattr(agent, "register_p", None)
+        zero_flag = getattr(agent, "zero_flag", None)
+        last_read = getattr(agent, "last_read", None)
+        termination_reason = getattr(agent, "entrant_termination", None)
+    return {
+        "id": agent.agent_id,
+        "pc": agent.pc,
+        "alive": agent.alive,
+        "cpu_used": agent.cpu_used,
+        "mem_writes": agent.mem_writes,
+        "region": [agent.region[0], agent.region[1]],
+        "register_a": register_a,
+        "register_p": register_p,
+        "zero_flag": zero_flag,
+        "last_read": last_read,
+        "termination_reason": termination_reason,
+    }
+
+
 def build_snapshot(
     tick: int,
     agents: list[Agent],
@@ -58,22 +101,12 @@ def build_snapshot(
 ) -> dict[str, Any]:
     return {
         "tick": tick,
-        "agents": [
-            {
-                "id": agent.agent_id,
-                "pc": agent.pc,
-                "alive": agent.alive,
-                "cpu_used": agent.cpu_used,
-                "mem_writes": agent.mem_writes,
-                "region": [agent.region[0], agent.region[1]],
-            }
-            for agent in agents
-        ],
+        "agents": [_agent_snapshot(agent) for agent in agents],
         "score": dict(score),
         "events": events,
         "memory_diffs": [
-            {"addr": address, "len": length, "owner": owner}
-            for address, length, owner in vm.tick_diffs
+            {"addr": address, "len": length, "owner": owner, "values": values}
+            for address, length, owner, values in vm.tick_diffs
         ],
     }
 

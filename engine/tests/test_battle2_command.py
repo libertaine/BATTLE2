@@ -370,7 +370,8 @@ def test_cli_python_act_failure_is_structured_without_traceback(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "Traceback" not in result.stdout + result.stderr
     records = [json.loads(line) for line in replay.read_text().splitlines()]
-    assert records[1]["events"][0]["reason"] == "agent_action_failed"
+    # records[1] is the tick-0 initial-state snapshot; tick 1 is records[2].
+    assert records[2]["events"][0]["reason"] == "agent_action_failed"
 
 
 def test_agents_command_initializes_starters_idempotently(tmp_path):
@@ -438,7 +439,8 @@ def test_quota_and_fractional_scores_reach_replay_and_summary(tmp_path):
 
     records = [json.loads(line) for line in replay.read_text().splitlines()]
     assert records[0]["config"]["instr_per_tick"] == 3
-    assert records[1]["score"] == {"A": 0.25, "B": 0.25}
+    # records[1] is the tick-0 initial-state snapshot; tick 1 is records[2].
+    assert records[2]["score"] == {"A": 0.25, "B": 0.25}
 
     summary = json.loads((replay.parent / "summary.json").read_text())
     assert summary["score"] == {"A": 0.25, "B": 0.25}

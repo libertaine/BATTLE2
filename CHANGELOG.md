@@ -6,6 +6,27 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 
 ### Added
 
+- Added a `runtime_kind` discriminator to the canonical replay header so a
+  reader can tell whether `pc`/`region`/`cpu_used` mean the VM's real fetch
+  address/code footprint/instruction count or the Python runtime's
+  agent-opaque controller bookkeeping/callback count, instead of leaving
+  that distinction implicit.
+- Added byte-level `values` to canonical memory-diff records (previously only
+  address/length/owner), and an explicit tick-zero initial-state record
+  capturing each entrant's starting registers and (for VM matches) its
+  loaded code -- together these make engine-observable arena content and
+  per-entrant controller state reconstructable from a canonical replay alone,
+  without rerunning any agent.
+- Added `battle_engine.result_model.verify_replay_digest` and
+  `verify_result_replay` for explicit, opt-in replay integrity verification
+  against a result's recorded SHA-256 digest, raising a typed
+  `ReplayIntegrityError` with a stable `.code` on mismatch, missing, or
+  unreadable files.
+- Added `engine/tests/test_replay_reconstruction.py`, including an
+  independently-derived-ground-truth end-to-end test proving canonical VM and
+  Python replays reconstruct live match state, plus coverage for digest
+  verification, `result_id` stability under nondeterministic exception text,
+  and `match_id` path-independence/change-sensitivity.
 - Added Agent API v1 for Python agents, including versioned manifests, explicit
   entry points and factories, fresh-instance construction, engine-controlled
   metadata, and validation of callable `reset()` and `act()` lifecycle methods.
@@ -36,6 +57,31 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 
 ### Changed
 
+- The canonical native-replay writer (`match_service._finalize_native_artifacts`)
+  now builds and serializes the same typed `battle_engine.replay` dataclasses
+  any reader consumes, instead of hand-building a second, independently
+  maintained dict-based representation; writer and reader can no longer drift
+  from each other by construction. `serialize_record` now always sorts JSON
+  keys, so re-serializing a parsed record reproduces byte-identical output.
+- The canonical replay's terminal result record now carries genuine final
+  per-entrant state (previously always an empty `agents` list) and uses
+  `null` for "no single winner" instead of leaving the field unpopulated;
+  `result.json`'s `winner` field keeps its existing non-null `"tie"`
+  convention unchanged for compatibility.
+- Consolidated winner resolution into one implementation
+  (`results.resolve_winner`, now typed against a small structural protocol
+  instead of the VM's concrete `Agent` class, removing a suppressed type
+  error); `match_service._effective_winner` is now only a thin, non-recomputing
+  mapper to the display sentinel rather than a second implementation of the
+  same win-mode rules.
+- `result_id`'s identity hash now excludes raw exception-message text (which
+  can embed nondeterministic content such as a default object `repr`'s
+  memory address) so two otherwise-identical reruns of a match that hits the
+  same agent failure get the same `result_id`. The full message is unchanged
+  everywhere it is displayed to a human.
+- `TournamentService` now rejects the entrant ID `"tie"` (case-insensitively)
+  before scheduling, reserving it from collision with the canonical
+  "no winner" sentinel.
 - Characterized the native VM scheduler explicitly: living entrants consume
   their quota in spawn order, and an earlier entrant can affect a later entrant
   during the same tick.
@@ -58,6 +104,15 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 
 ### Fixed
 
+- Fixed the canonical replay's terminal result record always recording an
+  empty final-agent list regardless of what actually happened in the match.
+- Fixed `VM.load_code` bypassing the same write-tracking path every other
+  arena write uses, which meant an entrant's initial loaded code was
+  invisible to replay memory diffs (including at reconstruction time).
+- Fixed a stale "Tournament execution has not yet been rebuilt on
+  `NativeMatchService`" limitation note that no longer matched the code
+  (`TournamentService` has called `NativeMatchService.run()` directly since
+  Phase 5) or `docs/TOURNAMENTS.md`.
 - Corrected Seeker branch targets so its scan and attack paths remain on valid
   instruction boundaries.
 - Reset per-tick CPU usage for every entrant, preventing a dead entrant's final
@@ -74,10 +129,19 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 - Python source and controller logic are not stored in, or corruptible through,
   arena memory.
 - Python agents are trusted in-process code. Hard timeouts and process isolation
-  for non-returning callbacks are not implemented.
-- Tournament execution has not yet been rebuilt on `NativeMatchService`.
-- Replay and result schemas retain the existing compatibility formats pending
-  later normalization.
+  for non-returning callbacks are not implemented; a `KeyboardInterrupt` raised
+  while an agent callback is executing is currently caught by the same
+  handler as an agent exception, so it forfeits that entrant rather than
+  reliably aborting the process.
+- Canonical replay reconstruction requires a linear scan of memory diffs from
+  tick 0; there is no snapshot/checkpoint shortcut for seeking directly to a
+  late tick in a long match.
+- Individual RNG draws inside agent code are not logged in the replay; only
+  each entrant's derived seed is captured. Reproducing an agent's exact
+  intermediate reasoning (not just its recorded actions) requires
+  re-executing its source against that seed.
+- A truncated or corrupted mid-stream replay still fails the whole read at
+  the point of corruption rather than offering a partial-recovery mode.
 
 ## [0.2.0] - 2026-08-06
 

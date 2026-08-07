@@ -37,6 +37,19 @@ class AgentState:
     cpu_used: int = 0
     mem_writes: int = 0
     region: tuple[int, int] | None = None
+    # Engine-owned register/controller state, populated where the runtime
+    # tracks it. ``register_a``/``register_p``/``zero_flag`` are meaningful
+    # for both VM and Python runtimes (both track A/P/Z-shaped state).
+    # ``last_read`` is Python-only; the VM has no equivalent concept.
+    register_a: int | None = None
+    register_p: int | None = None
+    zero_flag: bool | None = None
+    last_read: int | None = None
+    # Populated on the terminal result record (and, for Python entrants,
+    # on the tick where the entrant stopped): "normal_halt" or "forfeit".
+    # Always ``None`` for VM entrants -- the native VM scheduler does not
+    # track a per-agent termination reason at this granularity.
+    termination_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +57,11 @@ class MemoryDiff:
     address: int
     length: int = 1
     owner: str | None = None
+    # Byte values actually written, in address order, one per byte covered
+    # by ``length`` (accounting for a possible run of merged single-byte
+    # writes). Empty for legacy v0.1/v0.2 records, which never captured
+    # written values.
+    values: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -78,10 +96,22 @@ class RuntimeEvent:
 EngineEvent: TypeAlias = KillDeathEvent | AgentEvent | RuntimeEvent
 
 
+RuntimeKind: TypeAlias = Literal["vm", "python"]
+
+
 @dataclass(frozen=True)
 class ReplayHeader:
     config: MatchConfiguration
     agents: Mapping[str, str] = field(default_factory=dict)
+    # Canonical v3 identity and match-composition metadata. ``None``/empty
+    # for v0.1/v0.2 headers and for any header not produced by the
+    # canonical native-match finalization step.
+    replay_id: str | None = None
+    match_id: str | None = None
+    result_id: str | None = None
+    runtime_kind: RuntimeKind | None = None
+    reproducibility: Mapping[str, Any] = field(default_factory=dict)
+    entrants: tuple[Mapping[str, Any], ...] = ()
     schema: str = SCHEMA_NAME
     schema_version: int = SCHEMA_VERSION
     record_type: Literal["header"] = "header"
@@ -106,6 +136,12 @@ class MatchResult:
     ticks: int
     score: Mapping[str, int | float] = field(default_factory=dict)
     agents: tuple[AgentState, ...] = ()
+    # Canonical v3 identity/outcome metadata; see ``ReplayHeader``.
+    replay_id: str | None = None
+    match_id: str | None = None
+    result_id: str | None = None
+    termination_reason: str | None = None
+    entrants: tuple[Mapping[str, Any], ...] = ()
     schema: str = SCHEMA_NAME
     schema_version: int = SCHEMA_VERSION
     record_type: Literal["result"] = "result"
@@ -162,6 +198,13 @@ def _agent_from_dict(value: Any) -> AgentState:
         if isinstance(parsed, int):
             raise ReplayFormatError("agent.region must be [start, end]")
         region = parsed
+    register_a = data.get("register_a")
+    register_p = data.get("register_p")
+    last_read = data.get("last_read")
+    zero_flag = data.get("zero_flag")
+    termination_reason = data.get("termination_reason")
+    if termination_reason is not None and not isinstance(termination_reason, str):
+        raise ReplayFormatError("agent.termination_reason must be a string or null")
     return AgentState(
         agent_id=agent_id,
         pc=pc,
@@ -169,6 +212,11 @@ def _agent_from_dict(value: Any) -> AgentState:
         cpu_used=_as_int(data.get("cpu_used", 0), "agent.cpu_used"),
         mem_writes=_as_int(data.get("mem_writes", 0), "agent.mem_writes"),
         region=region,
+        register_a=(None if register_a is None else _as_int(register_a, "agent.register_a")),
+        register_p=(None if register_p is None else _as_int(register_p, "agent.register_p")),
+        zero_flag=(None if zero_flag is None else bool(zero_flag)),
+        last_read=(None if last_read is None else _as_int(last_read, "agent.last_read")),
+        termination_reason=termination_reason,
     )
 
 
@@ -180,10 +228,14 @@ def _diff_from_dict(value: Any) -> MemoryDiff:
     owner = data.get("owner")
     if owner is not None and not isinstance(owner, str):
         raise ReplayFormatError("memory diff owner must be a string or null")
+    values_value = data.get("values", ())
+    if not isinstance(values_value, (list, tuple)):
+        raise ReplayFormatError("memory diff values must be an array")
     return MemoryDiff(
         address=_as_int(address, "memory diff address"),
         length=_as_int(data.get("length", data.get("len", 1)), "memory diff length"),
         owner=owner,
+        values=tuple(_as_int(item, "memory diff value") for item in values_value),
     )
 
 
@@ -263,13 +315,26 @@ def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
             "weights": dict(record.config.weights),
         }
         base["agents"] = dict(record.agents)
+        base.update(
+            replay_id=record.replay_id,
+            match_id=record.match_id,
+            result_id=record.result_id,
+            runtime_kind=record.runtime_kind,
+            reproducibility=dict(record.reproducibility),
+            entrants=[dict(entrant) for entrant in record.entrants],
+        )
     elif isinstance(record, TickSnapshot):
         base.update(
             tick=record.tick,
             agents=[_agent_to_dict(agent) for agent in record.agents],
             score=dict(record.score),
             memory_diffs=[
-                {"address": diff.address, "length": diff.length, "owner": diff.owner}
+                {
+                    "address": diff.address,
+                    "length": diff.length,
+                    "owner": diff.owner,
+                    "values": list(diff.values),
+                }
                 for diff in record.memory_diffs
             ],
             events=[_event_to_dict(event) for event in record.events],
@@ -281,6 +346,11 @@ def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
             ticks=record.ticks,
             score=dict(record.score),
             agents=[_agent_to_dict(agent) for agent in record.agents],
+            replay_id=record.replay_id,
+            match_id=record.match_id,
+            result_id=record.result_id,
+            termination_reason=record.termination_reason,
+            entrants=[dict(entrant) for entrant in record.entrants],
         )
     else:  # pragma: no cover - protects callers bypassing static typing
         raise TypeError(f"unsupported replay record: {type(record).__name__}")
@@ -295,6 +365,11 @@ def _agent_to_dict(agent: AgentState) -> dict[str, Any]:
         "cpu_used": agent.cpu_used,
         "mem_writes": agent.mem_writes,
         "region": list(agent.region) if agent.region is not None else None,
+        "register_a": agent.register_a,
+        "register_p": agent.register_p,
+        "zero_flag": agent.zero_flag,
+        "last_read": agent.last_read,
+        "termination_reason": agent.termination_reason,
     }
 
 
@@ -329,7 +404,16 @@ def _event_to_dict(event: EngineEvent) -> dict[str, Any]:
 
 
 def serialize_record(record: ReplayRecord) -> str:
-    return json.dumps(record_to_dict(record), separators=(",", ":"))
+    """Serialize one canonical record with stable, sorted key order.
+
+    Deterministic key ordering makes this the single authoritative wire
+    encoding: the same record always produces the same bytes, so digests
+    computed over serialized output (see ``result_model``) are stable
+    across re-serialization, not just over whatever bytes happened to be
+    written first.
+    """
+
+    return json.dumps(record_to_dict(record), sort_keys=True, separators=(",", ":"))
 
 
 def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
@@ -356,9 +440,26 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
     record_type = data.get("record_type")
     if record_type == "header":
         agents = _require_mapping(data.get("agents", {}), "header.agents")
+        runtime_kind = data.get("runtime_kind")
+        if runtime_kind is not None and runtime_kind not in ("vm", "python"):
+            raise ReplayFormatError("header.runtime_kind must be 'vm', 'python', or null")
+        reproducibility = _require_mapping(
+            data.get("reproducibility", {}), "header.reproducibility"
+        )
+        entrants_value = data.get("entrants", ())
+        if not isinstance(entrants_value, (list, tuple)):
+            raise ReplayFormatError("header.entrants must be an array")
         return ReplayHeader(
             _config_from_dict(data.get("config")),
             {str(k): str(v) for k, v in agents.items()},
+            replay_id=data.get("replay_id"),
+            match_id=data.get("match_id"),
+            result_id=data.get("result_id"),
+            runtime_kind=runtime_kind,
+            reproducibility=dict(reproducibility),
+            entrants=tuple(
+                _require_mapping(item, "header.entrants item") for item in entrants_value
+            ),
             schema_version=version,
         )
     if record_type == "tick":
@@ -374,12 +475,26 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
         winner = data.get("winner")
         if winner is not None and not isinstance(winner, str):
             raise ReplayFormatError("result.winner must be a string or null")
+        termination_reason = data.get("termination_reason")
+        if termination_reason is not None and not isinstance(termination_reason, str):
+            raise ReplayFormatError("result.termination_reason must be a string or null")
+        result_entrants_value = data.get("entrants", ())
+        if not isinstance(result_entrants_value, (list, tuple)):
+            raise ReplayFormatError("result.entrants must be an array")
         return MatchResult(
             winner=winner,
             win_mode=str(data.get("win_mode", "score_fallback")),
             ticks=_as_int(data.get("ticks"), "result.ticks"),
             score=dict(_require_mapping(data.get("score", {}), "result.score")),
             agents=tuple(_agent_from_dict(item) for item in data.get("agents", ())),
+            replay_id=data.get("replay_id"),
+            match_id=data.get("match_id"),
+            result_id=data.get("result_id"),
+            termination_reason=termination_reason,
+            entrants=tuple(
+                _require_mapping(item, "result.entrants item")
+                for item in result_entrants_value
+            ),
             schema_version=version,
         )
     raise ReplayFormatError(f"unsupported record_type: {record_type!r}")

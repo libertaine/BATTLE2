@@ -181,7 +181,10 @@ def create_agent(): return Agent()
         json.loads(line)
         for line in (tmp_path / "replay.jsonl").read_text().splitlines()
     ]
-    assert records[1]["memory_diffs"] == [{"addr": 17, "len": 1, "owner": "A"}]
+    # records[1] is the tick-0 initial-state snapshot; tick 1 is records[2].
+    assert records[2]["memory_diffs"] == [
+        {"addr": 17, "len": 1, "owner": "A", "values": [91]}
+    ]
 
 
 def test_halt_stops_future_callbacks(tmp_path):
@@ -306,7 +309,8 @@ def create_agent(): return Agent()
     assert result.agents_by_id["A"].termination_reason == "forfeit"
     assert result.agents_by_id["A"].kills == 0
     records = [json.loads(line) for line in replay.read_text().splitlines()]
-    assert records[1]["events"][0] == {
+    # records[1] is the tick-0 initial-state snapshot; tick 1 is records[2].
+    assert records[2]["events"][0] == {
         "event_type": "forfeit",
         "victim": "A",
         "reason": code,
@@ -430,7 +434,8 @@ def create_agent(): return Agent()
         (1, 0, 1),
         (1, 0, 1),
     ]
-    events = json.loads(replay.read_text().splitlines()[1])["events"]
+    # Line 1 is the tick-0 initial-state snapshot; tick 1 is line 2.
+    events = json.loads(replay.read_text().splitlines()[2])["events"]
     assert [event["victim"] for event in events] == ["A", "B"]
 
 
