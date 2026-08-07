@@ -1,10 +1,12 @@
 from __future__ import annotations
+
+import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-import os
+from typing import Any, Dict, List, Optional
 
-from app.services.agent_meta import read_agent_meta
+from battle_engine.agents import discover_agents_in
+
 
 @dataclass
 class AgentRow:
@@ -13,8 +15,10 @@ class AgentRow:
     blob_path: Optional[str]
     meta: Dict[str, Any]
 
+
 class AgentCatalog:
-    """Very small catalog that lists agents/* subfolders and reads agent.yaml."""
+    """Designer adapter over the canonical engine-side agent discovery model."""
+
     def __init__(self, battle_root: Path):
         self.battle_root = Path(battle_root)
 
@@ -25,14 +29,33 @@ class AgentCatalog:
 
     def list_agents(self) -> List[AgentRow]:
         base = self.agents_dir()
+        specs = discover_agents_in(base)
         rows: List[AgentRow] = []
-        if not base.is_dir():
-            return rows
-        for d in sorted(p for p in base.iterdir() if p.is_dir()):
-            meta = read_agent_meta(d)
-            folder = d.name
-            # Prefer display, then name, then folder name
-            label = meta.get("display") or meta.get("name") or folder
-            blob = meta.get("blob_path")
-            rows.append(AgentRow(name=label, path=str(d), blob_path=blob, meta=meta))
+        for spec in specs.values():
+            meta = dict(spec.manifest)
+            declared_blob = meta.get("blob_path")
+            blob_path = (
+                str(spec.blob)
+                if spec.blob is not None
+                else declared_blob
+                if isinstance(declared_blob, str) and declared_blob
+                else None
+            )
+            meta.setdefault("name", spec.name)
+            meta.setdefault("display", spec.display)
+            meta.setdefault("kind", spec.kind)
+            if spec.api_version is not None:
+                meta.setdefault("api_version", spec.api_version)
+            if spec.version is not None:
+                meta.setdefault("version", spec.version)
+            if spec.entry_point is not None:
+                meta.setdefault("entrypoint", spec.entry_point)
+            rows.append(
+                AgentRow(
+                    name=spec.display,
+                    path=str(spec.dir),
+                    blob_path=blob_path,
+                    meta=meta,
+                )
+            )
         return rows

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
+from battle_engine.agent_api import AgentValidationError
 from battle_engine.agents import discover_agents, resolve_agent
 from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.core import Config, JSONLSink, Kernel, Weights
@@ -392,6 +393,8 @@ def _resolve_agent(
 
     try:
         spec_obj = resolve_agent(root, agent_name)
+    except AgentValidationError as exc:
+        raise SystemExit(str(exc)) from exc
     except SystemExit:
         spec_obj = None
 
@@ -457,7 +460,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         except (FileNotFoundError, OSError, ValueError) as exc:
             print(f"ERROR: Could not initialize starter agents: {exc}", file=sys.stderr)
             return 2
-        specs = discover_agents(root)
+        try:
+            specs = discover_agents(root)
+        except AgentValidationError as exc:
+            print(f"ERROR: Could not discover agents: {exc}", file=sys.stderr)
+            return 2
         if not specs:
             print(f"No agents found under {root / 'agents'}")
             return 0
@@ -602,7 +609,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 return None
             try:
                 return resolve_agent(root, name)
-            except SystemExit:
+            except (SystemExit, AgentValidationError):
                 return None
 
         a_spec = _try_resolve(args.a_type)
