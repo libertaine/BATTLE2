@@ -1,1 +1,7 @@
-/home/rod/Projects/BATTLE2/tournament/rosters/default.json
+{
+  "builtins": ["runner","writer","bomber","flooder","spiral","seeker"],
+  "custom": [
+    { "name": "chatgpt_hunter", "asm": "_legacy/agents_tooling/chatgpt_hunter.asm", "header": 0,  "entry": 0  },
+    { "name": "claude_agent",   "asm": "_legacy/agents_tooling/claude_agent.asm",   "header": 16, "entry": 16 }
+  ]
+}

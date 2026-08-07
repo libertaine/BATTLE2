@@ -187,10 +187,13 @@ pMARS GPLv2 licensing materials.
 
 ## Tests and automation
 
-`pytest.ini` includes `_legacy/tests`, `engine/tests`, `client/tests`, and
-`sdk/tests`. The legacy tests intentionally import the top-level legacy `core`
-module. The engine and client characterization tests import the packaged modules
-and freeze v0.1 behavior without starting a visible window.
+`pytest.ini` includes `_legacy/tests`, `engine/tests`, and `client/tests` while
+excluding tests marked `gui` from ordinary headless runs. Display-backed smoke
+tests are invoked explicitly by the dedicated Linux GUI workflow, including the
+Designer test under root `tests/`. The legacy tests intentionally import the
+top-level legacy `core` module. The engine and client characterization tests
+import the packaged modules and freeze v0.1 behavior without starting a visible
+window.
 
 GitHub Actions runs the headless suite on Python 3.10, 3.11, 3.12, and 3.13,
 validates the pure wheel, and builds the five Windows executables. Optional

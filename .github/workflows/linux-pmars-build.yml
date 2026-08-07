@@ -4,13 +4,26 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - v0.2-linux
-      - v0.2-integration
+      - main
     paths:
       - ".github/workflows/linux-pmars-build.yml"
+      - "pyproject.toml"
       - "tools/build_pmars_linux.sh"
       - "tools/pmars/README.md"
       - "engine/src/battle_engine/cli.py"
+      - "engine/src/battle_engine/command.py"
+      - "engine/src/battle_engine/paths.py"
+      - "engine/src/battle_engine/pmars.py"
+      - "engine/tests/test_pmars.py"
+  pull_request:
+    paths:
+      - ".github/workflows/linux-pmars-build.yml"
+      - "pyproject.toml"
+      - "tools/build_pmars_linux.sh"
+      - "tools/pmars/README.md"
+      - "engine/src/battle_engine/cli.py"
+      - "engine/src/battle_engine/command.py"
+      - "engine/src/battle_engine/paths.py"
       - "engine/src/battle_engine/pmars.py"
       - "engine/tests/test_pmars.py"
 

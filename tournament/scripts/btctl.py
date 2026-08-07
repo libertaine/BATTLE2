@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # Python 3.13
-import argparse, csv, json, os, subprocess, sys, time
+import argparse, csv, json, os, shlex, subprocess, sys, time
 from collections import defaultdict, Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parent
 ROSTER = ROOT / "roster.json"
 OUTROOT = ROOT / "results"
 
@@ -18,24 +19,25 @@ def _find_build_sh() -> Path:
         p = Path(env)
         if p.exists() and p.is_file():
             return p
-    for rel in ("build.sh", "agents_tooling/build.sh", "tools/build.sh"):
-        cand = ROOT / rel
+    candidates = (
+        REPO_ROOT / "sdk" / "tooling" / "build.sh",
+        ROOT / "build.sh",
+        ROOT / "agents_tooling" / "build.sh",
+        ROOT / "tools" / "build.sh",
+    )
+    for cand in candidates:
         if cand.exists() and cand.is_file():
             return cand
     raise FileNotFoundError(
         "build.sh not found. Set $BUILD_SH to an existing path or place build.sh at one of:\n"
-        f" - {ROOT/'build.sh'}\n - {ROOT/'agents_tooling/build.sh'}\n - {ROOT/'tools/build.sh'}"
+        + "\n".join(f" - {candidate}" for candidate in candidates)
     )
-
-BUILD_SH = _find_build_sh()
 
 def _battle_cmd():
     # Allow override to a specific launcher/binary if desired
     if os.environ.get("BATTLE_BIN"):
-        return os.environ["BATTLE_BIN"].split()
-    if (ROOT / "main.py").exists():
-        return [sys.executable, str(ROOT / "main.py")]
-    return [sys.executable, "-m", "BATTLE"]
+        return shlex.split(os.environ["BATTLE_BIN"])
+    return [sys.executable, "-m", "battle_engine", "run"]
 
 def load_roster():
     with open(ROSTER) as f:
@@ -47,19 +49,25 @@ def load_roster():
 def build_customs(customs, outdir=None):
     outdir = Path(outdir or ROOT / "agents_build")
     outdir.mkdir(parents=True, exist_ok=True)
+    build_sh = _find_build_sh()
     built = []
     for c in customs:
         name = c["name"]
-        asm_path = ROOT / c["asm"]
-        header = int(c.get("header", 0))
-        entry = int(c.get("entry", header))
+        asm_path = REPO_ROOT / c["asm"]
+        entry = int(c.get("entry", c.get("header", 0)))
         blob = outdir / f"{name}.blob"
 
-        cmd = [str(BUILD_SH), str(asm_path), str(blob), "--entry", str(entry)]
-        if header:
-            cmd += ["--header", str(header)]
+        cmd = [
+            str(build_sh),
+            str(asm_path),
+            str(blob),
+            "--entry",
+            str(entry),
+            "--name",
+            name,
+        ]
 
-        subprocess.run(cmd, cwd=ROOT, check=True)
+        subprocess.run(cmd, cwd=build_sh.parent, check=True)
         built.append({"name": name, "blob": str(blob)})
     return built
 
@@ -87,24 +95,24 @@ def run_game(a, b, seed, outdir, params=None, swap=False):
         "--a-type", a["cli"],
         "--b-type", b["cli"],
         "--replay", str(rundir / "replay.jsonl"),
-        "--config", str(rundir / "config.json"),
     ]
 
     # Supply blob config via env hook (engine must honor this)
     agents_json = {"A": a["cfg"], "B": b["cfg"]}
     (rundir / "agents.json").write_text(json.dumps(agents_json, indent=2))
     env = os.environ.copy()
-    env["BATTLE_AGENTS_JSON"] = str(rundir / "agents.json")
+    env["BATTLE_AGENTS_JSON"] = json.dumps(agents_json)
+    source_paths = [
+        REPO_ROOT / "engine" / "src",
+        REPO_ROOT / "client" / "src",
+        REPO_ROOT,
+    ]
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(path) for path in source_paths]
+        + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])
+    )
 
-    subprocess.run(cmd, cwd=ROOT, env=env, check=True)
-
-    # summary.json must be produced by engine into rundir (or copy if global)
-    sfile = rundir / "summary.json"
-    if not sfile.exists():
-        # try to pull a stray summary.json if engine dropped it at CWD
-        stray = ROOT / "summary.json"
-        if stray.exists():
-            stray.replace(sfile)
+    subprocess.run(cmd, cwd=REPO_ROOT, env=env, check=True)
     return rundir
 
 def parse_summary(path: Path):
@@ -295,6 +303,11 @@ def main():
         p.add_argument("--territory-bucket", type=int, default=DEF["territory_bucket"])
 
     args = ap.parse_args()
+
+    if args.cmd == "report":
+        aggregate_leaderboard(args.indir, args.csv, args.md)
+        return
+
     builtins, customs = load_roster()
     built_map = {c["name"]: str((ROOT/"agents_build"/f"{c['name']}.blob")) for c in customs}
 
@@ -349,10 +362,5 @@ def main():
         aggregate_leaderboard(args.out, Path(args.out)/"leaderboard.csv", Path(args.out)/"leaderboard.md")
         return
 
-    if args.cmd == "report":
-        aggregate_leaderboard(args.indir, args.csv, args.md)
-        return
-
 if __name__ == "__main__":
     main()
-
