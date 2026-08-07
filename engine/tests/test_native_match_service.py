@@ -6,9 +6,14 @@ import pytest
 from battle_engine.builtins import build_agent
 from battle_engine.config import Config, Weights
 from battle_engine.core import Kernel
-from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
-from battle_engine.results import build_summary
+from battle_engine.match_service import (
+    MatchEntrant,
+    MatchRequest,
+    NativeMatchService,
+    UnsupportedMatchCompositionError,
+)
 from battle_engine.replay import TickSnapshot, iter_replay, record_to_dict
+from battle_engine.results import build_summary
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
 
@@ -127,3 +132,146 @@ def test_service_preserves_spawn_order_and_wraps_entry_points(tmp_path):
     assert result.agents[0].alive is True
     assert result.agents[1].alive is False
     assert result.winner == "A"
+
+
+def test_duplicate_vm_entrant_ids_are_rejected(tmp_path):
+    entrants = (
+        MatchEntrant("A", "first", 0, build_agent("runner", 0)),
+        MatchEntrant("A", "second", 16, build_agent("runner", 16)),
+    )
+
+    with pytest.raises(UnsupportedMatchCompositionError, match="unique"):
+        NativeMatchService().run(
+            MatchRequest(_config(), entrants, 2, tmp_path / "replay.jsonl", False)
+        )
+    # Nothing should have been written for a request rejected before execution.
+    assert not (tmp_path / "replay.jsonl").exists()
+
+
+def test_duplicate_python_entrant_ids_are_rejected(tmp_path):
+    import json as _json
+
+    from battle_engine.agents import resolve_agent
+
+    directory = tmp_path / "agents" / "solo"
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        _json.dumps(
+            {
+                "kind": "python",
+                "api_version": 1,
+                "entrypoint": "agent.py:create_agent",
+                "name": "solo",
+                "display": "Solo",
+                "version": "1.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        "from battle_engine.agent_api import ActionKind, AgentAction\n"
+        "class Agent:\n"
+        "    def reset(self, context): pass\n"
+        "    def act(self, observation): return AgentAction(ActionKind.NOP)\n"
+        "def create_agent(): return Agent()\n",
+        encoding="utf-8",
+    )
+    spec = resolve_agent(tmp_path, "solo")
+    entrants = (
+        MatchEntrant.python("A", "solo", 0, spec),
+        MatchEntrant.python("A", "solo", 32, spec),
+    )
+
+    with pytest.raises(UnsupportedMatchCompositionError, match="unique"):
+        NativeMatchService().run(
+            MatchRequest(_config(), entrants, 2, tmp_path / "replay.jsonl", False)
+        )
+
+
+class _FailOnRunKernel:
+    """Stand-in for Kernel whose ``run`` fails after entrants are spawned."""
+
+    def __init__(self, *args, **kwargs):
+        self.agents = []
+        self.cfg = args[0]
+
+    def spawn(self, agent_id, entry, code):
+        self.agents.append(agent_id)
+
+    def run(self, max_ticks, verbose):
+        raise RuntimeError("simulated mid-run engine failure")
+
+
+def test_vm_engine_failure_leaves_no_partial_replay(tmp_path, monkeypatch):
+    replay = tmp_path / "replay.jsonl"
+    monkeypatch.setattr("battle_engine.match_service.Kernel", _FailOnRunKernel)
+
+    with pytest.raises(RuntimeError, match="simulated mid-run engine failure"):
+        NativeMatchService().run(
+            MatchRequest(_config(), _entrants(), 5, replay, False)
+        )
+
+    assert not replay.exists()
+    assert not list(tmp_path.glob(".replay.jsonl.*.tmp"))
+
+
+def test_vm_writer_failure_leaves_no_partial_or_temporary_replay(tmp_path, monkeypatch):
+    replay = tmp_path / "replay.jsonl"
+
+    class FailingSink:
+        def __init__(self, path):
+            self.path = path
+
+        def emit(self, record):
+            raise OSError("disk unavailable")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("battle_engine.match_service.JSONLSink", FailingSink)
+
+    with pytest.raises(OSError, match="disk unavailable"):
+        NativeMatchService().run(
+            MatchRequest(_config(), _entrants(), 5, replay, False)
+        )
+
+    assert not replay.exists()
+    assert not list(tmp_path.glob(".replay.jsonl.*.tmp"))
+
+
+def test_vm_stale_prior_artifacts_are_removed_even_when_the_new_run_fails(
+    tmp_path, monkeypatch
+):
+    replay = tmp_path / "replay.jsonl"
+    summary = tmp_path / "summary.json"
+    result_json = tmp_path / "result.json"
+    replay.write_text('{"stale": true}\n', encoding="utf-8")
+    summary.write_text('{"stale": true}', encoding="utf-8")
+    result_json.write_text('{"stale": true}', encoding="utf-8")
+
+    monkeypatch.setattr("battle_engine.match_service.Kernel", _FailOnRunKernel)
+
+    with pytest.raises(RuntimeError):
+        NativeMatchService().run(
+            MatchRequest(_config(), _entrants(), 5, replay, False)
+        )
+
+    # A failed attempt must not leave the OLD artifacts behind either --
+    # they no longer describe anything real once a new attempt was made.
+    assert not replay.exists()
+    assert not summary.exists()
+    assert not result_json.exists()
+
+
+def test_vm_replay_publication_is_atomic_on_success(tmp_path):
+    replay = tmp_path / "replay.jsonl"
+
+    result = NativeMatchService().run(
+        MatchRequest(_config(), _entrants(), 5, replay, False)
+    )
+
+    assert replay.is_file()
+    assert result.result_path is not None and result.result_path.is_file()
+    # No leftover temporary file from the write-then-rename sequence.
+    assert not list(tmp_path.glob(".replay.jsonl.*.tmp"))
+    assert not list(tmp_path.glob(".replay.jsonl.*.canonical.tmp"))

@@ -235,3 +235,52 @@ def test_existing_builtin_blob_and_legacy_python_discovery_remain_compatible(tmp
     assert specs["legacy_python"].entry_point == "agent.py:create_agent"
     with pytest.raises(UnsupportedAgentAPIVersionError):
         load_python_agent(specs["legacy_python"])
+
+
+def test_discovered_spec_name_is_always_the_directory_basename(tmp_path):
+    """A manifest's own declared "name" must never override identity used
+    for path resolution -- only ``spec.manifest["name"]`` (free-text
+    metadata) may reflect it. Confirms the containment fix in
+    ``resolve_agent`` isn't compensating for a spec-identity leak too."""
+
+    _write_agent(tmp_path, "evil", manifest={"name": "../outside/payload"})
+
+    specs = discover_agents(tmp_path)
+
+    assert specs["evil"].name == "evil"
+    assert specs["evil"].manifest["name"] == "../outside/payload"
+
+
+def test_resolve_agent_rejects_a_name_that_escapes_the_agents_directory(tmp_path):
+    """Regression for a real, confirmed path-traversal reachable through the
+    Designer: app/services/agent_catalog.py's AgentRow.meta echoes a
+    manifest's self-declared "name" field verbatim (falling back to the
+    safe directory name only when the manifest omits one), and
+    app/agent_designer.py prefers that value over the real directory name
+    when building --a-type/--b-type. A manifest can therefore cause the
+    *next* resolution of its own declared name to select an entirely
+    different agent.py outside agents/ -- proven below by resolving the
+    manifest's own declared name and confirming it is rejected rather than
+    silently loading the planted file outside agents/.
+    """
+
+    _write_agent(tmp_path, "evil", manifest={"name": "../outside/payload"})
+    outside = tmp_path / "outside" / "payload"
+    outside.mkdir(parents=True)
+    (outside / "agent.py").write_text(
+        "PAYLOAD_EXECUTED = True\ndef create_agent(): return None\n",
+        encoding="utf-8",
+    )
+
+    specs = discover_agents(tmp_path)
+    manifest_declared_name = specs["evil"].manifest["name"]
+    assert manifest_declared_name == "../outside/payload"  # sanity: attacker value
+
+    with pytest.raises(SystemExit, match="does not resolve within"):
+        resolve_agent(tmp_path, manifest_declared_name)
+
+    # A name that merely happens to contain ".." as a substring, but stays
+    # within agents/, must still resolve normally (no over-broad rejection).
+    _write_agent(tmp_path, "not..actually..traversing")
+    spec = resolve_agent(tmp_path, "not..actually..traversing")
+    assert spec.name == "not..actually..traversing"

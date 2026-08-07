@@ -19,6 +19,7 @@ from app.services.designer_workflows import (
     DesignerValidationError,
     build_designer_tournament_command,
     match_artifact_paths,
+    new_match_run_directory,
     read_match_presentation,
     read_tournament_presentation,
     validate_homogeneous,
@@ -135,6 +136,65 @@ class AgentDesigner(QMainWindow):
                 return row
         return None
 
+    # ------------------------------------------------------------------
+    # QProcess lifecycle
+    # ------------------------------------------------------------------
+    def _dispose_process(self) -> None:
+        """Detach and schedule cleanup of the current process, if any.
+
+        Disconnecting a process's signals before killing/replacing it means
+        a 'finished'/'errorOccurred' notification that the OS delivers
+        *after* this call (the child's actual exit is always asynchronous
+        relative to a kill() request) can no longer reach any slot -- this
+        removes the stale-signal race at its source, rather than only
+        detecting it after the fact. The per-signal handlers below also
+        verify the emitting process is still the active one, as a second,
+        independent safety net in case a future connection is ever added
+        without going through this method.
+        """
+        proc = self._proc
+        if proc is None:
+            return
+        for signal in (
+            proc.finished,
+            proc.errorOccurred,
+            proc.readyReadStandardOutput,
+            proc.readyReadStandardError,
+        ):
+            try:
+                signal.disconnect()
+            except (RuntimeError, TypeError):
+                pass  # Nothing was connected, or the object is already gone.
+        if proc.state() != QProcess.NotRunning:
+            proc.kill()
+        proc.deleteLater()
+        self._proc = None
+
+    def _start_process(
+        self, command: list[str], env: QProcessEnvironment, working_directory: Path, *, label: str
+    ) -> QProcess:
+        """Build, wire, and start a fresh QProcess, replacing any prior one.
+
+        Every signal connection closes over ``proc`` explicitly (rather than
+        reading ``self._proc`` from inside the handler) so a handler can
+        reliably tell whether it is still hearing from the currently active
+        process, independent of Qt's ``sender()`` tracking.
+        """
+        self._dispose_process()
+        proc = QProcess(self)
+        proc.setProcessEnvironment(env)
+        proc.setWorkingDirectory(str(working_directory))
+        proc.setProgram(command[0])
+        proc.setArguments(command[1:])
+        proc.readyReadStandardOutput.connect(lambda p=proc: self._pipe_proc_output(p))
+        proc.readyReadStandardError.connect(lambda p=proc: self._pipe_proc_output(p))
+        proc.finished.connect(lambda code, status, p=proc: self._on_proc_finished(p, code, status))
+        proc.errorOccurred.connect(
+            lambda error, p=proc: self._on_proc_error(p, label, command[0], error)
+        )
+        self._proc = proc
+        return proc
+
     def _on_advanced_run(self, cfg):
         # make sure Advanced tab gets log output immediately
         self._log_target = self.advanced
@@ -165,13 +225,11 @@ class AgentDesigner(QMainWindow):
             QMessageBox.warning(self, "Unsupported Match", str(exc))
             return
 
-        from pathlib import Path
         a_type = (rowA.meta.get("name") if isinstance(getattr(rowA, "meta", None), dict) else None) or Path(rowA.path).name or a_name
         b_type = (rowB.meta.get("name") if isinstance(getattr(rowB, "meta", None), dict) else None) or Path(rowB.path).name or b_name
 
-        result_path, replay_path = match_artifact_paths(
-            self.battle_root / "runs" / "_loose" / "replay.jsonl"
-        )
+        run_directory = new_match_run_directory(self.battle_root)
+        result_path, replay_path = match_artifact_paths(run_directory / "replay.jsonl")
         match_arguments = build_designer_match_arguments(
             ticks=ticks,
             arena=arena,
@@ -196,7 +254,6 @@ class AgentDesigner(QMainWindow):
         self.simple.setBusy(True)
         self.advanced.setBusy(True)
         self._log_target = self.advanced
-        self._last_replay = None
         self._result_path = result_path
         self._active_workflow = "match"
 
@@ -210,33 +267,22 @@ class AgentDesigner(QMainWindow):
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
         env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
 
-        # build process
-        self._proc = QProcess(self)
-        self._proc.setProcessEnvironment(env)
-        self._proc.setWorkingDirectory(str(root))
-        self._proc.setProgram(command[0])
-        self._proc.setArguments(command[1:])
-
-        self._proc.readyReadStandardOutput.connect(self._pipe_proc_output)
-        self._proc.readyReadStandardError.connect(self._pipe_proc_output)
-        self._proc.finished.connect(self._on_proc_finished)
-        self._proc.errorOccurred.connect(
-            lambda error: self._on_proc_error("RunMatch", command[0], error)
-        )
+        proc = self._start_process(command, env, root, label="RunMatch")
 
         self.advanced.appendLog(
             f"[RunMatch] A={a_name} -> type='{a_type}' blob='{getattr(rowA,'blob_path',None)}'  "
             f"B={b_name} -> type='{b_type}' blob='{getattr(rowB,'blob_path',None)}'  "
             f"ticks={ticks} arena={arena} seed={seed} "
             f"alive_w={alive_w} kill_w={kill_w} territory_w={terr_w} bucket={bucket}\n"
+            f"[RunMatch] output: {run_directory}\n"
         )
-        self._proc.start()
+        proc.start()
 
-    def _pipe_proc_output(self):
-        if not self._proc:
-            return
-        out = bytes(self._proc.readAllStandardOutput()).decode("utf-8", "ignore")
-        err = bytes(self._proc.readAllStandardError()).decode("utf-8", "ignore")
+    def _pipe_proc_output(self, proc=None):
+        if proc is None or proc is not self._proc:
+            return  # Stale signal from a process this window has already moved past.
+        out = bytes(proc.readAllStandardOutput()).decode("utf-8", "ignore")
+        err = bytes(proc.readAllStandardError()).decode("utf-8", "ignore")
         text = (out or "") + (err or "")
         if text:
             # send to active tab’s log
@@ -244,6 +290,7 @@ class AgentDesigner(QMainWindow):
                 self._log_target.appendLog(text)
             else:
                 self.simple.appendLog(text)  # fallback
+
     def _on_simple_run(self, cfg):
         rowA = self._resolve_agent_row_by_name(cfg.a_type)
         rowB = self._resolve_agent_row_by_name(cfg.b_type)
@@ -259,14 +306,12 @@ class AgentDesigner(QMainWindow):
             return
 
         # Prefer explicit name from YAML, else folder, else UI text
-        from pathlib import Path
         a_type = (rowA.meta.get("name") if hasattr(rowA, "meta") and isinstance(rowA.meta, dict) else None) or Path(rowA.path).name or cfg.a_type
         b_type = (rowB.meta.get("name") if hasattr(rowB, "meta") and isinstance(rowB.meta, dict) else None) or Path(rowB.path).name or cfg.b_type
 
         # Build CLI args with the correct flags
-        result_path, replay_path = match_artifact_paths(
-            self.battle_root / "runs" / "_loose" / "replay.jsonl"
-        )
+        run_directory = new_match_run_directory(self.battle_root)
+        result_path, replay_path = match_artifact_paths(run_directory / "replay.jsonl")
         match_arguments = build_designer_match_arguments(
             ticks=cfg.ticks,
             arena=cfg.arena,
@@ -284,7 +329,6 @@ class AgentDesigner(QMainWindow):
 
         # disable controls while running
         self.simple.setBusy(True)
-        self._last_replay = None
         self._result_path = result_path
         self._active_workflow = "match"
 
@@ -298,38 +342,27 @@ class AgentDesigner(QMainWindow):
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
         env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
 
-        # build process
-        self._proc = QProcess(self)
-        self._proc.setProcessEnvironment(env)
-        self._proc.setWorkingDirectory(str(root))
-        self._proc.setProgram(command[0])
-        self._proc.setArguments(command[1:])
-
-        # wire logs & finish
-        self._proc.readyReadStandardOutput.connect(self._pipe_proc_output)
-        self._proc.readyReadStandardError.connect(self._pipe_proc_output)
-        self._proc.finished.connect(self._on_proc_finished)
-        self._proc.errorOccurred.connect(
-            lambda error: self._on_proc_error("RunMatch", command[0], error)
-        )
+        proc = self._start_process(command, env, root, label="RunMatch")
 
         # start
         self.simple.appendLog(
             f"[RunMatch] A={cfg.a_type} -> type='{a_type}' blob='{getattr(rowA,'blob_path',None)}'  "
             f"B={cfg.b_type} -> type='{b_type}' blob='{getattr(rowB,'blob_path',None)}'  "
             f"ticks={cfg.ticks} arena={cfg.arena}\n"
+            f"[RunMatch] output: {run_directory}\n"
         )
-        self._proc.start()
+        proc.start()
 
     def _on_stop_run(self):
-        if self._proc and self._proc.state() != QProcess.NotRunning:
-            self._proc.kill()
+        self._dispose_process()
         self.simple.setBusy(False)
         self.advanced.setBusy(False)
         if self._log_target:
             self._log_target.appendLog("[RunMatch] stopped.\n")
 
-    def _on_proc_finished(self, code, status):
+    def _on_proc_finished(self, proc, code, status):
+        if proc is not self._proc:
+            return  # Stale signal from a process this window has already moved past.
         self.simple.setBusy(False)
         self.advanced.setBusy(False)
         label = "Tournament" if self._active_workflow == "tournament" else "RunMatch"
@@ -356,16 +389,23 @@ class AgentDesigner(QMainWindow):
             self.simple.enableOpenReplay(True)
             self.advanced.enableOpenReplay(True)
 
-    def _on_proc_error(self, label: str, program: str, error) -> None:
+    def _on_proc_error(self, proc, label: str, program: str, error) -> None:
+        if proc is not self._proc:
+            return  # Stale signal from a process this window has already moved past.
         self.simple.setBusy(False)
         self.advanced.setBusy(False)
         message = f"[{label}] failed to start '{program}': {error}"
         self._log_target.appendLog(message + "\n")
         QMessageBox.critical(self, f"{label} Failed", message)
 
-
     def _on_open_replay(self):
-        # try the captured path; else let the user pick
+        # "Open Last Replay" intentionally stays enabled while a new run is
+        # busy (Option A): each run now writes to its own directory
+        # (new_match_run_directory), and the stale-process guards above
+        # ensure self._last_replay only ever names a genuinely completed
+        # run's replay -- never the file a currently-running match is still
+        # writing. If either guarantee is ever relaxed, this button should
+        # move back into setBusy()'s disabled set.
         path = None
         if self._last_replay and Path(self._last_replay).exists():
             path = self._last_replay
@@ -404,19 +444,11 @@ class AgentDesigner(QMainWindow):
         source = [str(self.battle_root), str(self.battle_root / "engine" / "src")]
         env.insert("PYTHONPATH", sep.join(source + ([existing] if existing else [])))
         env.insert("BATTLE_AGENTS_DIR", str(self.battle_root / "agents"))
-        self._proc = QProcess(self)
-        self._proc.setProcessEnvironment(env)
-        self._proc.setWorkingDirectory(str(self.battle_root))
-        self._proc.setProgram(command[0])
-        self._proc.setArguments(command[1:])
-        self._proc.readyReadStandardOutput.connect(self._pipe_proc_output)
-        self._proc.readyReadStandardError.connect(self._pipe_proc_output)
-        self._proc.finished.connect(self._on_proc_finished)
-        self._proc.errorOccurred.connect(
-            lambda error: self._on_proc_error("Tournament", command[0], error)
-        )
+
+        proc = self._start_process(command, env, self.battle_root, label="Tournament")
+
         self._log_target.appendLog(f"[Tournament] output: {self._tournament_output}\n")
-        self._proc.start()
+        proc.start()
 
     def _present_tournament_result(self, code: int) -> None:
         if not self._tournament_output:
@@ -459,6 +491,15 @@ class AgentDesigner(QMainWindow):
             f"Python {info.python_version}\n"
             f"License: {info.license_name}\n{info.project_url}",
         )
+
+    def closeEvent(self, event) -> None:
+        # Detach and kill any active match/tournament subprocess before the
+        # window (and this object's slots) go away, so a delayed signal
+        # from it can never run against a partially/fully destroyed window,
+        # and so the child is not left running detached from the app.
+        self._dispose_process()
+        super().closeEvent(event)
+
 
 def main() -> int:
     app = QApplication(sys.argv)

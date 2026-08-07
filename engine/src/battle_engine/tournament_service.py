@@ -11,11 +11,40 @@ from typing import Any, Mapping
 
 from battle_engine.config import Config
 from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
-from battle_engine.result_model import ResultEnvelope, read_result, stable_id, write_json_atomic
+from battle_engine.result_model import (
+    ReplayIntegrityError,
+    ResultEnvelope,
+    read_result,
+    stable_id,
+    verify_replay_digest,
+    write_json_atomic,
+)
 from battle_engine.results import WINNER_TIE_SENTINEL
 
 SCHEMA_NAME = "battle2.tournament"
 SCHEMA_VERSION = 1
+
+# Diagnostic codes that indicate a non-retryable configuration/agent-loading
+# problem rather than a transient runtime/infrastructure failure. A closed
+# set (rather than substring matching against free-text codes) so that a
+# future, unrelated diagnostic code cannot be silently miscategorized just
+# because it happens to contain a matching substring. Runtime/infrastructure
+# failures (e.g. "artifact_write_failed", "engine_failed", or an unwrapped
+# exception with no ``.diagnostic`` at all) are intentionally not members of
+# this set and remain classified as "failed" -- they may succeed on retry.
+REJECTED_DIAGNOSTIC_CODES = frozenset(
+    {
+        "agent_manifest_invalid",
+        "agent_api_version_unsupported",
+        "agent_source_invalid",
+        "agent_import_failed",
+        "agent_factory_failed",
+        "agent_contract_invalid",
+        "agent_reset_failed",
+        "unsupported_match_composition",
+        "match_configuration_invalid",
+    }
+)
 
 
 class TournamentConfigurationError(ValueError):
@@ -103,6 +132,50 @@ def _safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._") or "entrant"
 
 
+def _resumed_result_mismatch(
+    envelope: ResultEnvelope, item: "TournamentMatch", replay_path: Path
+) -> str | None:
+    """Return why a resumed ``result.json`` cannot be trusted, or ``None`` if it checks out.
+
+    A schema-valid ``battle2.result`` envelope is not, by itself, evidence
+    that it belongs to *this* scheduled match: a directory could contain a
+    result copied from a different tournament, a stale result left over
+    from a differently-ordered or differently-seeded request, or a replay
+    that was pruned/corrupted after the result was written. This checks the
+    envelope's own recorded identity against what the schedule expects,
+    then verifies the replay it references still matches its digest --
+    reusing the same integrity check any other canonical-artifact consumer
+    would use, rather than inventing a second one.
+    """
+
+    entrant_order = tuple(str(entry.get("agent_id")) for entry in envelope.entrants)
+    if set(entrant_order) != set(item.entrant_ids):
+        return (
+            f"entrant IDs {sorted(set(entrant_order))} do not match the "
+            f"scheduled match's {sorted(set(item.entrant_ids))}"
+        )
+    if entrant_order != item.entrant_ids:
+        return (
+            f"entrant order {entrant_order} does not match the scheduled "
+            f"match's {item.entrant_ids}"
+        )
+    actual_seed = envelope.reproducibility.get("seed")
+    if actual_seed != item.seed:
+        return f"seed {actual_seed!r} does not match the scheduled match's {item.seed!r}"
+    if envelope.replay is None:
+        # Every tournament division is native VM-only or Python-only (pMARS
+        # divisions are unsupported), and every native result carries a
+        # replay reference -- a "completed" native result with none is
+        # itself evidence of a corrupt or foreign artifact, not a match
+        # outcome missing a replay by design.
+        return "result has no replay reference, but a native match result always has one"
+    try:
+        verify_replay_digest(envelope, replay_path)
+    except ReplayIntegrityError as exc:
+        return f"replay verification failed ({exc.code}): {exc}"
+    return None
+
+
 class TournamentService:
     def __init__(self, match_service: NativeMatchService | None = None):
         self.match_service = match_service or NativeMatchService()
@@ -132,21 +205,45 @@ class TournamentService:
         for item, entrants in scheduled:
             previous = prior_matches.get(item.schedule_id)
             result_path = item.artifact_dir / "result.json"
+            replay_path = item.artifact_dir / "replay.jsonl"
             if previous and previous.get("status") == "completed" and result_path.is_file():
-                envelope = read_result(result_path)
-                canonical_results.append(envelope)
+                mismatch: str | None
+                try:
+                    envelope = read_result(result_path)
+                    mismatch = _resumed_result_mismatch(envelope, item, replay_path)
+                except (OSError, ValueError, KeyError) as exc:
+                    envelope = None
+                    mismatch = f"result.json could not be read: {exc}"
+                if mismatch is None:
+                    assert envelope is not None
+                    canonical_results.append(envelope)
+                    completed.append(
+                        replace(
+                            item,
+                            status="completed",
+                            match_id=envelope.match_id,
+                            result_id=envelope.result_id,
+                        )
+                    )
+                    continue
+                # Do not include an untrusted artifact in standings, and do
+                # not silently re-run over it -- record a controlled,
+                # inspectable status so the operator can see why, and only
+                # actually retry it if they explicitly ask (--retry-failed),
+                # the same as any other non-completed match.
                 completed.append(
                     replace(
                         item,
-                        status="completed",
-                        match_id=envelope.match_id,
-                        result_id=envelope.result_id,
+                        status="corrupted",
+                        error_code="resumed_result_mismatch",
+                        error_message=mismatch[:240],
                     )
                 )
+                self._write_state(state_path, tournament_id, division, completed)
                 continue
             if (
                 previous
-                and previous.get("status") in {"failed", "rejected"}
+                and previous.get("status") in {"failed", "rejected", "corrupted"}
                 and not request.retry_failures
             ):
                 completed.append(
@@ -164,7 +261,7 @@ class TournamentService:
                         config=replace(request.config, seed=item.seed),
                         entrants=entrants,
                         max_ticks=request.max_ticks,
-                        replay_path=item.artifact_dir / "replay.jsonl",
+                        replay_path=replay_path,
                         verbose=request.verbose,
                     )
                 )
@@ -182,18 +279,7 @@ class TournamentService:
                 code = getattr(
                     getattr(exc, "diagnostic", None), "code", None
                 ) or getattr(exc, "code", "match_failed")
-                rejected_markers = (
-                    "configuration",
-                    "composition",
-                    "initial",
-                    "contract",
-                    "reset",
-                )
-                status = (
-                    "rejected"
-                    if any(marker in code for marker in rejected_markers)
-                    else "failed"
-                )
+                status = "rejected" if code in REJECTED_DIAGNOSTIC_CODES else "failed"
                 completed.append(
                     replace(
                         item,

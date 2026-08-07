@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -61,6 +63,23 @@ def validate_homogeneous(rows: Iterable[AgentRow], *, minimum: int = 2) -> str:
 def match_artifact_paths(replay_path: Path) -> tuple[Path, Path]:
     replay = replay_path.expanduser().resolve()
     return replay.with_name("result.json"), replay
+
+
+def new_match_run_directory(battle_root: Path) -> Path:
+    """A fresh, collision-free artifact directory for one Designer match run.
+
+    Each call returns a distinct path (UTC timestamp plus a short random
+    suffix), so two runs -- launched in immediate succession, or by a stale
+    process racing a new one -- can never share result/replay/summary files.
+    This is filesystem organization only: the returned path is never an
+    input to canonical match/result identity (``match_service.stable_id``
+    hashes match content, never a filesystem location), so it is safe to
+    change this naming scheme at any time without affecting `match_id`.
+    """
+
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    label = f"{stamp}-{uuid.uuid4().hex[:8]}"
+    return battle_root.expanduser().resolve() / "runs" / "_designer" / label
 
 
 def read_match_presentation(result_path: Path) -> MatchPresentation:

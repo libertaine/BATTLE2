@@ -257,7 +257,11 @@ class PythonEntrantController:
             )
             try:
                 loaded.instance.reset(context)
-            except BaseException as exc:
+            except Exception as exc:
+                # Exception, not BaseException: KeyboardInterrupt/SystemExit
+                # must propagate and stop the run rather than being reported
+                # as an ordinary agent failure (see the matching narrowing
+                # in the per-action handler below for the full rationale).
                 diagnostic = RuntimeDiagnostic(
                     code="agent_reset_failed",
                     stage="reset",
@@ -352,7 +356,14 @@ class PythonEntrantController:
                                     exception_type=type(exc).__name__,
                                 )
                             )
-                        except BaseException as exc:
+                        except Exception as exc:
+                            # Exception, not BaseException: an operator's
+                            # Ctrl-C (KeyboardInterrupt) or an agent's own
+                            # sys.exit() (SystemExit) must propagate and
+                            # actually stop the match, not be silently
+                            # absorbed as a routine agent forfeit -- that
+                            # was previously the only way to abort a hung
+                            # or runaway Python match short of SIGKILL.
                             state.cpu_used += 1
                             state.total_actions += 1
                             events.append(

@@ -12,9 +12,16 @@ record played matches, wins, losses, ties, and cumulative canonical score.
 
 The tournament root contains `tournament.json` using schema
 `battle2.tournament` version 1. It is atomically checkpointed after every match.
-With resume enabled, completed matches are loaded from their canonical
-`result.json` instead of rerun. Failed and rejected matches are recorded and
-excluded from standings; they remain terminal unless `retry_failures` is set.
+With resume enabled, a match recorded `completed` is only accepted from its
+canonical `result.json` (instead of rerun) after verifying that result's own
+entrant IDs, entrant order, and seed match the scheduled match, and that its
+referenced replay exists and matches its recorded digest. A `result.json`
+that fails any of these checks -- copied from a different tournament, stale
+from a differently-ordered or differently-seeded request, unparseable, or
+paired with a missing/modified replay -- is recorded as `corrupted` instead
+of `completed`. Failed, rejected, and corrupted matches are all recorded and
+excluded from standings; they remain terminal unless `retry_failures` is set,
+which retries all three the same way.
 
 Every match has a stable scheduled ID and a directory beneath `matches/` that
 contains its replay, canonical result, and compatibility summary where produced.

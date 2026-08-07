@@ -192,8 +192,25 @@ def discover_agents_in(base: Path) -> Dict[str, AgentSpec]:
 def resolve_agent(root: Path, name: str) -> AgentSpec:
     if not name or not name.strip():
         raise SystemExit("Agent name cannot be empty.")
-    agent_dir = _agents_root(root) / name
-    spec = _spec_from_dir(agent_dir)
+    agents_root = _agents_root(root)
+    agent_dir = agents_root / name
+    # Contain resolution to the agents/ tree: a caller-supplied name can
+    # come from anywhere a manifest's own free-text "name" field is echoed
+    # back as a selector (e.g. the Designer prefers a manifest's declared
+    # name over its directory basename) -- a name containing ".." must not
+    # be able to select a directory outside agents/, since that directory's
+    # entrypoint would then be imported and executed as if it were the
+    # agent the user actually selected. Same containment pattern already
+    # used for entry-point resolution within one agent directory; see
+    # agent_api.parse_entry_point.
+    resolved_dir = agent_dir.resolve()
+    try:
+        resolved_dir.relative_to(agents_root)
+    except ValueError:
+        raise SystemExit(
+            f"Agent name {name!r} does not resolve within {agents_root}."
+        )
+    spec = _spec_from_dir(resolved_dir)
     if spec is None:
         raise SystemExit(
             f"Unknown agent '{name}'. Expected a folder {agent_dir} with agent.yaml (JSON) or agent.py"

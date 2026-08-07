@@ -11,6 +11,7 @@ from app.services.designer_workflows import (
     DesignerValidationError,
     build_designer_tournament_command,
     match_artifact_paths,
+    new_match_run_directory,
     read_match_presentation,
     read_tournament_presentation,
     validate_homogeneous,
@@ -26,6 +27,21 @@ def _row(name: str, kind: str) -> AgentRow:
 
 def test_designer_adapter_import_does_not_require_qt():
     assert validate_homogeneous([_row("alpha", "python"), _row("beta", "python")]) == "python"
+
+
+def test_new_match_run_directory_is_unique_and_isolated(tmp_path):
+    first = new_match_run_directory(tmp_path)
+    second = new_match_run_directory(tmp_path)
+
+    assert first != second
+    assert first.parent == second.parent == tmp_path / "runs" / "_designer"
+    assert first.is_absolute() and second.is_absolute()
+
+    # Two runs' artifact paths, derived the normal way, cannot collide.
+    first_result, first_replay = match_artifact_paths(first / "replay.jsonl")
+    second_result, second_replay = match_artifact_paths(second / "replay.jsonl")
+    assert first_result != second_result
+    assert first_replay != second_replay
 
 
 def test_match_artifacts_and_canonical_replay_reference(tmp_path):

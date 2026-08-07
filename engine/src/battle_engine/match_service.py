@@ -560,6 +560,62 @@ def _finalize_native_artifacts(
     )
 
 
+def _run_vm_match(
+    request: MatchRequest, replay_path: Path, summary_path: Path
+) -> NativeMatchResult:
+    """Run a VM match, publishing its replay atomically.
+
+    Mirrors ``_run_python_match``'s temp-file-then-rename shape: nothing is
+    ever written at ``replay_path`` itself until the run has fully
+    succeeded, so a failure at any point -- kernel construction, spawning,
+    execution, or the write itself -- can never leave a partial file visible
+    at the requested final path.
+    """
+
+    # Clear stale artifacts from a previous run at this exact path up front
+    # (not only on failure), so a failed attempt here can never leave an old
+    # success-shaped replay/summary/result sitting at the requested location
+    # looking like this run's output.
+    for stale in (replay_path, summary_path, replay_path.with_name("result.json")):
+        stale.unlink(missing_ok=True)
+    replay_path.parent.mkdir(parents=True, exist_ok=True)
+
+    temporary_path: Path | None = None
+    sink: JSONLSink | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{replay_path.name}.", suffix=".tmp", dir=replay_path.parent
+        )
+        os.close(descriptor)
+        temporary_path = Path(temporary_name)
+        sink = JSONLSink(str(temporary_path))
+        kernel = Kernel(request.config, sink, summary_sink=NullSummarySink())
+        for entrant in request.entrants:
+            assert entrant.code is not None
+            kernel.spawn(
+                entrant.agent_id,
+                entrant.start % request.config.arena_size,
+                entrant.code,
+            )
+        kernel_winner = kernel.run(max_ticks=request.max_ticks, verbose=request.verbose)
+        sink.close()
+        sink = None  # Closed successfully; avoid a redundant close in finally.
+        temporary_path.replace(replay_path)
+        temporary_path = None
+        return _build_result(kernel, request.entrants, kernel_winner, replay_path)
+    finally:
+        if sink is not None:
+            try:
+                sink.close()
+            except OSError:
+                pass
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 class NativeMatchService:
     """Route homogeneous VM or Python entrants through their native controller."""
 
@@ -579,6 +635,11 @@ class NativeMatchService:
             raise UnsupportedMatchCompositionError(
                 "Every Python entrant requires a resolved Python AgentSpec."
             )
+        ids = [entrant.agent_id for entrant in request.entrants]
+        if len(set(ids)) != len(ids):
+            raise UnsupportedMatchCompositionError(
+                f"Entrant IDs must be unique; received: {ids}."
+            )
 
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
@@ -586,29 +647,8 @@ class NativeMatchService:
             return _finalize_native_artifacts(
                 request, _run_python_match(request, replay_path, summary_path)
             )
-        replay_path.with_name("result.json").unlink(missing_ok=True)
-        replay_path.parent.mkdir(parents=True, exist_ok=True)
-        sink = JSONLSink(str(replay_path))
-        try:
-            kernel = Kernel(request.config, sink, summary_sink=NullSummarySink())
-            for entrant in request.entrants:
-                assert entrant.code is not None
-                kernel.spawn(
-                    entrant.agent_id,
-                    entrant.start % request.config.arena_size,
-                    entrant.code,
-                )
-            kernel_winner = kernel.run(max_ticks=request.max_ticks, verbose=request.verbose)
-        except BaseException:
-            sink.close()
-            replay_path.unlink(missing_ok=True)
-            summary_path.unlink(missing_ok=True)
-            replay_path.with_name("result.json").unlink(missing_ok=True)
-            raise
-        finally:
-            sink.close()
         return _finalize_native_artifacts(
-            request, _build_result(kernel, request.entrants, kernel_winner, replay_path)
+            request, _run_vm_match(request, replay_path, summary_path)
         )
 
 

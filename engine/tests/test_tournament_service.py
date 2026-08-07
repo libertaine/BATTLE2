@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from pathlib import Path
 
 import pytest
-
 from battle_engine.config import Config
 from battle_engine.core import NOP, enc
-from battle_engine.match_service import MatchEntrant, NativeMatchService
+from battle_engine.match_service import MatchEntrant
+from battle_engine.result_model import ReplayReference, ResultEnvelope
 from battle_engine.tournament_service import (
     TournamentConfigurationError,
+    TournamentMatch,
     TournamentRequest,
     TournamentService,
+    _resumed_result_mismatch,
     derive_match_seed,
 )
 
@@ -124,3 +128,212 @@ def test_changed_request_does_not_resume_incompatible_state(tmp_path):
     TournamentService().run(_request(tmp_path, rounds=1))
     with pytest.raises(TournamentConfigurationError, match="does not match"):
         TournamentService().run(_request(tmp_path, rounds=2))
+
+
+# ---------------------------------------------------------------------------
+# Failed vs. rejected classification (closed set, not substring matching)
+# ---------------------------------------------------------------------------
+class _Diagnostic:
+    def __init__(self, code):
+        self.code = code
+
+
+class _DiagnosticError(Exception):
+    def __init__(self, code):
+        super().__init__(code)
+        self.diagnostic = _Diagnostic(code)
+
+
+def test_agent_loading_failure_codes_are_classified_rejected(tmp_path):
+    class RejectingService:
+        def run(self, request):
+            raise _DiagnosticError("agent_manifest_invalid")
+
+    result = TournamentService(RejectingService()).run(
+        _request(tmp_path, entrants=_entrants(2), rounds=1)
+    )
+    assert result.matches[0].status == "rejected"
+    assert result.matches[0].error_code == "agent_manifest_invalid"
+
+
+def test_infrastructure_failure_code_containing_a_rejected_substring_stays_failed(tmp_path):
+    # Regression: the old classifier matched "reset" as a *substring* of any
+    # code, so a transient infra failure like this would have been wrongly
+    # bucketed as "rejected" (non-retryable) even though it has nothing to
+    # do with agent loading or configuration.
+    class FlakyInfraService:
+        def run(self, request):
+            raise _DiagnosticError("connection_reset_by_peer")
+
+    result = TournamentService(FlakyInfraService()).run(
+        _request(tmp_path, entrants=_entrants(2), rounds=1)
+    )
+    assert result.matches[0].status == "failed"
+    assert result.matches[0].error_code == "connection_reset_by_peer"
+
+
+# ---------------------------------------------------------------------------
+# Resume validation: unit coverage of _resumed_result_mismatch
+# ---------------------------------------------------------------------------
+def _envelope(entrant_ids, seed, replay=None):
+    return ResultEnvelope(
+        result_id="result_x",
+        match_id="match_x",
+        mode="b2",
+        winner="tie",
+        termination_reason="tick_limit",
+        ticks=2,
+        score={},
+        entrants=tuple({"agent_id": agent_id} for agent_id in entrant_ids),
+        reproducibility={"seed": seed},
+        replay=replay,
+    )
+
+
+def _scheduled(entrant_ids, seed):
+    return TournamentMatch(
+        schedule_id="schedule_x",
+        round_number=1,
+        entrant_ids=entrant_ids,
+        seed=seed,
+        artifact_dir=Path("unused"),
+        status="completed",
+    )
+
+
+def test_resumed_result_mismatch_detects_different_entrant_order(tmp_path):
+    envelope = _envelope(
+        ["B", "A"], seed=5, replay=ReplayReference("r", "0" * 64, "replay.jsonl")
+    )
+    reason = _resumed_result_mismatch(envelope, _scheduled(("A", "B"), seed=5), tmp_path / "replay.jsonl")
+    assert reason is not None and "order" in reason
+
+
+def test_resumed_result_mismatch_detects_wrong_seed(tmp_path):
+    envelope = _envelope(
+        ["A", "B"], seed=99, replay=ReplayReference("r", "0" * 64, "replay.jsonl")
+    )
+    reason = _resumed_result_mismatch(envelope, _scheduled(("A", "B"), seed=5), tmp_path / "replay.jsonl")
+    assert reason is not None and "seed" in reason
+
+
+def test_resumed_result_mismatch_detects_missing_replay_reference(tmp_path):
+    envelope = _envelope(["A", "B"], seed=5, replay=None)
+    reason = _resumed_result_mismatch(
+        envelope, _scheduled(("A", "B"), seed=5), tmp_path / "replay.jsonl"
+    )
+    assert reason is not None and "replay" in reason
+
+
+def test_resumed_result_mismatch_accepts_a_genuinely_matching_result(tmp_path):
+    replay_path = tmp_path / "replay.jsonl"
+    replay_path.write_bytes(b'{"schema":"battle2.replay"}\n')
+    digest = hashlib.sha256(replay_path.read_bytes()).hexdigest()
+    envelope = _envelope(["A", "B"], seed=5, replay=ReplayReference("r", digest, "replay.jsonl"))
+    assert _resumed_result_mismatch(envelope, _scheduled(("A", "B"), seed=5), replay_path) is None
+
+
+# ---------------------------------------------------------------------------
+# Resume validation: end-to-end integration
+# ---------------------------------------------------------------------------
+def test_resume_rejects_result_copied_from_another_tournament(tmp_path):
+    donor_dir = tmp_path / "donor"
+    victim_dir = tmp_path / "victim"
+    donor_entrants = (
+        MatchEntrant("X", "Agent X", 0, enc(NOP)),
+        MatchEntrant("Y", "Agent Y", 32, enc(NOP)),
+    )
+
+    donor = TournamentService().run(_request(donor_dir, entrants=donor_entrants, rounds=1))
+    victim = TournamentService().run(_request(victim_dir, entrants=_entrants(2), rounds=1))
+
+    donor_match = donor.matches[0]
+    victim_match = victim.matches[0]
+    (victim_match.artifact_dir / "result.json").write_bytes(
+        (donor_match.artifact_dir / "result.json").read_bytes()
+    )
+    (victim_match.artifact_dir / "replay.jsonl").write_bytes(
+        (donor_match.artifact_dir / "replay.jsonl").read_bytes()
+    )
+
+    resumed = TournamentService().run(_request(victim_dir, entrants=_entrants(2), rounds=1))
+    resumed_match = resumed.matches[0]
+    assert resumed_match.status == "corrupted"
+    assert resumed_match.error_code == "resumed_result_mismatch"
+    assert "entrant IDs" in resumed_match.error_message
+    assert all(row.played == 0 for row in resumed.standings)
+
+
+def test_resume_rejects_result_with_wrong_seed_for_same_entrant_names(tmp_path):
+    donor_dir = tmp_path / "donor"
+    victim_dir = tmp_path / "victim"
+
+    donor = TournamentService().run(_request(donor_dir, entrants=_entrants(2), rounds=1, seed=1))
+    victim = TournamentService().run(_request(victim_dir, entrants=_entrants(2), rounds=1, seed=2))
+    donor_match = donor.matches[0]
+    victim_match = victim.matches[0]
+    assert donor_match.entrant_ids == victim_match.entrant_ids
+    assert donor_match.seed != victim_match.seed
+
+    (victim_match.artifact_dir / "result.json").write_bytes(
+        (donor_match.artifact_dir / "result.json").read_bytes()
+    )
+    (victim_match.artifact_dir / "replay.jsonl").write_bytes(
+        (donor_match.artifact_dir / "replay.jsonl").read_bytes()
+    )
+
+    resumed = TournamentService().run(_request(victim_dir, entrants=_entrants(2), rounds=1, seed=2))
+    resumed_match = resumed.matches[0]
+    assert resumed_match.status == "corrupted"
+    assert "seed" in resumed_match.error_message
+    assert all(row.played == 0 for row in resumed.standings)
+
+
+def test_resume_rejects_malformed_result_json(tmp_path):
+    first = TournamentService().run(_request(tmp_path, entrants=_entrants(2), rounds=1))
+    match = first.matches[0]
+    (match.artifact_dir / "result.json").write_text("{not valid json", encoding="utf-8")
+
+    resumed = TournamentService().run(_request(tmp_path, entrants=_entrants(2), rounds=1))
+    resumed_match = resumed.matches[0]
+    assert resumed_match.status == "corrupted"
+    assert resumed_match.error_code == "resumed_result_mismatch"
+    assert all(row.played == 0 for row in resumed.standings)
+
+
+def test_resume_rejects_result_whose_replay_was_truncated(tmp_path):
+    first = TournamentService().run(_request(tmp_path, entrants=_entrants(2), rounds=1))
+    match = first.matches[0]
+    replay_path = match.artifact_dir / "replay.jsonl"
+    original = replay_path.read_bytes()
+    replay_path.write_bytes(original[: len(original) // 2])
+
+    resumed = TournamentService().run(_request(tmp_path, entrants=_entrants(2), rounds=1))
+    resumed_match = resumed.matches[0]
+    assert resumed_match.status == "corrupted"
+    assert "replay verification failed" in resumed_match.error_message
+    assert all(row.played == 0 for row in resumed.standings)
+
+
+def test_resume_still_accepts_a_valid_unmodified_result(tmp_path):
+    first = TournamentService().run(_request(tmp_path, rounds=1))
+
+    class NoRunService:
+        def run(self, request):
+            raise AssertionError("a valid completed match must not be rerun")
+
+    resumed = TournamentService(NoRunService()).run(_request(tmp_path, rounds=1))
+    assert all(match.status == "completed" for match in resumed.matches)
+    assert resumed.standings == first.standings
+
+
+def test_corrupted_match_is_retried_when_retry_failures_is_set(tmp_path):
+    first = TournamentService().run(_request(tmp_path, rounds=1))
+    match = first.matches[0]
+    (match.artifact_dir / "result.json").write_text("{not valid json", encoding="utf-8")
+
+    corrupted = TournamentService().run(_request(tmp_path, rounds=1))
+    assert corrupted.matches[0].status == "corrupted"
+
+    retried = TournamentService().run(_request(tmp_path, rounds=1, retry_failures=True))
+    assert retried.matches[0].status == "completed"

@@ -328,6 +328,73 @@ def create_agent(): return Agent()
     assert canonical_result["entrants"][0]["metadata"]["source_sha256"]
 
 
+def test_keyboard_interrupt_during_act_propagates_instead_of_forfeiting(tmp_path):
+    interrupting = """
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): raise KeyboardInterrupt()
+def create_agent(): return Agent()
+"""
+    entrants = _entrants(tmp_path, {"interrupting": interrupting, "passive": PASSIVE_SOURCE})
+    controller = PythonEntrantController(Config(arena_size=64, instr_per_tick=1), entrants, 3)
+
+    with pytest.raises(KeyboardInterrupt):
+        controller.run(JSONLSink(str(tmp_path / "replay.jsonl")), verbose=False)
+
+    # Unlike an ordinary Exception, the entrant is not marked forfeited --
+    # execution stopped instead of continuing to "handle" the interrupt.
+    assert controller.states[0].diagnostic is None
+    assert controller.states[0].alive is True
+
+
+def test_system_exit_during_act_propagates_instead_of_forfeiting(tmp_path):
+    exiting = """
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): raise SystemExit(1)
+def create_agent(): return Agent()
+"""
+    entrants = _entrants(tmp_path, {"exiting": exiting, "passive": PASSIVE_SOURCE})
+    controller = PythonEntrantController(Config(arena_size=64, instr_per_tick=1), entrants, 3)
+
+    with pytest.raises(SystemExit):
+        controller.run(JSONLSink(str(tmp_path / "replay.jsonl")), verbose=False)
+
+    assert controller.states[0].diagnostic is None
+
+
+def test_keyboard_interrupt_during_reset_propagates(tmp_path):
+    interrupting = """
+class Agent:
+    def reset(self, context): raise KeyboardInterrupt()
+    def act(self, observation): raise NotImplementedError
+def create_agent(): return Agent()
+"""
+    entrants = _entrants(tmp_path, {"interrupting": interrupting, "passive": PASSIVE_SOURCE})
+
+    with pytest.raises(KeyboardInterrupt):
+        PythonEntrantController(Config(arena_size=64, instr_per_tick=1), entrants, 3)
+
+
+def test_ordinary_exceptions_still_forfeit_after_narrowing_to_exception(tmp_path):
+    """Confirms narrowing BaseException -> Exception did not regress the
+    normal forfeit path for ordinary (non-interrupt) failures."""
+    failing = """
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): raise ValueError("still an ordinary failure")
+def create_agent(): return Agent()
+"""
+    entrants = _entrants(tmp_path, {"failing": failing, "passive": PASSIVE_SOURCE})
+    controller = PythonEntrantController(Config(arena_size=64, instr_per_tick=1), entrants, 3)
+
+    result = controller.run(JSONLSink(str(tmp_path / "replay.jsonl")), verbose=False)
+
+    assert controller.states[0].diagnostic is not None
+    assert controller.states[0].diagnostic.code == "agent_action_failed"
+    assert result.winner == "B"
+
+
 def test_reset_failure_rejects_match_before_artifacts(tmp_path):
     broken = """
 class Agent:
