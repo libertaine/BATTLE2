@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from battle_engine import cli
+from battle_engine import cli, match_service
 
 
 def _match_arguments(replay: str | Path | None = None) -> list[str]:
@@ -80,7 +80,7 @@ def test_controlled_match_failure_removes_replay_and_stale_summary(
         del self, max_ticks, verbose
         raise RuntimeError("controlled match failure")
 
-    monkeypatch.setattr(cli.Kernel, "run", fail_run)
+    monkeypatch.setattr(match_service.Kernel, "run", fail_run)
 
     with pytest.raises(RuntimeError, match="controlled match failure"):
         cli.main(_match_arguments(replay))

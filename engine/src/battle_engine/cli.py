@@ -8,11 +8,11 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 from battle_engine.agent_api import AgentValidationError
 from battle_engine.agents import discover_agents, resolve_agent
 from battle_engine.builtins import SUPPORTED, build_agent
-from battle_engine.core import Config, JSONLSink, Kernel, Weights
+from battle_engine.core import Config, Weights
+from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
 from battle_engine.paths import get_data_root
 from battle_engine.pmars import PMarsError, run_pmars
 from battle_engine.starters import ensure_starter_agents
-from battle_engine.telemetry import NullSummarySink
 
 DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
 
@@ -124,66 +124,6 @@ def _load_agents_spec_from_env() -> Tuple[Dict[str, Any], Optional[Path]]:
     base = os.environ.get("BATTLE_AGENTS_DIR", "").strip()
     base_dir = Path(base).expanduser().resolve() if base else _battle_root()
     return spec, base_dir
-
-
-def _agent_summary_from_kernel(k: Kernel, name_map: Dict[str, str]) -> Dict[str, Any]:
-    """
-    Build a summary from kernel state/stats instead of replay parsing.
-    """
-    ticks_run = int(getattr(k, "tick", 0) or 0)
-    arena = int(getattr(k.cfg, "arena_size", 0) or 0)
-
-    by_id: Dict[str, Any] = {}
-    for agent in getattr(k, "agents", []):
-        st = k.stats.get(agent.agent_id, {})
-        territory_sum = int(st.get("territory_sum", 0) or 0)
-        avg_terr = territory_sum / max(1, ticks_run)
-
-        by_id[agent.agent_id] = {
-            "name": name_map.get(agent.agent_id, agent.agent_id),
-            "alive": bool(getattr(agent, "alive", False)),
-            "score": k.score.get(agent.agent_id, 0),
-            "alive_ticks": int(st.get("alive_ticks", 0) or 0),
-            "kills": int(st.get("kills", 0) or 0),
-            "deaths": int(st.get("deaths", 0) or 0),
-            "cpu_total": int(st.get("total_cpu", 0) or 0),
-            "mem_writes": int(st.get("total_mem_writes", 0) or 0),
-            "territory_last": int(st.get("territory_last", 0) or 0),
-            "territory_max": int(st.get("territory_max", 0) or 0),
-            "territory_avg": avg_terr,
-            "territory_pct_last": (
-                (int(st.get("territory_last", 0) or 0) * 100.0 / arena)
-                if arena
-                else 0.0
-            ),
-            "territory_pct_max": (
-                (int(st.get("territory_max", 0) or 0) * 100.0 / arena) if arena else 0.0
-            ),
-            "territory_pct_avg": (avg_terr * 100.0 / arena) if arena else 0.0,
-        }
-
-    return by_id
-
-
-def _winner_from_scores_if_needed(
-    kernel_winner: Optional[str],
-    score_map: Dict[str, int | float],
-    win_mode: str,
-) -> str:
-    if kernel_winner:
-        return kernel_winner
-
-    if win_mode in ("score", "score_fallback"):
-        ranked = sorted(score_map.items(), key=lambda kv: (-kv[1], kv[0]))
-        if not ranked:
-            return "tie"
-        if len(ranked) == 1:
-            return ranked[0][0]
-        if ranked[0][1] > ranked[1][1]:
-            return ranked[0][0]
-        return "tie"
-
-    return "tie"
 
 
 # ----------------------------
@@ -641,41 +581,32 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     # Agent validation above must complete before this owned output is opened;
     # otherwise an invalid invocation could truncate an existing replay.
-    replay_path.parent.mkdir(parents=True, exist_ok=True)
-    sink = JSONLSink(str(replay_path))
-    try:
-        k = Kernel(cfg, sink, summary_sink=NullSummarySink())
-        k.spawn("A", startA % cfg.arena_size, codeA)
-        k.spawn("B", startB % cfg.arena_size, codeB)
-        if codeC is not None and nameC:
-            k.spawn("C", startC % cfg.arena_size, codeC)
-
-        winner = k.run(max_ticks=args.ticks, verbose=not args.quiet)
-    except BaseException:
-        # A partial replay cannot be paired safely with an older summary. Both
-        # paths are owned by this invocation once the replay sink is opened.
-        sink.close()
-        replay_path.unlink(missing_ok=True)
-        summary_path.unlink(missing_ok=True)
-        raise
-    finally:
-        # MatchRunner normally closes the sink; closing an already-closed file is
-        # harmless and also covers spawn/setup failures before MatchRunner starts.
-        sink.close()
-
-    name_map = {"A": nameA, "B": nameB}
-    if nameC:
-        name_map["C"] = nameC
-
-    agent_stats = _agent_summary_from_kernel(k, name_map)
-    score_map = dict(k.score)
-    effective_winner = _winner_from_scores_if_needed(winner, score_map, cfg.win_mode)
+    entrants = [
+        MatchEntrant("A", nameA, startA, codeA),
+        MatchEntrant("B", nameB, startB, codeB),
+    ]
+    if codeC is not None and nameC:
+        entrants.append(MatchEntrant("C", nameC, startC, codeC))
+    match_result = NativeMatchService().run(
+        MatchRequest(
+            config=cfg,
+            entrants=tuple(entrants),
+            max_ticks=args.ticks,
+            replay_path=replay_path,
+            verbose=not args.quiet,
+        )
+    )
+    agent_stats = {
+        agent.agent_id: agent.as_legacy_statistics() for agent in match_result.agents
+    }
+    score_map = dict(match_result.score)
+    effective_winner = match_result.winner
 
     summary = {
         "version": 2,
         "mode": "b2",
         "seed": getattr(cfg, "seed", None),
-        "ticks": int(getattr(k, "tick", args.ticks) or 0),
+        "ticks": match_result.ticks_run,
         "winner": effective_winner,
         "A_score": score_map.get("A", 0),
         "B_score": score_map.get("B", 0),
@@ -686,7 +617,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         "params": {
             "arena": cfg.arena_size,
             "ticks_requested": args.ticks,
-            "ticks_run": int(getattr(k, "tick", args.ticks) or 0),
+            "ticks_run": match_result.ticks_run,
             "win_mode": cfg.win_mode,
             "alive_w": cfg.weights.alive,
             "kill_w": cfg.weights.kill,
