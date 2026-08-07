@@ -1,6 +1,6 @@
 # Agent API v1 Technical Contract
 
-This document describes the implemented BATTLE2 Python Agent API v1. The current
+This document describes the implemented Bytefray Python Agent API v1. The current
 runtime supports deterministic Python-versus-Python matches through the native
 match service. VM/Python mixed matches remain unsupported.
 

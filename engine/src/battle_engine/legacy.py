@@ -44,7 +44,7 @@ def agent_designer(argv: Sequence[str] | None = None) -> int:
         if exc.name and (exc.name == "PySide6" or exc.name.startswith("PySide6.")):
             print(
                 "battle-agent-designer requires optional dependencies; "
-                "install with: pip install 'battle2[designer]'",
+                "install with: pip install 'bytefray[designer]'",
                 file=sys.stderr,
             )
             return 2

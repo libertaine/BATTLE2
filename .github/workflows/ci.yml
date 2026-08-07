@@ -35,7 +35,7 @@ jobs:
       - name: Build wheel
         run: python -m build --wheel
       - name: Inspect wheel contents and entry points
-        run: python tools/check_wheel.py dist/battle2-*.whl
+        run: python tools/check_wheel.py dist/bytefray-*.whl
 
   build-windows-exe:
     runs-on: windows-latest

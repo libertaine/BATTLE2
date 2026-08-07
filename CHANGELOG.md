@@ -57,6 +57,17 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 
 ### Changed
 
+- Renamed the project from BATTLE2 to Bytefray. The canonical public CLI is
+  now `bytefray`; the `battle2` command remains a deprecated compatibility
+  alias throughout the v0.3 transition, dispatching to the identical
+  implementation with the same behavior and exit codes while printing a
+  one-line deprecation notice. `BYTEFRAY_ROOT` is now the preferred
+  writable-data-root environment variable, with the legacy `BATTLE2_ROOT`
+  and `BATTLE_ROOT` variables retained as deprecated fallbacks in that
+  order. Internal Python package names (`battle_engine`, `battle_client`)
+  and the `battle2.*` artifact schema identifiers (`battle2.result`,
+  `battle2.replay`) are intentionally unchanged, as they are stable
+  protocol identifiers rather than product branding.
 - The canonical native-replay writer (`match_service._finalize_native_artifacts`)
   now builds and serializes the same typed `battle_engine.replay` dataclasses
   any reader consumes, instead of hand-building a second, independently

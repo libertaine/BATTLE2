@@ -1,4 +1,4 @@
-"""Qt-free adapters between Designer controls and supported BATTLE2 workflows."""
+"""Qt-free adapters between Designer controls and supported Bytefray workflows."""
 
 from __future__ import annotations
 

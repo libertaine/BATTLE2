@@ -43,8 +43,8 @@ def _resolve_renderer(name: str) -> type[AbstractRenderer]:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
-        prog="battle_client",
-        description="BATTLE Client — presentation only (replay visualizer)",
+        prog="bytefray replay",
+        description="Bytefray replay client — presentation only (replay visualizer)",
     )
     p.add_argument("--replay", required=True, help="Path to replay.jsonl")
     p.add_argument(

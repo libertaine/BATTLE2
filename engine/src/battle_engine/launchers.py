@@ -1,4 +1,4 @@
-"""Source and frozen command construction for BATTLE2 child applications."""
+"""Source and frozen command construction for Bytefray child applications."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _packaged_executable(name: str) -> Path:
 
 
 def build_match_command(arguments: Sequence[str]) -> list[str]:
-    """Build a non-shell command for the primary BATTLE2 match interface."""
+    """Build a non-shell command for the primary Bytefray match interface."""
     options = list(arguments)
     if is_frozen_application():
         return [str(_packaged_executable("battle2")), "run", *options]

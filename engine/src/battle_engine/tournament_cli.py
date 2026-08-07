@@ -29,7 +29,7 @@ def _positive(value: str) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="battle2 tournament",
+        prog="bytefray tournament",
         description="Run or resume a homogeneous native round-robin tournament.",
     )
     parser.add_argument("agents", nargs="+", help="two or more discovered or built-in agents")

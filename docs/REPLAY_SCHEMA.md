@@ -1,4 +1,4 @@
-# BATTLE2 Replay and Event Contract
+# Bytefray Replay and Event Contract
 
 ## v0.3 canonical writer
 

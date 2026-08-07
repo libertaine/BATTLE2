@@ -1,8 +1,8 @@
-"""Shared GUI launcher utilities for BATTLE2 (pygame-based stubs).
+"""Shared GUI launcher utilities for Bytefray (pygame-based stubs).
 
 This module exposes:
   - run_pygame_app(title, size, rgb_bg) -> int
-  - main(title="BATTLE2", size=(800, 600), rgb_bg=(32, 32, 32)) -> None
+  - main(title="Bytefray", size=(800, 600), rgb_bg=(32, 32, 32)) -> None
 
 Both `app/agent_designer.py` and `app/replay_viewer.py` should import:
     from app.main import main
@@ -47,7 +47,7 @@ def run_pygame_app(title: str, size=(800, 600), rgb_bg=(32, 32, 32)) -> int:
     return 0
 
 
-def main(title: str = "BATTLE2", size=(800, 600), rgb_bg=(32, 32, 32)) -> None:
+def main(title: str = "Bytefray", size=(800, 600), rgb_bg=(32, 32, 32)) -> None:
     """Convenience entry — runs the pygame loop and exits with its code."""
     sys.exit(run_pygame_app(title, size=size, rgb_bg=rgb_bg))
 

@@ -1,6 +1,6 @@
-# BATTLE2 Agent Authoring Guide
+# Bytefray Agent Authoring Guide
 
-BATTLE2 supports built-in and blob entrants in the native VM, Python agents in
+Bytefray supports built-in and blob entrants in the native VM, Python agents in
 experimental Python-versus-Python matches, and Redcode warriors through the
 separate pMARS backend. Mixed Python/VM matches are not yet supported.
 

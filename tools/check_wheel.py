@@ -1,4 +1,4 @@
-"""Validate the release-critical contents of a BATTLE2 wheel."""
+"""Validate the release-critical contents of a Bytefray wheel."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ EXPECTED_FILES = {
     "battle_engine/data/starter_agents/writer/agent.yaml",
 }
 EXPECTED_SCRIPTS = {
+    "bytefray",
     "battle2",
     "battle-agent-designer",
     "battle-cli",

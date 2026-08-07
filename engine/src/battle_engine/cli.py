@@ -149,9 +149,9 @@ def _positive_int(value: str) -> int:
 
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        prog="BATTLE",
+        prog="bytefray run",
         description=(
-            "Battle engine CLI. Choose built-ins or point to discovered agents "
+            "Bytefray engine CLI. Choose built-ins or point to discovered agents "
             "under /agents/<name>/."
         ),
     )
@@ -259,7 +259,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "--mode",
         choices=["b2", "redcode94"],
         default="b2",
-        help="Engine mode: 'b2' for built-in BATTLE agents (default) or 'redcode94' to run pMARS.",
+        help="Engine mode: 'b2' for the native engine (default) or 'redcode94' to run pMARS.",
     )
     p.add_argument(
         "--red-a", type=str, help="Warrior A file (.red or .load) for redcode94 mode"
@@ -476,7 +476,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             print(f"Warrior file missing: {missing}", file=sys.stderr)
             return 2
 
-        # Redcode mode currently produces a summary but no BATTLE replay.
+        # Redcode mode currently produces a summary but no canonical replay.
         # Remove an artifact from an earlier invocation before starting pMARS.
         replay_path.unlink(missing_ok=True)
         summary_path.with_name("result.json").unlink(missing_ok=True)

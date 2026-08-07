@@ -147,7 +147,7 @@ Starter manifests currently initialize Runner, Writer, Seeker, and Spiral in a w
 
 ## Redcode/pMARS
 
-`battle2 run --mode redcode94` invokes a separate pMARS process. Its core size, cycles, processes, warrior length, minimum distance, rounds, failure handling, and result parsing are pMARS-backend concerns.
+`bytefray run --mode redcode94` invokes a separate pMARS process. Its core size, cycles, processes, warrior length, minimum distance, rounds, failure handling, and result parsing are pMARS-backend concerns.
 
 Redcode does not execute BATTLE VM opcodes, use BATTLE registers, participate in native scheduling, or currently produce a native BATTLE replay. It produces a normalized summary on success.
 

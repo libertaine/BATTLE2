@@ -38,11 +38,61 @@ def test_primary_help_lists_all_subcommands():
         assert name in result.stdout
 
 
+def test_primary_help_uses_canonical_bytefray_branding():
+    result = _run("--help")
+    assert result.returncode == 0
+    assert "usage: bytefray " in result.stdout
+    assert "BATTLE2" not in result.stdout
+
+
 @pytest.mark.parametrize("subcommand", command.COMMANDS)
 def test_every_subcommand_help_works_without_launching_optional_ui(subcommand):
     result = _run(subcommand, "--help")
     assert result.returncode == 0, result.stderr
     assert "usage:" in result.stdout
+
+
+@pytest.mark.parametrize("subcommand", command.COMMANDS)
+def test_every_subcommand_help_uses_bytefray_prog(subcommand):
+    result = _run(subcommand, "--help")
+    assert result.returncode == 0, result.stderr
+    assert f"usage: bytefray {subcommand}" in result.stdout
+
+
+def test_battle2_alias_dispatches_identically_to_bytefray_with_deprecation_notice(capsys):
+    with pytest.raises(SystemExit) as main_exit_info:
+        command.main(["--help"])
+    main_captured = capsys.readouterr()
+
+    with pytest.raises(SystemExit) as battle2_exit_info:
+        command.battle2_main(["--help"])
+    battle2_captured = capsys.readouterr()
+
+    assert battle2_exit_info.value.code == main_exit_info.value.code
+    assert battle2_captured.out == main_captured.out
+    assert main_captured.err == ""
+    assert battle2_captured.err.strip() == command.BATTLE2_DEPRECATION_NOTICE
+    assert "Bytefray" in command.BATTLE2_DEPRECATION_NOTICE
+    assert "battle2" in command.BATTLE2_DEPRECATION_NOTICE
+
+
+def test_battle2_command_console_script_prints_deprecation_notice_and_matches_bytefray():
+    bytefray_result = _run("--help")
+    battle2_env = dict(os.environ)
+    battle2_env["PYTHONPATH"] = os.pathsep.join(
+        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
+    )
+    battle2_result = subprocess.run(
+        [sys.executable, "-c", "from battle_engine.command import battle2_main; raise SystemExit(battle2_main(['--help']))"],
+        cwd=ROOT,
+        env=battle2_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert battle2_result.returncode == bytefray_result.returncode
+    assert battle2_result.stdout == bytefray_result.stdout
+    assert "BATTLE2 has been renamed Bytefray" in battle2_result.stderr
 
 
 def test_invalid_run_arguments_use_standard_exit_code_two():
@@ -492,7 +542,7 @@ def test_missing_designer_dependency_has_actionable_error(monkeypatch, capsys):
 
     monkeypatch.setattr(command.importlib, "import_module", missing_designer)
     assert command.main(["design"]) == 2
-    assert "battle2[designer]" in capsys.readouterr().err
+    assert "bytefray[designer]" in capsys.readouterr().err
 
 
 def test_legacy_battle_cli_wrapper_preserves_help():

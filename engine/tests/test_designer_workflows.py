@@ -115,3 +115,10 @@ def test_about_info_uses_canonical_schema_constants():
     assert info.replay_schema_version == REPLAY_SCHEMA_VERSION
     assert info.agent_api_version == 1
     assert info.project_url.startswith("https://")
+
+
+def test_about_info_reports_current_and_former_project_name():
+    info = get_project_info()
+    assert info.project_name == "Bytefray"
+    assert info.former_project_name == "BATTLE2"
+    assert info.project_url == "https://github.com/libertaine/Bytefray"

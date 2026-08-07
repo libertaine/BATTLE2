@@ -1,22 +1,38 @@
 
-# BATTLE2
+# Bytefray
 
-**BATTLE2** is a Python-based framework and simulation engine for Core War–style AI competitions. It supports:
+*(formerly BATTLE2)*
+
+**Bytefray** is a programmable-agent arena, inspired by Core War, where deterministic VM and Python agents compete in a shared memory arena. It supports:
 
 - Python agent discovery, Agent API v1 validation, and experimental Python-vs-Python matches
 - Precompiled binary “blob” agents  
 - Integration with pMARS (Redcode) for interop  
 - Replay viewing and agent design tools  
 
+Matches, results, and replays are fully deterministic and canonically recorded, with a headless tournament service for round-robin competitions. Agents can be authored by hand or generated with the help of an LLM, but Bytefray itself does not require one to run — it is a competitive engine and simulation platform, not an LLM benchmark.
+
 This project is released under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/libertaine/BATTLE2?label=latest%20release)](https://github.com/libertaine/BATTLE2/releases)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/libertaine/Bytefray?label=latest%20release)](https://github.com/libertaine/Bytefray/releases)
 [![Changelog](https://img.shields.io/badge/Changelog-view-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+## Project rename: BATTLE2 → Bytefray
+
+This project was previously named **BATTLE2**. The public CLI is now `bytefray`;
+the legacy `battle2` command remains available as a deprecated compatibility
+alias throughout the v0.3 transition and prints a short deprecation notice
+when used. Internal Python package names (`battle_engine`, `battle_client`)
+and the `battle2.*` artifact schema identifiers (`battle2.result`,
+`battle2.replay`) are retained unchanged for compatibility — they are stable
+protocol identifiers, not user-facing branding. Set `BYTEFRAY_ROOT` to choose
+a writable data root explicitly; the legacy `BATTLE2_ROOT` and `BATTLE_ROOT`
+variables remain supported as deprecated fallbacks.
+
 ## AI-Assisted Development
 
-BATTLE2 began partly as an experiment in whether large language models could contribute meaningfully to the creation of a real software project. It has evolved into an exploration of AI-assisted, human-directed software development. AI tools are used for implementation, repository exploration, debugging, architecture critique, test generation, documentation, code review, and independent second opinions.
+Bytefray (formerly BATTLE2) began partly as an experiment in whether large language models could contribute meaningfully to the creation of a real software project. It has evolved into an exploration of AI-assisted, human-directed software development. AI tools are used for implementation, repository exploration, debugging, architecture critique, test generation, documentation, code review, and independent second opinions.
 
 Development is incremental and repository-driven. Goals and architecture are established through human direction and AI-assisted analysis; coding agents work against branches and the current source tree; failures are reproduced; tests are run; and diffs are reviewed before changes are accepted. Different tools and models may also be used independently to challenge implementations or review one another's conclusions.
 
@@ -41,8 +57,8 @@ AI-generated code and review findings are treated as proposals, not authority. C
 ### Clone & Install (dev mode)
 
 ```bash
-git clone https://github.com/libertaine/BATTLE2.git
-cd BATTLE2
+git clone https://github.com/libertaine/Bytefray.git
+cd Bytefray
 python -m venv venv
 source venv/bin/activate     # or `.\venv\Scripts\activate` on Windows
 pip install -e .             # engine, headless replay, and agent discovery
@@ -83,14 +99,15 @@ Choose one of the options below:
 | Agents | `%ProgramData%\BATTLE2\agents\` |
 
 A regular Windows wheel installation instead defaults to
-`%LOCALAPPDATA%\BATTLE2`. Explicit `BATTLE2_ROOT`, then legacy `BATTLE_ROOT`,
-take precedence. Frozen installer/portable behavior and recognized source or
-editable checkouts retain their documented roots before the installed-platform
-default is considered.
+`%LOCALAPPDATA%\BATTLE2`. Explicit `BYTEFRAY_ROOT`, then legacy `BATTLE2_ROOT`,
+then legacy `BATTLE_ROOT`, take precedence in that order. Frozen
+installer/portable behavior and recognized source or editable checkouts retain
+their documented roots before the installed-platform default is considered.
 
 Environment variable `BATTLE2_ROOT` is automatically set to the data root during installation.
-The legacy `BATTLE_ROOT` name remains supported when `BATTLE2_ROOT` is unset. If
-both are defined, `BATTLE2_ROOT` takes precedence.
+`BYTEFRAY_ROOT` is the preferred variable going forward and, if set, takes
+precedence over it. The legacy `BATTLE_ROOT` name remains supported when
+neither `BYTEFRAY_ROOT` nor `BATTLE2_ROOT` is set.
 This writable data root is separate from bundled read-only application
 resources; PyInstaller's temporary `_MEIPASS` directory is never used for
 replays, logs, generated files, or user configuration.
@@ -107,8 +124,8 @@ are no longer needed.
 ### CLI Usage
 
 ```bash
-battle2 --help
-battle2 run --help
+bytefray --help
+bytefray run --help
 ```
 
 Key options:
@@ -123,15 +140,18 @@ Key options:
 Primary commands are:
 
 ```bash
-battle2 run       # execute a match
-battle2 tournament runner writer seeker --rounds 2  # headless round robin
-battle2 replay    # consume an existing replay
-battle2 design    # launch the optional PySide6 designer
-battle2 agents    # list discovered agents
+bytefray run       # execute a match
+bytefray tournament runner writer seeker --rounds 2  # headless round robin
+bytefray replay    # consume an existing replay
+bytefray design    # launch the optional PySide6 designer
+bytefray agents    # list discovered agents
 ```
 
+`battle2` remains a deprecated compatibility alias for `bytefray` throughout
+the v0.3 transition — it dispatches to the exact same implementation with
+identical behavior and exit codes, but prints a one-line deprecation notice.
 The v0.1 command names `battle-cli`, `match-runner`, and
-`battle-agent-designer` remain compatibility wrappers throughout v0.2. Module
+`battle-agent-designer` also remain compatibility wrappers. Module
 execution is also available:
 
 ```bash
@@ -147,7 +167,7 @@ tabs can run VM-vs-VM or Python-vs-Python matches, show the canonical winner and
 termination reason, and hand canonical replays to the existing viewer. Mixed
 VM/Python selections are rejected explicitly. **Tools → Run Tournament…** opens
 a minimal homogeneous round-robin launcher; tournament artifacts are written to
-the selected directory. **Help → About BATTLE2** reports the installed version
+the selected directory. **Help → About Bytefray** reports the installed version
 and the active Agent API, result, and replay schema versions.
 
 ---
@@ -186,7 +206,7 @@ The `agent.yaml` defines metadata (name, display name, required blobs, dependenc
 Use:
 
 ```bash
-battle2 agents
+bytefray agents
 ```
 
 to see all discovered agents.
@@ -215,14 +235,14 @@ agent files.
 
 ## ⚙ Integration with pMARS (Redcode mode)
 
-BATTLE2 supports pMARS (Redcode) for interoperability:
+Bytefray supports pMARS (Redcode) for interoperability:
 
 ```bash
-battle2 run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
+bytefray run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks 800
 ```
 
 * The backend resolves pMARS in this order: non-empty `PMARS_CMD`, platform
-  resources, the configured BATTLE2 data/application layout, then `PATH`.
+  resources, the configured Bytefray data/application layout, then `PATH`.
   Windows considers its bundled `pmars/windows` resources and `pmars.exe`;
   Linux considers only executable `pmars` files in `pmars`, `bin`, or `PATH`
   and never selects the repository's Windows PE files. `PMARS_CMD` denotes one
@@ -249,27 +269,28 @@ battle2 run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --ticks
 2. View available agents:
 
    ```bash
-   battle2 agents
+   bytefray agents
    ```
 
 3. Run a match with default agents:
 
    ```bash
-   battle2 run --ticks 500 --arena 2048 --a-type my_agent --b-type other_agent
+   bytefray run --ticks 500 --arena 2048 --a-type my_agent --b-type other_agent
    ```
 
 4. Optional: launch viewer to inspect results:
 
    ```bash
-   battle2 replay --replay path/to/replay.jsonl --renderer pygame
+   bytefray replay --replay path/to/replay.jsonl --renderer pygame
    ```
 
 ---
 
 ## 🚀 Packaging for Windows
 
-The root package exposes the primary `battle2` dispatcher and retains legacy
-commands through `battle_engine.legacy` compatibility wrappers.
+The root package exposes the primary `bytefray` dispatcher (with `battle2`
+retained as a deprecated compatibility alias) and retains legacy commands
+through `battle_engine.legacy` compatibility wrappers.
 For Windows packaging, two approaches are viable:
 
 * **PyInstaller + Inno Setup**
@@ -312,18 +333,18 @@ If you are migrating from the prior version, check the following:
 * `.env` has been removed; use environment variables or CLI options instead
 * The wrapper ensures existing CLI logic carries forward unchanged
 
-Contributions welcome — open a PR or issue. Thanks for checking out BATTLE2!
+Contributions welcome — open a PR or issue. Thanks for checking out Bytefray!
 
 ## 🧰 Development / Build from Source
 
-Developers can build and test BATTLE2 directly from source.
+Developers can build and test Bytefray directly from source.
 Requires **Python 3.10 through 3.13** and a current pip. CI tests all four
 supported Python versions.
 
 ```bash
 # 1️⃣ Clone the repository
-git clone https://github.com/libertaine/BATTLE2.git
-cd BATTLE2
+git clone https://github.com/libertaine/Bytefray.git
+cd Bytefray
 
 # 2️⃣ Create and activate a virtual environment
 py -3.10 -m venv .venv        # any supported Python 3.10 through 3.13
@@ -367,7 +388,7 @@ Python 3.10 or newer; CI validates the minimum version on Python 3.10.
 ### Directory Overview
 
 ```
-BATTLE2/
+Bytefray/
 ├── app/
 │   ├── agent_designer.py      # PySide6 GUI
 │   ├── match_runner.py        # Pygame visualizer

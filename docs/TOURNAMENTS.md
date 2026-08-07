@@ -32,7 +32,7 @@ are rejected before artifacts are created. Phase 6a exposes the service through
 the supported headless CLI:
 
 ```bash
-battle2 tournament runner writer seeker \
+bytefray tournament runner writer seeker \
   --rounds 2 --seed 1337 --ticks 3000 --output runs/league
 ```
 
@@ -55,7 +55,7 @@ more recorded failed/rejected matches, and 2 for invalid requests, unsupported
 composition, or incompatible state.
 
 Each match directory contains canonical `result.json` and `replay.jsonl`, plus
-the compatibility summary where applicable. Single-match `battle2 run` output
+the compatibility summary where applicable. Single-match `bytefray run` output
 also names its canonical result and replay alongside `summary.json`.
 
 The optional PySide6 Designer exposes a deliberately small launcher at

@@ -38,7 +38,7 @@ class AgentDesigner(QMainWindow):
     """Main window combining Simple and Advanced tabs."""
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("BATTLE2 – Agent Designer")
+        self.setWindowTitle("Bytefray – Agent Designer")
 
         # Build battle_root and shared catalog
         battle_root = _resolve_battle_root()
@@ -48,7 +48,7 @@ class AgentDesigner(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Starter Agents Unavailable",
-                f"BATTLE2 could not initialize its starter agents.\n\n{exc}",
+                f"Bytefray could not initialize its starter agents.\n\n{exc}",
             )
         self.battle_root = battle_root            # <-- keep for later
         self._proc = None                         # <-- init process handle
@@ -101,7 +101,7 @@ class AgentDesigner(QMainWindow):
         tools.addAction("Run Tournament…", self._on_tournament)
         tools.addAction("Open Last Output Folder", self._on_open_output_folder)
         help_menu = self.menuBar().addMenu("Help")
-        help_menu.addAction("About BATTLE2", self._on_about)
+        help_menu.addAction("About Bytefray", self._on_about)
 
     @Slot()
     def refresh_agents(self) -> None:
@@ -484,8 +484,8 @@ class AgentDesigner(QMainWindow):
         info = get_project_info()
         QMessageBox.about(
             self,
-            "About BATTLE2",
-            f"BATTLE2 {info.version}\n"
+            "About Bytefray",
+            f"{info.project_name} {info.version} (formerly {info.former_project_name})\n"
             f"Agent API v{info.agent_api_version}\n"
             f"Result schema v{info.result_schema_version}; replay schema v{info.replay_schema_version}\n"
             f"Python {info.python_version}\n"

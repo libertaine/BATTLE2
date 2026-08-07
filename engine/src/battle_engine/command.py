@@ -1,4 +1,9 @@
-"""Primary ``battle2`` command dispatcher."""
+"""Primary ``bytefray`` command dispatcher.
+
+``battle2`` is retained as a deprecated compatibility alias for the project's
+former name (see :func:`battle2_main`); both names dispatch to :func:`main`
+and behave identically apart from the alias printing a deprecation notice.
+"""
 
 from __future__ import annotations
 
@@ -10,15 +15,20 @@ from collections.abc import Sequence
 
 COMMANDS = ("run", "tournament", "replay", "design", "agents")
 
+BATTLE2_DEPRECATION_NOTICE = (
+    "BATTLE2 has been renamed Bytefray. The 'battle2' command is deprecated; "
+    "use 'bytefray' instead."
+)
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="battle2",
-        description="BATTLE2 engine, replay, designer, and agent tools.",
+        prog="bytefray",
+        description="Bytefray engine, replay, designer, and agent tools.",
     )
     subcommands = parser.add_subparsers(dest="command")
     subcommands.add_parser(
-        "run", add_help=False, help="run a native BATTLE2 or pMARS match"
+        "run", add_help=False, help="run a native Bytefray or pMARS match"
     )
     subcommands.add_parser(
         "tournament", add_help=False, help="run or resume a native round-robin tournament"
@@ -36,7 +46,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _simple_help(command: str, description: str) -> int:
-    parser = argparse.ArgumentParser(prog=f"battle2 {command}", description=description)
+    parser = argparse.ArgumentParser(prog=f"bytefray {command}", description=description)
     parser.print_help()
     return 0
 
@@ -46,18 +56,18 @@ def _design(argv: list[str]) -> int:
         return _simple_help(
             "design",
             "Open the optional PySide6 agent designer. Install with: "
-            "pip install 'battle2[designer]'",
+            "pip install 'bytefray[designer]'",
         )
     if argv:
-        parser = argparse.ArgumentParser(prog="battle2 design", add_help=False)
+        parser = argparse.ArgumentParser(prog="bytefray design", add_help=False)
         parser.error(f"unrecognized arguments: {' '.join(argv)}")
     try:
         module = importlib.import_module("app.agent_designer")
     except ModuleNotFoundError as exc:
         if exc.name and (exc.name == "PySide6" or exc.name.startswith("PySide6.")):
             print(
-                "battle2 design requires the optional designer dependencies; "
-                "install with: pip install 'battle2[designer]'",
+                "bytefray design requires the optional designer dependencies; "
+                "install with: pip install 'bytefray[designer]'",
                 file=sys.stderr,
             )
             return 2
@@ -68,10 +78,10 @@ def _design(argv: list[str]) -> int:
 def _agents(argv: list[str]) -> int:
     if argv == ["--help"] or argv == ["-h"]:
         return _simple_help(
-            "agents", "List agents discovered under the configured BATTLE2 agents directory."
+            "agents", "List agents discovered under the configured Bytefray agents directory."
         )
     if argv:
-        parser = argparse.ArgumentParser(prog="battle2 agents", add_help=False)
+        parser = argparse.ArgumentParser(prog="bytefray agents", add_help=False)
         parser.error(f"unrecognized arguments: {' '.join(argv)}")
     from battle_engine.cli import main as engine_main
 
@@ -108,3 +118,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _agents(remainder)
     parser.error(f"unknown command: {namespace.command}")
     return 2
+
+
+def battle2_main(argv: Sequence[str] | None = None) -> int:
+    """Deprecated ``battle2`` alias; dispatches to :func:`main` unchanged.
+
+    Prints a one-line deprecation notice to stderr and otherwise produces
+    identical behavior, output, and exit codes to invoking ``bytefray``
+    directly with the same arguments.
+    """
+    print(BATTLE2_DEPRECATION_NOTICE, file=sys.stderr)
+    return main(argv)

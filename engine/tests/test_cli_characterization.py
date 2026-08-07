@@ -34,7 +34,7 @@ def _run(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
 def test_engine_cli_starts_and_displays_help():
     result = _run("-m", "battle_engine.cli", "--help")
     assert result.returncode == 0
-    assert "usage: BATTLE" in result.stdout
+    assert "usage: bytefray run" in result.stdout
     assert "--list-agents" in result.stdout
     assert "--mode {b2,redcode94}" in result.stdout
 

@@ -12,13 +12,28 @@ from app.services import osutil
 
 @pytest.fixture(autouse=True)
 def clear_root_environment(monkeypatch):
+    monkeypatch.delenv("BYTEFRAY_ROOT", raising=False)
     monkeypatch.delenv("BATTLE2_ROOT", raising=False)
     monkeypatch.delenv("BATTLE_ROOT", raising=False)
 
 
-def test_battle2_root_precedes_legacy_root(monkeypatch, tmp_path):
+def test_bytefray_root_precedes_both_legacy_roots(monkeypatch, tmp_path):
+    preferred = tmp_path / "preferred root"
+    legacy_v2 = tmp_path / "legacy v2 root"
+    legacy_v1 = tmp_path / "legacy v1 root"
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(preferred))
+    monkeypatch.setenv("BATTLE2_ROOT", str(legacy_v2))
+    monkeypatch.setenv("BATTLE_ROOT", str(legacy_v1))
+
+    assert paths.get_data_root() == preferred.resolve()
+    assert cli._battle_root() == preferred.resolve()
+    assert osutil.get_battle_root() == preferred.resolve()
+
+
+def test_battle2_root_precedes_legacy_root_when_bytefray_root_is_empty(monkeypatch, tmp_path):
     preferred = tmp_path / "preferred root"
     legacy = tmp_path / "legacy root"
+    monkeypatch.setenv("BYTEFRAY_ROOT", "   ")
     monkeypatch.setenv("BATTLE2_ROOT", str(preferred))
     monkeypatch.setenv("BATTLE_ROOT", str(legacy))
 
@@ -27,8 +42,9 @@ def test_battle2_root_precedes_legacy_root(monkeypatch, tmp_path):
     assert osutil.get_battle_root() == preferred.resolve()
 
 
-def test_legacy_root_is_fallback_when_battle2_root_is_empty(monkeypatch, tmp_path):
+def test_legacy_root_is_fallback_when_bytefray_and_battle2_root_are_empty(monkeypatch, tmp_path):
     legacy = tmp_path / "legacy data"
+    monkeypatch.setenv("BYTEFRAY_ROOT", "")
     monkeypatch.setenv("BATTLE2_ROOT", "   ")
     monkeypatch.setenv("BATTLE_ROOT", str(legacy))
 
@@ -36,6 +52,7 @@ def test_legacy_root_is_fallback_when_battle2_root_is_empty(monkeypatch, tmp_pat
 
 
 def test_empty_configured_roots_are_ignored(monkeypatch):
+    monkeypatch.setenv("BYTEFRAY_ROOT", "")
     monkeypatch.setenv("BATTLE2_ROOT", "")
     monkeypatch.setenv("BATTLE_ROOT", "  ")
 
@@ -45,7 +62,7 @@ def test_empty_configured_roots_are_ignored(monkeypatch):
 
 def test_relative_configured_root_is_absolute_and_preserves_spaces(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("BATTLE2_ROOT", os.path.join("relative parent", "data files"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", os.path.join("relative parent", "data files"))
 
     resolved = paths.get_data_root()
 

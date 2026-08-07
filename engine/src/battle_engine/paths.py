@@ -14,9 +14,15 @@ def normalize_root(value: str | os.PathLike[str]) -> Path:
 
 
 def configured_data_root(environ: Mapping[str, str] | None = None) -> Path | None:
-    """Resolve the explicit writable root, preferring the v0.2 variable."""
+    """Resolve the explicit writable root.
+
+    ``BYTEFRAY_ROOT`` is the preferred, current variable. ``BATTLE2_ROOT`` and
+    ``BATTLE_ROOT`` remain supported, deprecated compatibility aliases from
+    the project's prior name, checked in that order when ``BYTEFRAY_ROOT`` is
+    unset.
+    """
     values = os.environ if environ is None else environ
-    for name in ("BATTLE2_ROOT", "BATTLE_ROOT"):
+    for name in ("BYTEFRAY_ROOT", "BATTLE2_ROOT", "BATTLE_ROOT"):
         value = values.get(name, "").strip()
         if value:
             return normalize_root(value)

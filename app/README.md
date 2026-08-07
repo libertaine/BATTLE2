@@ -11,7 +11,7 @@ A small PySide6 desktop app that lets you pick agents, run the supported **headl
 - **File-only workflow**: engine writes `runs/_loose/result.json` and `replay.jsonl`, plus compatibility `summary.json`.
 - VM-vs-VM and Python-vs-Python matches; mixed runtime selections are rejected.
 - Minimal homogeneous round-robin launcher under **Tools → Run Tournament…**.
-- Runtime/API/schema details under **Help → About BATTLE2**.
+- Runtime/API/schema details under **Help → About Bytefray**.
 - Cross‑platform: sets `PYTHONPATH` using `:` (POSIX) / `;` (Windows).
 
 ## Requirements

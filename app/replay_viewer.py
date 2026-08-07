@@ -1,4 +1,4 @@
-"""Windows-friendly launcher for the shared BATTLE2 replay application."""
+"""Windows-friendly launcher for the shared Bytefray replay application."""
 
 from __future__ import annotations
 

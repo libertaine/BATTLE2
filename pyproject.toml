@@ -1,4 +1,4 @@
-# pyproject.toml — BATTLE2
+# pyproject.toml — Bytefray (formerly BATTLE2)
 # Uses setuptools backend; supports src-style layout in BOTH engine/src and client/src.
 
 [build-system]
@@ -6,9 +6,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "battle2"
+name = "bytefray"
 version = "0.2.0"
-description = "BATTLE2: Core Wars–inspired battle engine, agent designer, and replay viewer."
+description = "Bytefray: a programmable-agent arena, inspired by Core War, with deterministic VM and Python agents. Formerly BATTLE2."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -53,15 +53,16 @@ windows-build = [
 ]
 
 [project.scripts]
-battle2               = "battle_engine.command:main"
+bytefray              = "battle_engine.command:main"
+battle2               = "battle_engine.command:battle2_main"
 battle-agent-designer = "battle_engine.legacy:agent_designer"
 match-runner          = "battle_engine.legacy:match_runner"
 battle-cli            = "battle_engine.legacy:battle_cli"
 
 
 [project.urls]
-Homepage = "https://github.com/libertaine/BATTLE2"
-Issues = "https://github.com/libertaine/BATTLE2/issues"
+Homepage = "https://github.com/libertaine/Bytefray"
+Issues = "https://github.com/libertaine/Bytefray/issues"
 
 # -------------------- setuptools config --------------------
 

@@ -1,6 +1,6 @@
 # Canonical Result Contract
 
-BATTLE2 v0.3 writes `result.json` using schema `battle2.result`, version 1. The
+Bytefray v0.3 writes `result.json` using schema `battle2.result`, version 1. The
 same high-level envelope represents VM, Python, and pMARS matches.
 
 Required envelope fields are `result_id`, `match_id`, `mode`, `status`, `winner`,

@@ -1,4 +1,4 @@
-"""Public loading and Phase 3a runtime contract for BATTLE2 Python agents."""
+"""Public loading and Phase 3a runtime contract for Bytefray Python agents."""
 
 from __future__ import annotations
 
@@ -198,7 +198,7 @@ def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
     if api_version != AGENT_API_VERSION:
         raise UnsupportedAgentAPIVersionError(
             f"Python agent {agent_spec.name!r} declares API version {api_version!r}; "
-            f"BATTLE2 supports version {AGENT_API_VERSION}.",
+            f"Bytefray supports version {AGENT_API_VERSION}.",
             path=agent_spec.dir,
         )
     entry_point = getattr(agent_spec, "entry_point", None)
