@@ -126,15 +126,30 @@ abbreviated.
 
 ## Git safety
 
-- Never force-push, `reset --hard`, or otherwise rewrite shared branches
-  (`main`, `v0.3-foundation`, or any `origin/*` branch) without explicit
-  user instruction.
+- Before modifying files, inspect the current branch, working-tree status,
+  and any existing uncommitted changes. Preserve unrelated user changes.
+- Never force-push, `reset --hard`, or otherwise rewrite `main`, any
+  release/foundation branch, or any `origin/*` branch without explicit user
+  instruction.
 - Prefer new commits over amending; never amend a commit that's already been
   pushed.
 - Don't bypass hooks (`--no-verify`) or disable signing to get a commit or
   push through — fix the underlying failure instead.
 - Only commit when asked. When staging, review what's actually included
   rather than blindly using `git add -A`/`git add .`.
+
+## Task discipline
+
+- Before implementing non-trivial behavior, read the relevant
+  architecture/schema documentation and check `docs/specs/` for an existing
+  specification.
+- Make the smallest change that satisfies the requested behavior; don't
+  opportunistically refactor adjacent code unless required for correctness.
+- Preserve public and compatibility surfaces unless the task explicitly
+  changes them.
+- Run the focused tests first, then the appropriate broader validation
+  (`python -m pytest`, relevant `mypy` invocation) before reporting
+  completion.
 
 ## Where to look for deeper documentation
 
