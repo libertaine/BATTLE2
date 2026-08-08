@@ -5,13 +5,6 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
-### Removed
-
-- Removed the v0.1 `match-runner` console-script entry point and its Windows
-  build/installer artifact; it called a `PygameRenderer` API removed in
-  Phase 7a and had no maintained functionality. Use `bytefray replay
-  --renderer pygame` or `battle-replay-viewer.exe` instead.
-
 ## [0.3.0] - 2026-08-08
 
 ### Added
@@ -135,6 +128,13 @@ This changelog records notable user- and developer-visible changes to Bytefray
   replay artifacts alongside the compatibility summary.
 - Routed Designer match completion through canonical result/replay artifacts,
   with explicit homogeneous-runtime preflight and concise result presentation.
+
+### Removed
+
+- Removed the v0.1 `match-runner` console-script entry point and its Windows
+  build/installer artifact; it called a `PygameRenderer` API removed in
+  Phase 7a and had no maintained functionality. Use `bytefray replay
+  --renderer pygame` or `battle-replay-viewer.exe` instead.
 
 ### Fixed
 
