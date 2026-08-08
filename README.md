@@ -76,24 +76,24 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Current release:** [BATTLE2 v0.2.0](https://github.com/libertaine/BATTLE2/releases/tag/v0.2.0).
-The v0.1 downloads are historical and have been superseded.
+**Current release:** [Bytefray v0.3.0](https://github.com/libertaine/Bytefray/releases/tag/v0.3.0).
+The v0.1 and v0.2 downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Windows installer** | [BATTLE2-Setup-0.2.0.exe](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/BATTLE2-Setup-0.2.0.exe) | Installs under `C:\Program Files\BATTLE2` |
-| 💼 **Portable Windows applications** | [BATTLE2-0.2.0-windows-exes.zip](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/BATTLE2-0.2.0-windows-exes.zip) | Complete onedir layouts for all five executables |
-| 🐍 **Python wheel** | [battle2-0.2.0-py3-none-any.whl](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/battle2-0.2.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
-| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/BATTLE2/releases/download/v0.2.0/SHA256SUMS.txt) | SHA-256 values for release assets |
+| 🧰 **Windows installer** | [Bytefray-Setup-0.3.0.exe](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/Bytefray-Setup-0.3.0.exe) | Installs under `C:\Program Files\Bytefray` |
+| 💼 **Portable Windows applications** | [Bytefray-0.3.0-windows-exes.zip](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/Bytefray-0.3.0-windows-exes.zip) | Complete onedir layouts for all five executables |
+| 🐍 **Python wheel** | [bytefray-0.3.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/bytefray-0.3.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---
 
 ### Default Install Paths
 | Component | Location |
 |------------|-----------|
-| Binaries | `C:\Program Files\BATTLE2\bin\<application>\` |
+| Binaries | `C:\Program Files\Bytefray\bin\<application>\` |
 | Data root | `%ProgramData%\BATTLE2\` |
 | Replays | `%ProgramData%\BATTLE2\runs\_loose\` |
 | Agents | `%ProgramData%\BATTLE2\agents\` |
@@ -117,7 +117,7 @@ Uninstall removes installed programs and shortcuts but retains `%ProgramData%\BA
 Remove that directory manually only when its agents, replays, logs, and settings
 are no longer needed.
 
-> **Linux:** The v0.2 wheel is headless-first. See
+> **Linux:** The v0.3 wheel is headless-first. See
 > [Linux wheel installation](docs/LINUX_INSTALL.md) for virtual-environment,
 > XDG data, starter-agent, optional GUI, and current pMARS guidance.
 
@@ -406,11 +406,12 @@ pyinstaller -y --clean --name battle-agent-designer --windowed ^
 ```
 
 > 💡 *Note:* For Windows packaging, use **Inno Setup 6** and compile
-> `tools\installer.iss` to create `BATTLE2-Setup-x.y.z.exe`.
+> `tools\installer.iss` to create `Bytefray-Setup-x.y.z.exe`.
 > This installer preserves the five PyInstaller application directories beneath
-> `C:\Program Files\BATTLE2\bin` and uses `%ProgramData%\BATTLE2` for writable
-> shared data. It requires administrative installation and supports Windows
-> AMD64/x64; it does not claim ARM64 support.
+> `C:\Program Files\Bytefray\bin` and uses `%ProgramData%\BATTLE2` for writable
+> shared data (kept under the legacy name for upgrade continuity). It requires
+> administrative installation and supports Windows AMD64/x64; it does not
+> claim ARM64 support.
 
 The legacy executable helper scripts use Python 3.11 as the reproducible release
 build interpreter. This does not change the package runtime requirement of
@@ -450,7 +451,7 @@ Bytefray/
 To verify a successful build and installation:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1 -AppDir "C:\Program Files\BATTLE2"
+powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1 -AppDir "C:\Program Files\Bytefray"
 ```
 
 This runs a minimal smoke test of all installed executables to ensure:

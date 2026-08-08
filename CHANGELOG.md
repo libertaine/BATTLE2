@@ -1,6 +1,7 @@
 # Changelog
 
-This changelog records notable user- and developer-visible changes to BATTLE2.
+This changelog records notable user- and developer-visible changes to Bytefray
+(formerly BATTLE2).
 
 ## [Unreleased]
 

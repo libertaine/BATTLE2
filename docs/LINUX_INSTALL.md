@@ -1,6 +1,6 @@
-# BATTLE2 v0.2.0 Linux wheel installation
+# Bytefray v0.3.0 Linux wheel installation
 
-BATTLE2 v0.2.0 supports Python 3.10 through 3.13. The Linux release artifact is a
+Bytefray v0.3.0 supports Python 3.10 through 3.13. The Linux release artifact is a
 Python wheel; no PyInstaller, AppImage, Debian, or Flatpak artifact is currently
 provided.
 
@@ -10,36 +10,37 @@ Create an isolated environment and install the wheel:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install ./battle2-0.2.0-py3-none-any.whl
+python -m pip install ./bytefray-0.3.0-py3-none-any.whl
 ```
 
 The core install supports native matches and headless replay. Optional desktop
 dependencies are separate:
 
 ```bash
-python -m pip install 'battle2[replay]'    # Pygame replay viewer
-python -m pip install 'battle2[designer]'  # PySide6 Agent Designer
+python -m pip install 'bytefray[replay]'    # Pygame replay viewer
+python -m pip install 'bytefray[designer]'  # PySide6 Agent Designer
 ```
 
 PySide6 and Pygame are not required for the core CLI. CI validates Pygame and
 Designer startup under X11/Xvfb. That is not full visible/input GUI validation,
-and native Wayland remains unvalidated, so the v0.2.0 Linux wheel should still be
+and native Wayland remains unvalidated, so the v0.3.0 Linux wheel should still be
 treated as headless-first.
 
 ## Writable data and starter agents
 
-`BATTLE2_ROOT` selects the writable data root. If it is unset, legacy
-`BATTLE_ROOT` is honored. With neither variable set, an installed Linux wheel
+`BYTEFRAY_ROOT` selects the writable data root. The legacy `BATTLE2_ROOT` and
+`BATTLE_ROOT` variables are honored, in that order, only when `BYTEFRAY_ROOT`
+is unset. With none of these variables set, an installed Linux wheel
 uses `$XDG_DATA_HOME/battle2`, or `~/.local/share/battle2` when
 `XDG_DATA_HOME` is unset. Recognized source and editable checkouts continue to
 use the repository root.
 
-Packaged starter manifests are read-only resources. `battle2 agents` initializes
+Packaged starter manifests are read-only resources. `bytefray agents` initializes
 missing Runner, Writer, Seeker, and Spiral manifests before listing the catalog,
 without overwriting user files:
 
 ```bash
-battle2 agents
+bytefray agents
 ```
 
 With no `--replay` option, matches write
@@ -51,17 +52,20 @@ always beside the selected replay.
 ## Headless operation
 
 ```bash
-battle2 --help
-battle2 run --ticks 500 --quota 2 --a-type writer --b-type runner
-battle2 replay --replay ~/.local/share/battle2/runs/_loose/replay.jsonl \
+bytefray --help
+bytefray run --ticks 500 --quota 2 --a-type writer --b-type runner
+bytefray replay --replay ~/.local/share/battle2/runs/_loose/replay.jsonl \
   --renderer headless
 ```
+
+The `battle2` command remains a deprecated compatibility alias for `bytefray`
+throughout the v0.3 transition, dispatching to the identical implementation.
 
 The wheel does not bundle a Linux pMARS executable or select the repository's
 Windows PE executables on Linux. `PMARS_CMD` remains authoritative and an
 executable `pmars` may be discovered through `PATH`. Upstream supports a
 console-only build, but the audited Ubuntu 0.9.5 package is compiled with X11;
-`-b` means brief output and does not disable its display. BATTLE2 now provides a
+`-b` means brief output and does not disable its display. Bytefray now provides a
 pinned, experimental build script for the authoritative pMARS 0.9.5 source in
 `tools/build_pmars_linux.sh`; it produces a libc-only console executable without
 patching or modifying the supplied source. Linux Redcode operation still requires
@@ -75,6 +79,6 @@ future binary release remains a release-policy task; see `tools/pmars/README.md`
 Select one console-only executable path without fixed arguments:
 
 ```bash
-PMARS_CMD=/absolute/path/to/pmars battle2 run --mode redcode94 \
+PMARS_CMD=/absolute/path/to/pmars bytefray run --mode redcode94 \
   --red-a path/to/a.red --red-b path/to/b.red
 ```
