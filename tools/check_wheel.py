@@ -22,7 +22,6 @@ EXPECTED_SCRIPTS = {
     "battle2",
     "battle-agent-designer",
     "battle-cli",
-    "match-runner",
 }
 ALLOWED_PMARS_PATHS = {"battle_engine/pmars.py"}
 

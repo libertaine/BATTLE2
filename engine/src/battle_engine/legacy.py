@@ -25,14 +25,6 @@ def _gui_arguments(command: str, description: str, argv: Sequence[str] | None) -
     return True
 
 
-def match_runner(argv: Sequence[str] | None = None) -> int:
-    if not _gui_arguments("match-runner", "Launch the legacy Pygame match window.", argv):
-        return 0
-    from app.match_runner import main
-
-    return int(main())
-
-
 def agent_designer(argv: Sequence[str] | None = None) -> int:
     if not _gui_arguments(
         "battle-agent-designer", "Launch the legacy PySide6 agent designer.", argv

@@ -50,7 +50,6 @@ Name: "{code:GetDataRoot}\runs\_loose"
 ; Preserve each canonical PyInstaller onedir tree and their sibling relationship.
 Source: "{#DistRoot}\battle2\*"; DestDir: "{app}\bin\battle2"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#DistRoot}\battle-cli\*"; DestDir: "{app}\bin\battle-cli"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#DistRoot}\match-runner\*"; DestDir: "{app}\bin\match-runner"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#DistRoot}\battle-agent-designer\*"; DestDir: "{app}\bin\battle-agent-designer"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#DistRoot}\battle-replay-viewer\*"; DestDir: "{app}\bin\battle-replay-viewer"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\README.md"; DestDir: "{app}\docs"; Flags: ignoreversion

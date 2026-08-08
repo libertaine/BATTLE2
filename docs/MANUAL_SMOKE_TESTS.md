@@ -6,21 +6,19 @@ summary creation, agent discovery, CLI help, and headless replay processing.
 The following checks require an interactive desktop, platform toolchain, or
 external executable and remain manual release checks.
 
-## Pygame live match and replay viewer
+## Pygame replay viewer
 
-1. Install the GUI extra and run `python -m app.match_runner`.
-2. Confirm a visible window opens, updates during a match, responds to close/input
-   controls, and exits without leaving a Python process.
-3. Open a newly generated replay with `python -m app.replay_viewer`.
-4. Confirm playback, window resize/fit behavior, final frame, and close controls.
-5. At the start prompt, confirm no replay tick is shown until Space is pressed.
-6. During playback, press Space to pause and leave it paused for several seconds;
+1. Install the GUI extra and open a newly generated replay with
+   `python -m app.replay_viewer` (or `bytefray replay --renderer pygame`).
+2. Confirm playback, window resize/fit behavior, final frame, and close controls.
+3. At the start prompt, confirm no replay tick is shown until Space is pressed.
+4. During playback, press Space to pause and leave it paused for several seconds;
    confirm tick/event counters do not advance.
-7. While paused, press `N` once and confirm exactly one logical replay record
+5. While paused, press `N` once and confirm exactly one logical replay record
    advances. Repeat, then resume with Space and confirm no records were skipped.
-8. Close the window from the start prompt, while paused, during playback, and on
+6. Close the window from the start prompt, while paused, during playback, and on
    the completion screen; confirm each path exits without a lingering process.
-9. Let playback finish and confirm the completion screen appears before the
+7. Let playback finish and confirm the completion screen appears before the
    window closes; Space or Escape should close it cleanly.
 
 Linux CI provides X11/Xvfb startup smoke for this window. Visible rendering,
@@ -95,7 +93,7 @@ uses the bundled executable to cover its real output and platform behavior.
 3. Build/run the Inno Setup installer where release validation requires it.
 4. Confirm Start Menu/PATH choices, `%ProgramData%` locations, bundled resources,
    uninstall behavior, and operation from a path containing spaces.
-5. Confirm all five executable trees exist and both CLI executables provide help.
+5. Confirm all four executable trees exist and both CLI executables provide help.
 6. Initialize starters, run native and bundled-pMARS matches, and verify no data
    is written beneath Program Files.
 7. Close all application processes, uninstall, and confirm program files and

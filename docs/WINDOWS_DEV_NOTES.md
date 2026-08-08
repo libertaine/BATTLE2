@@ -55,14 +55,12 @@ checking a `client/` file standalone failed with
 `Cannot find implementation or library stub for module named
 "battle_engine.replay"` even though the package imports fine at runtime.
 
-`engine/src/battle_engine` currently has one known pre-existing error
-(`tournament_service.py`, an `Argument 1 to "read_result"` type mismatch)
-and, as a byproduct of `mypy_path` now letting mypy actually resolve
-`battle_client.renderers.pygame_renderer`, it also now type-checks
-`app/match_runner.py` for the first time -- which was previously masked
-behind an unrelated import-not-found error there. `app/match_runner.py` is
-a known-dead file (see its own state: it calls `PygameRenderer.setup()`/
+`app/match_runner.py` is dead source: it calls `PygameRenderer.setup()`/
 `.update()`/`.on_complete()`/`.teardown()`, methods that no longer exist
 since Phase 7a Slice 3 stopped `PygameRenderer` being an `AbstractRenderer`
-subclass) and its errors are tracked separately, not part of the engine's
-mypy baseline.
+subclass. Its `match-runner` console-script entry point was removed in v0.3
+(the maintained interactive viewer is `bytefray replay --renderer pygame` /
+`battle-replay-viewer.exe`), which also removed the only import of the
+module from `battle_engine.legacy` -- so `mypy engine/src/battle_engine` no
+longer traverses into it and its dead-API errors do not need tracking
+against the engine's mypy baseline.

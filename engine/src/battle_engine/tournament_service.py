@@ -304,6 +304,10 @@ class TournamentService:
                         verbose=request.verbose,
                     )
                 )
+                if native.result_path is None:
+                    raise RuntimeError(
+                        "native match reported success without a result_path"
+                    )
                 envelope = read_result(native.result_path)
                 canonical_results.append(envelope)
                 completed.append(

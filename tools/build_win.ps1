@@ -59,7 +59,6 @@ New-Item -ItemType Directory -Force -Path $DistDir  | Out-Null
 $Artifacts = @(
   @{ Name = "battle2";                 Spec = "tools\battle2.spec" },
   @{ Name = "battle-cli";              Spec = "tools\battle_cli.spec" },
-  @{ Name = "match-runner";            Spec = "tools\match_runner.spec" },
   @{ Name = "battle-agent-designer";   Spec = "tools\agent_designer.spec" },
   @{ Name = "battle-replay-viewer";    Spec = "tools\replay_viewer.spec" }
 )

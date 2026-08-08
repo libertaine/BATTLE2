@@ -552,9 +552,6 @@ def test_legacy_battle_cli_wrapper_preserves_help():
 
 
 def test_legacy_gui_wrappers_delegate_lazily(monkeypatch):
-    monkeypatch.setitem(sys.modules, "app.match_runner", SimpleNamespace(main=lambda: 7))
-    assert legacy.match_runner([]) == 7
-
     monkeypatch.setattr(
         legacy.importlib,
         "import_module",
@@ -568,8 +565,6 @@ def test_legacy_gui_help_does_not_import_optional_apps(monkeypatch, capsys):
         raise AssertionError(f"optional app imported for help: {name}")
 
     monkeypatch.setattr(legacy.importlib, "import_module", unexpected_import)
-    assert legacy.match_runner(["--help"]) == 0
     assert legacy.agent_designer(["--help"]) == 0
     output = capsys.readouterr().out
-    assert "usage: match-runner" in output
     assert "usage: battle-agent-designer" in output

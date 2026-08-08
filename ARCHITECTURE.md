@@ -136,11 +136,13 @@ renderer modules and a compatibility module at `client/src/renderers.py`.
 
 ### Desktop application (`app`)
 
-`app.agent_designer`, `app.match_runner`, and `app.replay_viewer` provide desktop
-tools and service adapters. They are packaged from the repository root rather
-than the two `src` trees. The designer uses PySide6 and the live runner/viewer use
-Pygame-oriented presentation paths. These are adjacent consumers of the engine,
-not part of `battle_engine.core`.
+`app.agent_designer` and `app.replay_viewer` provide desktop tools and service
+adapters. They are packaged from the repository root rather than the two `src`
+trees. The designer uses PySide6 and the replay viewer uses a Pygame-oriented
+presentation path. These are adjacent consumers of the engine, not part of
+`battle_engine.core`. `app/match_runner.py` is dead source (see
+`docs/WINDOWS_DEV_NOTES.md`) retained but no longer wired to any console
+script.
 
 ## Configuration and artifacts
 
@@ -158,7 +160,6 @@ The root `pyproject.toml` uses setuptools and discovers packages from
 
 - `battle2` → `battle_engine.command:main`
 - `battle-cli` → compatibility wrapper for `battle_engine.cli:main`
-- `match-runner` → compatibility wrapper for `app.match_runner:main`
 - `battle-agent-designer` → lazy compatibility wrapper for the designer
 
 `app/pyproject.toml` separately describes the desktop designer and maps

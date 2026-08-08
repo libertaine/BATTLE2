@@ -150,8 +150,10 @@ bytefray agents    # list discovered agents
 `battle2` remains a deprecated compatibility alias for `bytefray` throughout
 the v0.3 transition — it dispatches to the exact same implementation with
 identical behavior and exit codes, but prints a one-line deprecation notice.
-The v0.1 command names `battle-cli`, `match-runner`, and
-`battle-agent-designer` also remain compatibility wrappers. Module
+The v0.1 command names `battle-cli` and `battle-agent-designer` also remain
+compatibility wrappers. The v0.1 `match-runner` command was removed in v0.3;
+`bytefray replay --renderer pygame` (or `battle-replay-viewer.exe`) is the
+maintained interactive Pygame viewer. Module
 execution is also available:
 
 ```bash
@@ -259,7 +261,6 @@ agent files.
 | Executable | Role | Tech |
 |-----------|------|------|
 | battle-agent-designer.exe | Configure & run matches, open replays | PySide6 (Qt) |
-| match-runner.exe          | Live match visualizer (grid/ticks)     | Pygame |
 | battle-replay-viewer.exe  | View and analyze match replays         | Pygame |
 
 
@@ -328,7 +329,7 @@ For Windows packaging, two approaches are viable:
 
 * **PyInstaller + Inno Setup**
 
-  * Build five onedir applications: `battle2`, `battle-cli`, `match-runner`,
+  * Build four onedir applications: `battle2`, `battle-cli`,
     `battle-agent-designer`, and `battle-replay-viewer`.
   * Use the Inno Setup script to install those applications. Bundled pMARS is
     present only inside the two CLI application resource trees; starter agents
@@ -390,16 +391,13 @@ pip install -U pip setuptools wheel
 pip install -e ".[dev,replay,designer]"
 
 # 4️⃣ Run the engine or GUI directly
-python -m app.match_runner     # Pygame match window
-python -m app.agent_designer   # PySide6 designer GUI
+bytefray replay --renderer pygame   # Pygame replay viewer
+python -m app.agent_designer        # PySide6 designer GUI
 python -m battle_engine --help
 
 # 5️⃣ (Optional) Build executables
 pyinstaller -y --clean --name battle-cli --console ^
   --paths engine\src --collect-all battle_engine -m battle_engine.cli
-
-pyinstaller -y --clean --name match-runner --windowed ^
-  app\match_runner.py
 
 pyinstaller -y --clean --name battle-agent-designer --windowed ^
   app\agent_designer.py
@@ -425,7 +423,6 @@ Python 3.10 or newer; CI validates the minimum version on Python 3.10.
 Bytefray/
 ├── app/
 │   ├── agent_designer.py      # PySide6 GUI
-│   ├── match_runner.py        # Pygame visualizer
 │   └── main.py                # GUI entry and window setup
 ├── engine/
 │   └── src/battle_engine/     # Simulation core & CLI
@@ -457,7 +454,7 @@ powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1 -AppDir "
 This runs a minimal smoke test of all installed executables to ensure:
 
 * `battle-cli.exe` runs headless matches
-* `match-runner.exe` opens the Pygame window
+* `battle-replay-viewer.exe` opens the Pygame replay window
 * `battle-agent-designer.exe` opens the Qt interface
 
 ---

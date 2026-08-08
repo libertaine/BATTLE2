@@ -26,7 +26,6 @@ Set-StrictMode -Version Latest
 $ArtifactNames = @(
   "battle2",
   "battle-cli",
-  "match-runner",
   "battle-agent-designer",
   "battle-replay-viewer"
 )

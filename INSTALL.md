@@ -4,10 +4,12 @@
 
 Download `Bytefray-Setup-0.3.0.exe` from the
 [v0.3.0 release](https://github.com/libertaine/Bytefray/releases/tag/v0.3.0).
-It installs five
+It installs four
 onedir applications beneath `C:\Program Files\Bytefray\bin`: `battle2`,
-`battle-cli`, `match-runner`, `battle-agent-designer`, and
-`battle-replay-viewer`. The release archive containing the corresponding portable
+`battle-cli`, `battle-agent-designer`, and `battle-replay-viewer`. The v0.1
+`match-runner` command was removed in v0.3; use `battle-replay-viewer` (or
+`bytefray replay --renderer pygame`) instead. The release archive containing
+the corresponding portable
 application trees is `Bytefray-0.3.0-windows-exes.zip`. Extract the entire ZIP
 for portable use; do not copy only the top-level executables because their
 adjacent DLLs, Qt plugins, resources, and pMARS files are required.
