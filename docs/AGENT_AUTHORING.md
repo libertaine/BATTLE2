@@ -92,9 +92,103 @@ it too, and run them against each other:
 bytefray run --a-type my_agent --b-type other_python_agent --ticks 100
 ```
 
-The recommended author workflow is **create → validate → run**. See
-[AGENT_API_V1.md](AGENT_API_V1.md) for the full loading, lifecycle, and
+The recommended author workflow is **create → validate → test → replay →
+modify → repeat**:
+
+```bash
+bytefray agents create my_agent
+bytefray agents validate my_agent
+bytefray agents test my_agent
+bytefray replay <reported-replay-path>
+```
+
+See [AGENT_API_V1.md](AGENT_API_V1.md) for the full loading, lifecycle, and
 action contract the generated files satisfy.
+
+## Development-test your agent
+
+`bytefray agents validate` and `bytefray agents test` answer genuinely
+different questions:
+
+| | `agents validate` | `agents test` |
+|---|---|---|
+| Question | Can the agent satisfy one Agent API lifecycle call? | Can the agent execute through real match semantics for a short development run, and what happened? |
+| Execution | One `reset()`, one `act()`, no VM, no arena, no opponent. | A real match, up to 200 ticks, against a real opponent. |
+| Artifacts | None -- a dry run produces no replay/result. | Canonical `replay.jsonl`/`result.json`/`summary.json`, identical in shape to `bytefray run`'s. |
+| A forfeit/exception in the checked callback | The one validation failure reported -- validation itself failed. | One entrant's outcome within an otherwise successfully executed match -- the *test* still succeeded. |
+
+`bytefray agents test <agent-id>` (`battle2 agents test` works
+identically) runs the agent under test against either an internal
+reference Python opponent or, with `--opponent <agent-id>`, another
+discovered Python agent, through the exact production match machinery
+(`NativeMatchService`) that `bytefray run` uses -- there is no separate
+test-only simulation loop, result format, or replay format. `--seed`
+(default: the project's own default seed, `1337`) and `--ticks` (default:
+`200`, a short development-loop budget distinct from `bytefray run`'s
+default of `3000`) override the match's seed and tick budget:
+
+```text
+agent: my_agent
+opponent: reference
+seed: 1337
+ticks: 117/200
+winner: my_agent
+termination: last_agent_standing
+result: <data_root>/runs/agents_test/my_agent/<run-label>/result.json
+replay: <data_root>/runs/agents_test/my_agent/<run-label>/replay.jsonl
+summary: <data_root>/runs/agents_test/my_agent/<run-label>/summary.json
+
+Run 'bytefray replay <replay-path>' to inspect it.
+```
+
+**Bytefray exits `0` whenever it successfully evaluated user-agent
+behavior, even when that behavior prevented a match from starting.**
+A test-agent forfeit, death, or loss within a completed match is one
+case. If the agent under test itself fails to load, import, or `reset()`
+before tick zero, that is exit `0` too (the evaluation succeeded; it just
+found nothing to run), with no replay/result/summary produced, since the
+canonical match never began:
+
+```text
+agent: my_agent
+status: initialization_failed
+stage: reset
+code: agent_reset_failed
+error: Python agent my_agent reset failed: RuntimeError: boom
+detail: RuntimeError
+result: none
+replay: none
+```
+
+The identical rule applies to an **explicitly selected `--opponent`**: it
+is user-provided agent code being evaluated by this development test just
+like the tested agent itself, so its own pre-tick-zero initialization
+failure is also exit `0`, identified by the opponent's own discovery id:
+
+```text
+agent: my_agent
+opponent: other_python_agent
+status: initialization_failed
+stage: reset
+code: agent_reset_failed
+error: Python agent other_python_agent reset failed: RuntimeError: boom
+detail: RuntimeError
+result: none
+replay: none
+```
+
+Only a problem that is *not* a fact about evaluated user code returns
+exit `2`: an unknown agent/opponent, a non-Python agent/opponent, or the
+**internal bundled `reference` opponent** (used when `--opponent` is
+omitted) failing to initialize. The reference opponent is Bytefray-owned
+infrastructure, not user code, so its own failure means the tool or its
+bundled fixture is broken -- not a result about your agent.
+
+`bytefray agents test` never opens the replay viewer automatically; run
+the printed `bytefray replay <path>` command as a separate, explicit next
+step. If you want to compare more than one opponent, or run more than a
+short development match, use `bytefray tournament` or `bytefray run`
+directly -- see [TOURNAMENTS.md](TOURNAMENTS.md).
 
 ## Underlying file format (manual reference)
 

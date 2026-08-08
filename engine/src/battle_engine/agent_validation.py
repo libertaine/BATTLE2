@@ -121,6 +121,31 @@ def build_validation_observation() -> Observation:
     )
 
 
+def _display_message(diagnostic: RuntimeDiagnostic, agent_id: str) -> str:
+    """Rewrite the shared reset/act diagnostic templates' synthetic 'A'
+    identity for CLI display.
+
+    ``diagnose_reset_failure``/``diagnose_action_exception``/
+    ``diagnose_invalid_action`` are shared verbatim with a real match's
+    forfeit path (see the module docstring), so their message text always
+    names the *fixture's* per-tick identity (``VALIDATION_AGENT_ID``,
+    "A") -- correct and load-bearing for the equivalence tests, since a
+    real match's own diagnostics say the same thing for its slot-A
+    entrant. But a person running ``bytefray agents validate
+    reset_err_agent`` never sees a second agent or a slot letter; telling
+    them "Python agent A reset failed" reads as a different agent than
+    the one they just named. Only the printed text is adjusted here --
+    the underlying ``RuntimeDiagnostic`` returned by ``validate_agent``
+    is untouched.
+    """
+
+    if diagnostic.stage in ("reset", "action"):
+        return diagnostic.message.replace(
+            f"Python agent {VALIDATION_AGENT_ID} ", f"Python agent {agent_id} ", 1
+        )
+    return diagnostic.message
+
+
 def _format_dry_run_action(action: AgentAction) -> str:
     parts = [action.kind.name]
     if action.operand is not None:
@@ -286,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
         print("status: invalid", file=sys.stderr)
         print(f"stage: {diagnostic.stage}", file=sys.stderr)
         print(f"code: {diagnostic.code}", file=sys.stderr)
-        print(f"error: {diagnostic.message}", file=sys.stderr)
+        print(f"error: {_display_message(diagnostic, agent_id)}", file=sys.stderr)
         if diagnostic.exception_type:
             print(f"detail: {diagnostic.exception_type}", file=sys.stderr)
         return 2

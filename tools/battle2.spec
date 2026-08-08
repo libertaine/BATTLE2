@@ -8,6 +8,7 @@ client_src = os.path.join(project_root, "client", "src")
 script_path = os.path.join(engine_src, "battle_engine", "__main__.py")
 pmars_dir = os.path.join(project_root, "pmars", "windows")
 starter_agents_dir = os.path.join(engine_src, "battle_engine", "data", "starter_agents")
+agent_template_dir = os.path.join(engine_src, "battle_engine", "data", "agent_template")
 pmars_datas = [
     (os.path.join(pmars_dir, "pmars.exe"), "pmars/windows"),
     (os.path.join(pmars_dir, "COPYING"), "pmars/windows"),
@@ -15,6 +16,8 @@ pmars_datas = [
 datas = list(pmars_datas)
 if os.path.isdir(starter_agents_dir):
     datas.append((starter_agents_dir, "battle_engine/data/starter_agents"))
+if os.path.isdir(agent_template_dir):
+    datas.append((agent_template_dir, "battle_engine/data/agent_template"))
 
 hiddenimports = (
     collect_submodules("battle_engine")

@@ -84,12 +84,17 @@ def _agents(argv: list[str]) -> int:
         from battle_engine.agent_validation import main as validate_main
 
         return validate_main(argv[1:])
+    if argv and argv[0] == "test":
+        from battle_engine.agent_test import main as test_main
+
+        return test_main(argv[1:])
     if argv == ["--help"] or argv == ["-h"]:
         return _simple_help(
             "agents",
             "List agents discovered under the configured Bytefray agents "
-            "directory, 'agents create <agent-id>' to scaffold a new one, or "
-            "'agents validate <agent-id>' to dry-run one Python agent.",
+            "directory, 'agents create <agent-id>' to scaffold a new one, "
+            "'agents validate <agent-id>' to dry-run one Python agent, or "
+            "'agents test <agent-id>' to run a short development match.",
         )
     if argv:
         parser = argparse.ArgumentParser(prog="bytefray agents", add_help=False)

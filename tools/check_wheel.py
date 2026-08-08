@@ -16,6 +16,8 @@ EXPECTED_FILES = {
     "battle_engine/data/starter_agents/seeker/agent.yaml",
     "battle_engine/data/starter_agents/spiral/agent.yaml",
     "battle_engine/data/starter_agents/writer/agent.yaml",
+    "battle_engine/data/agent_template/agent.yaml",
+    "battle_engine/data/agent_template/agent.py",
 }
 EXPECTED_SCRIPTS = {
     "bytefray",

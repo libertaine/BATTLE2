@@ -25,6 +25,15 @@ MAX_AGENT_ID_LENGTH = 64
 
 TEMPLATE_FILES = ("agent.yaml", "agent.py")
 
+__all__ = [
+    "AgentScaffoldError",
+    "ScaffoldResult",
+    "create_agent",
+    "main",
+    "template_resource_dir",
+    "validate_agent_id",
+]
+
 
 class AgentScaffoldError(ValueError):
     """A user-correctable failure creating a scaffolded agent."""
@@ -49,7 +58,7 @@ def validate_agent_id(agent_id: str) -> str:
     return agent_id
 
 
-def _template_resource_dir(resource_root: Path) -> Path:
+def template_resource_dir(resource_root: Path) -> Path:
     candidates = (
         resource_root / "battle_engine" / "data" / "agent_template",
         resource_root / "engine" / "src" / "battle_engine" / "data" / "agent_template",
@@ -80,7 +89,7 @@ def create_agent(
 
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = (resource_root or get_resource_root()).expanduser().resolve()
-    template_dir = _template_resource_dir(resources)
+    template_dir = template_resource_dir(resources)
 
     agents_dir = root / "agents"
     destination = agents_dir / agent_id

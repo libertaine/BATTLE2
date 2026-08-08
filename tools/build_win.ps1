@@ -98,6 +98,42 @@ try {
   }
 }
 
+# Exercise 'bytefray agents create' against the actual frozen battle2.exe in
+# an isolated, throwaway BYTEFRAY_ROOT. This is a regression check for a
+# real, previously-shipped defect: tools/battle2.spec bundled
+# battle_engine/data/starter_agents but not the sibling
+# battle_engine/data/agent_template directory 'agents create' depends on, so
+# the resource was silently absent from the frozen build's _MEIPASS
+# extraction directory even though source checkouts and installed wheels
+# both already had it. A config-level test (engine/tests/
+# test_windows_packaging_spec.py) covers the .spec file's data list without
+# needing a real build; this block is the actual, executable-level proof.
+$SmokeRoot = Join-Path ([IO.Path]::GetTempPath()) ("bytefray-agents-create-smoke-" + [Guid]::NewGuid().ToString("N"))
+$PreviousBytefrayRoot = $env:BYTEFRAY_ROOT
+try {
+  New-Item -ItemType Directory -Force -Path $SmokeRoot | Out-Null
+  $env:BYTEFRAY_ROOT = $SmokeRoot
+  $Battle2Exe = Join-Path $DistDir "battle2\battle2.exe"
+  Write-Host "[build] 'agents create' smoke test against $Battle2Exe (BYTEFRAY_ROOT=$SmokeRoot)"
+  & $Battle2Exe agents create smoke_agent
+  if ($LASTEXITCODE -ne 0) {
+    throw "'battle2.exe agents create smoke_agent' failed with exit code $LASTEXITCODE"
+  }
+  $ManifestPath = Join-Path $SmokeRoot "agents\smoke_agent\agent.yaml"
+  $SourcePath = Join-Path $SmokeRoot "agents\smoke_agent\agent.py"
+  if (-not (Test-Path $ManifestPath) -or -not (Test-Path $SourcePath)) {
+    throw "'battle2.exe agents create smoke_agent' did not write the expected agent.yaml/agent.py under $SmokeRoot"
+  }
+  Write-Host "[build] 'agents create' smoke test passed."
+} finally {
+  if ($null -eq $PreviousBytefrayRoot) {
+    Remove-Item Env:BYTEFRAY_ROOT -ErrorAction SilentlyContinue
+  } else {
+    $env:BYTEFRAY_ROOT = $PreviousBytefrayRoot
+  }
+  Remove-Item -Recurse -Force $SmokeRoot -ErrorAction SilentlyContinue
+}
+
 Write-Host ""
 Write-Host "[build] Success."
 foreach ($Artifact in $Artifacts) {

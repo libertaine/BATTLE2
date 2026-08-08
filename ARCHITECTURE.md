@@ -362,8 +362,25 @@ seeing how it performs. The intended user journey is:
 
 **create → validate → test → inspect → modify → repeat**
 
-No part of this is implemented yet as of this document (Phase 0 of v0.4
-is documentation/packaging-hygiene only — see `CHANGELOG.md`'s
-`[Unreleased]` section). Do not treat any agent-scaffolding, validation,
-or feedback-loop tooling described in future specs under `docs/specs/` as
-already built until it lands and this document is updated to describe it.
+Phase 0 (documentation/packaging hygiene) landed no code. Phase 1
+(`docs/specs/agent_scaffold.md`) added `bytefray agents create <agent-id>`,
+which scaffolds a minimal Agent API v1 Python agent from a bundled
+`battle_engine/data/agent_template/` resource. Phase 2
+(`docs/specs/agent_validation.md`) added `bytefray agents validate
+<agent-id>`, a single-tick dry run of the Agent API v1 contract reusing the
+production loader/action-validator. Phase 3
+(`docs/specs/agent_test.md`) added `bytefray agents test <agent-id>`, a
+short (200-tick default), deterministic real match run through the exact
+`NativeMatchService` boundary against either an internal reference Python
+opponent (built from the same Phase 1 template resource, loaded directly
+from the package resource directory and never copied into the user's
+`agents/` catalog) or an explicit `--opponent <agent-id>`; it writes the
+same canonical `replay.jsonl`/`result.json`/`summary.json` artifacts any
+other native match writes, under `<data_root>/runs/agents_test/<agent-id>/
+<run-label>/`. A tested agent's own forfeit, death, or loss within a
+completed match is still a successful evaluation (exit `0`); only a
+tool/infrastructure failure — an unknown or non-Python agent/opponent, or
+an opponent that fails to initialize — is exit `2`. Do not treat any
+further feedback-loop tooling described in future specs under
+`docs/specs/` as already built until it lands and this document is
+updated to describe it.
