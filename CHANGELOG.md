@@ -4,6 +4,8 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-08
+
 ### Added
 
 - Added a `runtime_kind` discriminator to the canonical replay header so a
@@ -54,6 +56,19 @@ This changelog records notable user- and developer-visible changes to BATTLE2.
   agent resolution, resume/retry controls, standings output, and stable exits.
 - Added a minimal Designer tournament launcher and About surface using shared,
   package-safe runtime and schema metadata.
+- Added `ReplaySession`, a replay-analysis foundation providing deterministic
+  forward/backward seek and incremental state reconstruction from canonical
+  replay records, independent of any renderer.
+- Added an interactive Pygame replay viewer with play/pause/step/restart/jump
+  and adjustable playback speed, a runtime-aware HUD distinguishing VM and
+  Python match state, and a clickable event timeline with click-to-seek
+  navigation.
+- Added territory analysis: per-tick owned-cell count/percentage summaries, a
+  selected-cell inspector, a precomputed territory-history trend graph, and a
+  recent-activity (recently-changed-cell) heatmap overlay, all derived solely
+  from existing replay/session state.
+- Stabilized the Windows development and test baseline for the interactive
+  viewer and its analysis overlays.
 
 ### Changed
 
