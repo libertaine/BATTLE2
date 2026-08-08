@@ -3,17 +3,24 @@ from __future__ import annotations
 import pytest
 from battle_client.player import PlaybackController
 from battle_client.renderers.pygame_renderer import (
+    ACTIVITY_WINDOW_TICKS,
     PygameRenderer,
     SelectedCellInfo,
+    TerritoryHistory,
     _event_section_start,
+    activity_intensity,
     build_hud_lines,
     collect_match_events,
+    compute_territory_history,
+    downsample_series,
     events_near_tick,
     format_event_line,
     format_inspector_lines,
     resolve_event_click,
     screen_pos_to_address,
+    select_history_window,
     selected_cell_info,
+    territory_graph_points,
     territory_summary,
 )
 from battle_client.session import ReplaySession, ReplayState
@@ -336,6 +343,237 @@ def test_territory_summary_on_empty_arena_does_not_divide_by_zero():
         tick=0, arena=b"", owners=(), agents={"A": _agent("A")}, score={}, runtime_kind="vm",
     )
     assert territory_summary(state) == {"A": (0, 0.0)}
+
+
+# ---------------------------------------------------------------------------
+# compute_territory_history (Phase 7b Slice 3)
+# ---------------------------------------------------------------------------
+def test_compute_territory_history_matches_territory_summary_at_every_tick(tmp_path):
+    session = _events_session(tmp_path)
+    history = compute_territory_history(session)
+
+    assert history.ticks == (0, 1, 2, 3, 4)
+    session.restart()
+    for index, tick in enumerate(history.ticks):
+        if session.current_tick != tick:
+            session.step_forward()
+        expected = territory_summary(session.current_state)
+        for agent_id, (_count, percentage) in expected.items():
+            assert history.percentages[agent_id][index] == pytest.approx(percentage)
+
+
+def test_compute_territory_history_shows_gain_and_loss_over_ticks(tmp_path):
+    # In _events_session, A gains a cell at tick 1 (10% -> 20%), then at
+    # tick 2 claims B's one owned cell (address 4) on top of killing B --
+    # A gains to 30% while B's territory *drops* to 0%, even though B's
+    # death and B's territory loss are separate facts (ownership, not
+    # kill/score, is what territory tracks). C gains at tick 3 (10% -> 20%).
+    session = _events_session(tmp_path)
+    history = compute_territory_history(session)
+
+    assert history.percentages["A"] == (10.0, 20.0, 30.0, 30.0, 30.0)
+    assert history.percentages["B"] == (10.0, 10.0, 0.0, 0.0, 0.0)
+    assert history.percentages["C"] == (10.0, 10.0, 10.0, 20.0, 20.0)
+
+
+def test_compute_territory_history_unowned_cells_never_attributed_to_an_agent(tmp_path):
+    session = _events_session(tmp_path)  # arena_size=10, only 3 cells ever claimed at tick 0
+    history = compute_territory_history(session)
+    total_owned_pct = sum(history.percentages[a][0] for a in history.percentages)
+    assert total_owned_pct == pytest.approx(30.0)  # 3/10 cells; the rest stay unowned
+
+
+def test_compute_territory_history_restores_session_cursor(tmp_path):
+    session = _events_session(tmp_path)
+    session.seek(3)
+    compute_territory_history(session)
+    assert session.current_tick == 3
+
+
+def test_compute_territory_history_empty_replay_is_empty(tmp_path):
+    header = ReplayHeader(MatchConfiguration(arena_size=4), {"A": "alpha"}, runtime_kind="vm")
+    replay_path = tmp_path / "empty.jsonl"
+    write_replay(replay_path, [header])
+    session = ReplaySession()
+    session.load(replay_path)
+
+    history = compute_territory_history(session)
+
+    assert history == TerritoryHistory(ticks=(), percentages={})
+
+
+def test_compute_territory_history_does_not_depend_on_canonical_score(tmp_path):
+    # In _events_session, A's score jumps to 2 at tick 2 on the kill, but
+    # A's territory percentage only reflects owned cells, not that score.
+    session = _events_session(tmp_path)
+    history = compute_territory_history(session)
+    tick2_index = history.ticks.index(2)
+    assert history.percentages["A"][tick2_index] == pytest.approx(30.0)  # 3/10 cells
+    # Score at tick 2 (2) is nowhere near the territory percentage (30.0) --
+    # they are unrelated units, not proportional to each other.
+
+
+# ---------------------------------------------------------------------------
+# select_history_window / downsample_series (Phase 7b Slice 3)
+# ---------------------------------------------------------------------------
+def test_select_history_window_keeps_only_the_trailing_range():
+    ticks = (0, 1, 2, 3, 4, 5)
+    values = (0.0, 10.0, 20.0, 30.0, 40.0, 50.0)
+    windowed_ticks, windowed_values = select_history_window(ticks, values, current_tick=4, window=2)
+    assert windowed_ticks == (2, 3, 4)
+    assert windowed_values == (20.0, 30.0, 40.0)
+
+
+def test_select_history_window_never_includes_ticks_after_current():
+    ticks = (0, 1, 2, 3)
+    values = (0.0, 1.0, 2.0, 3.0)
+    windowed_ticks, _ = select_history_window(ticks, values, current_tick=1, window=100)
+    assert windowed_ticks == (0, 1)
+
+
+def test_select_history_window_empty_input_is_a_safe_no_op():
+    assert select_history_window((), (), current_tick=5, window=10) == ((), ())
+
+
+def test_downsample_series_keeps_all_points_under_the_cap():
+    ticks = (0, 1, 2)
+    values = (0.0, 1.0, 2.0)
+    assert downsample_series(ticks, values, max_points=10) == (ticks, values)
+
+
+def test_downsample_series_respects_the_cap_and_keeps_the_last_point():
+    ticks = tuple(range(100))
+    values = tuple(float(t) for t in ticks)
+    sampled_ticks, sampled_values = downsample_series(ticks, values, max_points=10)
+    assert len(sampled_ticks) <= 10
+    assert sampled_ticks[-1] == 99
+    assert sampled_values[-1] == 99.0
+
+
+def test_downsample_series_non_positive_cap_is_a_safe_no_op():
+    ticks, values = (0, 1, 2), (0.0, 1.0, 2.0)
+    assert downsample_series(ticks, values, max_points=0) == (ticks, values)
+
+
+# ---------------------------------------------------------------------------
+# territory_graph_points (pure coordinate math -- no Pygame dependency)
+# ---------------------------------------------------------------------------
+def test_territory_graph_points_zero_percent_is_at_the_bottom():
+    points = territory_graph_points((0,), (0.0,), (0, 0, 100, 50))
+    assert points == [(0, 49)]
+
+
+def test_territory_graph_points_hundred_percent_is_at_the_top():
+    points = territory_graph_points((0,), (100.0,), (0, 0, 100, 50))
+    assert points == [(0, 0)]
+
+
+def test_territory_graph_points_spans_the_rect_by_tick():
+    points = territory_graph_points((0, 10), (0.0, 0.0), (0, 0, 100, 50))
+    assert points[0][0] == 0
+    assert points[1][0] == 99  # rightmost pixel of the rect
+
+
+def test_territory_graph_points_values_are_clamped_into_range():
+    # A value above value_max (shouldn't happen for a real percentage, but
+    # handled honestly) clamps to the top rather than drawing off-panel.
+    points = territory_graph_points((0,), (150.0,), (0, 0, 100, 50), value_max=100.0)
+    assert points == [(0, 0)]
+
+
+def test_territory_graph_points_empty_or_degenerate_rect_is_a_safe_no_op():
+    assert territory_graph_points((), (), (0, 0, 100, 50)) == []
+    assert territory_graph_points((0,), (0.0,), (0, 0, 0, 50)) == []
+    assert territory_graph_points((0,), (0.0,), (0, 0, 100, 0)) == []
+
+
+# ---------------------------------------------------------------------------
+# activity_intensity (pure decay/window math -- no Pygame dependency)
+# ---------------------------------------------------------------------------
+def test_activity_intensity_is_full_the_tick_it_changed():
+    assert activity_intensity(current_tick=10, last_changed_tick=10, window=30) == 1.0
+
+
+def test_activity_intensity_decays_linearly():
+    assert activity_intensity(current_tick=25, last_changed_tick=10, window=30) == pytest.approx(0.5)
+
+
+def test_activity_intensity_is_zero_at_and_beyond_the_window():
+    assert activity_intensity(current_tick=40, last_changed_tick=10, window=30) == 0.0
+    assert activity_intensity(current_tick=100, last_changed_tick=10, window=30) == 0.0
+
+
+def test_activity_intensity_never_negative_for_a_future_change():
+    assert activity_intensity(current_tick=5, last_changed_tick=10, window=30) == 0.0
+
+
+def test_activity_intensity_non_positive_window_is_always_zero():
+    assert activity_intensity(current_tick=10, last_changed_tick=10, window=0) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# PygameRenderer._advance_transient_effects: recent-activity bookkeeping
+# ---------------------------------------------------------------------------
+def _state_with_owners(tick, owners, agents=None):
+    return ReplayState(
+        tick=tick,
+        arena=bytes(len(owners)),
+        owners=owners,
+        agents=agents or {},
+        score={},
+        runtime_kind="vm",
+    )
+
+
+def test_linear_step_records_changed_addresses_in_recent_changes():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 4, 4, 1
+
+    renderer._advance_transient_effects(_state_with_owners(0, (None, None, None, None)))
+    renderer._advance_transient_effects(_state_with_owners(1, ("A", None, None, None)))
+
+    assert renderer._recent_changes == {0: 1}
+
+
+def test_recent_changes_decays_and_is_pruned_past_the_window():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+
+    renderer._advance_transient_effects(_state_with_owners(0, (None,)))
+    renderer._advance_transient_effects(_state_with_owners(1, ("A",)))
+    assert renderer._recent_changes == {0: 1}
+
+    for tick in range(2, ACTIVITY_WINDOW_TICKS + 3):
+        renderer._advance_transient_effects(_state_with_owners(tick, ("A",)))
+
+    assert renderer._recent_changes == {}
+
+
+def test_seek_clears_recent_changes():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+
+    renderer._advance_transient_effects(_state_with_owners(0, (None,)))
+    renderer._advance_transient_effects(_state_with_owners(1, ("A",)))
+    assert renderer._recent_changes == {0: 1}
+
+    # A non-linear jump (e.g. a backward seek) -- next tick is not
+    # last_rendered_tick + 1.
+    renderer._advance_transient_effects(_state_with_owners(5, ("A",)))
+    assert renderer._recent_changes == {}
+
+
+def test_restart_clears_recent_changes():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+
+    renderer._advance_transient_effects(_state_with_owners(3, (None,)))
+    renderer._advance_transient_effects(_state_with_owners(4, ("A",)))
+    assert renderer._recent_changes == {0: 4}
+
+    renderer._advance_transient_effects(_state_with_owners(0, (None,)))  # restart
+    assert renderer._recent_changes == {}
+
 
 
 # ---------------------------------------------------------------------------

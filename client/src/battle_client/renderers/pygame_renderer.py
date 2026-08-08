@@ -9,10 +9,15 @@ directly from a ``battle_client.session.ReplaySession`` on every frame via
 ``session.current_state`` -- there is no second, renderer-owned
 reconstruction of arena bytes, ownership, agent state, or score anywhere
 in this module. The only per-frame state this renderer keeps for itself is
-purely visual and transient (recent write flashes, agent trails); both are
-cleared on any non-linear tick change (a seek/restart, as opposed to a
-plain forward step), so they never imply history that didn't actually
-happen at the tick currently on screen.
+purely visual and transient (recent write flashes, agent trails, and --
+Phase 7b Slice 3 -- a tick-indexed "recent activity" recency map); all of
+it is cleared on any non-linear tick change (a seek/restart, as opposed to
+a plain forward step), so it never implies history that didn't actually
+happen at the tick currently on screen. The one exception is the
+territory-history trend graph, which is precomputed once per loaded
+session (see ``compute_territory_history``) rather than accumulated
+per-frame, since it reads as "this match's territory history up to now"
+regardless of how the viewer got to the current tick.
 
 ``HeadlessRenderer`` (a different renderer, in ``renderers/headless.py``)
 is unaffected by any of this and still uses the original
@@ -21,9 +26,10 @@ is unaffected by any of this and still uses the original
 
 from __future__ import annotations
 
+import bisect
 import math
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,6 +41,16 @@ from battle_client.session import ReplaySession, ReplayState
 
 FLASH_TTL = 6
 TRAIL_LENGTH = 200
+
+# Phase 7b Slice 3: territory-history trend graph and recent-activity heatmap.
+# All three are deliberately small: the graph shows only a trailing window of
+# ticks (not the whole match) downsampled to a point cap, and the activity
+# heatmap only remembers a bounded number of recent per-address changes -- see
+# compute_territory_history's and _advance_transient_effects's docstrings.
+TERRITORY_HISTORY_WINDOW_TICKS = 300
+TERRITORY_GRAPH_MAX_POINTS = 120
+ACTIVITY_WINDOW_TICKS = 30
+ACTIVITY_COLOR: tuple[int, int, int] = (255, 200, 80)
 
 # Color palette (unchanged from the prior renderer).
 AGENT_COLORS: dict[str, tuple[int, int, int]] = {
@@ -141,6 +157,155 @@ def territory_summary(state: ReplayState) -> dict[str, tuple[int, float]]:
         percentage = (count / total * 100.0) if total else 0.0
         summary[agent_id] = (count, percentage)
     return summary
+
+
+@dataclass(frozen=True)
+class TerritoryHistory:
+    """Every entrant's owned-cell percentage at every recorded tick.
+
+    ``ticks`` is strictly increasing (it is ``session.recorded_ticks`` in
+    order); ``percentages[agent_id]`` is a tuple aligned index-for-index
+    with ``ticks``. An agent absent from a given tick's ``ReplayState.
+    agents`` -- never happens for a canonical replay, which reports every
+    entrant every tick, but handled honestly rather than assumed for a
+    legacy one -- is recorded as ``0.0`` for that tick rather than
+    omitted, so every agent's series has exactly ``len(ticks)`` points.
+    This is a territory (ownership) metric derived only from ``state.
+    owners``, same as ``territory_summary``; it is never a substitute for
+    canonical score.
+    """
+
+    ticks: tuple[int, ...]
+    percentages: Mapping[str, tuple[float, ...]]
+
+
+def compute_territory_history(session: ReplaySession) -> TerritoryHistory:
+    """Derive :class:`TerritoryHistory` by walking ``session`` forward once.
+
+    Uses only ``ReplaySession``'s own existing incremental reconstruction
+    (``restart``/``step_forward``) -- there is no second, renderer-owned
+    replay of memory diffs, and no per-tick full arena snapshot is stored,
+    only each tick's small ``{agent_id: percentage}`` summary. Intended to
+    be called once, right after a session is loaded (see ``PygameRenderer.
+    run``), not on every rendered frame -- walking ~3000 ticks once at
+    startup is cheap; doing it every frame would not be.
+
+    The session's cursor is restored to wherever it was before this call
+    (via ``seek`` back to the original tick), so calling this mid-playback
+    -- as tests do -- never disturbs the caller's position. Returns an
+    empty history for a replay with no tick records.
+    """
+    if not session.loaded or session.final_tick is None:
+        return TerritoryHistory(ticks=(), percentages={})
+
+    original_tick = session.current_tick
+    ticks: list[int] = []
+    points: list[dict[str, float]] = []
+    agent_ids: set[str] = set()
+
+    state = session.restart()
+    while True:
+        ticks.append(state.tick)
+        summary = territory_summary(state)
+        points.append({agent_id: percentage for agent_id, (_count, percentage) in summary.items()})
+        agent_ids.update(summary)
+        if session.at_end:
+            break
+        state = session.step_forward()
+
+    percentages = {
+        agent_id: tuple(point.get(agent_id, 0.0) for point in points) for agent_id in agent_ids
+    }
+    session.seek(original_tick)
+    return TerritoryHistory(ticks=tuple(ticks), percentages=percentages)
+
+
+def select_history_window(
+    ticks: Sequence[int], values: Sequence[float], current_tick: int, window: int
+) -> tuple[tuple[int, ...], tuple[float, ...]]:
+    """The trailing slice of ``(ticks, values)`` covering
+    ``[current_tick - window, current_tick]``.
+
+    ``ticks``/``values`` must already be aligned and in ascending tick
+    order (as :class:`TerritoryHistory` guarantees). Never includes a tick
+    after ``current_tick``: the graph shows the match's history up to the
+    replay's current playback position, never a preview of ticks the
+    replay hasn't reached yet. Returns empty tuples for an empty input.
+    """
+    if not ticks:
+        return (), ()
+    start = bisect.bisect_left(ticks, current_tick - window)
+    end = bisect.bisect_right(ticks, current_tick)
+    return tuple(ticks[start:end]), tuple(values[start:end])
+
+
+def downsample_series(
+    ticks: Sequence[int], values: Sequence[float], max_points: int
+) -> tuple[tuple[int, ...], tuple[float, ...]]:
+    """Evenly sample ``(ticks, values)`` down to at most ``max_points``
+    points, always including the first and last (most recent) point so the
+    graph's right edge always reflects the current tick exactly. A no-op
+    if there are already ``max_points`` or fewer points (including
+    ``max_points <= 0``, which would otherwise mean "keep none").
+    """
+    n = len(ticks)
+    if n <= max_points or max_points <= 0:
+        return tuple(ticks), tuple(values)
+    if max_points == 1:
+        return (ticks[-1],), (values[-1],)
+    indices = sorted({round(i * (n - 1) / (max_points - 1)) for i in range(max_points)})
+    return tuple(ticks[i] for i in indices), tuple(values[i] for i in indices)
+
+
+def territory_graph_points(
+    ticks: Sequence[int],
+    values: Sequence[float],
+    rect: tuple[int, int, int, int],
+    value_max: float = 100.0,
+) -> list[tuple[int, int]]:
+    """Map ``(tick, value)`` pairs onto screen coordinates inside ``rect``.
+
+    ``rect`` is ``(x, y, w, h)``. ``value`` is a percentage in ``[0,
+    value_max]``; ``0`` maps to the bottom of ``rect`` and ``value_max`` to
+    the top, so the graph reads the conventional way (higher = more
+    territory). Pure coordinate math, no Pygame dependency, so this is
+    directly unit-testable without a window. Returns ``[]`` for no input
+    points or a degenerate (zero/negative size) rect.
+    """
+    x, y, w, h = rect
+    if not ticks or w <= 0 or h <= 0:
+        return []
+    first_tick, last_tick = ticks[0], ticks[-1]
+    span = last_tick - first_tick
+    screen_points: list[tuple[int, int]] = []
+    for tick, value in zip(ticks, values):
+        fx = (tick - first_tick) / span if span > 0 else 0.0
+        clamped = max(0.0, min(value_max, value))
+        fy = 1.0 - (clamped / value_max if value_max > 0 else 0.0)
+        screen_points.append((int(x + fx * (w - 1)), int(y + fy * (h - 1))))
+    return screen_points
+
+
+def activity_intensity(current_tick: int, last_changed_tick: int, window: int) -> float:
+    """How "recently active" a cell that last changed at
+    ``last_changed_tick`` is, viewed from ``current_tick``.
+
+    ``1.0`` the tick it changed, decaying linearly to ``0.0`` by
+    ``window`` ticks later, floored at ``0.0``: a cell that "changed" at a
+    tick after ``current_tick`` (never happens through normal playback,
+    since the recency tracker is only ever updated up to the tick just
+    rendered) is simply treated as not recently active rather than
+    producing a value above ``1.0``. This is the decay/window model for
+    the "recent activity" overlay -- tied to replay ticks, not real-time
+    frames, so it is identical however many frames a real playback loop
+    happens to render for that tick.
+    """
+    if window <= 0:
+        return 0.0
+    age = current_tick - last_changed_tick
+    if age < 0:
+        return 0.0
+    return max(0.0, 1.0 - age / window)
 
 
 def collect_match_events(session: ReplaySession) -> list[tuple[int, EngineEvent]]:
@@ -501,6 +666,20 @@ class PygameRenderer:
         # is always, once loaded.
         self._selected_address: int | None = None
 
+        # Territory-history trend graph (Phase 7b Slice 3): precomputed once
+        # in run() by compute_territory_history, never recomputed per frame.
+        self._territory_history = TerritoryHistory(ticks=(), percentages={})
+
+        # Recent-activity heatmap (Phase 7b Slice 3): address -> the tick it
+        # last changed owner, maintained incrementally in
+        # _advance_transient_effects (same changed-address detection as
+        # _flash, reused rather than duplicated). Tick-indexed rather than a
+        # per-frame TTL like _flash, so its decay (see activity_intensity)
+        # is identical regardless of real frame rate. Cleared on any
+        # non-linear tick change -- see _advance_transient_effects's
+        # docstring for why "clear" was chosen over "rebuild from history".
+        self._recent_changes: dict[int, int] = {}
+
     # ---------- grid geometry (pure, presentation-only) ----------
 
     def _resolve_grid_dims(self, arena_cells: int) -> tuple[int, int]:
@@ -572,6 +751,9 @@ class PygameRenderer:
         # Scans every recorded tick once; see _match_events's docstring in
         # __init__ for why this is cached rather than redone per frame.
         self._match_events = collect_match_events(session)
+        # Also walks every recorded tick once (restoring the cursor
+        # afterward); see compute_territory_history's docstring.
+        self._territory_history = compute_territory_history(session)
 
         controller = PlaybackController(
             session, tick_interval=tick_interval, playing=not start_paused
@@ -704,12 +886,24 @@ class PygameRenderer:
     # ---------- transient (visual-only) effect bookkeeping ----------
 
     def _advance_transient_effects(self, state: ReplayState) -> None:
-        """Update flashes/trails for the newly-current ``state``.
+        """Update flashes/trails/recent-activity for the newly-current
+        ``state``.
 
-        A genuine single-tick forward step extends them; anything else
-        (a seek, a restart, the very first frame) clears them first, so a
-        backward seek never shows a flash or trail implying activity that
-        hasn't happened yet relative to the tick now on screen.
+        A genuine single-tick forward step extends them; anything else (a
+        seek, a restart, the very first frame) clears them first, so a
+        backward seek never shows a flash, trail, or "recently changed"
+        highlight implying activity that hasn't happened yet relative to
+        the tick now on screen.
+
+        Seek/restart policy for ``_recent_changes`` (Phase 7b Slice 3):
+        cleared, not rebuilt from nearby replay history. Rebuilding would
+        mean re-scanning the target tick's preceding ``window`` ticks'
+        memory diffs on every non-linear jump; clearing is the simplest
+        policy that is still correct -- like ``_flash``/``_trail_points``,
+        this is presentation-only bookkeeping of what the *viewer* has
+        actually observed happen tick-by-tick, not a claim about the
+        replay's full history, so "nothing recently observed yet at the
+        new position" is an honest, deterministic state, not a gap.
         """
         is_linear_step = (
             self._last_rendered_tick is not None and state.tick == self._last_rendered_tick + 1
@@ -717,13 +911,24 @@ class PygameRenderer:
         if not is_linear_step:
             self._trail_points.clear()
             self._flash.clear()
+            self._recent_changes.clear()
 
         if is_linear_step and self._last_owners is not None:
             for address, (old, new) in enumerate(zip(self._last_owners, state.owners)):
                 if new is not None and new != old:
+                    self._recent_changes[address] = state.tick
                     xy = self._to_xy(address)
                     if xy is not None:
                         self._flash[xy] = (PROCESS_FLASH.get(new, DEFAULT_FLASH), FLASH_TTL)
+
+        if self._recent_changes:
+            stale = [
+                address
+                for address, changed_tick in self._recent_changes.items()
+                if state.tick - changed_tick > ACTIVITY_WINDOW_TICKS
+            ]
+            for address in stale:
+                del self._recent_changes[address]
 
         if self.trails_enabled and (is_linear_step or self._last_rendered_tick is None):
             for agent_id, agent in state.agents.items():
@@ -775,6 +980,16 @@ class PygameRenderer:
             tint = OWNERSHIP_TINT.get(owner, DEFAULT_TINT)
             gs.set_at(xy, self._blend(GRID_BG, tint, 0.65))
 
+        for address, changed_tick in self._recent_changes.items():
+            intensity = activity_intensity(state.tick, changed_tick, ACTIVITY_WINDOW_TICKS)
+            if intensity <= 0.0:
+                continue
+            xy = self._to_xy(address)
+            if xy is None:
+                continue
+            current = tuple(gs.get_at(xy))[:3]
+            gs.set_at(xy, self._blend(current, ACTIVITY_COLOR, 0.6 * intensity))
+
         for xy, (color, _ttl) in self._flash.items():
             if 0 <= xy[0] < self.grid_cols and 0 <= xy[1] < self.grid_rows:
                 gs.set_at(xy, color)
@@ -800,6 +1015,7 @@ class PygameRenderer:
             self._draw_agent_marker(agent_id, xy)
 
         self._draw_selection_highlight()
+        self._draw_territory_graph(state)
         self._draw_hud(controller)
 
     def _blend(
@@ -842,6 +1058,55 @@ class PygameRenderer:
             int(x * cell_w), int(y * cell_h), max(1, math.ceil(cell_w)), max(1, math.ceil(cell_h))
         )
         self.pg.draw.rect(self.screen, SELECTION_COLOR, rect, 2)
+
+    def _draw_territory_graph(self, state: ReplayState) -> None:
+        """Draw the compact territory-history trend panel in the bottom-right
+        corner: one polyline per agent, its owned-cell percentage over a
+        trailing window of ticks ending at the current tick.
+
+        Reads only ``self._territory_history`` (precomputed once in
+        ``run()`` -- see ``compute_territory_history``); no replay
+        reconstruction happens here, only windowing/downsampling/coordinate
+        math (``select_history_window``/``downsample_series``/
+        ``territory_graph_points``), all pure and cheap. A no-op if no
+        history was computed (e.g. a replay with no tick records).
+        """
+        history = self._territory_history
+        if not history.ticks:
+            return
+
+        w, h = self.screen.get_size()
+        panel_w, panel_h, margin = 190, 70, 8
+        panel_x, panel_y = w - panel_w - margin, h - panel_h - margin
+        if panel_x < 0 or panel_y < 0:
+            return
+        # Local (panel-surface) coordinates -- the plot area, inset from the
+        # panel's own border, leaving a bottom strip for the legend labels.
+        local_plot_rect = (4, 4, panel_w - 8, panel_h - 20)
+
+        panel = self.pg.Surface((panel_w, panel_h), flags=self.pg.SRCALPHA)
+        panel.fill((0, 0, 0, 150))
+        self.pg.draw.rect(panel, (90, 90, 90, 255), panel.get_rect(), 1)
+
+        legend_x = local_plot_rect[0]
+        for agent_id in sorted(history.percentages):
+            ticks, values = select_history_window(
+                history.ticks,
+                history.percentages[agent_id],
+                state.tick,
+                TERRITORY_HISTORY_WINDOW_TICKS,
+            )
+            ticks, values = downsample_series(ticks, values, TERRITORY_GRAPH_MAX_POINTS)
+            points = territory_graph_points(ticks, values, local_plot_rect)
+            color = AGENT_COLORS.get(agent_id, DEFAULT_AGENT_COLOR)
+            if len(points) >= 2:
+                self.pg.draw.lines(panel, color, False, points, 1)
+            current_pct = values[-1] if values else 0.0
+            label = self.hud_font.render(f"{agent_id} {current_pct:.0f}%", True, color)
+            panel.blit(label, (legend_x, panel_h - 14))
+            legend_x += label.get_width() + 10
+
+        self.screen.blit(panel, (panel_x, panel_y))
 
     def _draw_polyline(self, points: list[tuple[int, int]], color: tuple[int, int, int]) -> None:
         screen_points = [self._screen_xy(x, y) for (x, y) in points]
