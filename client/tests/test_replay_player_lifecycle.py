@@ -9,9 +9,13 @@ from battle_client import cli
 from battle_client.player import ReplayPlayer
 from battle_client.renderers.base import AbstractRenderer
 from battle_client.renderers.base import RendererDependencyError
-from battle_client.renderers.pygame_renderer import PygameRenderer
 from battle_engine.replay import MatchConfiguration, ReplayHeader, ReplayRecord, TickSnapshot
 
+# Phase 7a Slice 3: PygameRenderer is no longer driven through this
+# ReplayPlayer/on_event streaming lifecycle -- it is interactive, driven
+# directly by a ReplaySession/PlaybackController instead (see
+# battle_client.player's module docstring). Its equivalent step/pause
+# behavior is covered by test_playback_controller.py.
 
 RECORDS = [
     ReplayHeader(MatchConfiguration(arena_size=32)),
@@ -112,16 +116,6 @@ def test_one_step_permit_processes_exactly_one_logical_record():
         ReplayPlayer(renderer).play(RECORDS)
     assert renderer.records == RECORDS[:1]
     assert renderer.calls[-1] == "teardown"
-
-
-def test_pygame_step_permit_is_consumed_even_by_a_header():
-    renderer = PygameRenderer()
-    renderer.arena = 32
-    renderer.paused = True
-    renderer.step_once = True
-    renderer.on_event(ReplayHeader(MatchConfiguration(arena_size=32)))
-    assert renderer.paused
-    assert not renderer.step_once
 
 
 def test_runtime_error_tears_down_without_false_completion():

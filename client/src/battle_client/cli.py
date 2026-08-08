@@ -4,32 +4,39 @@ import argparse
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from battle_client.renderers.base import AbstractRenderer, RendererDependencyError
+from battle_engine.replay import ReplayFormatError
+
+from battle_client.player import DEFAULT_TICK_INTERVAL, SPEEDS, ReplayPlayer
+from battle_client.renderers.base import RendererDependencyError
 from battle_client.renderers.headless import HeadlessRenderer
-from battle_client.player import ReplayPlayer
+from battle_client.session import ReplaySession, ReplaySessionError
 from battle_client.utils import iter_jsonl, maybe_load_summary, paced
 
-# Pygame renderer is optional; import lazily.
-_PYGAME_CLASS: type[AbstractRenderer] | None = None
+# Pygame renderer is optional; import lazily. It is intentionally *not*
+# AbstractRenderer-shaped (see battle_client.player's module docstring), so
+# RENDERERS/_resolve_renderer below are typed loosely (type[Any]) rather
+# than falsely claiming every entry is an AbstractRenderer subclass.
+_PYGAME_CLASS: type[Any] | None = None
 
 
-def _get_pygame_renderer_cls() -> type[AbstractRenderer]:
+def _get_pygame_renderer_cls() -> type[Any]:
     global _PYGAME_CLASS
     if _PYGAME_CLASS is None:
         from battle_client.renderers.pygame_renderer import PygameRenderer
 
         _PYGAME_CLASS = PygameRenderer
-    return _PYGAME_CLASS  # type: ignore[return-value]
+    return _PYGAME_CLASS
 
 
-RENDERERS: dict[str, type[AbstractRenderer] | Callable[[], type[AbstractRenderer]]] = {
+RENDERERS: dict[str, type[Any] | Callable[[], type[Any]]] = {
     "headless": HeadlessRenderer,
     "pygame": _get_pygame_renderer_cls,  # resolved when selected
 }
 
 
-def _resolve_renderer(name: str) -> type[AbstractRenderer]:
+def _resolve_renderer(name: str) -> type[Any]:
     if name not in RENDERERS:
         raise SystemExit(
             f"Unknown renderer '{name}'. Choose from: {', '.join(sorted(RENDERERS))}"
@@ -57,7 +64,33 @@ def main(argv: list[str] | None = None) -> int:
         "--tick-delay",
         type=float,
         default=0.0,
-        help="Optional seconds to sleep between events for pacing (e.g., 0.01)",
+        help=(
+            "For --renderer headless: seconds to sleep between streamed "
+            "records (0 = no delay). For --renderer pygame: the "
+            "interactive viewer's base seconds-per-tick at 1x speed "
+            f"(0 defaults to {DEFAULT_TICK_INTERVAL:g}); the viewer's own "
+            "in-window speed control scales this at runtime, it does not "
+            "replace it."
+        ),
+    )
+    p.add_argument(
+        "--start-tick",
+        type=int,
+        default=None,
+        help="--renderer pygame only: open positioned at this tick "
+        "(snapped to the nearest recorded tick, clamped to range)",
+    )
+    p.add_argument(
+        "--paused",
+        action="store_true",
+        help="--renderer pygame only: open paused instead of playing",
+    )
+    p.add_argument(
+        "--speed",
+        type=float,
+        default=None,
+        help="--renderer pygame only: initial playback speed multiplier "
+        f"(snapped to the nearest of {list(SPEEDS)})",
     )
     args = p.parse_args(argv)
 
@@ -65,13 +98,59 @@ def main(argv: list[str] | None = None) -> int:
     if not replay_path.exists():
         p.error(f"Replay not found: {replay_path}")
 
-    metadata = maybe_load_summary(replay_path)
+    if args.renderer == "pygame":
+        return _run_interactive(args, replay_path)
+    return _run_streaming(args, replay_path)
 
+
+def _run_streaming(args: argparse.Namespace, replay_path: Path) -> int:
+    """The original one-shot forward-stream path: headless (and any future
+    stream-only renderer registered in RENDERERS).
+    """
+    metadata = maybe_load_summary(replay_path)
     RendererClass = _resolve_renderer(args.renderer)
     renderer = RendererClass()  # type: ignore[call-arg]
 
     try:
         ReplayPlayer(renderer).play(paced(iter_jsonl(replay_path), args.tick_delay), metadata)
+    except KeyboardInterrupt:
+        pass
+    except SystemExit:
+        raise
+    except RendererDependencyError as e:
+        print(f"[battle_client] dependency error: {e}", file=sys.stderr)
+        return 2
+    except Exception as e:  # noqa: BLE001 - CLI boundary reports renderer/runtime failures
+        print(f"[battle_client] error: {e}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
+    """The interactive Pygame path: ReplaySession + PlaybackController,
+    bypassing ReplayPlayer's forward-only stream entirely (see
+    battle_client.player's module docstring for why).
+    """
+    session = ReplaySession()
+    try:
+        session.load(replay_path)
+    except (ReplaySessionError, ReplayFormatError) as e:
+        print(f"[battle_client] error: {e}", file=sys.stderr)
+        return 1
+
+    tick_interval = args.tick_delay if args.tick_delay > 0 else DEFAULT_TICK_INTERVAL
+    RendererClass = _resolve_renderer("pygame")
+    renderer = RendererClass()  # type: ignore[call-arg]
+
+    try:
+        renderer.run(
+            session,
+            tick_interval=tick_interval,
+            start_tick=args.start_tick,
+            start_paused=args.paused,
+            initial_speed=args.speed,
+        )
     except KeyboardInterrupt:
         pass
     except SystemExit:

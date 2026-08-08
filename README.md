@@ -162,6 +162,39 @@ Native single-match output reports canonical `result.json` and replay paths as
 well as the compatibility `summary.json`. See the tournament guide for output,
 resume, and standings behavior.
 
+### Interactive replay viewer
+
+```bash
+bytefray replay --replay path/to/replay.jsonl --renderer pygame
+```
+
+opens an interactive window. All shown state — arena ownership, per-entrant
+score/registers/cpu/writes, winner, termination reason — is reconstructed
+directly from the canonical replay file; the match is never rerun. Playback
+starts immediately (use `--paused` to start paused instead):
+
+| Key | Action |
+|---|---|
+| `Space` | Play / pause |
+| `Right` | Step forward one recorded tick |
+| `Left` | Step back to the previous recorded tick |
+| `Shift+Right` / `Shift+Left` | Seek forward / backward ~10 ticks |
+| `Home` | Restart to the first tick |
+| `End` | Jump to the final tick |
+| `+` / `-` | Increase / decrease playback speed (0.25x–8x) |
+| `[` / `]` | Decrease / increase window scale |
+| `T` | Toggle agent trails |
+| `Esc` / `Q` | Quit |
+
+Reaching the final tick pauses playback automatically; pressing `Space` again
+restarts from the first tick. `--start-tick N`, `--paused`, and `--speed X`
+set the viewer's initial position, pause state, and speed. `--tick-delay`
+sets the base seconds-per-tick at 1x speed (default 0.05s); the in-window
+speed control scales it at runtime rather than replacing it.
+
+`--renderer headless` remains a non-interactive, text-only stream of the
+same replay, unaffected by any of the above.
+
 The optional Designer uses the same supported commands. Its Simple and Advanced
 tabs can run VM-vs-VM or Python-vs-Python matches, show the canonical winner and
 termination reason, and hand canonical replays to the existing viewer. Mixed
