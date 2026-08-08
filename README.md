@@ -84,7 +84,7 @@ Choose one of the options below:
 | Type | File | Description |
 |------|------|--------------|
 | 🧰 **Windows installer** | [Bytefray-Setup-0.3.0.exe](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/Bytefray-Setup-0.3.0.exe) | Installs under `C:\Program Files\Bytefray` |
-| 💼 **Portable Windows applications** | [Bytefray-0.3.0-windows-exes.zip](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/Bytefray-0.3.0-windows-exes.zip) | Complete onedir layouts for all five executables |
+| 💼 **Portable Windows applications** | [Bytefray-0.3.0-windows-exes.zip](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/Bytefray-0.3.0-windows-exes.zip) | Complete onedir layouts for all four executables |
 | 🐍 **Python wheel** | [bytefray-0.3.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/bytefray-0.3.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
 | 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
