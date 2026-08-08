@@ -16,7 +16,45 @@ separate pMARS backend. Mixed Python/VM matches are not yet supported.
 User agents live under the configured writable data root in
 `agents/<discovery-name>/`. The directory name is the CLI discovery ID.
 
-## Minimal executable Python agent
+## Recommended: scaffold a starting agent
+
+The fastest way to get a valid, immediately-discoverable Python agent is
+`bytefray agents create`:
+
+```bash
+bytefray agents create my_agent
+```
+
+This writes `agents/my_agent/agent.yaml` and `agents/my_agent/agent.py`
+under the configured writable data root (`battle2 agents create` works
+identically). The command refuses to touch an existing directory or file at
+that path — there is no `--force` — and prints the paths it wrote plus a
+suggested next command:
+
+```text
+agent: my_agent
+manifest: <data_root>/agents/my_agent/agent.yaml
+source: <data_root>/agents/my_agent/agent.py
+Run 'bytefray run --a-type my_agent --b-type <opponent>' to try it.
+```
+
+Create a second scaffolded agent (or point at an existing one) and run them
+against each other:
+
+```bash
+bytefray run --a-type my_agent --b-type other_python_agent --ticks 100
+```
+
+Edit the generated `agent.py`'s `act` method to replace the placeholder
+strategy. See [AGENT_API_V1.md](AGENT_API_V1.md) for the full loading,
+lifecycle, and action contract the generated files satisfy.
+
+## Underlying file format (manual reference)
+
+The scaffold command has no template selection — this section documents the
+same minimal shape by hand, useful when you want to understand or hand-edit
+the underlying manifest/source format rather than start from the generated
+files. It intentionally matches what `bytefray agents create` generates.
 
 `agents/example/agent.yaml`:
 
@@ -24,10 +62,13 @@ User agents live under the configured writable data root in
 kind: python
 api_version: 1
 entrypoint: agent.py:create_agent
-name: example
-display: Example Agent
-version: 0.1.0
+version: "0.1.0"
 ```
+
+`name`/`display` are recognized but deliberately omitted here: agent
+identity is always the directory basename, never a manifest field, so
+adding a `name` that merely duplicates the directory risks silently
+drifting from it if the directory is later renamed.
 
 `agents/example/agent.py`:
 
@@ -47,12 +88,6 @@ class ExampleAgent:
 
 def create_agent() -> ExampleAgent:
     return ExampleAgent()
-```
-
-Create a second Python agent directory, then run:
-
-```bash
-battle2 run --a-type example --b-type other_python_agent --ticks 100
 ```
 
 Both selected agents must resolve to `kind: python`. Selecting a Python agent

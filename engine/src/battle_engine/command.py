@@ -76,9 +76,15 @@ def _design(argv: list[str]) -> int:
 
 
 def _agents(argv: list[str]) -> int:
+    if argv and argv[0] == "create":
+        from battle_engine.agent_scaffold import main as scaffold_main
+
+        return scaffold_main(argv[1:])
     if argv == ["--help"] or argv == ["-h"]:
         return _simple_help(
-            "agents", "List agents discovered under the configured Bytefray agents directory."
+            "agents",
+            "List agents discovered under the configured Bytefray agents "
+            "directory, or 'agents create <agent-id>' to scaffold a new one.",
         )
     if argv:
         parser = argparse.ArgumentParser(prog="bytefray agents", add_help=False)
