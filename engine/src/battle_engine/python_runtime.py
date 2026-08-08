@@ -70,6 +70,97 @@ class InvalidPythonActionError(ValueError):
     """An ``act`` result is not one valid Phase 3a operation."""
 
 
+def diagnose_load_failure(
+    exc: AgentValidationError, *, agent_id: str, slot: int = 0
+) -> RuntimeDiagnostic:
+    """Build the stable diagnostic for a load-stage failure.
+
+    Shared by a real match's initialization path and Agent API validation
+    (``battle_engine.agent_validation``), so the two report the identical
+    code/stage/message for the same underlying ``load_python_agent`` failure.
+    """
+
+    return RuntimeDiagnostic(
+        code=exc.code,
+        stage="load",
+        message=_safe_message(exc),
+        agent_id=agent_id,
+        slot=slot,
+        exception_type=type(exc).__name__,
+    )
+
+
+def diagnose_reset_failure(
+    exc: Exception, *, agent_id: str, slot: int = 0
+) -> RuntimeDiagnostic:
+    """Build the stable diagnostic for a reset-stage failure.
+
+    Shared by a real match's initialization path and Agent API validation.
+    """
+
+    return RuntimeDiagnostic(
+        code="agent_reset_failed",
+        stage="reset",
+        message=(
+            f"Python agent {agent_id} reset failed: "
+            f"{type(exc).__name__}: {_safe_message(exc)}"
+        ),
+        agent_id=agent_id,
+        slot=slot,
+        exception_type=type(exc).__name__,
+    )
+
+
+def diagnose_action_exception(
+    exc: Exception, *, agent_id: str, slot: int = 0, tick: int, action_slot: int
+) -> RuntimeDiagnostic:
+    """Build the stable diagnostic for an ``act()``-stage exception.
+
+    Shared by a real match's forfeit path and Agent API validation.
+    """
+
+    return RuntimeDiagnostic(
+        code="agent_action_failed",
+        stage="action",
+        message=(
+            f"Python agent {agent_id} act failed: "
+            f"{type(exc).__name__}: {_safe_message(exc)}"
+        ),
+        agent_id=agent_id,
+        slot=slot,
+        exception_type=type(exc).__name__,
+        tick=tick,
+        action_slot=action_slot,
+    )
+
+
+def diagnose_invalid_action(
+    exc: InvalidPythonActionError,
+    *,
+    agent_id: str,
+    slot: int = 0,
+    tick: int,
+    action_slot: int,
+) -> RuntimeDiagnostic:
+    """Build the stable diagnostic for an ``act()``-stage invalid-action rejection.
+
+    Shared by a real match's forfeit path and Agent API validation.
+    """
+
+    return RuntimeDiagnostic(
+        code="agent_action_invalid",
+        stage="action",
+        message=(
+            f"Python agent {agent_id} returned an invalid action: {_safe_message(exc)}"
+        ),
+        agent_id=agent_id,
+        slot=slot,
+        exception_type=type(exc).__name__,
+        tick=tick,
+        action_slot=action_slot,
+    )
+
+
 @dataclass
 class PythonEntrantState:
     agent_id: str
@@ -224,13 +315,8 @@ class PythonEntrantController:
             try:
                 loaded = load_python_agent(entrant.python_spec)
             except AgentValidationError as exc:
-                diagnostic = RuntimeDiagnostic(
-                    code=exc.code,
-                    stage="load",
-                    message=_safe_message(exc),
-                    agent_id=entrant.agent_id,
-                    slot=slot,
-                    exception_type=type(exc).__name__,
+                diagnostic = diagnose_load_failure(
+                    exc, agent_id=entrant.agent_id, slot=slot
                 )
                 raise PythonEntrantInitializationError(diagnostic) from exc
             seed = derive_agent_seed(
@@ -262,16 +348,8 @@ class PythonEntrantController:
                 # must propagate and stop the run rather than being reported
                 # as an ordinary agent failure (see the matching narrowing
                 # in the per-action handler below for the full rationale).
-                diagnostic = RuntimeDiagnostic(
-                    code="agent_reset_failed",
-                    stage="reset",
-                    message=(
-                        f"Python agent {entrant.agent_id} reset failed: "
-                        f"{type(exc).__name__}: {_safe_message(exc)}"
-                    ),
-                    agent_id=entrant.agent_id,
-                    slot=slot,
-                    exception_type=type(exc).__name__,
+                diagnostic = diagnose_reset_failure(
+                    exc, agent_id=entrant.agent_id, slot=slot
                 )
                 raise PythonEntrantInitializationError(diagnostic) from exc
             self.states.append(state)
@@ -281,34 +359,18 @@ class PythonEntrantController:
             )
 
     def _forfeit(
-        self,
-        state: PythonEntrantState,
-        code: str,
-        message: str,
-        *,
-        tick: int,
-        action_slot: int,
-        exception_type: str | None = None,
+        self, state: PythonEntrantState, diagnostic: RuntimeDiagnostic
     ) -> dict[str, Any]:
         state.alive = False
         state.entrant_termination = "forfeit"
-        state.diagnostic = RuntimeDiagnostic(
-            code=code,
-            stage="action",
-            message=message,
-            agent_id=state.agent_id,
-            slot=state.slot,
-            exception_type=exception_type,
-            tick=tick,
-            action_slot=action_slot,
-        )
+        state.diagnostic = diagnostic
         return {
             "type": "forfeit",
             "victim": state.agent_id,
-            "reason": code,
-            "stage": "action",
-            "tick": tick,
-            "action_slot": action_slot,
+            "reason": diagnostic.code,
+            "stage": diagnostic.stage,
+            "tick": diagnostic.tick,
+            "action_slot": diagnostic.action_slot,
         }
 
     def run(self, sink: ReplaySink, *, verbose: bool) -> PythonRuntimeResult:
@@ -348,12 +410,13 @@ class PythonEntrantController:
                             events.append(
                                 self._forfeit(
                                     state,
-                                    "agent_action_invalid",
-                                    f"Python agent {state.agent_id} returned an "
-                                    f"invalid action: {_safe_message(exc)}",
-                                    tick=tick,
-                                    action_slot=action_slot,
-                                    exception_type=type(exc).__name__,
+                                    diagnose_invalid_action(
+                                        exc,
+                                        agent_id=state.agent_id,
+                                        slot=state.slot,
+                                        tick=tick,
+                                        action_slot=action_slot,
+                                    ),
                                 )
                             )
                         except Exception as exc:
@@ -369,12 +432,13 @@ class PythonEntrantController:
                             events.append(
                                 self._forfeit(
                                     state,
-                                    "agent_action_failed",
-                                    f"Python agent {state.agent_id} act failed: "
-                                    f"{type(exc).__name__}: {_safe_message(exc)}",
-                                    tick=tick,
-                                    action_slot=action_slot,
-                                    exception_type=type(exc).__name__,
+                                    diagnose_action_exception(
+                                        exc,
+                                        agent_id=state.agent_id,
+                                        slot=state.slot,
+                                        tick=tick,
+                                        action_slot=action_slot,
+                                    ),
                                 )
                             )
 
@@ -428,5 +492,9 @@ __all__ = [
     "TerminationReason",
     "apply_action",
     "derive_agent_seed",
+    "diagnose_action_exception",
+    "diagnose_invalid_action",
+    "diagnose_load_failure",
+    "diagnose_reset_failure",
     "validate_action",
 ]

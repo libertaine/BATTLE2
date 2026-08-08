@@ -38,16 +38,63 @@ source: <data_root>/agents/my_agent/agent.py
 Run 'bytefray run --a-type my_agent --b-type <opponent>' to try it.
 ```
 
-Create a second scaffolded agent (or point at an existing one) and run them
-against each other:
+Edit the generated `agent.py`'s `act` method to replace the placeholder
+strategy, then validate before running a real match:
+
+```bash
+bytefray agents validate my_agent
+```
+
+## Validate before running
+
+`bytefray agents validate <agent-id>` (`battle2 agents validate` works
+identically) discovers, loads, resets, and dry-runs one Python agent for a
+single deterministic tick, without running a full match:
+
+```text
+agent: my_agent
+status: valid
+api_version: 1
+dry_run_action: WRITE operand=232 value=165
+```
+
+This proves the agent's Agent API v1 contract is satisfied for one
+deterministic dry-run tick — discoverable, loadable, reset successfully,
+and returning one action the current runtime accepts. It does **not**
+prove the agent will win, survive, or avoid failing on a later tick; it
+proves nothing about strategy quality, timeout safety, or sandboxing (no
+runtime timeout/process containment exists yet — see "Not yet
+implemented" below).
+
+On failure, `bytefray agents validate` reports a stable machine-readable
+`stage`/`code`, a human-readable `error` message, and exits `2` without a
+raw traceback:
+
+```text
+agent: my_agent
+status: invalid
+stage: load
+code: agent_import_failed
+error: Failed importing Python agent source ...: SyntaxError: ...
+```
+
+Validation is currently supported for Python (`kind: python`) agents
+only; a built-in, blob, Redcode, or unknown agent ID reports a clear
+unsupported/unknown result rather than a misleading pass. See
+[AGENT_API_V1.md](AGENT_API_V1.md) for the full Agent API v1 contract
+this checks. Validation is not sandboxed and has no timeout: `reset`/
+`act` run the same unrestricted in-process Python a real match runs.
+
+Create a second scaffolded agent (or point at an existing one), validate
+it too, and run them against each other:
 
 ```bash
 bytefray run --a-type my_agent --b-type other_python_agent --ticks 100
 ```
 
-Edit the generated `agent.py`'s `act` method to replace the placeholder
-strategy. See [AGENT_API_V1.md](AGENT_API_V1.md) for the full loading,
-lifecycle, and action contract the generated files satisfy.
+The recommended author workflow is **create → validate → run**. See
+[AGENT_API_V1.md](AGENT_API_V1.md) for the full loading, lifecycle, and
+action contract the generated files satisfy.
 
 ## Underlying file format (manual reference)
 
