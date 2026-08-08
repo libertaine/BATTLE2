@@ -22,10 +22,12 @@ is unaffected by any of this and still uses the original
 from __future__ import annotations
 
 import math
+from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from battle_engine.replay import AgentState
+from battle_engine.replay import AgentEvent, AgentState, EngineEvent, KillDeathEvent, RuntimeEvent
 
 from battle_client.player import PlaybackController
 from battle_client.renderers.base import RendererDependencyError
@@ -61,7 +63,8 @@ DEFAULT_AGENT_COLOR = (200, 200, 200)
 
 HELP_TEXT = (
     "Space play/pause  Right/Left step  Shift+Right/Left seek 10  "
-    "Home/End first/last  +/- speed  [/] zoom  T trails  Esc/Q quit"
+    "Home/End first/last  +/- speed  [/] zoom  T trails  "
+    "click event to seek  Esc/Q quit"
 )
 
 
@@ -74,6 +77,7 @@ def _agent_display_line(
     agent_id: str,
     display_name: str,
     state: ReplayState,
+    territory: tuple[int, float] | None = None,
 ) -> str:
     """One HUD line for one entrant, labeled for its actual runtime kind.
 
@@ -83,6 +87,14 @@ def _agent_display_line(
     labeled as an action/callback count, and the always-degenerate
     ``(0, 0)`` region is never presented as a meaningful footprint -- see
     the runtime-kind semantics table in docs/REPLAY_SCHEMA.md.
+
+    ``territory``, if given, is this agent's ``(owned_cell_count,
+    percentage_of_arena)`` from :func:`territory_summary` -- rendered as
+    its own ``territory=`` token, deliberately never merged into or
+    confused with ``score=``: territory is a point-in-time ownership
+    snapshot, while score (see ``battle_engine.scoring.ScoringPolicy``)
+    accumulates cumulatively in bucketed steps and is not proportional to
+    it.
     """
     agent = state.agents.get(agent_id)
     if agent is None:
@@ -100,29 +112,155 @@ def _agent_display_line(
         cpu_label = f"cpu={agent.cpu_used}"
         region_label = f"region={list(agent.region)}" if agent.region else "region=?"
 
+    territory_label = ""
+    if territory is not None:
+        count, percentage = territory
+        territory_label = f"  territory={count}/{len(state.owners)} ({percentage:.1f}%)"
+
     return (
-        f"{agent_id} ({display_name})  {status}  score={score:g}  "
+        f"{agent_id} ({display_name})  {status}  score={score:g}{territory_label}  "
         f"{cpu_label}  writes={agent.mem_writes}  {position_label}  {region_label}"
     )
+
+
+def territory_summary(state: ReplayState) -> dict[str, tuple[int, float]]:
+    """Each entrant's ``(owned_cell_count, percentage_of_arena)``.
+
+    Derived entirely from ``state.owners`` -- an ownership snapshot, not
+    canonical score (see ``_agent_display_line``'s docstring for why the
+    two must not be conflated). Every agent present in ``state.agents`` is
+    included, even at zero owned cells, so a viewer never has to treat a
+    missing entry as "unknown" versus "owns nothing".
+    """
+    total = len(state.owners)
+    counts = Counter(owner for owner in state.owners if owner is not None)
+    summary: dict[str, tuple[int, float]] = {}
+    for agent_id in state.agents:
+        count = counts.get(agent_id, 0)
+        percentage = (count / total * 100.0) if total else 0.0
+        summary[agent_id] = (count, percentage)
+    return summary
+
+
+def collect_match_events(session: ReplaySession) -> list[tuple[int, EngineEvent]]:
+    """Every recorded event in ``session``, as ``(tick, event)`` pairs.
+
+    ``session.recorded_ticks`` is already strictly increasing (see
+    ``ReplaySession``'s own tick-identity guarantee), so this list comes
+    out chronologically ordered for free. In practice, for a canonical
+    v3 replay, every event is a ``KillDeathEvent`` or a ``RuntimeEvent``
+    (Python-only ``forfeit``) -- the native writer never emits
+    ``AgentEvent`` (``spawn``/``move``/``territory``/``claim``), which
+    exists solely to represent historical v0.1/v0.2 records. Both are
+    handled the same way here regardless: nothing about this function
+    depends on which event types a given replay happens to contain.
+    """
+    events: list[tuple[int, EngineEvent]] = []
+    for tick in session.recorded_ticks:
+        for event in session.events_at_tick(tick):
+            events.append((tick, event))
+    return events
+
+
+def events_near_tick(
+    events: list[tuple[int, EngineEvent]], tick: int, window: int = 5
+) -> list[tuple[int, EngineEvent]]:
+    """Up to ``window`` most recent events at or before ``tick``.
+
+    ``events`` is assumed already in ascending tick order (as
+    ``collect_match_events`` returns it); the result stays in that same
+    ascending order, so it reads top-to-bottom the same direction as the
+    match itself played out.
+    """
+    at_or_before = [pair for pair in events if pair[0] <= tick]
+    return at_or_before[-window:] if window > 0 else []
+
+
+def format_event_line(tick: int, event: EngineEvent) -> str:
+    """One human-readable line for a single recorded event, e.g.
+    ``"T042 kill: B by A"`` or ``"T017 forfeit: C (invalid_action)"``.
+    """
+    prefix = f"T{tick:03d}"
+    if isinstance(event, KillDeathEvent):
+        by = f" by {event.killer}" if event.killer else ""
+        return f"{prefix} {event.event_type}: {event.victim}{by}"
+    if isinstance(event, RuntimeEvent):
+        return f"{prefix} {event.event_type}: {event.victim} ({event.reason})"
+    if isinstance(event, AgentEvent):
+        return f"{prefix} {event.event_type}: {event.agent_id or '?'}"
+    return f"{prefix} event"
+
+
+def resolve_event_click(
+    ticks: Sequence[int],
+    origin: tuple[int, int],
+    size: tuple[int, int],
+    line_height: int,
+    click: tuple[int, int],
+) -> int | None:
+    """Which recorded tick (if any) a click at ``click`` selects.
+
+    ``ticks`` is the ordered sequence of tick numbers currently rendered
+    as one line each, starting at screen position ``origin`` and spanning
+    ``size``, each ``line_height`` pixels tall. Pure coordinate math, no
+    Pygame dependency, so this is directly testable without a window.
+    Returns ``None`` if the click misses the panel entirely or falls past
+    the last rendered line.
+    """
+    ox, oy = origin
+    w, h = size
+    cx, cy = click
+    if not (ox <= cx < ox + w and oy <= cy < oy + h):
+        return None
+    if line_height <= 0:
+        return None
+    index = (cy - oy) // line_height
+    if index < 0 or index >= len(ticks):
+        return None
+    return ticks[index]
+
+
+def _event_section_start(lines: list[str]) -> int | None:
+    """The index in ``lines`` (as returned by :func:`build_hud_lines`)
+    where the "Recent events:" section's event rows begin, or ``None`` if
+    that call included no such section (no events at/before that tick).
+    """
+    try:
+        return lines.index("Recent events:") + 1
+    except ValueError:
+        return None
 
 
 def build_hud_lines(
     session: ReplaySession,
     controller: PlaybackController,
+    *,
+    match_events: list[tuple[int, EngineEvent]] | None = None,
 ) -> list[str]:
     """The HUD's text content for the session/controller's current state.
 
     Kept readable rather than exhaustive: one status line, one line per
-    entrant, and winner/termination once the replay's terminal record
-    establishes them -- which is independent of the current playback
-    position, since that metadata comes straight from the canonical
-    replay's own terminal ``MatchResult``, not from scrubbing to the end.
+    entrant (now including territory alongside score -- see
+    ``_agent_display_line``), a short "Recent events" section, and
+    winner/termination once the replay's terminal record establishes them
+    -- which is independent of the current playback position, since that
+    metadata comes straight from the canonical replay's own terminal
+    ``MatchResult``, not from scrubbing to the end.
+
+    ``match_events`` lets a caller that already computed
+    ``collect_match_events(session)`` once (it scans every recorded tick,
+    so a real renderer should cache it for the session's lifetime rather
+    than repeat that scan every frame) pass it in; if omitted, it is
+    computed fresh here, which keeps this function usable standalone in
+    tests without that caching concern.
     """
     state = session.current_state
     runtime_label = state.runtime_kind or "unknown"
     status = "PLAYING" if controller.playing else "PAUSED"
     if session.at_end:
         status = "PAUSED (end)" if not controller.playing else status
+
+    territory = territory_summary(state)
 
     lines = [
         f"Bytefray Replay -- runtime: {runtime_label}",
@@ -133,7 +271,17 @@ def build_hud_lines(
     agent_names = dict(session.header.agents) if session.header is not None else {}
     for agent_id in sorted(state.agents):
         display_name = agent_names.get(agent_id, agent_id)
-        lines.append(_agent_display_line(agent_id, display_name, state))
+        lines.append(
+            _agent_display_line(agent_id, display_name, state, territory.get(agent_id))
+        )
+
+    events = collect_match_events(session) if match_events is None else match_events
+    recent = events_near_tick(events, state.tick)
+    if recent:
+        lines.append("")
+        lines.append("Recent events:")
+        for event_tick, event in recent:
+            lines.append(f"  {format_event_line(event_tick, event)}")
 
     if session.result is not None:
         winner = session.winner or "tie"
@@ -225,6 +373,19 @@ class PygameRenderer:
         self._last_rendered_tick: int | None = None
         self._last_owners: tuple[str | None, ...] | None = None
 
+        # Every recorded (tick, event) pair for the loaded session, computed
+        # once in run() -- collect_match_events scans every recorded tick,
+        # so this is cached for the session's lifetime rather than redone
+        # every frame (see build_hud_lines's ``match_events`` parameter).
+        self._match_events: list[tuple[int, EngineEvent]] = []
+        # Where the HUD's "Recent events" panel was last drawn on screen,
+        # and which tick each of its lines corresponds to -- set fresh by
+        # _draw_hud every frame, read by _loop's click handling. None/empty
+        # when the current tick has no events to show.
+        self._event_panel_origin: tuple[int, int] | None = None
+        self._event_panel_size: tuple[int, int] | None = None
+        self._event_panel_ticks: tuple[int, ...] = ()
+
     # ---------- grid geometry (pure, presentation-only) ----------
 
     def _resolve_grid_dims(self, arena_cells: int) -> tuple[int, int]:
@@ -293,6 +454,9 @@ class PygameRenderer:
         self.arena = session.header.config.arena_size if session.header else 0
         self.grid_cols, self.grid_rows = self._resolve_grid_dims(self.arena)
         self._configure_window()
+        # Scans every recorded tick once; see _match_events's docstring in
+        # __init__ for why this is cached rather than redone per frame.
+        self._match_events = collect_match_events(session)
 
         controller = PlaybackController(
             session, tick_interval=tick_interval, playing=not start_paused
@@ -374,6 +538,8 @@ class PygameRenderer:
                     if new_scale != self.scale:
                         self.scale = new_scale
                         self._resize_window()
+                elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
+                    self._handle_click(controller, event.pos)
             if not running:
                 break
 
@@ -381,6 +547,28 @@ class PygameRenderer:
             self._advance_transient_effects(controller.session.current_state)
             self._redraw(controller)
             pg.display.flip()
+
+    def _handle_click(self, controller: PlaybackController, pos: tuple[int, int]) -> None:
+        """Seek to an event's tick if ``pos`` landed on its HUD line.
+
+        A no-op outside the "Recent events" panel (``_event_panel_origin``
+        is ``None`` whenever the current tick has no events to show -- see
+        ``_draw_hud``). Pauses first, matching every other discrete
+        navigation command's precedent (``step_forward``/``step_backward``/
+        ``restart``); ``ReplaySession.seek`` is called directly rather than
+        through ``PlaybackController`` because seeking to an arbitrary
+        already-recorded tick isn't one of the controller's own navigation
+        primitives (see ``player.py``'s module docstring on why
+        ``ReplaySession`` stays the sole source of reconstructed state).
+        """
+        if self._event_panel_origin is None or self._event_panel_size is None:
+            return
+        tick = resolve_event_click(
+            self._event_panel_ticks, self._event_panel_origin, self._event_panel_size, 16, pos
+        )
+        if tick is not None:
+            controller.pause()
+            controller.session.seek(tick)
 
     # ---------- transient (visual-only) effect bookkeeping ----------
 
@@ -511,7 +699,8 @@ class PygameRenderer:
         self.pg.draw.lines(self.screen, color, False, screen_points, width)
 
     def _draw_hud(self, controller: PlaybackController) -> None:
-        lines = build_hud_lines(controller.session, controller)
+        session = controller.session
+        lines = build_hud_lines(session, controller, match_events=self._match_events)
         w, _ = self.screen.get_size()
         line_height = 16
         hud_h = line_height * len(lines) + 12
@@ -521,3 +710,18 @@ class PygameRenderer:
             rendered = self.hud_font.render(text, True, (235, 235, 235))
             hud.blit(rendered, (10, 6 + index * line_height))
         self.screen.blit(hud, (0, 0))
+
+        # Track where the "Recent events" lines just landed on screen (HUD
+        # surface origin is (0, 0)) so a click can be resolved against them
+        # -- see _handle_click. None/empty whenever there's nothing to
+        # click, e.g. no events at/before the current tick.
+        recent = events_near_tick(self._match_events, session.current_tick)
+        start_index = _event_section_start(lines)
+        if start_index is not None and recent:
+            self._event_panel_origin = (0, 6 + start_index * line_height)
+            self._event_panel_size = (w, line_height * len(recent))
+            self._event_panel_ticks = tuple(tick for tick, _event in recent)
+        else:
+            self._event_panel_origin = None
+            self._event_panel_size = None
+            self._event_panel_ticks = ()
