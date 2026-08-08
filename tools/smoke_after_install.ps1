@@ -1,16 +1,18 @@
 <#
-Validates an installed BATTLE2 tree or performs an isolated install/upgrade/uninstall cycle.
+Validates an installed Bytefray tree or performs an isolated install/upgrade/uninstall cycle.
 
 Post-install smoke:
   pwsh tools/smoke_after_install.ps1
 
 Full isolated lifecycle validation:
-  pwsh tools/smoke_after_install.ps1 -InstallerPath dist\installer\BATTLE2-Setup-0.2.0.exe `
-    -AppDir "D:\BATTLE2 Test\Application" -DataRoot "D:\BATTLE2 Test\Data" -Lifecycle
+  pwsh tools/smoke_after_install.ps1 -InstallerPath dist\installer\Bytefray-Setup-0.3.0.exe `
+    -AppDir "D:\Bytefray Test\Application" -DataRoot "D:\Bytefray Test\Data" -Lifecycle
 #>
 [CmdletBinding()]
 param(
-  [string]$AppDir = "$Env:ProgramFiles\BATTLE2",
+  [string]$AppDir = "$Env:ProgramFiles\Bytefray",
+  # Installer keeps the writable data directory at ProgramData\BATTLE2 for
+  # upgrade continuity; see the comment in tools/installer.iss GetDataRoot.
   [string]$DataRoot = "$Env:ProgramData\BATTLE2",
   [string]$InstallerPath,
   [int]$GuiHoldSeconds = 5,
@@ -130,7 +132,7 @@ function Install-Battle2([string]$Description) {
 }
 
 function Invoke-InstalledSmoke {
-  $env:BATTLE2_ROOT = $DataRoot
+  $env:BYTEFRAY_ROOT = $DataRoot
   Remove-Item Env:BATTLE_ROOT -ErrorAction SilentlyContinue
   Write-SmokeLog "Application root: $AppDir"
   Write-SmokeLog "Writable data root: $DataRoot"
@@ -159,8 +161,8 @@ function Invoke-InstalledSmoke {
     }
   }
 
-  $StartMenuGroup = Join-Path $Env:ProgramData "Microsoft\Windows\Start Menu\Programs\BATTLE2"
-  foreach ($ShortcutName in @("BATTLE2 Agent Designer.lnk", "BATTLE2 Replay Viewer.lnk")) {
+  $StartMenuGroup = Join-Path $Env:ProgramData "Microsoft\Windows\Start Menu\Programs\Bytefray"
+  foreach ($ShortcutName in @("Bytefray Agent Designer.lnk", "Bytefray Replay Viewer.lnk")) {
     $Shortcut = Join-Path $StartMenuGroup $ShortcutName
     if (-not (Test-Path -LiteralPath $Shortcut -PathType Leaf)) {
       throw "Installed Start Menu shortcut missing: $Shortcut"
@@ -231,11 +233,11 @@ function Invoke-InstalledSmoke {
   $Running = @(
     Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($AppDir, [StringComparison]::OrdinalIgnoreCase) }
   )
-  if ($Running.Count -ne 0) { throw "Installed BATTLE2 processes remain: $($Running.Id -join ', ')" }
+  if ($Running.Count -ne 0) { throw "Installed Bytefray processes remain: $($Running.Id -join ', ')" }
   Write-SmokeLog "Installed application smoke passed."
 }
 
-Write-SmokeLog "=== BATTLE2 Windows installer smoke ==="
+Write-SmokeLog "=== Bytefray Windows installer smoke ==="
 if (-not $Lifecycle) {
   Invoke-InstalledSmoke
   Write-SmokeLog "=== SUCCESS ==="
@@ -248,11 +250,16 @@ if (-not $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
   throw "-Lifecycle must run from an elevated PowerShell because the installer sets a machine environment variable."
 }
 $PreviousMachineRoot = [Environment]::GetEnvironmentVariable("BATTLE2_ROOT", "Machine")
+$PreviousMachineBytefrayRoot = [Environment]::GetEnvironmentVariable("BYTEFRAY_ROOT", "Machine")
 try {
   Install-Battle2 "initial silent install"
   $MachineRoot = [Environment]::GetEnvironmentVariable("BATTLE2_ROOT", "Machine")
   if ([IO.Path]::GetFullPath($MachineRoot) -ne $DataRoot) {
     throw "Machine BATTLE2_ROOT mismatch: expected '$DataRoot', found '$MachineRoot'."
+  }
+  $MachineBytefrayRoot = [Environment]::GetEnvironmentVariable("BYTEFRAY_ROOT", "Machine")
+  if ([IO.Path]::GetFullPath($MachineBytefrayRoot) -ne $DataRoot) {
+    throw "Machine BYTEFRAY_ROOT mismatch: expected '$DataRoot', found '$MachineBytefrayRoot'."
   }
   Invoke-InstalledSmoke
 
@@ -277,8 +284,8 @@ try {
   }
   if (Test-Path -LiteralPath $AppDir) { throw "Program directory remains after uninstall: $AppDir" }
   if (-not (Test-Path -LiteralPath $UserFile)) { throw "Uninstall removed retained user data." }
-  $Group = Join-Path $Env:ProgramData "Microsoft\Windows\Start Menu\Programs\BATTLE2"
-  foreach ($ShortcutName in @("BATTLE2 Agent Designer.lnk", "BATTLE2 Replay Viewer.lnk")) {
+  $Group = Join-Path $Env:ProgramData "Microsoft\Windows\Start Menu\Programs\Bytefray"
+  foreach ($ShortcutName in @("Bytefray Agent Designer.lnk", "Bytefray Replay Viewer.lnk")) {
     $Shortcut = Join-Path $Group $ShortcutName
     if (Test-Path -LiteralPath $Shortcut) {
       throw "Installed Start Menu shortcut remains after uninstall: $Shortcut"
@@ -288,11 +295,16 @@ try {
   if ($null -ne $MachineRootAfterUninstall) {
     throw "Machine BATTLE2_ROOT remains after uninstall: $MachineRootAfterUninstall"
   }
+  $MachineBytefrayRootAfterUninstall = [Environment]::GetEnvironmentVariable("BYTEFRAY_ROOT", "Machine")
+  if ($null -ne $MachineBytefrayRootAfterUninstall) {
+    throw "Machine BYTEFRAY_ROOT remains after uninstall: $MachineBytefrayRootAfterUninstall"
+  }
   $Remaining = @(Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($AppDir, [StringComparison]::OrdinalIgnoreCase) })
-  if ($Remaining.Count -ne 0) { throw "BATTLE2 processes remain after uninstall: $($Remaining.Id -join ', ')" }
+  if ($Remaining.Count -ne 0) { throw "Bytefray processes remain after uninstall: $($Remaining.Id -join ', ')" }
   Write-SmokeLog "Upgrade preserved modified agents; uninstall removed programs and retained data."
   Write-SmokeLog "=== SUCCESS: full installer lifecycle passed ==="
 } finally {
   [Environment]::SetEnvironmentVariable("BATTLE2_ROOT", $PreviousMachineRoot, "Machine")
-  Write-SmokeLog "Restored previous machine BATTLE2_ROOT value."
+  [Environment]::SetEnvironmentVariable("BYTEFRAY_ROOT", $PreviousMachineBytefrayRoot, "Machine")
+  Write-SmokeLog "Restored previous machine BATTLE2_ROOT and BYTEFRAY_ROOT values."
 }

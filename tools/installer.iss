@@ -1,15 +1,17 @@
-; BATTLE2 v0.2 Windows installer (Inno Setup 6)
-; Build from the repository root with:
+; Bytefray v0.3 Windows installer (Inno Setup 6)
+; Formerly BATTLE2. Build from the repository root with:
 ;   ISCC.exe tools\installer.iss
 
-#define AppName "BATTLE2"
-#define AppVersion "0.2.0"
-#define AppPublisher "BATTLE2 Project"
+#define AppName "Bytefray"
+#define AppVersion "0.3.0"
+#define AppPublisher "Bytefray Project"
 #define DistRoot "..\dist\windows"
 #define OutputRoot "..\dist\installer"
 
 [Setup]
-; Stable product identity. Keep this AppId unchanged for all BATTLE2 v0.2 upgrades.
+; Stable product identity, unchanged across the BATTLE2 -> Bytefray rebrand.
+; Keep this AppId unchanged for all upgrades so existing BATTLE2 installs
+; upgrade in place as Bytefray rather than installing side-by-side.
 AppId={{A5B86D38-9A6C-4D7F-9B4E-BA7720000002}
 AppName={#AppName}
 AppVersion={#AppVersion}
@@ -20,7 +22,7 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir={#OutputRoot}
-OutputBaseFilename=BATTLE2-Setup-{#AppVersion}
+OutputBaseFilename=Bytefray-Setup-{#AppVersion}
 ArchitecturesAllowed=x64os
 ArchitecturesInstallIn64BitMode=x64os
 PrivilegesRequired=admin
@@ -55,13 +57,17 @@ Source: "..\README.md"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}\docs"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\BATTLE2 Agent Designer"; Filename: "{app}\bin\battle-agent-designer\battle-agent-designer.exe"; WorkingDir: "{app}\bin"
-Name: "{group}\BATTLE2 Replay Viewer"; Filename: "{app}\bin\battle-replay-viewer\battle-replay-viewer.exe"; WorkingDir: "{app}\bin"
-Name: "{commondesktop}\BATTLE2 Agent Designer"; Filename: "{app}\bin\battle-agent-designer\battle-agent-designer.exe"; WorkingDir: "{app}\bin"; Tasks: desktopicons
-Name: "{commondesktop}\BATTLE2 Replay Viewer"; Filename: "{app}\bin\battle-replay-viewer\battle-replay-viewer.exe"; WorkingDir: "{app}\bin"; Tasks: desktopicons
+Name: "{group}\Bytefray Agent Designer"; Filename: "{app}\bin\battle-agent-designer\battle-agent-designer.exe"; WorkingDir: "{app}\bin"
+Name: "{group}\Bytefray Replay Viewer"; Filename: "{app}\bin\battle-replay-viewer\battle-replay-viewer.exe"; WorkingDir: "{app}\bin"
+Name: "{commondesktop}\Bytefray Agent Designer"; Filename: "{app}\bin\battle-agent-designer\battle-agent-designer.exe"; WorkingDir: "{app}\bin"; Tasks: desktopicons
+Name: "{commondesktop}\Bytefray Replay Viewer"; Filename: "{app}\bin\battle-replay-viewer\battle-replay-viewer.exe"; WorkingDir: "{app}\bin"; Tasks: desktopicons
 
 [Registry]
-; Only the v0.2 variable is installed. BATTLE_ROOT remains a runtime fallback.
+; BYTEFRAY_ROOT is the preferred variable for new installs. BATTLE2_ROOT is
+; written alongside it for compatibility with tooling that still reads the
+; old name; BATTLE_ROOT remains a runtime-only fallback (see paths.py) and is
+; not written here. Both values point at the same writable data directory.
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "BYTEFRAY_ROOT"; ValueData: "{code:GetDataRoot}"; Flags: preservestringtype uninsdeletevalue
 Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "BATTLE2_ROOT"; ValueData: "{code:GetDataRoot}"; Flags: preservestringtype uninsdeletevalue
 
 [Code]
@@ -69,5 +75,9 @@ function GetDataRoot(Param: String): String;
 begin
   Result := ExpandConstant('{param:BATTLE2DATAROOT|}');
   if Result = '' then
+    // Deliberately still "BATTLE2": this is the writable data directory an
+    // existing BATTLE2 install already uses. Renaming it to "Bytefray" would
+    // point upgraded installs at an empty new folder and orphan existing
+    // agents/replays/logs. Only the registry variable names are rebranded.
     Result := ExpandConstant('{commonappdata}\BATTLE2');
 end;
