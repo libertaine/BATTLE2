@@ -4,12 +4,16 @@ import pytest
 from battle_client.player import PlaybackController
 from battle_client.renderers.pygame_renderer import (
     PygameRenderer,
+    SelectedCellInfo,
     _event_section_start,
     build_hud_lines,
     collect_match_events,
     events_near_tick,
     format_event_line,
+    format_inspector_lines,
     resolve_event_click,
+    screen_pos_to_address,
+    selected_cell_info,
     territory_summary,
 )
 from battle_client.session import ReplaySession, ReplayState
@@ -498,3 +502,254 @@ def test_handle_click_with_no_panel_is_a_safe_no_op(tmp_path):
 
     assert controller.playing is True
     assert session.current_tick == 0
+
+
+# ---------------------------------------------------------------------------
+# screen_pos_to_address (pure geometry -- no Pygame dependency)
+# ---------------------------------------------------------------------------
+def test_screen_pos_to_address_top_left_is_address_zero():
+    assert screen_pos_to_address((0, 0), (100, 40), 5, 2, 10) == 0
+
+
+def test_screen_pos_to_address_bottom_right_pixel_is_last_address():
+    assert screen_pos_to_address((99, 39), (100, 40), 5, 2, 10) == 9
+
+
+def test_screen_pos_to_address_cell_boundaries():
+    # cols=5 -> cell width 20px; col 1 starts at x=20.
+    assert screen_pos_to_address((19, 0), (100, 40), 5, 2, 10) == 0
+    assert screen_pos_to_address((20, 0), (100, 40), 5, 2, 10) == 1
+    # rows=2 -> cell height 20px; row 1 starts at y=20.
+    assert screen_pos_to_address((0, 19), (100, 40), 5, 2, 10) == 0
+    assert screen_pos_to_address((0, 20), (100, 40), 5, 2, 10) == 5
+
+
+@pytest.mark.parametrize(
+    "pos",
+    [(100, 10), (-1, 10), (10, 40), (10, -1)],
+)
+def test_screen_pos_to_address_outside_screen_bounds_is_none(pos):
+    assert screen_pos_to_address(pos, (100, 40), 5, 2, 10) is None
+
+
+def test_screen_pos_to_address_degenerate_grid_is_a_safe_no_op():
+    assert screen_pos_to_address((0, 0), (100, 40), 0, 2, 10) is None
+    assert screen_pos_to_address((0, 0), (0, 0), 5, 2, 10) is None
+
+
+# ---------------------------------------------------------------------------
+# selected_cell_info / format_inspector_lines
+# ---------------------------------------------------------------------------
+def test_selected_cell_info_reports_byte_owner_and_vm_occupant(tmp_path):
+    session = _events_session(tmp_path)  # tick 0: A owns/occupies 0, B owns/occupies 4
+    info = selected_cell_info(session.current_state, 0)
+    assert info == SelectedCellInfo(address=0, byte_value=1, owner="A", occupant="A")
+
+
+def test_selected_cell_info_unowned_unoccupied_cell(tmp_path):
+    session = _events_session(tmp_path)
+    info = selected_cell_info(session.current_state, 5)
+    assert info == SelectedCellInfo(address=5, byte_value=0, owner=None, occupant=None)
+
+
+def test_selected_cell_info_owner_present_without_current_occupant(tmp_path):
+    session = _events_session(tmp_path)
+    session.step_forward()  # tick 1: A's pc moves to 1; address 0 still owned by A
+    info = selected_cell_info(session.current_state, 0)
+    assert info.owner == "A"
+    assert info.occupant is None
+
+
+def test_selected_cell_info_out_of_range_address_is_none(tmp_path):
+    session = _events_session(tmp_path)
+    assert selected_cell_info(session.current_state, 10) is None
+    assert selected_cell_info(session.current_state, -1) is None
+
+
+def test_selected_cell_info_python_replay_never_reports_an_occupant(tmp_path):
+    session = _python_session(tmp_path)
+    state = session.current_state
+    assert state.runtime_kind == "python"
+    for agent in state.agents.values():
+        assert isinstance(agent.pc, int)
+        info = selected_cell_info(state, agent.pc % len(state.owners))
+        assert info.occupant is None  # never invented for a Python controller value
+
+
+def test_selected_cell_info_recently_changed_flag_is_carried_through():
+    state = ReplayState(
+        tick=0, arena=b"\x01", owners=("A",), agents={}, score={}, runtime_kind="vm",
+    )
+    info = selected_cell_info(state, 0, recently_changed=True)
+    assert info.recently_changed is True
+
+
+def test_format_inspector_lines_none_selection_is_empty():
+    assert format_inspector_lines(None) == []
+
+
+def test_format_inspector_lines_shows_all_fields():
+    info = SelectedCellInfo(address=7, byte_value=255, owner="A", occupant="A")
+    lines = format_inspector_lines(info)
+    assert lines[0] == "Selected cell:"
+    assert "addr=7" in lines[1]
+    assert "byte=0xff" in lines[1]
+    assert "owner=A" in lines[1]
+    assert "agent=A" in lines[1]
+    assert "recently changed" not in lines[1]
+
+
+def test_format_inspector_lines_unowned_unoccupied_reads_none():
+    info = SelectedCellInfo(address=1, byte_value=0, owner=None, occupant=None)
+    line = format_inspector_lines(info)[1]
+    assert "owner=none" in line
+    assert "agent=none" in line
+
+
+def test_format_inspector_lines_recently_changed_is_flagged():
+    info = SelectedCellInfo(address=1, byte_value=1, owner="A", occupant=None, recently_changed=True)
+    line = format_inspector_lines(info)[1]
+    assert "recently changed" in line
+
+
+# ---------------------------------------------------------------------------
+# build_hud_lines: selected-cell inspector integration
+# ---------------------------------------------------------------------------
+def test_hud_shows_selected_cell_between_agent_lines_and_events(tmp_path):
+    session = _events_session(tmp_path)
+    while not session.at_end:
+        session.step_forward()
+    controller = PlaybackController(session, playing=False)
+    selected = selected_cell_info(session.current_state, 0)
+    lines = build_hud_lines(session, controller, selected=selected)
+
+    inspector_index = lines.index("Selected cell:")
+    events_index = lines.index("Recent events:")
+    agent_index = next(i for i, line in enumerate(lines) if line.startswith("A (alpha)"))
+    assert agent_index < inspector_index < events_index
+
+
+def test_hud_omits_selected_cell_section_when_nothing_selected(tmp_path):
+    session = _no_events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    joined = "\n".join(build_hud_lines(session, controller))
+    assert "Selected cell:" not in joined
+
+
+# ---------------------------------------------------------------------------
+# PygameRenderer cell selection: click handling, persistence, highlight
+# ---------------------------------------------------------------------------
+class _FakeScreen:
+    """A minimal stand-in for a Pygame ``Surface``: only ``get_size()`` is
+    exercised by cell-selection code, so this avoids needing a real window.
+    """
+
+    def __init__(self, size):
+        self._size = size
+
+    def get_size(self):
+        return self._size
+
+
+def _grid_renderer(arena_size, *, cell_px=20):
+    renderer = PygameRenderer()
+    cols, rows = renderer._resolve_grid_dims(arena_size)
+    renderer.grid_cols, renderer.grid_rows, renderer.arena = cols, rows, arena_size
+    renderer.screen = _FakeScreen((cols * cell_px, rows * cell_px))
+    return renderer
+
+
+def test_click_on_arena_cell_selects_its_address(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _grid_renderer(10)
+
+    renderer._handle_click(controller, (0, 0))
+
+    assert renderer._selected_address == 0
+
+
+def test_click_outside_arena_does_not_change_selection(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _grid_renderer(10)
+    renderer._selected_address = 3
+
+    w, _h = renderer.screen.get_size()
+    renderer._handle_click(controller, (w + 50, 5))
+
+    assert renderer._selected_address == 3
+
+
+def test_click_before_run_with_no_screen_leaves_selection_unchanged(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = PygameRenderer()  # screen/grid never configured (no run())
+
+    renderer._handle_click(controller, (10, 10))
+
+    assert renderer._selected_address is None
+
+
+def test_event_panel_click_takes_priority_over_cell_selection(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=True)
+    renderer = _grid_renderer(10)
+    renderer._event_panel_origin = (0, 0)
+    renderer._event_panel_size = (200, 32)
+    renderer._event_panel_ticks = (2, 4)
+
+    renderer._handle_click(controller, (0, 0))
+
+    assert session.current_tick == 2  # seeked via the event panel
+    assert renderer._selected_address is None  # cell selection untouched
+
+
+def test_selection_persists_across_step_seek_and_restart(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _grid_renderer(10)
+
+    renderer._handle_click(controller, (0, 0))
+    assert renderer._selected_address == 0
+
+    session.step_forward()
+    assert renderer._selected_address == 0
+
+    session.seek(4)
+    assert renderer._selected_address == 0
+
+    session.restart()
+    assert renderer._selected_address == 0
+
+
+def test_inspector_values_update_as_replay_moves(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _grid_renderer(10)
+    renderer._handle_click(controller, (0, 0))  # address 0, owned+occupied by A at tick 0
+
+    info_t0 = renderer._selected_cell_info(session.current_state)
+    assert info_t0.owner == "A"
+    assert info_t0.occupant == "A"
+
+    session.step_forward()  # tick 1: A's pc moves to 1
+    info_t1 = renderer._selected_cell_info(session.current_state)
+    assert info_t1.owner == "A"
+    assert info_t1.occupant is None
+
+    session.seek(4)
+    info_t4 = renderer._selected_cell_info(session.current_state)
+    assert info_t4.address == 0
+
+
+def test_selected_address_maps_back_to_the_clicked_cell_for_highlighting(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _grid_renderer(10)
+
+    renderer._handle_click(controller, (21, 21))  # inside cell col=1,row=1 (20px cells)
+    assert renderer._selected_address == renderer.grid_cols + 1
+
+    xy = renderer._to_xy(renderer._selected_address)
+    assert xy == (1, 1)

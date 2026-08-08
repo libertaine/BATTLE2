@@ -60,11 +60,12 @@ PROCESS_FLASH: dict[str, tuple[int, int, int]] = {
 DEFAULT_TINT = (80, 80, 80)
 DEFAULT_FLASH = (255, 255, 255)
 DEFAULT_AGENT_COLOR = (200, 200, 200)
+SELECTION_COLOR: tuple[int, int, int] = (255, 255, 0)
 
 HELP_TEXT = (
     "Space play/pause  Right/Left step  Shift+Right/Left seek 10  "
     "Home/End first/last  +/- speed  [/] zoom  T trails  "
-    "click event to seek  Esc/Q quit"
+    "click event to seek  click cell to inspect  Esc/Q quit"
 )
 
 
@@ -220,6 +221,103 @@ def resolve_event_click(
     return ticks[index]
 
 
+def screen_pos_to_address(
+    pos: tuple[int, int],
+    screen_size: tuple[int, int],
+    grid_cols: int,
+    grid_rows: int,
+    arena_size: int,
+) -> int | None:
+    """The arena address rendered at screen position ``pos``, or ``None``.
+
+    Inverts the grid-to-screen mapping ``_redraw`` uses (a ``grid_cols`` x
+    ``grid_rows`` surface uniformly scaled to fill ``screen_size``): pure
+    coordinate math, no Pygame dependency, so it is directly testable
+    without a window. Returns ``None`` if ``pos`` falls outside
+    ``screen_size`` entirely, or if the grid geometry is degenerate
+    (``grid_cols``/``grid_rows``/screen dimensions <= 0). The
+    ``address >= arena_size`` guard is a defensive no-op in practice --
+    ``_resolve_grid_dims`` always returns a rectangle whose cell count is
+    exactly ``arena_size`` -- but is kept here honestly rather than assumed.
+    """
+    x, y = pos
+    w, h = screen_size
+    if grid_cols <= 0 or grid_rows <= 0 or w <= 0 or h <= 0:
+        return None
+    if not (0 <= x < w and 0 <= y < h):
+        return None
+    col = min((x * grid_cols) // w, grid_cols - 1)
+    row = min((y * grid_rows) // h, grid_rows - 1)
+    address = row * grid_cols + col
+    if address >= arena_size:
+        return None
+    return address
+
+
+@dataclass(frozen=True)
+class SelectedCellInfo:
+    """The authoritative replay state at one selected arena address.
+
+    Every field is read straight off an existing ``ReplayState`` (or, for
+    ``recently_changed``, off the renderer's existing per-address flash
+    bookkeeping in ``_advance_transient_effects`` -- itself derived only
+    from a genuine ownership change on the immediately preceding linear
+    step); nothing here is fabricated. ``occupant`` is only ever populated
+    for a VM replay (``AgentState.pc`` is a real fetch address there and
+    only there -- see ``_vm_marker_xy``'s docstring); for a Python replay
+    it stays ``None`` unconditionally, since the Python controller's ``pc``
+    value is not a position an agent can be said to "occupy".
+    """
+
+    address: int
+    byte_value: int | None
+    owner: str | None
+    occupant: str | None
+    recently_changed: bool = False
+
+
+def selected_cell_info(
+    state: ReplayState, address: int, *, recently_changed: bool = False
+) -> SelectedCellInfo | None:
+    """``SelectedCellInfo`` for ``address`` in ``state``, or ``None`` if
+    ``address`` is outside ``state.owners``' range (out-of-range for the
+    replay's arena).
+    """
+    if address < 0 or address >= len(state.owners):
+        return None
+    byte_value = state.arena[address] if address < len(state.arena) else None
+    owner = state.owners[address]
+    occupant = None
+    if state.runtime_kind == "vm":
+        for agent_id, agent in state.agents.items():
+            if agent.alive and isinstance(agent.pc, int) and agent.pc == address:
+                occupant = agent_id
+                break
+    return SelectedCellInfo(
+        address=address,
+        byte_value=byte_value,
+        owner=owner,
+        occupant=occupant,
+        recently_changed=recently_changed,
+    )
+
+
+def format_inspector_lines(info: SelectedCellInfo | None) -> list[str]:
+    """HUD lines for a "Selected cell:" panel, or ``[]`` if ``info`` is
+    ``None`` (nothing selected -- the panel is simply omitted, matching
+    how ``build_hud_lines`` already omits "Recent events:" when empty).
+    """
+    if info is None:
+        return []
+    byte_label = f"byte=0x{info.byte_value:02x}" if info.byte_value is not None else "byte=?"
+    owner_label = f"owner={info.owner}" if info.owner is not None else "owner=none"
+    agent_label = f"agent={info.occupant}" if info.occupant is not None else "agent=none"
+    line = f"  addr={info.address}  {byte_label}  {owner_label}  {agent_label}"
+    if info.recently_changed:
+        line += "  (recently changed)"
+    return ["Selected cell:", line]
+
+
 def _event_section_start(lines: list[str]) -> int | None:
     """The index in ``lines`` (as returned by :func:`build_hud_lines`)
     where the "Recent events:" section's event rows begin, or ``None`` if
@@ -236,16 +334,19 @@ def build_hud_lines(
     controller: PlaybackController,
     *,
     match_events: list[tuple[int, EngineEvent]] | None = None,
+    selected: SelectedCellInfo | None = None,
 ) -> list[str]:
     """The HUD's text content for the session/controller's current state.
 
     Kept readable rather than exhaustive: one status line, one line per
     entrant (now including territory alongside score -- see
-    ``_agent_display_line``), a short "Recent events" section, and
-    winner/termination once the replay's terminal record establishes them
-    -- which is independent of the current playback position, since that
-    metadata comes straight from the canonical replay's own terminal
-    ``MatchResult``, not from scrubbing to the end.
+    ``_agent_display_line``), a compact "Selected cell:" panel (Phase 7b
+    Slice 2, see ``format_inspector_lines``) when ``selected`` is given, a
+    short "Recent events" section, and winner/termination once the
+    replay's terminal record establishes them -- which is independent of
+    the current playback position, since that metadata comes straight
+    from the canonical replay's own terminal ``MatchResult``, not from
+    scrubbing to the end.
 
     ``match_events`` lets a caller that already computed
     ``collect_match_events(session)`` once (it scans every recorded tick,
@@ -274,6 +375,11 @@ def build_hud_lines(
         lines.append(
             _agent_display_line(agent_id, display_name, state, territory.get(agent_id))
         )
+
+    inspector_lines = format_inspector_lines(selected)
+    if inspector_lines:
+        lines.append("")
+        lines.extend(inspector_lines)
 
     events = collect_match_events(session) if match_events is None else match_events
     recent = events_near_tick(events, state.tick)
@@ -385,6 +491,15 @@ class PygameRenderer:
         self._event_panel_origin: tuple[int, int] | None = None
         self._event_panel_size: tuple[int, int] | None = None
         self._event_panel_ticks: tuple[int, ...] = ()
+
+        # Presentation-only selected-cell inspector state (Phase 7b Slice 2).
+        # Set by a click on the arena grid (never on the event panel, which
+        # takes priority -- see _handle_click); intentionally never cleared
+        # by playback navigation (step/seek/restart), so a selection
+        # persists across the whole replay for as long as its address stays
+        # in range -- which, since a session's arena size never changes,
+        # is always, once loaded.
+        self._selected_address: int | None = None
 
     # ---------- grid geometry (pure, presentation-only) ----------
 
@@ -549,26 +664,42 @@ class PygameRenderer:
             pg.display.flip()
 
     def _handle_click(self, controller: PlaybackController, pos: tuple[int, int]) -> None:
-        """Seek to an event's tick if ``pos`` landed on its HUD line.
+        """Seek to an event's tick, or select an arena cell, for a click at
+        ``pos``.
 
-        A no-op outside the "Recent events" panel (``_event_panel_origin``
-        is ``None`` whenever the current tick has no events to show -- see
-        ``_draw_hud``). Pauses first, matching every other discrete
-        navigation command's precedent (``step_forward``/``step_backward``/
-        ``restart``); ``ReplaySession.seek`` is called directly rather than
+        The "Recent events" panel takes priority when both could apply (it
+        is drawn on top of the grid): a click resolving to an event tick
+        seeks and returns immediately, without also touching cell
+        selection. ``ReplaySession.seek`` is called directly rather than
         through ``PlaybackController`` because seeking to an arbitrary
         already-recorded tick isn't one of the controller's own navigation
         primitives (see ``player.py``'s module docstring on why
         ``ReplaySession`` stays the sole source of reconstructed state).
+
+        Otherwise, if the click lands on a valid arena cell, it becomes the
+        selected address (see ``_selected_address``) -- a presentation-only
+        selection, not a navigation command, so it never pauses playback.
+        A click that hits neither the event panel nor a valid arena cell
+        (outside the window, or before the renderer has a real screen --
+        e.g. in a unit test that never called ``run()``) leaves the
+        current selection untouched.
         """
-        if self._event_panel_origin is None or self._event_panel_size is None:
+        if self._event_panel_origin is not None and self._event_panel_size is not None:
+            tick = resolve_event_click(
+                self._event_panel_ticks, self._event_panel_origin, self._event_panel_size, 16, pos
+            )
+            if tick is not None:
+                controller.pause()
+                controller.session.seek(tick)
+                return
+
+        if self.screen is None or self.grid_cols <= 0 or self.grid_rows <= 0:
             return
-        tick = resolve_event_click(
-            self._event_panel_ticks, self._event_panel_origin, self._event_panel_size, 16, pos
+        address = screen_pos_to_address(
+            pos, self.screen.get_size(), self.grid_cols, self.grid_rows, self.arena
         )
-        if tick is not None:
-            controller.pause()
-            controller.session.seek(tick)
+        if address is not None:
+            self._selected_address = address
 
     # ---------- transient (visual-only) effect bookkeeping ----------
 
@@ -668,6 +799,7 @@ class PygameRenderer:
                 continue
             self._draw_agent_marker(agent_id, xy)
 
+        self._draw_selection_highlight()
         self._draw_hud(controller)
 
     def _blend(
@@ -693,14 +825,53 @@ class PygameRenderer:
         label = self.font.render(agent_id, True, (255, 255, 255))
         self.screen.blit(label, label.get_rect(center=(sx, sy - r - 8)))
 
+    def _draw_selection_highlight(self) -> None:
+        """Outline the selected cell (if any and if on-screen) in
+        ``SELECTION_COLOR``. A no-op if nothing is selected.
+        """
+        if self._selected_address is None:
+            return
+        xy = self._to_xy(self._selected_address)
+        if xy is None:
+            return
+        x, y = xy
+        w, h = self.screen.get_size()
+        cell_w = w / self.grid_cols
+        cell_h = h / self.grid_rows
+        rect = self.pg.Rect(
+            int(x * cell_w), int(y * cell_h), max(1, math.ceil(cell_w)), max(1, math.ceil(cell_h))
+        )
+        self.pg.draw.rect(self.screen, SELECTION_COLOR, rect, 2)
+
     def _draw_polyline(self, points: list[tuple[int, int]], color: tuple[int, int, int]) -> None:
         screen_points = [self._screen_xy(x, y) for (x, y) in points]
         width = max(1, min(self.screen.get_size()) // max(self.grid_cols, self.grid_rows) // 3)
         self.pg.draw.lines(self.screen, color, False, screen_points, width)
 
+    def _selected_cell_info(self, state: ReplayState) -> SelectedCellInfo | None:
+        """The current ``SelectedCellInfo`` for ``self._selected_address``,
+        or ``None`` if nothing is selected.
+
+        ``recently_changed`` comes from ``self._flash`` -- the renderer's
+        existing per-address ownership-change bookkeeping (see
+        ``_advance_transient_effects``), which only ever fires on a
+        genuine ownership change on the immediately preceding *linear*
+        step and is cleared on any seek/restart. Reusing it here, rather
+        than inventing separate "last write" tracking, keeps the signal
+        honest: it reflects an owner change, not literally every write.
+        """
+        if self._selected_address is None:
+            return None
+        xy = self._to_xy(self._selected_address)
+        recently_changed = xy is not None and xy in self._flash
+        return selected_cell_info(state, self._selected_address, recently_changed=recently_changed)
+
     def _draw_hud(self, controller: PlaybackController) -> None:
         session = controller.session
-        lines = build_hud_lines(session, controller, match_events=self._match_events)
+        selected = self._selected_cell_info(session.current_state)
+        lines = build_hud_lines(
+            session, controller, match_events=self._match_events, selected=selected
+        )
         w, _ = self.screen.get_size()
         line_height = 16
         hud_h = line_height * len(lines) + 12
