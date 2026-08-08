@@ -358,28 +358,54 @@ def test_read_result_never_verifies_automatically(tmp_path):
 # ---------------------------------------------------------------------------
 # result_id determinism under nondeterministic exception text
 # ---------------------------------------------------------------------------
-def test_result_id_is_stable_despite_nondeterministic_exception_text(tmp_path):
+def test_result_id_is_stable_despite_nondeterministic_exception_text(tmp_path, monkeypatch):
+    """result_id must not depend on diagnostic message text.
+
+    Real agent-exception text is nondeterministic in practice -- e.g. a
+    default ``repr()`` embeds an ``id()``-derived pseudo-address, which
+    CPython's allocator can (and, depending on prior allocation traffic,
+    reliably does) reuse across two sequentially-created objects. Asserting
+    that two runs' messages actually differ by relying on that address is
+    therefore not itself deterministic: it can pass or fail depending on
+    unrelated allocator state left over from other tests in the same
+    process.
+
+    ``canonical_match_id`` folds each Python entrant's agent source bytes
+    into match identity (``source_sha256``), so simply baking a distinct
+    marker into each run's agent.py (an earlier version of this fix did
+    that) would make ``match_id`` differ for a real, unrelated reason --
+    the agents genuinely would no longer be identical -- defeating the
+    point of the test. Instead, both runs use byte-identical agent source;
+    the message-text marker is supplied at *runtime* via an environment
+    variable the agent reads in ``act()``, so it varies deterministically
+    between runs without the agent's on-disk identity changing at all.
+    """
     from battle_engine.agents import resolve_agent
 
-    source = """
+    marker_env_var = "BYTEFRAY_TEST_RESULT_ID_MARKER"
+    failing_source = f"""
+import os
 from battle_engine.agent_api import ActionKind, AgentAction
-
-class Boom:
-    def __repr__(self):
-        return f"<Boom object at 0x{id(self):x}>"
 
 class Agent:
     def reset(self, context):
         pass
 
     def act(self, observation):
-        raise RuntimeError(repr(Boom()))
+        raise RuntimeError("boom-" + os.environ["{marker_env_var}"])
 
 def create_agent():
     return Agent()
 """
+    passive_source = """
+from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): return AgentAction(ActionKind.NOP)
+def create_agent(): return Agent()
+"""
 
-    def _spec(root, name):
+    def _spec(root, name, source):
         directory = root / "agents" / name
         directory.mkdir(parents=True)
         (directory / "agent.yaml").write_text(
@@ -401,21 +427,11 @@ def create_agent():
     def _run(label):
         root = tmp_path / label
         entrants = (
-            MatchEntrant.python("A", "failing", 0, _spec(root, "failing")),
-            MatchEntrant.python("B", "passive", 32, _spec(root, "passive")),
-        )
-        # "passive" reuses the failing source's sibling passive agent.
-        (root / "agents" / "passive" / "agent.py").write_text(
-            """
-from battle_engine.agent_api import ActionKind, AgentAction
-class Agent:
-    def reset(self, context): pass
-    def act(self, observation): return AgentAction(ActionKind.NOP)
-def create_agent(): return Agent()
-""",
-            encoding="utf-8",
+            MatchEntrant.python("A", "failing", 0, _spec(root, "failing", failing_source)),
+            MatchEntrant.python("B", "passive", 32, _spec(root, "passive", passive_source)),
         )
         replay_path = root / "replay.jsonl"
+        monkeypatch.setenv(marker_env_var, label)
         return NativeMatchService().run(
             MatchRequest(_config(), entrants, max_ticks=2, replay_path=replay_path, verbose=False)
         )
@@ -425,10 +441,14 @@ def create_agent(): return Agent()
 
     first_message = read_result(first.result_path).entrants[0]["diagnostic"]["message"]
     second_message = read_result(second.result_path).entrants[0]["diagnostic"]["message"]
-    # The two default `repr`s embed different object addresses, proving the
-    # underlying exception text really is nondeterministic between runs...
+    # Each run's raised message embeds its own label ("first"/"second") via
+    # the environment marker, by construction -- guaranteed different,
+    # deterministically, with no dependence on allocator/`id()` behavior...
+    assert "first" in first_message
+    assert "second" in second_message
     assert first_message != second_message
-    # ...yet identity is unaffected, because result_id excludes message text.
+    # ...yet identity is unaffected: the agent source on disk (and thus
+    # match_id's source_sha256) is byte-identical between the two runs.
     assert first.match_id == second.match_id
     assert first.result_id == second.result_id
 

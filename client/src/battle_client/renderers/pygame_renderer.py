@@ -25,6 +25,8 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+from battle_engine.replay import AgentState
+
 from battle_client.player import PlaybackController
 from battle_client.renderers.base import RendererDependencyError
 from battle_client.session import ReplaySession, ReplayState
@@ -243,6 +245,20 @@ class PygameRenderer:
         a = address % self.arena
         return (a % self.grid_cols, a // self.grid_cols)
 
+    def _vm_marker_xy(self, state: ReplayState, agent: AgentState) -> tuple[int, int] | None:
+        """The on-grid position of a VM agent's marker, or ``None``.
+
+        ``AgentState.pc`` is typed ``Position = int | tuple[int, int]``
+        (see ``battle_engine.replay``), but is only ever a real fetch
+        address (``int``) for a VM-runtime replay -- never for a Python
+        one, where ``runtime_kind`` is already checked. The ``isinstance``
+        check narrows that union for the type checker rather than
+        asserting it from ``runtime_kind`` alone.
+        """
+        if state.runtime_kind != "vm" or not isinstance(agent.pc, int):
+            return None
+        return self._to_xy(agent.pc)
+
     def _screen_xy(self, x: int, y: int) -> tuple[int, int]:
         w, h = self.screen.get_size()
         return (
@@ -394,7 +410,7 @@ class PygameRenderer:
             for agent_id, agent in state.agents.items():
                 if not agent.alive:
                     continue
-                xy = self._to_xy(agent.pc) if state.runtime_kind == "vm" else None
+                xy = self._vm_marker_xy(state, agent)
                 if xy is None:
                     continue
                 points = self._trail_points.setdefault(agent_id, [])
@@ -459,7 +475,7 @@ class PygameRenderer:
         for agent_id, agent in state.agents.items():
             if not agent.alive:
                 continue
-            xy = self._to_xy(agent.pc) if state.runtime_kind == "vm" else None
+            xy = self._vm_marker_xy(state, agent)
             if xy is None:
                 continue
             self._draw_agent_marker(agent_id, xy)

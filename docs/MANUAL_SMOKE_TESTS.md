@@ -28,6 +28,38 @@ input, resizing/scaling, deterministic close behavior, and native Wayland remain
 manual and Wayland is not yet validated. Headless JSONL consumption is automated
 separately.
 
+## Bytefray interactive Pygame replay viewer keyboard controls (Phase 7a)
+
+`bytefray replay --replay <path> --renderer pygame` opens the interactive
+viewer described in `client/src/battle_client/renderers/pygame_renderer.py`.
+`client/tests/test_linux_pygame_smoke.py` (the `gui`-marked pytest suite)
+exercises the real event loop and confirms arrow-key stepping and
+QUIT-event handling programmatically, but full keyboard coverage --
+especially anything involving a held modifier -- needs a human at a real
+keyboard: synthetic Win32 `SendKeys` automation was tried and found
+unreliable for modifier and some special-key delivery in an automated
+session (arrow keys and letters register; `Shift+arrow`, `Home`, `End`,
+and `Q`/`Esc` did not reliably reach the window that way), so it is not
+worth chasing further with more OS-input automation. Run a canonical
+replay and confirm each control:
+
+- [ ] `Space` -- toggles play/pause; pressing it at the final tick restarts
+      from tick 0 and begins playing (not a loop -- it only restarts once,
+      on that explicit press).
+- [ ] `Right` / `Left` -- steps forward/backward exactly one recorded tick;
+      a safe no-op at the last/first tick.
+- [ ] `Shift+Right` / `Shift+Left` -- seeks forward/backward roughly 10
+      ticks, clamped to the replay's range.
+- [ ] `Home` -- restarts to the first tick.
+- [ ] `End` -- jumps to the final tick.
+- [ ] `+` / `-` -- cycles playback speed through 0.25x/0.5x/1x/2x/4x/8x.
+- [ ] `[` / `]` -- decreases/increases the window's cell scale.
+- [ ] `T` -- toggles agent trails on/off.
+- [ ] `Q` / `Esc` -- quits the window cleanly (no lingering process).
+
+Record the result (date, machine, who ran it, pass/fail per control) here
+or in the PR/issue tracking the Phase 7a closeout when performed.
+
 ## PySide6 agent designer
 
 1. Run `python -m app.agent_designer` (and, where applicable,

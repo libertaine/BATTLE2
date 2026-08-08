@@ -5,6 +5,8 @@ __pycache__/
 *.pyd
 *.so
 .pytest_cache/
+.pytest-cache/
+.pytest-tmp/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
