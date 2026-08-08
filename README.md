@@ -422,8 +422,8 @@ Python 3.10 or newer; CI validates the minimum version on Python 3.10.
 ```
 Bytefray/
 ├── app/
-│   ├── agent_designer.py      # PySide6 GUI
-│   └── main.py                # GUI entry and window setup
+│   ├── agent_designer.py      # PySide6 GUI (the Agent Designer entry point)
+│   └── replay_viewer.py       # battle-replay-viewer entry point
 ├── engine/
 │   └── src/battle_engine/     # Simulation core & CLI
 ├── client/

@@ -5,6 +5,40 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+v0.4's primary theme is **Agent Authoring & Development Feedback Loop**:
+tightening the loop an agent author works in, from writing an agent to
+seeing how it performs. The intended user journey is
+create → validate → test → inspect → modify → repeat. No implementation
+work for this theme has landed yet.
+
+### Changed
+
+- Rewrote `ARCHITECTURE.md` to describe the current `NativeMatchService`-
+  centered architecture (canonical `battle2.replay` v3 writing, the
+  `bytefray run`/`tournament` routing to it, the `battle_client` replay-
+  consumption boundary, and the actual `app.agent_designer`/
+  `app.replay_viewer` entry points) instead of the superseded v0.2
+  document.
+- Confirmed `app/match_runner.py` is not part of the shipped Windows
+  executable set: `tools/build_win.ps1` (the script CI's `build-windows-exe`
+  job actually runs) and `tools/installer.iss` build/package only
+  `battle2`, `battle-cli`, `battle-agent-designer`, and
+  `battle-replay-viewer`. No build artifact or configuration change was
+  needed as a result. `tools/match_runner.spec` and the match-runner build
+  steps in `tools/build_executables.ps1`/`tools/build_executables_windows.ps1`
+  are pre-v0.3 leftovers not invoked by CI or by `build_win.ps1`; they are
+  left as-is pending a human decision on whether to remove them (see
+  ARCHITECTURE.md's Packaging section).
+
+### Fixed
+
+- Corrected `app/README.md` and `README.md`'s directory overview, which
+  described `app/main.py` as the Agent Designer's entry point or an
+  alternate way to launch it. Neither `app/agent_designer.py` nor
+  `app/replay_viewer.py` imports `app/main.py`; the supported entry
+  points are `battle-agent-designer`/`bytefray design` (`app.agent_designer`)
+  and `battle-replay-viewer` (`app.replay_viewer`).
+
 ## [0.3.0] - 2026-08-08
 
 ### Added

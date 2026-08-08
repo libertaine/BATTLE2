@@ -9,7 +9,7 @@ Constraints:
 
 Repo context:
 - Engine CLI: python -m battle_engine.cli
-- GUI entry: app/main.py
+- GUI entry: app/agent_designer.py (Agent Designer), app/replay_viewer.py (replay viewer)
 
 SPEC:
 <<paste contents of docs/specs/<FUNCTION_NAME>.md>>

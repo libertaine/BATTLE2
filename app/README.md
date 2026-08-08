@@ -35,7 +35,7 @@ battle-agent-designer
 
 If you prefer running without installing:
 ```bash
-python -m app.main
+python -m app.agent_designer
 ```
 
 ### Agent discovery

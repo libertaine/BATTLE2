@@ -1,229 +1,320 @@
-# BATTLE2 v0.2 Architecture
+# Bytefray Architecture
 
-This document records the released v0.2.0 architecture while
-retaining clearly identified v0.1 compatibility boundaries. Some responsibilities
-overlap and historical code remains in the repository. Migration history is in
-[`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md).
+This document describes Bytefray's architecture as it exists on the
+`v0.4-foundation` branch, after the v0.3.0 release (NativeMatchService,
+Agent API v1 Python-vs-Python matches, canonical `battle2.replay` schema
+v3, and the headless tournament service). It supersedes the v0.2-era
+architecture document; that superseded text remains available in git
+history (see the `v0.2.0` tag) and in
+[`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md) for migration context.
+This document describes what exists today; it does not describe planned
+v0.4 agent-authoring functionality (see "v0.4 direction" at the end).
 
 ## Runtime components
 
 ### Engine package (`engine/src/battle_engine`)
 
-`battle_engine.core` remains the primary public compatibility surface and owns
-the `Kernel` facade and its established mutable attributes. Match responsibilities
-now delegate to focused services:
-
-- `battle_engine.match.MatchRunner` owns tick scheduling, instruction quotas,
-  termination, and the established per-tick operation order.
-- `battle_engine.scoring.ScoringPolicy` owns alive, territory-bucket, and kill
-  point application without executing instructions.
-- `battle_engine.statistics.StatisticsCollector` owns in-memory counters and
-  territory accumulation without persistence.
-- `battle_engine.results` owns winner resolution and persistence-neutral summary
-  construction.
-- `battle_engine.telemetry` defines replay/summary sink protocols, the v0.1 JSONL
-  publisher, JSON summary adapter, and legacy renderer boundary adapter.
-
-`Kernel.run()` delegates scheduling to `MatchRunner`, resolves/builds the result,
-and preserves its direct-caller compatibility summary through an injectable
-`SummarySink`. CLI callers inject a null sink and persist only the canonical
-replay-adjacent summary. `JSONLSink` is re-exported from `core`. Lower-level
-implementations remain extracted:
+Low-level layers remain acyclic and mostly standard-library-only, as before:
 
 - `battle_engine.config` owns the mutable `Config` and `Weights` dataclasses.
 - `battle_engine.instructions` owns byte-oriented ISA constants and `enc`.
 - `battle_engine.agent_state` owns the mutable execution-time `Agent` state.
-- `battle_engine.vm` owns circular arena memory, ownership, instruction decoding,
-  wrapping behavior, and per-tick memory differences.
+- `battle_engine.vm` owns circular arena memory, ownership, instruction
+  decoding, wrapping behavior, and per-tick memory differences. The VM
+  executes instructions only; it does not calculate scores or statistics.
+- `battle_engine.core` re-exports `VM`, `Config`, `Weights`, `Agent`, `enc`,
+  and the `Kernel` facade from their extracted modules, so
+  `from battle_engine.core import VM, Config, ...` keeps working.
+- `battle_engine.match.MatchRunner`, `battle_engine.scoring.ScoringPolicy`,
+  and `battle_engine.statistics.StatisticsCollector` own tick scheduling,
+  scoring, and in-memory counters respectively, without persisting
+  anything. `battle_engine.results` owns winner resolution
+  (`results.resolve_winner`) and persistence-neutral summary construction.
+  `battle_engine.telemetry` defines the replay/summary sink protocols
+  (`JSONLSink`, `NullSummarySink`, etc.) used by both the VM and Python
+  execution paths.
 
-`core` imports and re-exports these names, so existing imports such as
-`from battle_engine.core import VM, Config, Weights, Agent, enc` resolve to the
-new implementation objects without duplicate compatibility classes.
+**`NativeMatchService`** (`battle_engine.match_service`) is the canonical
+execution/orchestration boundary for every native (non-pMARS) match,
+whether invoked from the single-match CLI, the Designer, or the
+tournament service. It accepts a typed `MatchRequest` (a `Config`, a tuple
+of `MatchEntrant`s, a tick limit, and a replay path) and returns a typed
+`NativeMatchResult`. It:
 
-The VM supports `NOP`, `MOV`, `ADD`, `LOAD`, `STORE`, `JMP`, `JZ`, `HALT`,
-`MOVP`, `ADDP`, `LOADI`, and `STOREI`. Values encoded by `enc` use one opcode byte
-and, where applicable, a four-byte little-endian immediate.
+1. rejects mixed VM/Python compositions, missing bytecode, missing Python
+   specs, or duplicate entrant IDs (`UnsupportedMatchCompositionError`)
+   before anything runs;
+2. routes an all-VM request through `Kernel.run()` (the VM scheduler) or an
+   all-Python request through `PythonEntrantController.run()`
+   (`battle_engine.python_runtime`, built on Agent API v1 —
+   `battle_engine.agent_api`), each writing an intermediate replay through
+   the same `JSONLSink`/temp-file-then-rename discipline;
+3. calls `_finalize_native_artifacts` to compute the canonical `match_id`
+   and `result_id` (via `battle_engine.result_model.stable_id`), rewrite
+   every intermediate replay record into the typed `battle_engine.replay`
+   dataclasses at schema version 3, and atomically publish the canonical
+   replay (`replay.jsonl`) alongside `result.json`
+   (`battle2.result` schema v1, written by `write_json_atomic`) with a
+   SHA-256 replay digest recorded in `result.json`'s `replay` reference.
 
-`battle_engine.builtins` assembles the native `runner`, `writer`, `bomber`,
-`flooder`, `spiral`, and `seeker` programs into VM bytecode.
+A partially-failed match never leaves a success-shaped replay, result, or
+`summary.json` at the requested path — every write path clears stale
+artifacts up front and again on any failure. `battle_engine.replay` itself
+remains the standard-library-only, frozen-dataclass module that defines
+the canonical wire contract (headers, per-tick snapshots, memory diffs,
+engine events, terminal `MatchResult`), plus JSON (de)serialization,
+JSONL streaming (`iter_replay`), and `write_replay`. The full wire
+contract is in [`docs/REPLAY_SCHEMA.md`](docs/REPLAY_SCHEMA.md).
 
-`battle_engine.replay` defines the canonical, standard-library-only v0.2 replay
-contract. Frozen dataclasses model headers, match configuration, agent state,
-memory differences, tick snapshots, engine events, and match results. The module
-also owns JSON serialization, validation, JSONL streaming, and conversion from
-supported v0.1 native and legacy event records. The detailed wire contract is in
-[`docs/REPLAY_SCHEMA.md`](docs/REPLAY_SCHEMA.md).
+`battle_engine.agent_api` validates and loads Python agents against
+Agent API v1: versioned manifests, explicit entry points/factories,
+fresh-instance construction per match, collision-resistant module loading
+(so two agents with the same source filename import independently), and
+validation of callable `reset()`/`act()` lifecycle methods. See
+[`docs/AGENT_API_V1.md`](docs/AGENT_API_V1.md). Python-vs-Python matches
+are deterministic: restricted immutable observations, a versioned
+single-action vocabulary, independent per-agent RNG streams derived from
+the match seed, and the existing VM instruction quota reused as the
+action budget. Mixed VM/Python matches remain explicitly unsupported.
 
-`battle_engine.agents` discovers directories below `agents/`. A directory is
-valid when it has `agent.yaml` or `agent.py`. Despite its name, `agent.yaml` may
-contain JSON; YAML syntax is supported when PyYAML is installed. The resolver
-recognizes an optional `model.blob`, display metadata, and default parameters.
-The current CLI executes blobs and built-ins; it detects `agent.py` but does not
-load Python agent code itself.
+`battle_engine.agents` discovers directories below `agents/`. A directory
+is valid when it has `agent.yaml` (JSON syntax also accepted; YAML when
+PyYAML is installed) or `agent.py`. `battle_engine.starters` validates the
+canonical Runner, Writer, Seeker, and Spiral manifests bundled under
+`battle_engine/data/starter_agents` and non-destructively copies only
+missing files into the writable `get_data_root()/agents` catalog.
 
-`battle_engine.starters` validates the canonical Runner, Writer, Seeker, and
-Spiral manifests bundled under `battle_engine/data/starter_agents`, then copies
-only missing files into the writable `get_data_root()/agents` catalog. It reads
-resources through `get_resource_root()`, never writes into `_MEIPASS`, and uses
-exclusive file creation so user edits and custom agents remain untouched.
+`battle_engine.builtins` assembles the native `runner`, `writer`,
+`bomber`, `flooder`, `spiral`, and `seeker` VM programs into bytecode.
 
-### Engine CLI (`battle_engine.cli`)
+### Engine CLI (`battle_engine.cli`, `battle_engine.command`)
 
-The primary `battle2` command and `python -m battle_engine` dispatch to four lazy
-subcommands: `run`, `replay`, `design`, and `agents`. `run` reuses
-`battle_engine.cli.main(argv)` directly, `replay` reuses the replay client,
-`agents` reuses engine discovery, and `design` imports the optional PySide6 app
-only when launched. Help paths therefore require no GUI dependencies.
+The `bytefray` command (`battle_engine.command:main`) and
+`python -m battle_engine` dispatch to five lazy subcommands: `run`,
+`tournament`, `replay`, `design`, and `agents`. `battle2`
+(`battle_engine.command:battle2_main`) is a deprecated compatibility
+alias that prints a one-line deprecation notice and otherwise dispatches
+to the identical implementation.
 
-The legacy `battle-cli` command and `python -m battle_engine.cli` continue to use
-the engine argparse entry point. The engine CLI:
+- **`run`** reuses `battle_engine.cli.main(argv)` directly. It resolves
+  configuration and agent slots from flags/environment, then branches on
+  `--mode`:
+  - `b2` (default, native engine): resolves VM bytecode or a Python
+    `AgentSpec` per slot, builds `MatchEntrant`/`MatchRequest`, and calls
+    `NativeMatchService().run(...)`. This is how ordinary single-match CLI
+    execution reaches the canonical boundary.
+  - `redcode94`: invokes `battle_engine.pmars.run_pmars` directly — this
+    path does **not** go through `NativeMatchService` and produces no
+    canonical replay (`result.json`'s `replay` field is `null`). It writes
+    a `summary.json` (schema version 2) and a `battle2.result` v1 envelope
+    with `mode="redcode94"` built by hand in `cli.py`, using the same
+    `stable_id`/`ResultEnvelope` machinery `NativeMatchService` uses for
+    identity, but with no replay to digest.
+- **`tournament`** reuses `battle_engine.tournament_cli.main(argv)`,
+  which drives `TournamentService` (`battle_engine.tournament_service`).
+  `TournamentService` constructs a deterministic round-robin schedule and
+  calls `NativeMatchService().run(...)` once per scheduled match — this is
+  how tournament execution reaches the canonical boundary, identically to
+  single-match `run`. See [`docs/TOURNAMENTS.md`](docs/TOURNAMENTS.md) for
+  resume/retry/standings behavior.
+- **`replay`** reuses the replay client (`battle_client.cli.main`).
+- **`design`** lazily imports `app.agent_designer` only when launched, so
+  `--help` and other non-GUI paths never import PySide6.
+- **`agents`** reuses `battle_engine.cli.main(["--list-agents"])`.
 
-1. resolves configuration and agent parameters from flags and environment;
-2. resolves agent slots in this order: `BATTLE_AGENTS_JSON`, direct blob flag,
-   discovered agent, built-in agent;
-3. runs either the native B2 `Kernel` or an external pMARS process for
-   `redcode94` mode; and
-4. writes match artifacts.
-
-The v0.1 native replay is newline-delimited JSON. Its first record is a version 6
-header containing configuration, followed by one snapshot per executed tick.
-Each snapshot contains agent state, score, events, and memory ownership diffs.
-The CLI writes one sibling `summary.json` with schema version 2. Its default
-replay is `<data-root>/runs/_loose/replay.jsonl`; explicitly supplied relative
-paths remain relative to the current working directory. Direct `Kernel` callers
-retain the injectable compatibility summary sink.
-
-The external pMARS mode writes a version 2 summary but no native replay stream.
-Executable discovery and execution are owned by `battle_engine.pmars`. It keeps
-commands as argument lists, resolves read-only packaged files through the
-resource root, supports installer/portable files beneath the writable layout,
-and normalizes missing, timeout, process-exit, and output-parsing failures before
-they reach either the CLI or a GUI-launched engine subprocess.
-The v0.1 engine writer remains active in this migration phase; canonical v0.2
-writing is available through `battle_engine.replay.write_replay` but is not yet
-wired into `Kernel` or the CLI.
+The legacy `battle-cli` command and `python -m battle_engine.cli`
+(`battle_engine.legacy:battle_cli`) continue to use the same engine
+argparse entry point as `bytefray run`. `battle-agent-designer`
+(`battle_engine.legacy:agent_designer`) is a compatibility wrapper that
+lazily imports `app.agent_designer` — see "Desktop application" below.
+The v0.1 `match-runner` console-script entry point was removed in v0.3.
 
 ### Replay client (`client/src/battle_client`)
 
-`battle_client.cli` reads existing JSONL streams and optionally reads a sibling
-`summary.json`. `battle_client.utils` delegates replay parsing to
-`battle_engine.replay`, so renderers receive only canonical `ReplayRecord`
-dataclasses. It also normalizes historical summary metadata locations before
-renderer setup. `battle_client.player.ReplayPlayer` owns replay iteration and the
-explicit presentation lifecycle:
+`battle_client.cli` reads existing canonical (or legacy-compatible) JSONL
+replay streams and an optional sibling `summary.json`, then dispatches to
+one of two independent presentation paths:
 
-```text
-setup -> wait_for_start -> [wait_until_ready -> on_event -> update]*
-      -> on_complete -> hold_open -> teardown
-```
+- `battle_client.player.ReplayPlayer` drives a **renderer** through an
+  explicit lifecycle (`setup -> wait_for_start ->
+  [wait_until_ready -> on_event -> update]* -> on_complete -> hold_open ->
+  teardown`, with `teardown` always run from a `finally` block). Pausing
+  and single-step gating happen before delivery of each record, so a
+  paused renderer cannot drop records. `HeadlessRenderer` has no Pygame
+  dependency; `PygameRenderer` is imported lazily only when selected and
+  implements the interactive viewer described in the README (play/pause,
+  step, seek, speed control, a runtime-aware HUD, a clickable event
+  timeline, and territory/heatmap overlays). `AbstractRenderer` supplies
+  no-op interactive/update/completion/hold-open methods so renderers share
+  one interface without capability probing.
+- `battle_client.session.ReplaySession` is a renderer-independent,
+  fully-buffered, seekable cursor over reconstructed engine-observable
+  state (arena bytes, ownership, per-entrant `AgentState`, score), built
+  only on `battle_engine.replay.iter_replay`. It powers the interactive
+  viewer's territory/timeline analysis without rerunning any agent or
+  coupling to a specific renderer. `seek` replays forward from tick 0 (or
+  incrementally from the current tick) — there is no snapshot/checkpoint
+  shortcut for a long match, a documented known limitation.
 
-`teardown` runs from a `finally` block after setup is attempted. Pausing and
-single-step gating happen before delivery of the pending canonical record, so a
-paused renderer cannot drop records and a step permit processes one record.
-Rendering is selected at the client boundary:
+Neither the renderer path nor `ReplaySession` runs the simulation; both
+consume only the canonical replay file the engine already wrote. This is
+the architectural separation between engine execution
+(`NativeMatchService` / `Kernel` / `PythonEntrantController`, which never
+read a replay back) and replay consumption (`battle_client`, which never
+re-executes an agent).
 
-- `HeadlessRenderer` prints stable text and has no Pygame dependency.
-- `PygameRenderer` is imported lazily only when selected.
-
-`AbstractRenderer` supplies no-op interactive, update, completion, and hold-open
-methods. Concrete renderers therefore share one interface without capability
-probing. `PygameCanvas` uses `update` from a Qt timer, imports Pygame only when the
-widget is shown, and completes/tears down the renderer when the widget closes.
-
-Schema/version and legacy-shape checks are confined to the read boundary rather
-than individual renderers. The client does not run the simulation. The repository also retains older
-renderer modules and a compatibility module at `client/src/renderers.py`.
+`client/src/battle_client/renderers/pygame_canvas.py` defines
+`PygameCanvas`, a `QtWidgets.QWidget`-embeddable renderer intended to host
+Pygame rendering inside a Qt window. **It currently has no callers
+anywhere in the repository** — it is not imported by `app/agent_designer.py`,
+`app/replay_viewer.py`, or any other module — and is not wired into the
+Designer. It exists as unused, unremoved code; do not infer from its
+presence that the Designer embeds a live replay view.
 
 ### Desktop application (`app`)
 
-`app.agent_designer` and `app.replay_viewer` provide desktop tools and service
-adapters. They are packaged from the repository root rather than the two `src`
-trees. The designer uses PySide6 and the replay viewer uses a Pygame-oriented
-presentation path. These are adjacent consumers of the engine, not part of
-`battle_engine.core`. `app/match_runner.py` is dead source (see
-`docs/WINDOWS_DEV_NOTES.md`) retained but no longer wired to any console
-script.
+`app` is packaged from the repository root rather than a `src` tree and
+holds PySide6/Pygame-oriented tools that are adjacent consumers of the
+engine, not part of `battle_engine.core`.
+
+- **`app/agent_designer.py` is the actual, sole supported Agent Designer
+  entry point.** It is a PySide6 `QMainWindow` application (Simple/Advanced
+  tabs, a homogeneous VM-vs-VM or Python-vs-Python match launcher, a
+  tournament launcher dialog, and an About surface) built from
+  `app.services.*` and `app.views.*`. It is reached two ways: the
+  `battle-agent-designer` console script
+  (`battle_engine.legacy:agent_designer`, which lazily imports
+  `app.agent_designer` and calls its `main()`) and `bytefray design`
+  (`battle_engine.command._design`, same lazy import). Both reject stray
+  arguments and print a usage message for `--help` without importing
+  PySide6.
+- **`app/replay_viewer.py` is the actual `battle-replay-viewer` entry
+  point.** Its `main()` normalizes viewer-friendly arguments (a bare path
+  becomes `--replay <path>`, `--renderer pygame` is the default unless
+  overridden) and delegates to `battle_client.cli.main`. It is built by
+  `tools/replay_viewer.spec` into the `battle-replay-viewer` executable.
+- **`app/main.py` is not the active entry point for anything.** Its own
+  docstring states that `app/agent_designer.py` and `app/replay_viewer.py`
+  "should import" `from app.main import main`, but neither file does —
+  both are self-contained and use their own `main()`. `app/main.py` is not
+  referenced by any PyInstaller spec, console script, or the
+  `battle_engine.command`/`legacy` dispatchers; running it directly opens
+  a generic blank Pygame window with no relationship to the Designer or
+  replay viewer. It is stale/orphaned source, not an active entry point;
+  this task does not delete it (see "Packaging" below for the one
+  documentation reference that did incorrectly point at it).
+- **`app/match_runner.py` is dead source**, not part of any supported
+  entry point or the shipped Windows build (see "Packaging" below).
 
 ## Configuration and artifacts
 
-- `engine/config/battle.defaults.json` is a reference defaults file. Runtime
-  defaults are also encoded in the `Config` dataclass.
-- `agents/<name>/agent.yaml` and optional `model.blob` form the agent catalog.
-- Native runs produce `replay.jsonl` and `summary.json`.
-- Historical run output, prebuilt executables, pMARS binaries, SDK examples, and
-  `_legacy/` coexist with the active source tree.
+- `engine/config/battle.defaults.json` is a reference defaults file;
+  runtime defaults also live in the `Config` dataclass.
+- `agents/<name>/agent.yaml` (or `agent.py`, or both) and an optional
+  `model.blob` form the agent catalog.
+- Every native match writes exactly three sibling artifacts:
+  canonical `replay.jsonl` (schema v3), `result.json` (`battle2.result`
+  v1, with a SHA-256 digest of the replay), and a compatibility
+  `summary.json`. A `redcode94` match writes `summary.json` and
+  `result.json` with `replay: null` — no canonical replay stream.
+- Historical run output, prebuilt executables, pMARS binaries, SDK
+  examples, and `_legacy/` coexist with the active source tree but are
+  not part of the current architecture.
 
 ## Packaging and commands
 
 The root `pyproject.toml` uses setuptools and discovers packages from
-`engine/src`, `client/src`, and the repository root. Public commands are:
+`engine/src`, `client/src`, and the repository root (`app`). Public
+commands:
 
-- `battle2` → `battle_engine.command:main`
-- `battle-cli` → compatibility wrapper for `battle_engine.cli:main`
-- `battle-agent-designer` → lazy compatibility wrapper for the designer
+| Command | Target |
+|---|---|
+| `bytefray` | `battle_engine.command:main` |
+| `battle2` (deprecated alias) | `battle_engine.command:battle2_main` |
+| `battle-cli` (compatibility) | `battle_engine.legacy:battle_cli` |
+| `battle-agent-designer` (compatibility) | `battle_engine.legacy:agent_designer` → `app.agent_designer.main()` |
 
-`app/pyproject.toml` separately describes the desktop designer and maps
-`battle-agent-designer` to `app.main:main`. The root project is the authoritative
-whole-repository package used by the documented install flow.
+Windows executables are built by **`tools/build_win.ps1`**, the script CI
+actually invokes (`.github/workflows/ci.yml`'s `build-windows-exe` job).
+It builds exactly four onedir applications from four PyInstaller specs —
+`tools/battle2.spec`, `tools/battle_cli.spec`,
+`tools/agent_designer.spec` (→ `app/agent_designer.py`), and
+`tools/replay_viewer.spec` (→ `app/replay_viewer.py`) — then runs a
+deterministic frozen GUI-import smoke test against `battle2.exe design`
+and the standalone Designer. `tools/installer.iss` (Inno Setup) packages
+the same four onedir trees beneath `{app}\bin\`.
 
-Windows builds remain implemented by the PowerShell scripts and PyInstaller spec
-files under `tools/`; `tools/build_win.ps1` is invoked by CI.
-The unified Windows `battle2.exe` explicitly collects the dynamically loaded
-`app` package and Qt dependencies, so all four dispatcher commands are available.
-The Windows build runs deterministic frozen startup smoke for both
-`battle2.exe design` and the standalone Designer; this is startup coverage, not
-a substitute for manual visible/input GUI testing.
+**`app/match_runner.py` is not shipped.** There is no PyInstaller spec
+invoked by `tools/build_win.ps1` or `tools/installer.iss` for it, and its
+console-script entry point was removed in v0.3 (see CHANGELOG). The only
+references that would build it into an executable are two older helper
+scripts, `tools/build_executables.ps1` and
+`tools/build_executables_windows.ps1` — both predate the current
+four-executable build, are not invoked by CI or any documented workflow,
+and would fail if run today because `app/match_runner.py` calls
+`PygameRenderer.setup()`/`.update()`/`.on_complete()`/`.teardown()`,
+methods that no longer exist on `PygameRenderer` (see
+[`docs/WINDOWS_DEV_NOTES.md`](docs/WINDOWS_DEV_NOTES.md)). `tools/match_runner.spec`,
+the PyInstaller spec for it, is likewise not referenced by any build
+script CI runs. Because none of these three files are part of the actual
+release build surface today, none were changed as part of this cleanup;
+whether to delete them as unreachable leftovers is left for a human
+decision rather than treated as implied by this audit.
 
-Runtime Python support is 3.10 through 3.13. Core installation requires PyYAML. Optional
-extras are `replay` (Pygame), `designer` (PySide6), `dev`, and `windows-build`;
-the v0.1 `gui` aggregate remains as an alias. Some legacy release scripts choose
-Python 3.11 for reproducible executable builds, but this does not raise the
-package runtime minimum.
-
-Wheels contain Python packages and package-local assets only. Repository-level
-agent directories remain runtime/user data. pMARS executables, SDK archives,
-historical builds, and third-party license trees are deliberately excluded from
-the Python wheel; any future binary distribution must preserve the applicable
-pMARS GPLv2 licensing materials.
+Wheels contain Python packages and package-local assets only (see
+`[tool.setuptools.package-data]`). Repository-level `agents/` directories
+are runtime/user data. pMARS executables, SDK archives, historical
+builds, and `third_party_licenses/` are deliberately excluded from the
+Python wheel.
 
 ## Tests and automation
 
-`pytest.ini` includes `_legacy/tests`, `engine/tests`, and `client/tests` while
-excluding tests marked `gui` from ordinary headless runs. Display-backed smoke
-tests are invoked explicitly by the dedicated Linux GUI workflow, including the
-Designer test under root `tests/`. The legacy tests intentionally import the
-top-level legacy `core` module. The engine and client characterization tests
-import the packaged modules and freeze v0.1 behavior without starting a visible
-window.
-
-GitHub Actions runs the headless suite on Python 3.10, 3.11, 3.12, and 3.13,
-validates the pure wheel, and builds the five Windows executables. Optional
-workflows provide Linux X11/Xvfb startup smoke for Pygame and the Designer and
-Ubuntu 22.04 pMARS build/runtime validation. These startup checks do not replace
-manual visible rendering, input, scaling, close-lifecycle, or native Wayland tests.
+`pytest.ini` sets `testpaths` to `_legacy/tests`, `engine/tests`, and
+`client/tests`, and excludes tests marked `gui` from ordinary headless
+runs. `.github/workflows/ci.yml` runs three jobs: `test-linux-core`
+(headless suite on Python 3.10–3.13, plus a check that importing
+`battle_engine.launchers`/`app.services.engine_commands` never pulls in
+`PySide6`/`pygame`), `build-linux-wheel` (build + `tools/check_wheel.py`),
+and `build-windows-exe` (`tools/build_win.ps1`). Optional workflows
+(`.github/workflows/linux-gui-smoke.yml`,
+`.github/workflows/linux-pmars-build.yml`) cover Linux X11/Xvfb GUI
+startup smoke and Ubuntu pMARS build/runtime — these are startup checks,
+not a substitute for manual interactive testing.
 
 ## Dependency direction as implemented
 
 ```text
-agent manifests/blobs + built-ins
+agent manifests/blobs/Python sources + built-ins
               |
               v
-      battle_engine.cli -----> pMARS (redcode94 only)
-              |
+      battle_engine.cli ------------------> pMARS (redcode94 only,
+              |                              bypasses NativeMatchService)
+              | (mode b2)
               v
-       battle_engine.core (Kernel facade)
+      battle_engine.tournament_service --\
+              |                          |
+              v                          v
+       battle_engine.match_service.NativeMatchService
               |
-              v
+    +---------+----------+
+    v                     v
+ Kernel (VM)      PythonEntrantController
+    |                     |
  match -> scoring/statistics -> results
               |
               v
- telemetry adapters -> replay.jsonl / summary.json / legacy renderer
+   canonical battle2.replay v3 (replay.jsonl)
+   + battle2.result v1 (result.json)
+   + compatibility summary.json
               |
               v
-       app tools / replay client
+   battle_client (ReplayPlayer + renderers, or ReplaySession)
+              |
+              v
+      app.replay_viewer / app.agent_designer
 ```
 
-The extracted low-level dependency direction is acyclic:
+The extracted low-level dependency direction remains acyclic:
 
 ```text
 config                 instructions     agent_state
@@ -234,54 +325,45 @@ config                 instructions     agent_state
                           \      v      /
                            core (Kernel facade)
                                   |
-                         CLI and consumers
+                         MatchRunner / NativeMatchService
 ```
 
-`config`, `instructions`, and `agent_state` use only the standard library. `vm`
-depends on `instructions` and `agent_state`; none imports `core`. Built-in agents
-depend directly on `instructions`.
-
-The VM executes instructions only; it does not calculate scores or statistics.
-Domain statistics and result construction do not write files. Replay dictionary
-construction and serialization live in telemetry, outside the scheduling logic.
-Renderer-specific `__owners__` compatibility remains isolated in
-`LegacyRendererObserver`.
-
-Remaining coupling is intentional for compatibility: `Kernel` remains the public
-mutable match state consumed by `MatchRunner`; the CLI still creates the v0.1
-replay sink and writes its separate version 2 user-facing summary; and the kernel
-facade suppresses default summary-output failures as v0.1 did.
+`config`, `instructions`, and `agent_state` use only the standard library.
+`vm` depends on `instructions` and `agent_state`; none imports `core`.
 
 ## Application roots
 
-`battle_engine.paths` is the shared root-resolution boundary. `BATTLE2_ROOT`
-(with `BATTLE_ROOT` as a legacy fallback) selects the writable data root used
-for agents, replays, logs, generated files, and user configuration. Relative
-configured values are normalized against the current working directory.
+`battle_engine.paths` is the shared root-resolution boundary.
+`BYTEFRAY_ROOT` is the preferred writable-data-root environment variable;
+`BATTLE2_ROOT` and then `BATTLE_ROOT` are checked, in that order, as
+deprecated fallbacks. The application *resource* root is separate: source
+checkouts use the repository root, installed packages use package-local
+resources, and frozen applications use PyInstaller's `_MEIPASS` extraction
+directory for read-only bundled files — `_MEIPASS` is never a writable
+data root. Without an explicit root, a frozen portable application writes
+beside its executable; the Windows installer sets both `BYTEFRAY_ROOT` and
+`BATTLE2_ROOT` to `%ProgramData%\BATTLE2` (kept under the legacy name for
+upgrade continuity with existing installs). A regular installed Windows
+wheel defaults to `%LOCALAPPDATA%\BATTLE2`; a regular installed Linux
+wheel uses `$XDG_DATA_HOME/battle2` or `~/.local/share/battle2`.
 
-The application resource root is separate. Source checkouts use the repository
-root, installed packages use package-local resources, and frozen applications
-use PyInstaller's `_MEIPASS` extraction directory for read-only bundled files.
-`_MEIPASS` is never a writable data root. Without an explicit root, a frozen
-portable application writes beside its executable; the Windows installer sets
-`BATTLE2_ROOT` to select its writable ProgramData location.
+`battle_engine.launchers` owns child command construction for both the
+Designer and any other launcher of a match/replay subprocess. Frozen
+applications resolve sibling `.exe` files beside the current executable
+(the installer's onedir sibling-folder layout); source/editable checkouts
+invoke the current Python interpreter. Commands are always argument lists,
+never shell strings.
 
-With neither root variable set, a regular installed Linux wheel uses
-`$XDG_DATA_HOME/battle2` or `~/.local/share/battle2`. A regular installed Windows
-wheel uses `%LOCALAPPDATA%\BATTLE2`, falling back beneath the current user's
-`AppData\Local` directory. Source and editable checkouts continue to use the
-repository root.
+## v0.4 direction
 
-The v0.2 installer preserves each PyInstaller onedir artifact beneath
-`{app}\bin\<application>`, so the Designer's frozen sibling lookup reaches the
-installed `battle2` and replay-viewer directories without duplicating their
-internals. Installation is administrative and AMD64-only. It sets the machine
-`BATTLE2_ROOT` to `%ProgramData%\BATTLE2` by default, does not modify `PATH`, and
-retains writable application data during uninstall.
+v0.4's primary theme is **Agent Authoring & Development Feedback Loop**:
+tightening the loop an agent author works in, from writing an agent to
+seeing how it performs. The intended user journey is:
 
-`battle_engine.launchers` owns child command construction. Source and editable
-applications invoke the primary dispatcher or replay client with the current
-Python interpreter. Frozen applications resolve `battle2.exe` and
-`battle-replay-viewer.exe` beside the current executable (including the v0.2
-onedir sibling-folder layout); writable-data settings never redirect executable
-discovery. Commands are always argument lists rather than shell strings.
+**create → validate → test → inspect → modify → repeat**
+
+No part of this is implemented yet as of this document (Phase 0 of v0.4
+is documentation/packaging-hygiene only — see `CHANGELOG.md`'s
+`[Unreleased]` section). Do not treat any agent-scaffolding, validation,
+or feedback-loop tooling described in future specs under `docs/specs/` as
+already built until it lands and this document is updated to describe it.

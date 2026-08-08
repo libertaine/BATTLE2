@@ -67,9 +67,12 @@ or in the PR/issue tracking the Phase 7a closeout when performed.
    replay viewer.
 4. Confirm malformed form input produces a usable error and does not corrupt an
    existing manifest.
-5. Where the embedded `PygameCanvas` is available, open and close its containing
-   Qt window repeatedly. Confirm timer updates stop on close, Pygame tears down,
-   and reopening creates a working canvas without terminating the Qt process.
+
+`client/src/battle_client/renderers/pygame_canvas.py` defines `PygameCanvas`,
+a Qt-embeddable renderer widget, but nothing in the Designer or elsewhere in
+the repository currently instantiates it -- it has no callers. There is no
+embedded-canvas smoke test to run today; remove this note once `PygameCanvas`
+is either wired into a consumer or removed.
 
 This remains manual because widget layout, native dialogs, and subprocess handoff
 need human inspection across supported desktop environments.
