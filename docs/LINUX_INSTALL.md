@@ -58,8 +58,8 @@ bytefray replay --replay ~/.local/share/battle2/runs/_loose/replay.jsonl \
   --renderer headless
 ```
 
-The `battle2` command remains a deprecated compatibility alias for `bytefray`
-throughout the v0.3 transition, dispatching to the identical implementation.
+The `battle2` command remains a deprecated compatibility alias for `bytefray`,
+dispatching to the identical implementation.
 
 The wheel does not bundle a Linux pMARS executable or select the repository's
 Windows PE executables on Linux. `PMARS_CMD` remains authoritative and an

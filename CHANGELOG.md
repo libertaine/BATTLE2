@@ -5,13 +5,13 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-08
+
 v0.4's primary theme is **Agent Authoring & Development Feedback Loop**:
 tightening the loop an agent author works in, from writing an agent to
-seeing how it performs. The intended user journey is
-create → validate → test → inspect → modify → repeat. Phases 1-4d have
-landed (both the CLI and the Designer GUI). Phase 5 (replay-analysis
-extraction/migration, supporting architectural work rather than a new
-feature) has also landed; v0.4 next moves to final hardening/release.
+seeing how it performs. The supported user journey, available from both
+the CLI and the Designer GUI, is
+create → validate → test → inspect → modify → repeat.
 
 ### Added
 

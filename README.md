@@ -22,8 +22,7 @@ This project is released under the **MIT License**. See the [LICENSE](LICENSE) f
 
 This project was previously named **BATTLE2**. The public CLI is now `bytefray`;
 the legacy `battle2` command remains available as a deprecated compatibility
-alias throughout the v0.3 transition and prints a short deprecation notice
-when used. Internal Python package names (`battle_engine`, `battle_client`)
+alias and prints a short deprecation notice when used. Internal Python package names (`battle_engine`, `battle_client`)
 and the `battle2.*` artifact schema identifiers (`battle2.result`,
 `battle2.replay`) are retained unchanged for compatibility — they are stable
 protocol identifiers, not user-facing branding. Set `BYTEFRAY_ROOT` to choose
@@ -76,17 +75,17 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Current release:** [Bytefray v0.3.0](https://github.com/libertaine/Bytefray/releases/tag/v0.3.0).
-The v0.1 and v0.2 downloads are historical and have been superseded.
+**Current release:** [Bytefray v0.4.0](https://github.com/libertaine/Bytefray/releases/tag/v0.4.0).
+The v0.1–v0.3 downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Windows installer** | [Bytefray-Setup-0.3.0.exe](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/Bytefray-Setup-0.3.0.exe) | Installs under `C:\Program Files\Bytefray` |
-| 💼 **Portable Windows applications** | [Bytefray-0.3.0-windows-exes.zip](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/Bytefray-0.3.0-windows-exes.zip) | Complete onedir layouts for all four executables |
-| 🐍 **Python wheel** | [bytefray-0.3.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/bytefray-0.3.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
-| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v0.3.0/SHA256SUMS.txt) | SHA-256 values for release assets |
+| 🧰 **Windows installer** | [Bytefray-Setup-0.4.0.exe](https://github.com/libertaine/Bytefray/releases/download/v0.4.0/Bytefray-Setup-0.4.0.exe) | Installs under `C:\Program Files\Bytefray` |
+| 💼 **Portable Windows applications** | [Bytefray-0.4.0-windows-exes.zip](https://github.com/libertaine/Bytefray/releases/download/v0.4.0/Bytefray-0.4.0-windows-exes.zip) | Complete onedir layouts for all four executables |
+| 🐍 **Python wheel** | [bytefray-0.4.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v0.4.0/bytefray-0.4.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v0.4.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---
 
@@ -147,11 +146,24 @@ bytefray design    # launch the optional PySide6 designer
 bytefray agents    # list discovered agents
 ```
 
-`battle2` remains a deprecated compatibility alias for `bytefray` throughout
-the v0.3 transition — it dispatches to the exact same implementation with
-identical behavior and exit codes, but prints a one-line deprecation notice.
-The v0.1 command names `battle-cli` and `battle-agent-designer` also remain
-compatibility wrappers. The v0.1 `match-runner` command was removed in v0.3;
+`bytefray agents` also has a `create → validate → test` subcommand group for
+authoring your own Python agent:
+
+```bash
+bytefray agents create my_agent     # scaffold a new Agent API v1 agent
+bytefray agents validate my_agent   # one-tick dry run of the Agent API contract
+bytefray agents test my_agent       # short real match vs. a reference opponent
+```
+
+The same loop, plus **Open Replay**, is available without a terminal from the
+Agent Designer's **Agent Development** tab. See the
+[Agent Authoring Guide](docs/AGENT_AUTHORING.md) for the full workflow.
+
+`battle2` remains a deprecated compatibility alias for `bytefray` — it
+dispatches to the exact same implementation with identical behavior and exit
+codes, but prints a one-line deprecation notice. The v0.1 command names
+`battle-cli` and `battle-agent-designer` also remain compatibility wrappers.
+The v0.1 `match-runner` command was removed in v0.3;
 `bytefray replay --renderer pygame` (or `battle-replay-viewer.exe`) is the
 maintained interactive Pygame viewer. Module
 execution is also available:
@@ -218,8 +230,8 @@ and the active Agent API, result, and replay schema versions.
 | Redcode | `.red/.asm`  | Via pMARS integration     | Compatible with existing Core War agents |
 
 * A directory containing **Python** source is discoverable, validated, and can
-  execute against another Python agent through the experimental v0.3 runtime.
-  Mixed Python/VM matches remain unsupported.
+  execute against another Python agent through the experimental Python-vs-Python
+  runtime. Mixed Python/VM matches remain unsupported.
 * Use **blob** when you want to ship just the low-level compiled version.
 * The **Redcode** mode allows interop with legacy Core War agents (via pMARS). Use `--mode redcode94`.
 
@@ -260,8 +272,14 @@ agent files.
 
 | Executable | Role | Tech |
 |-----------|------|------|
-| battle-agent-designer.exe | Configure & run matches, open replays | PySide6 (Qt) |
+| battle-agent-designer.exe | Configure & run matches, author agents (Simple/Advanced/**Agent Development** tabs), open replays | PySide6 (Qt) |
 | battle-replay-viewer.exe  | View and analyze match replays         | Pygame |
+
+The Agent Designer's **Agent Development** tab brings the CLI's
+create → validate → test → replay agent-authoring loop into the GUI: New
+Agent, Validate, Development Test (with Opponent/Seed/Ticks options), and
+Open Replay. See the [Agent Authoring Guide](docs/AGENT_AUTHORING.md) for
+details.
 
 
 

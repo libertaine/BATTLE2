@@ -46,6 +46,14 @@ def validate_wheel(wheel: Path) -> None:
                 f"{unexpected_pmars}"
             )
 
+        stray_bytecode = sorted(
+            name for name in names if "__pycache__" in name or name.endswith(".pyc")
+        )
+        if stray_bytecode:
+            raise ValueError(
+                f"Wheel unexpectedly contains compiled bytecode/cache: {stray_bytecode}"
+            )
+
         entry_points_name = next(
             (name for name in names if name.endswith(".dist-info/entry_points.txt")),
             None,

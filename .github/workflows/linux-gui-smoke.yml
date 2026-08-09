@@ -10,7 +10,7 @@ on:
       - "client/**"
       - "engine/src/**"
       - "pyproject.toml"
-      - "tests/test_linux_designer_smoke.py"
+      - "tests/**"
       - "pytest.ini"
   pull_request:
     paths:
@@ -19,7 +19,7 @@ on:
       - "client/**"
       - "engine/src/**"
       - "pyproject.toml"
-      - "tests/test_linux_designer_smoke.py"
+      - "tests/**"
       - "pytest.ini"
 
 jobs:
@@ -86,5 +86,6 @@ jobs:
           echo "$plugin"
           ldd "$plugin" || true
 
-      - name: Exercise X11 startup, primary window creation, and deterministic shutdown
-        run: xvfb-run -a python -m pytest -q -m gui tests/test_linux_designer_smoke.py
+      - name: Exercise X11 startup, primary window creation, deterministic shutdown,
+          and the Agent Development (create/validate/test) workflow
+        run: xvfb-run -a python -m pytest -q -m gui tests/

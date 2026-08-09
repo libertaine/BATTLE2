@@ -1,14 +1,15 @@
 # Bytefray Architecture
 
-This document describes Bytefray's architecture as it exists on the
-`v0.4-foundation` branch, after the v0.3.0 release (NativeMatchService,
-Agent API v1 Python-vs-Python matches, canonical `battle2.replay` schema
-v3, and the headless tournament service). It supersedes the v0.2-era
-architecture document; that superseded text remains available in git
-history (see the `v0.2.0` tag) and in
+This document describes Bytefray's architecture as of the v0.4.0 release
+(NativeMatchService, Agent API v1 Python-vs-Python matches, canonical
+`battle2.replay` schema v3, the headless tournament service, and the
+`bytefray agents create/validate/test` authoring commands plus the
+Designer's Agent Development tab added in v0.4). It supersedes the
+v0.2-era architecture document; that superseded text remains available in
+git history (see the `v0.2.0` tag) and in
 [`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md) for migration context.
-This document describes what exists today; it does not describe planned
-v0.4 agent-authoring functionality (see "v0.4 direction" at the end).
+This document describes what exists today (see "v0.4 direction" at the end
+for how the current agent-authoring functionality was delivered in phases).
 
 ## Runtime components
 
@@ -383,15 +384,16 @@ applications resolve sibling `.exe` files beside the current executable
 invoke the current Python interpreter. Commands are always argument lists,
 never shell strings.
 
-## v0.4 direction
+## v0.4.0 delivery history
 
 v0.4's primary theme is **Agent Authoring & Development Feedback Loop**:
 tightening the loop an agent author works in, from writing an agent to
-seeing how it performs. The intended user journey is:
+seeing how it performs. The delivered user journey is:
 
 **create → validate → test → inspect → modify → repeat**
 
-Phase 0 (documentation/packaging hygiene) landed no code. Phase 1
+This section records how that loop was delivered, phase by phase, across
+the v0.4.0 release. Phase 0 (documentation/packaging hygiene) landed no code. Phase 1
 (`docs/specs/agent_scaffold.md`) added `bytefray agents create <agent-id>`,
 which scaffolds a minimal Agent API v1 Python agent from a bundled
 `battle_engine/data/agent_template/` resource. Phase 2
@@ -418,14 +420,14 @@ same loop into the PySide6 Agent Designer as a third "Agent Development"
 tab — see the Desktop application section above for how Validate/Test are
 wired through the existing `QProcess`/single-active-process machinery
 without forking any Phase 1-3 semantic. Phase 4d (integration polish,
-documentation, and frozen-app verification) is the remaining slice. Phase 5
+documentation, and frozen-app verification) completed that tab. Phase 5
 (`docs/specs/replay_analysis.md`) is supporting architectural work, not a
 further step in the create → validate → test → inspect → modify loop
 itself: it extracted the replay-domain facts `PygameRenderer` already
 computed (territory ownership/history, match events, selected-cell state)
 into the headless `battle_client.analysis` module described above, and
-migrated the renderer to consume it. v0.4 moves to final hardening/release
-after Phase 5. Do not treat any further feedback-loop tooling described in
+migrated the renderer to consume it. Phase 6 (final hardening and release)
+closed out v0.4 as the tagged `v0.4.0` release described throughout this
+document. Do not treat any further feedback-loop tooling described in
 future specs under `docs/specs/` as already built until it lands and this
-document is
-updated to describe it.
+document is updated to describe it.
