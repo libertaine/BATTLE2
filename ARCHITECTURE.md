@@ -155,6 +155,16 @@ one of two independent presentation paths:
   coupling to a specific renderer. `seek` replays forward from tick 0 (or
   incrementally from the current tick) — there is no snapshot/checkpoint
   shortcut for a long match, a documented known limitation.
+- `battle_client.analysis` (v0.4 Phase 5) is the one authoritative,
+  Pygame-free implementation of the replay-domain facts `PygameRenderer`
+  needs: territory ownership (`territory_summary`, `TerritoryHistory`/
+  `compute_territory_history`), match event collection/query
+  (`collect_match_events`, `events_near_tick`), and selected-arena-cell
+  state (`SelectedCellInfo`/`selected_cell_info`). It depends only on
+  `battle_client.session`/`battle_engine.replay`, is importable with no
+  display and no Pygame installed, and is the module `PygameRenderer`
+  itself now calls into rather than maintaining private duplicates — see
+  `docs/specs/replay_analysis.md`.
 
 Neither the renderer path nor `ReplaySession` runs the simulation; both
 consume only the canonical replay file the engine already wrote. This is
@@ -408,7 +418,14 @@ same loop into the PySide6 Agent Designer as a third "Agent Development"
 tab — see the Desktop application section above for how Validate/Test are
 wired through the existing `QProcess`/single-active-process machinery
 without forking any Phase 1-3 semantic. Phase 4d (integration polish,
-documentation, and frozen-app verification) is the remaining slice. Do not
-treat any further feedback-loop tooling described in future specs under
-`docs/specs/` as already built until it lands and this document is
+documentation, and frozen-app verification) is the remaining slice. Phase 5
+(`docs/specs/replay_analysis.md`) is supporting architectural work, not a
+further step in the create → validate → test → inspect → modify loop
+itself: it extracted the replay-domain facts `PygameRenderer` already
+computed (territory ownership/history, match events, selected-cell state)
+into the headless `battle_client.analysis` module described above, and
+migrated the renderer to consume it. v0.4 moves to final hardening/release
+after Phase 5. Do not treat any further feedback-loop tooling described in
+future specs under `docs/specs/` as already built until it lands and this
+document is
 updated to describe it.

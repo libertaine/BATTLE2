@@ -28,13 +28,21 @@ from __future__ import annotations
 
 import bisect
 import math
-from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from battle_engine.replay import AgentEvent, AgentState, EngineEvent, KillDeathEvent, RuntimeEvent
 
+from battle_client.analysis import (
+    SelectedCellInfo,
+    TerritoryHistory,
+    collect_match_events,
+    compute_territory_history,
+    events_near_tick,
+    selected_cell_info,
+    territory_summary,
+)
 from battle_client.player import PlaybackController
 from battle_client.renderers.base import RendererDependencyError
 from battle_client.session import ReplaySession, ReplayState
@@ -140,86 +148,6 @@ def _agent_display_line(
     )
 
 
-def territory_summary(state: ReplayState) -> dict[str, tuple[int, float]]:
-    """Each entrant's ``(owned_cell_count, percentage_of_arena)``.
-
-    Derived entirely from ``state.owners`` -- an ownership snapshot, not
-    canonical score (see ``_agent_display_line``'s docstring for why the
-    two must not be conflated). Every agent present in ``state.agents`` is
-    included, even at zero owned cells, so a viewer never has to treat a
-    missing entry as "unknown" versus "owns nothing".
-    """
-    total = len(state.owners)
-    counts = Counter(owner for owner in state.owners if owner is not None)
-    summary: dict[str, tuple[int, float]] = {}
-    for agent_id in state.agents:
-        count = counts.get(agent_id, 0)
-        percentage = (count / total * 100.0) if total else 0.0
-        summary[agent_id] = (count, percentage)
-    return summary
-
-
-@dataclass(frozen=True)
-class TerritoryHistory:
-    """Every entrant's owned-cell percentage at every recorded tick.
-
-    ``ticks`` is strictly increasing (it is ``session.recorded_ticks`` in
-    order); ``percentages[agent_id]`` is a tuple aligned index-for-index
-    with ``ticks``. An agent absent from a given tick's ``ReplayState.
-    agents`` -- never happens for a canonical replay, which reports every
-    entrant every tick, but handled honestly rather than assumed for a
-    legacy one -- is recorded as ``0.0`` for that tick rather than
-    omitted, so every agent's series has exactly ``len(ticks)`` points.
-    This is a territory (ownership) metric derived only from ``state.
-    owners``, same as ``territory_summary``; it is never a substitute for
-    canonical score.
-    """
-
-    ticks: tuple[int, ...]
-    percentages: Mapping[str, tuple[float, ...]]
-
-
-def compute_territory_history(session: ReplaySession) -> TerritoryHistory:
-    """Derive :class:`TerritoryHistory` by walking ``session`` forward once.
-
-    Uses only ``ReplaySession``'s own existing incremental reconstruction
-    (``restart``/``step_forward``) -- there is no second, renderer-owned
-    replay of memory diffs, and no per-tick full arena snapshot is stored,
-    only each tick's small ``{agent_id: percentage}`` summary. Intended to
-    be called once, right after a session is loaded (see ``PygameRenderer.
-    run``), not on every rendered frame -- walking ~3000 ticks once at
-    startup is cheap; doing it every frame would not be.
-
-    The session's cursor is restored to wherever it was before this call
-    (via ``seek`` back to the original tick), so calling this mid-playback
-    -- as tests do -- never disturbs the caller's position. Returns an
-    empty history for a replay with no tick records.
-    """
-    if not session.loaded or session.final_tick is None:
-        return TerritoryHistory(ticks=(), percentages={})
-
-    original_tick = session.current_tick
-    ticks: list[int] = []
-    points: list[dict[str, float]] = []
-    agent_ids: set[str] = set()
-
-    state = session.restart()
-    while True:
-        ticks.append(state.tick)
-        summary = territory_summary(state)
-        points.append({agent_id: percentage for agent_id, (_count, percentage) in summary.items()})
-        agent_ids.update(summary)
-        if session.at_end:
-            break
-        state = session.step_forward()
-
-    percentages = {
-        agent_id: tuple(point.get(agent_id, 0.0) for point in points) for agent_id in agent_ids
-    }
-    session.seek(original_tick)
-    return TerritoryHistory(ticks=tuple(ticks), percentages=percentages)
-
-
 def select_history_window(
     ticks: Sequence[int], values: Sequence[float], current_tick: int, window: int
 ) -> tuple[tuple[int, ...], tuple[float, ...]]:
@@ -308,40 +236,6 @@ def activity_intensity(current_tick: int, last_changed_tick: int, window: int) -
     return max(0.0, 1.0 - age / window)
 
 
-def collect_match_events(session: ReplaySession) -> list[tuple[int, EngineEvent]]:
-    """Every recorded event in ``session``, as ``(tick, event)`` pairs.
-
-    ``session.recorded_ticks`` is already strictly increasing (see
-    ``ReplaySession``'s own tick-identity guarantee), so this list comes
-    out chronologically ordered for free. In practice, for a canonical
-    v3 replay, every event is a ``KillDeathEvent`` or a ``RuntimeEvent``
-    (Python-only ``forfeit``) -- the native writer never emits
-    ``AgentEvent`` (``spawn``/``move``/``territory``/``claim``), which
-    exists solely to represent historical v0.1/v0.2 records. Both are
-    handled the same way here regardless: nothing about this function
-    depends on which event types a given replay happens to contain.
-    """
-    events: list[tuple[int, EngineEvent]] = []
-    for tick in session.recorded_ticks:
-        for event in session.events_at_tick(tick):
-            events.append((tick, event))
-    return events
-
-
-def events_near_tick(
-    events: list[tuple[int, EngineEvent]], tick: int, window: int = 5
-) -> list[tuple[int, EngineEvent]]:
-    """Up to ``window`` most recent events at or before ``tick``.
-
-    ``events`` is assumed already in ascending tick order (as
-    ``collect_match_events`` returns it); the result stays in that same
-    ascending order, so it reads top-to-bottom the same direction as the
-    match itself played out.
-    """
-    at_or_before = [pair for pair in events if pair[0] <= tick]
-    return at_or_before[-window:] if window > 0 else []
-
-
 def format_event_line(tick: int, event: EngineEvent) -> str:
     """One human-readable line for a single recorded event, e.g.
     ``"T042 kill: B by A"`` or ``"T017 forfeit: C (invalid_action)"``.
@@ -419,58 +313,18 @@ def screen_pos_to_address(
     return address
 
 
-@dataclass(frozen=True)
-class SelectedCellInfo:
-    """The authoritative replay state at one selected arena address.
-
-    Every field is read straight off an existing ``ReplayState`` (or, for
-    ``recently_changed``, off the renderer's existing per-address flash
-    bookkeeping in ``_advance_transient_effects`` -- itself derived only
-    from a genuine ownership change on the immediately preceding linear
-    step); nothing here is fabricated. ``occupant`` is only ever populated
-    for a VM replay (``AgentState.pc`` is a real fetch address there and
-    only there -- see ``_vm_marker_xy``'s docstring); for a Python replay
-    it stays ``None`` unconditionally, since the Python controller's ``pc``
-    value is not a position an agent can be said to "occupy".
-    """
-
-    address: int
-    byte_value: int | None
-    owner: str | None
-    occupant: str | None
-    recently_changed: bool = False
-
-
-def selected_cell_info(
-    state: ReplayState, address: int, *, recently_changed: bool = False
-) -> SelectedCellInfo | None:
-    """``SelectedCellInfo`` for ``address`` in ``state``, or ``None`` if
-    ``address`` is outside ``state.owners``' range (out-of-range for the
-    replay's arena).
-    """
-    if address < 0 or address >= len(state.owners):
-        return None
-    byte_value = state.arena[address] if address < len(state.arena) else None
-    owner = state.owners[address]
-    occupant = None
-    if state.runtime_kind == "vm":
-        for agent_id, agent in state.agents.items():
-            if agent.alive and isinstance(agent.pc, int) and agent.pc == address:
-                occupant = agent_id
-                break
-    return SelectedCellInfo(
-        address=address,
-        byte_value=byte_value,
-        owner=owner,
-        occupant=occupant,
-        recently_changed=recently_changed,
-    )
-
-
-def format_inspector_lines(info: SelectedCellInfo | None) -> list[str]:
+def format_inspector_lines(
+    info: SelectedCellInfo | None, *, recently_changed: bool = False
+) -> list[str]:
     """HUD lines for a "Selected cell:" panel, or ``[]`` if ``info`` is
     ``None`` (nothing selected -- the panel is simply omitted, matching
     how ``build_hud_lines`` already omits "Recent events:" when empty).
+
+    ``recently_changed`` is renderer-local presentation state (sourced
+    from ``PygameRenderer._flash`` -- see ``_selected_cell_info`` below),
+    not a field on the domain ``SelectedCellInfo`` itself: see
+    ``docs/specs/replay_analysis.md`` §6 for why that boundary was drawn
+    here rather than on the analysis-layer dataclass.
     """
     if info is None:
         return []
@@ -478,7 +332,7 @@ def format_inspector_lines(info: SelectedCellInfo | None) -> list[str]:
     owner_label = f"owner={info.owner}" if info.owner is not None else "owner=none"
     agent_label = f"agent={info.occupant}" if info.occupant is not None else "agent=none"
     line = f"  addr={info.address}  {byte_label}  {owner_label}  {agent_label}"
-    if info.recently_changed:
+    if recently_changed:
         line += "  (recently changed)"
     return ["Selected cell:", line]
 
@@ -500,6 +354,7 @@ def build_hud_lines(
     *,
     match_events: list[tuple[int, EngineEvent]] | None = None,
     selected: SelectedCellInfo | None = None,
+    recently_changed: bool = False,
 ) -> list[str]:
     """The HUD's text content for the session/controller's current state.
 
@@ -518,7 +373,10 @@ def build_hud_lines(
     so a real renderer should cache it for the session's lifetime rather
     than repeat that scan every frame) pass it in; if omitted, it is
     computed fresh here, which keeps this function usable standalone in
-    tests without that caching concern.
+    tests without that caching concern. ``recently_changed`` is forwarded
+    to ``format_inspector_lines`` -- see that function's docstring for why
+    it is a separate renderer-local parameter rather than a field on
+    ``selected``.
     """
     state = session.current_state
     runtime_label = state.runtime_kind or "unknown"
@@ -541,7 +399,7 @@ def build_hud_lines(
             _agent_display_line(agent_id, display_name, state, territory.get(agent_id))
         )
 
-    inspector_lines = format_inspector_lines(selected)
+    inspector_lines = format_inspector_lines(selected, recently_changed=recently_changed)
     if inspector_lines:
         lines.append("")
         lines.extend(inspector_lines)
@@ -1114,28 +972,46 @@ class PygameRenderer:
         self.pg.draw.lines(self.screen, color, False, screen_points, width)
 
     def _selected_cell_info(self, state: ReplayState) -> SelectedCellInfo | None:
-        """The current ``SelectedCellInfo`` for ``self._selected_address``,
-        or ``None`` if nothing is selected.
+        """The current (domain-only) ``SelectedCellInfo`` for
+        ``self._selected_address``, or ``None`` if nothing is selected.
 
-        ``recently_changed`` comes from ``self._flash`` -- the renderer's
-        existing per-address ownership-change bookkeeping (see
-        ``_advance_transient_effects``), which only ever fires on a
-        genuine ownership change on the immediately preceding *linear*
-        step and is cleared on any seek/restart. Reusing it here, rather
-        than inventing separate "last write" tracking, keeps the signal
-        honest: it reflects an owner change, not literally every write.
+        Whether that address was "recently changed" is renderer-local
+        presentation state, not part of this domain fact -- see
+        ``_selected_recently_changed``.
         """
         if self._selected_address is None:
             return None
+        return selected_cell_info(state, self._selected_address)
+
+    def _selected_recently_changed(self) -> bool:
+        """Whether ``self._selected_address`` was flashed by the most
+        recent linear step.
+
+        Sourced from ``self._flash`` -- the renderer's existing per-address
+        ownership-change bookkeeping (see ``_advance_transient_effects``),
+        which only ever fires on a genuine ownership change on the
+        immediately preceding *linear* step and is cleared on any
+        seek/restart. Reusing it here, rather than inventing separate
+        "last write" tracking, keeps the signal honest: it reflects an
+        owner change, not literally every write. This is deliberately kept
+        out of ``battle_client.analysis.SelectedCellInfo`` -- see
+        ``docs/specs/replay_analysis.md`` §6.
+        """
+        if self._selected_address is None:
+            return False
         xy = self._to_xy(self._selected_address)
-        recently_changed = xy is not None and xy in self._flash
-        return selected_cell_info(state, self._selected_address, recently_changed=recently_changed)
+        return xy is not None and xy in self._flash
 
     def _draw_hud(self, controller: PlaybackController) -> None:
         session = controller.session
         selected = self._selected_cell_info(session.current_state)
+        recently_changed = self._selected_recently_changed()
         lines = build_hud_lines(
-            session, controller, match_events=self._match_events, selected=selected
+            session,
+            controller,
+            match_events=self._match_events,
+            selected=selected,
+            recently_changed=recently_changed,
         )
         w, _ = self.screen.get_size()
         line_height = 16

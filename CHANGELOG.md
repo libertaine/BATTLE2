@@ -8,9 +8,10 @@ This changelog records notable user- and developer-visible changes to Bytefray
 v0.4's primary theme is **Agent Authoring & Development Feedback Loop**:
 tightening the loop an agent author works in, from writing an agent to
 seeing how it performs. The intended user journey is
-create → validate → test → inspect → modify → repeat. Phases 1-4c have
-landed (both the CLI and the Designer GUI); Phase 4d (integration polish,
-documentation, and frozen-app verification) is in progress.
+create → validate → test → inspect → modify → repeat. Phases 1-4d have
+landed (both the CLI and the Designer GUI). Phase 5 (replay-analysis
+extraction/migration, supporting architectural work rather than a new
+feature) has also landed; v0.4 next moves to final hardening/release.
 
 ### Added
 
@@ -45,6 +46,18 @@ documentation, and frozen-app verification) is in progress.
 
 ### Changed
 
+- Extracted the replay-domain facts `PygameRenderer` already computed
+  (territory ownership/history, match event collection/query,
+  selected-arena-cell state) out of
+  `client/src/battle_client/renderers/pygame_renderer.py` and into a new,
+  Pygame-free `client/src/battle_client/analysis.py`, then migrated the
+  renderer to consume it, removing the private duplicate implementations.
+  The one deliberate behavior change: the renderer-local "recently
+  changed" flag on a selected cell moved from a field on the domain
+  `SelectedCellInfo` dataclass to an explicit keyword parameter on the
+  renderer's own `format_inspector_lines`, since it reflects UI
+  observation history, not a replay fact (Phase 5; see
+  `docs/specs/replay_analysis.md`). Pygame viewer behavior is unchanged.
 - Rewrote `ARCHITECTURE.md` to describe the current `NativeMatchService`-
   centered architecture (canonical `battle2.replay` v3 writing, the
   `bytefray run`/`tournament` routing to it, the `battle_client` replay-

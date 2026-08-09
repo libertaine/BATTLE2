@@ -1,27 +1,21 @@
 from __future__ import annotations
 
 import pytest
+from battle_client.analysis import SelectedCellInfo, collect_match_events, selected_cell_info
 from battle_client.player import PlaybackController
 from battle_client.renderers.pygame_renderer import (
     ACTIVITY_WINDOW_TICKS,
     PygameRenderer,
-    SelectedCellInfo,
-    TerritoryHistory,
     _event_section_start,
     activity_intensity,
     build_hud_lines,
-    collect_match_events,
-    compute_territory_history,
     downsample_series,
-    events_near_tick,
     format_event_line,
     format_inspector_lines,
     resolve_event_click,
     screen_pos_to_address,
     select_history_window,
-    selected_cell_info,
     territory_graph_points,
-    territory_summary,
 )
 from battle_client.session import ReplaySession, ReplayState
 from battle_engine.replay import (
@@ -212,83 +206,14 @@ def _python_forfeit_session(tmp_path):
     return session
 
 
-def _run_vm_kill_match(tmp_path):
-    """A real (not hand-built) VM match where A halts and B kills nobody
-    -- used to confirm collect_match_events picks up a genuine engine-
-    produced death event, not just a hand-built one."""
-    from battle_engine.config import Config
-    from battle_engine.core import HALT, NOP, enc
-    from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
-
-    entrants = (
-        MatchEntrant("A", "halts", 0, enc(HALT)),
-        MatchEntrant("B", "waits", 16, enc(NOP)),
-    )
-    replay_path = tmp_path / "vm_events.jsonl"
-    NativeMatchService().run(
-        MatchRequest(
-            Config(arena_size=32, instr_per_tick=1, seed=1337),
-            entrants, 2, replay_path, False,
-        )
-    )
-    session = ReplaySession()
-    session.load(replay_path)
-    return session
-
-
 # ---------------------------------------------------------------------------
-# collect_match_events / events_near_tick / format_event_line
+# format_event_line
+#
+# collect_match_events/events_near_tick characterization moved to
+# client/tests/test_analysis.py (v0.4 Phase 5) -- format_event_line stays
+# here since it is presentation (text formatting), not a domain query; see
+# docs/specs/replay_analysis.md §2-3.
 # ---------------------------------------------------------------------------
-def test_collect_match_events_returns_every_event_in_chronological_order(tmp_path):
-    session = _events_session(tmp_path)
-    events = collect_match_events(session)
-    assert events == [
-        (2, KillDeathEvent("kill", "B", "A")),
-        (4, KillDeathEvent("death", "C", None)),
-    ]
-
-
-def test_collect_match_events_on_a_replay_with_no_events_is_empty(tmp_path):
-    session = _no_events_session(tmp_path)
-    assert collect_match_events(session) == []
-
-
-def test_collect_match_events_on_a_real_vm_match_finds_the_recorded_death(tmp_path):
-    session = _run_vm_kill_match(tmp_path)
-    events = collect_match_events(session)
-    assert events == [(1, KillDeathEvent("death", "A", None))]
-
-
-def test_collect_match_events_on_a_real_python_forfeit_match(tmp_path):
-    session = _python_forfeit_session(tmp_path)
-    events = collect_match_events(session)
-    assert len(events) == 1
-    _tick, event = events[0]
-    assert isinstance(event, RuntimeEvent)
-    assert event.event_type == "forfeit"
-    assert event.victim == "A"
-    assert event.reason == "agent_action_failed"
-
-
-def test_events_near_tick_excludes_events_after_the_given_tick():
-    events = [(2, KillDeathEvent("kill", "B", "A")), (4, KillDeathEvent("death", "C", None))]
-    assert events_near_tick(events, 1) == []
-    assert events_near_tick(events, 2) == [(2, KillDeathEvent("kill", "B", "A"))]
-    assert events_near_tick(events, 3) == [(2, KillDeathEvent("kill", "B", "A"))]
-    assert events_near_tick(events, 4) == events
-
-
-def test_events_near_tick_stays_in_ascending_order_and_respects_window():
-    events = [(t, KillDeathEvent("death", str(t), None)) for t in range(10)]
-    recent = events_near_tick(events, 9, window=3)
-    assert [tick for tick, _event in recent] == [7, 8, 9]
-
-
-def test_events_near_tick_zero_window_returns_nothing():
-    events = [(2, KillDeathEvent("kill", "B", "A"))]
-    assert events_near_tick(events, 2, window=0) == []
-
-
 def test_format_event_line_kill_with_attributed_killer():
     assert format_event_line(42, KillDeathEvent("kill", "B", "A")) == "T042 kill: B by A"
 
@@ -309,108 +234,9 @@ def test_format_event_line_agent_event_legacy_compatibility():
     assert format_event_line(3, AgentEvent("spawn", agent_id=None)) == "T003 spawn: ?"
 
 
-# ---------------------------------------------------------------------------
-# territory_summary
-# ---------------------------------------------------------------------------
-def test_territory_summary_matches_owner_counts_and_percentages(tmp_path):
-    session = _events_session(tmp_path)
-    while not session.at_end:
-        session.step_forward()
-    territory = territory_summary(session.current_state)
-    assert territory == {"A": (3, 30.0), "B": (0, 0.0), "C": (2, 20.0)}
-
-
-def test_territory_summary_reflects_state_at_an_earlier_tick(tmp_path):
-    session = _events_session(tmp_path)
-    territory = territory_summary(session.current_state)  # tick 0
-    assert territory == {"A": (1, 10.0), "B": (1, 10.0), "C": (1, 10.0)}
-
-
-def test_territory_summary_only_includes_agents_present_in_state():
-    state = ReplayState(
-        tick=0,
-        arena=b"\x00" * 4,
-        owners=("A", "A", None, None),
-        agents={"A": _agent("A")},
-        score={"A": 0},
-        runtime_kind="vm",
-    )
-    assert territory_summary(state) == {"A": (2, 50.0)}
-
-
-def test_territory_summary_on_empty_arena_does_not_divide_by_zero():
-    state = ReplayState(
-        tick=0, arena=b"", owners=(), agents={"A": _agent("A")}, score={}, runtime_kind="vm",
-    )
-    assert territory_summary(state) == {"A": (0, 0.0)}
-
-
-# ---------------------------------------------------------------------------
-# compute_territory_history (Phase 7b Slice 3)
-# ---------------------------------------------------------------------------
-def test_compute_territory_history_matches_territory_summary_at_every_tick(tmp_path):
-    session = _events_session(tmp_path)
-    history = compute_territory_history(session)
-
-    assert history.ticks == (0, 1, 2, 3, 4)
-    session.restart()
-    for index, tick in enumerate(history.ticks):
-        if session.current_tick != tick:
-            session.step_forward()
-        expected = territory_summary(session.current_state)
-        for agent_id, (_count, percentage) in expected.items():
-            assert history.percentages[agent_id][index] == pytest.approx(percentage)
-
-
-def test_compute_territory_history_shows_gain_and_loss_over_ticks(tmp_path):
-    # In _events_session, A gains a cell at tick 1 (10% -> 20%), then at
-    # tick 2 claims B's one owned cell (address 4) on top of killing B --
-    # A gains to 30% while B's territory *drops* to 0%, even though B's
-    # death and B's territory loss are separate facts (ownership, not
-    # kill/score, is what territory tracks). C gains at tick 3 (10% -> 20%).
-    session = _events_session(tmp_path)
-    history = compute_territory_history(session)
-
-    assert history.percentages["A"] == (10.0, 20.0, 30.0, 30.0, 30.0)
-    assert history.percentages["B"] == (10.0, 10.0, 0.0, 0.0, 0.0)
-    assert history.percentages["C"] == (10.0, 10.0, 10.0, 20.0, 20.0)
-
-
-def test_compute_territory_history_unowned_cells_never_attributed_to_an_agent(tmp_path):
-    session = _events_session(tmp_path)  # arena_size=10, only 3 cells ever claimed at tick 0
-    history = compute_territory_history(session)
-    total_owned_pct = sum(history.percentages[a][0] for a in history.percentages)
-    assert total_owned_pct == pytest.approx(30.0)  # 3/10 cells; the rest stay unowned
-
-
-def test_compute_territory_history_restores_session_cursor(tmp_path):
-    session = _events_session(tmp_path)
-    session.seek(3)
-    compute_territory_history(session)
-    assert session.current_tick == 3
-
-
-def test_compute_territory_history_empty_replay_is_empty(tmp_path):
-    header = ReplayHeader(MatchConfiguration(arena_size=4), {"A": "alpha"}, runtime_kind="vm")
-    replay_path = tmp_path / "empty.jsonl"
-    write_replay(replay_path, [header])
-    session = ReplaySession()
-    session.load(replay_path)
-
-    history = compute_territory_history(session)
-
-    assert history == TerritoryHistory(ticks=(), percentages={})
-
-
-def test_compute_territory_history_does_not_depend_on_canonical_score(tmp_path):
-    # In _events_session, A's score jumps to 2 at tick 2 on the kill, but
-    # A's territory percentage only reflects owned cells, not that score.
-    session = _events_session(tmp_path)
-    history = compute_territory_history(session)
-    tick2_index = history.ticks.index(2)
-    assert history.percentages["A"][tick2_index] == pytest.approx(30.0)  # 3/10 cells
-    # Score at tick 2 (2) is nowhere near the territory percentage (30.0) --
-    # they are unrelated units, not proportional to each other.
+# territory_summary/compute_territory_history characterization moved to
+# client/tests/test_analysis.py (v0.4 Phase 5) -- see
+# docs/specs/replay_analysis.md §2-3.
 
 
 # ---------------------------------------------------------------------------
@@ -776,52 +602,15 @@ def test_screen_pos_to_address_degenerate_grid_is_a_safe_no_op():
 
 
 # ---------------------------------------------------------------------------
-# selected_cell_info / format_inspector_lines
+# format_inspector_lines
+#
+# selected_cell_info's own domain-fact characterization (byte/owner/
+# occupant derivation) moved to client/tests/test_analysis.py (v0.4 Phase
+# 5). ``recently_changed`` is renderer-local presentation state -- see
+# docs/specs/replay_analysis.md §6 -- so its characterization stays here,
+# as a keyword argument to format_inspector_lines rather than a field on
+# SelectedCellInfo.
 # ---------------------------------------------------------------------------
-def test_selected_cell_info_reports_byte_owner_and_vm_occupant(tmp_path):
-    session = _events_session(tmp_path)  # tick 0: A owns/occupies 0, B owns/occupies 4
-    info = selected_cell_info(session.current_state, 0)
-    assert info == SelectedCellInfo(address=0, byte_value=1, owner="A", occupant="A")
-
-
-def test_selected_cell_info_unowned_unoccupied_cell(tmp_path):
-    session = _events_session(tmp_path)
-    info = selected_cell_info(session.current_state, 5)
-    assert info == SelectedCellInfo(address=5, byte_value=0, owner=None, occupant=None)
-
-
-def test_selected_cell_info_owner_present_without_current_occupant(tmp_path):
-    session = _events_session(tmp_path)
-    session.step_forward()  # tick 1: A's pc moves to 1; address 0 still owned by A
-    info = selected_cell_info(session.current_state, 0)
-    assert info.owner == "A"
-    assert info.occupant is None
-
-
-def test_selected_cell_info_out_of_range_address_is_none(tmp_path):
-    session = _events_session(tmp_path)
-    assert selected_cell_info(session.current_state, 10) is None
-    assert selected_cell_info(session.current_state, -1) is None
-
-
-def test_selected_cell_info_python_replay_never_reports_an_occupant(tmp_path):
-    session = _python_session(tmp_path)
-    state = session.current_state
-    assert state.runtime_kind == "python"
-    for agent in state.agents.values():
-        assert isinstance(agent.pc, int)
-        info = selected_cell_info(state, agent.pc % len(state.owners))
-        assert info.occupant is None  # never invented for a Python controller value
-
-
-def test_selected_cell_info_recently_changed_flag_is_carried_through():
-    state = ReplayState(
-        tick=0, arena=b"\x01", owners=("A",), agents={}, score={}, runtime_kind="vm",
-    )
-    info = selected_cell_info(state, 0, recently_changed=True)
-    assert info.recently_changed is True
-
-
 def test_format_inspector_lines_none_selection_is_empty():
     assert format_inspector_lines(None) == []
 
@@ -845,9 +634,15 @@ def test_format_inspector_lines_unowned_unoccupied_reads_none():
 
 
 def test_format_inspector_lines_recently_changed_is_flagged():
-    info = SelectedCellInfo(address=1, byte_value=1, owner="A", occupant=None, recently_changed=True)
-    line = format_inspector_lines(info)[1]
+    info = SelectedCellInfo(address=1, byte_value=1, owner="A", occupant=None)
+    line = format_inspector_lines(info, recently_changed=True)[1]
     assert "recently changed" in line
+
+
+def test_format_inspector_lines_recently_changed_defaults_to_false():
+    info = SelectedCellInfo(address=1, byte_value=1, owner="A", occupant=None)
+    line = format_inspector_lines(info)[1]
+    assert "recently changed" not in line
 
 
 # ---------------------------------------------------------------------------
