@@ -175,6 +175,18 @@ def _import_source(source_path: Path) -> ModuleType:
         )
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
+    # Agent source files are one-shot dynamic imports under a per-path
+    # hashed module name (see _module_name) -- never re-imported, so a
+    # bytecode cache buys nothing. Without suppressing it, every load
+    # writes a __pycache__/*.pyc next to the source: harmless for a
+    # user's own agents/<id>/ directory, but the bundled reference
+    # opponent's agent.py (see agent_test._reference_opponent_spec)
+    # lives inside the installed battle_engine package itself, so this
+    # would otherwise leave stray bytecode in a source checkout and in
+    # tools/check_wheel.py's release wheel on every ordinary use of
+    # `agents test`/`validate`.
+    previous_dont_write_bytecode = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
     try:
         spec.loader.exec_module(module)
     except BaseException as exc:
@@ -183,6 +195,8 @@ def _import_source(source_path: Path) -> ModuleType:
             f"Failed importing Python agent source {source_path}: {type(exc).__name__}: {exc}",
             path=source_path,
         ) from exc
+    finally:
+        sys.dont_write_bytecode = previous_dont_write_bytecode
     return module
 
 

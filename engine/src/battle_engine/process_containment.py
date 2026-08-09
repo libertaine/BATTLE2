@@ -110,7 +110,11 @@ def _bind_windows_job_object(process: Any) -> ChildLifetimeBinding:
     try:
         from ctypes import wintypes
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # ctypes.WinDLL only exists in typeshed's win32-conditional stubs, so
+        # this line reports attr-defined under `mypy engine/src/battle_engine`
+        # on any non-Windows host even though this function itself is never
+        # reached there (the caller's `sys.platform != "win32"` guard above).
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
 
         job_object_extended_limit_information = 9
         job_object_limit_kill_on_job_close = 0x00002000

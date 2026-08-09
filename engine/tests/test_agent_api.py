@@ -75,6 +75,22 @@ def test_valid_python_agent_is_discovered_loaded_and_fresh(tmp_path):
     assert first.source_path == directory / "agent.py"
 
 
+def test_loading_an_agent_does_not_write_a_bytecode_cache(tmp_path):
+    # The bundled reference opponent (agent_test._reference_opponent_spec)
+    # loads its agent.py from inside the installed battle_engine package
+    # itself, not a user's writable data root. A __pycache__ dropped there
+    # by an ordinary `agents test`/`validate` run would pollute a source
+    # checkout and, if a release wheel were subsequently built from the
+    # same checkout, fail tools/check_wheel.py's "no compiled bytecode"
+    # check -- see the regression this guards in agent_api._import_source.
+    directory = _write_agent(tmp_path)
+    spec = resolve_agent(tmp_path, "example")
+
+    load_python_agent(spec)
+
+    assert not (directory / "__pycache__").exists()
+
+
 def test_unsupported_api_version_has_typed_diagnostic(tmp_path):
     _write_agent(tmp_path, manifest={"api_version": 2})
 

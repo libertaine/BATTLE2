@@ -9,6 +9,23 @@ from pathlib import Path
 from battle_engine.paths import is_frozen_application, normalize_root
 
 
+def _current_executable() -> str:
+    """Return the running interpreter's own path, without resolving symlinks.
+
+    ``sys.executable`` is documented as already absolute, including inside a
+    virtualenv. Routing it through :func:`normalize_root` (which calls
+    ``Path.resolve()``) is correct for user-supplied paths but wrong here:
+    a standard Linux ``venv``'s ``bin/python`` is itself a symlink chain
+    down to the base interpreter it was created from, and resolving it
+    walks straight past the venv to that base interpreter -- which lacks
+    the venv's site-packages entirely. Every child process this module
+    launches in source (non-frozen) mode would then fail to import
+    ``battle_engine``. ``expanduser`` is kept for parity with
+    ``normalize_root`` even though ``sys.executable`` never contains ``~``.
+    """
+    return str(Path(sys.executable).expanduser())
+
+
 def _packaged_executable(name: str) -> Path:
     executable_dir = normalize_root(Path(sys.executable).parent)
     filename = f"{name}.exe"
@@ -28,7 +45,7 @@ def build_match_command(arguments: Sequence[str]) -> list[str]:
     options = list(arguments)
     if is_frozen_application():
         return [str(_packaged_executable("battle2")), "run", *options]
-    return [str(normalize_root(sys.executable)), "-m", "battle_engine", "run", *options]
+    return [_current_executable(), "-m", "battle_engine", "run", *options]
 
 
 def build_tournament_command(arguments: Sequence[str]) -> list[str]:
@@ -37,7 +54,7 @@ def build_tournament_command(arguments: Sequence[str]) -> list[str]:
     if is_frozen_application():
         return [str(_packaged_executable("battle2")), "tournament", *options]
     return [
-        str(normalize_root(sys.executable)),
+        _current_executable(),
         "-m",
         "battle_engine",
         "tournament",
@@ -58,7 +75,7 @@ def build_agents_command(subcommand: str, arguments: Sequence[str]) -> list[str]
     if is_frozen_application():
         return [str(_packaged_executable("battle2")), "agents", subcommand, *options]
     return [
-        str(normalize_root(sys.executable)),
+        _current_executable(),
         "-m",
         "battle_engine",
         "agents",
@@ -118,7 +135,7 @@ def build_replay_command(
             *options,
         ]
     return [
-        str(normalize_root(sys.executable)),
+        _current_executable(),
         "-m",
         "battle_client.cli",
         "--replay",

@@ -27,7 +27,35 @@ def test_source_match_uses_primary_dispatcher_and_preserves_arguments(monkeypatc
 
     command = launchers.build_match_command(arguments)
 
-    assert command == [str(python.resolve()), "-m", "battle_engine", "run", *arguments]
+    assert command == [str(python), "-m", "battle_engine", "run", *arguments]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX symlink semantics only")
+def test_source_commands_do_not_resolve_a_symlinked_interpreter(monkeypatch, tmp_path):
+    # Reproduces a real Linux venv layout: bin/python is a symlink chain
+    # down to a differently-located base interpreter. Resolving
+    # sys.executable (as plain normalize_root(sys.executable) used to)
+    # walks past the venv boundary to that base interpreter, which lacks
+    # the venv's site-packages -- every subprocess this module builds
+    # would then fail with "No module named battle_engine". The launched
+    # command must use the venv's own (symlinked) interpreter path as
+    # reported by sys.executable, unresolved.
+    base_interpreter = tmp_path / "base" / "python3.11"
+    base_interpreter.parent.mkdir(parents=True)
+    base_interpreter.touch()
+    venv_python = tmp_path / "venv" / "bin" / "python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(base_interpreter)
+    _set_source(monkeypatch, venv_python)
+
+    match_command = launchers.build_match_command([])
+    agents_command = launchers.build_agents_command("validate", ["my_agent"])
+    tournament_command = launchers.build_tournament_command([])
+
+    assert match_command[0] == str(venv_python)
+    assert agents_command[0] == str(venv_python)
+    assert tournament_command[0] == str(venv_python)
+    assert match_command[0] != str(base_interpreter)
 
 
 def test_source_replay_uses_client_module_and_keeps_path_one_argument(monkeypatch, tmp_path):
@@ -38,7 +66,7 @@ def test_source_replay_uses_client_module_and_keeps_path_one_argument(monkeypatc
     command = launchers.build_replay_command(replay, ["--renderer", "pygame"])
 
     assert command == [
-        str(python.resolve()),
+        str(python),
         "-m",
         "battle_client.cli",
         "--replay",
@@ -55,7 +83,7 @@ def test_source_agents_command_uses_primary_dispatcher(monkeypatch, tmp_path):
     command = launchers.build_agents_command("validate", ["my_agent"])
 
     assert command == [
-        str(python.resolve()), "-m", "battle_engine", "agents", "validate", "my_agent",
+        str(python), "-m", "battle_engine", "agents", "validate", "my_agent",
     ]
 
 
@@ -66,7 +94,7 @@ def test_source_tournament_uses_primary_dispatcher(monkeypatch, tmp_path):
     command = launchers.build_tournament_command(["alpha", "beta", "--rounds", "2"])
 
     assert command == [
-        str(python.resolve()), "-m", "battle_engine", "tournament",
+        str(python), "-m", "battle_engine", "tournament",
         "alpha", "beta", "--rounds", "2",
     ]
 
@@ -197,7 +225,7 @@ def test_engine_runner_uses_shared_match_builder_and_preserves_config(monkeypatc
 
     command, _env = engine_commands.build_engine_command(config, paths)
 
-    assert command[:4] == [str(python.resolve()), "-m", "battle_engine", "run"]
+    assert command[:4] == [str(python), "-m", "battle_engine", "run"]
     assert command[4:] == [
         "--arena", "256",
         "--ticks", "40",
