@@ -1,0 +1,9 @@
+{
+  "name": "wanderer",
+  "display": "Wanderer (Starter)",
+  "description": "Opportunist: leaps to random cells and only stops to exploit a neighborhood when a leap lands on contested ground.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}

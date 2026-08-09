@@ -8,7 +8,26 @@ from pathlib import Path
 
 from battle_engine.paths import get_data_root, get_resource_root
 
-STARTER_AGENT_NAMES = ("runner", "writer", "seeker", "spiral")
+# The first four are native VM starters (manifest-only; resolved against
+# the built-in VM programs in battle_engine.builtins by name -- see
+# cli.py's SUPPORTED fallback). The remaining five (added in v0.6.1) are
+# Agent API v1 Python starters, each shipping its own agent.py implementing
+# a distinct strategy against the restricted Python Agent API rather than
+# native VM bytecode -- see each agent.py's module docstring for its
+# strategy and the reasoning behind it. ensure_starter_agents() treats both
+# kinds identically: non-destructive copy-if-missing into the same writable
+# agents/ catalog.
+STARTER_AGENT_NAMES = (
+    "runner",
+    "writer",
+    "seeker",
+    "spiral",
+    "claimer",
+    "strider",
+    "hunter",
+    "wanderer",
+    "adaptive",
+)
 
 
 def _starter_resource_dir(resource_root: Path) -> Path:

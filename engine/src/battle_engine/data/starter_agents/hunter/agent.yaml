@@ -1,0 +1,9 @@
+{
+  "name": "hunter",
+  "display": "Hunter (Starter)",
+  "description": "Aggressor: scans for contested ground -- cells that are neither blank nor its own -- and seizes it with a short write burst.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}
