@@ -78,6 +78,15 @@ way it did, and containing an agent that never returns. See
   unused module. PyYAML is now imported statically wherever agent
   manifests are parsed, so all four frozen executables bundle it
   reliably.
+- The Designer's Run/Tournament/Validate/Test child processes could look
+  for agents in a different directory than the one the Designer itself
+  used, in a portable (no-installer) checkout: the child environment
+  relied on inheriting `BYTEFRAY_ROOT`/`BATTLE2_ROOT`/`BATTLE_ROOT` from
+  the OS environment, which only matches the Designer's own resolved
+  root when that root came from an explicit env var (true after a normal
+  install, not in a portable extraction). All five child-process launches
+  now explicitly set `BYTEFRAY_ROOT` to the Designer's own resolved data
+  root.
 
 ## [0.4.0] - 2026-08-08
 
