@@ -170,6 +170,7 @@ class EvaluationRequest:
     ticks: int = DEFAULT_TICKS
     resume: bool = True
     retry_failures: bool = False
+    data_root: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -631,6 +632,7 @@ class EvaluationService:
         seeds: tuple[int, ...],
         baseline_id: str | None = None,
         ticks: int = DEFAULT_TICKS,
+        data_root: Path | None = None,
     ) -> tuple[dict[str, AgentSpec], str]:
         """Validate a request's agent/seed/tick shape and resolve its evaluation id.
 
@@ -651,6 +653,7 @@ class EvaluationService:
             output_dir=Path("."),
             baseline_id=baseline_id,
             ticks=ticks,
+            data_root=data_root,
         )
         specs = self._validate(request)
         evaluation_id = self._evaluation_id(request, specs)
@@ -720,7 +723,7 @@ class EvaluationService:
         if request.baseline_id is not None:
             subject_ids.append(request.baseline_id)
         all_ids = sorted(set(subject_ids) | set(request.opponent_ids))
-        root = get_data_root()
+        root = request.data_root or get_data_root()
         return {agent_id: _resolve_python_agent(root, agent_id) for agent_id in all_ids}
 
     def _evaluation_id(self, request: EvaluationRequest, specs: dict[str, AgentSpec]) -> str:
@@ -806,6 +809,7 @@ class EvaluationService:
                 timeout=None,
                 trace=False,
                 run_dir=cell.artifact_dir,
+                data_root=request.data_root,
             )
         except AgentTestError as exc:
             return replace(

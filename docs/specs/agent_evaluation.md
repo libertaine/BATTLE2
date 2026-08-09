@@ -288,6 +288,8 @@ class EvaluationRequest:
     output_dir: Path
     resume: bool = True
     retry_failures: bool = False
+    data_root: Path | None = None   # threaded to resolve_agent/test_agent, mirroring
+                                      # test_agent's own optional data_root parameter
 ```
 
 Both `opponent_ids` and `seeds` must be non-empty; `candidate_id` must
