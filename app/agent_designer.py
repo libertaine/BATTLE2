@@ -311,6 +311,18 @@ class AgentDesigner(QMainWindow):
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
         env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        # Force the child to resolve the identical data root this process
+        # did, rather than relying on inheritance alone: inheritance only
+        # reproduces the same root when it was itself set from an explicit
+        # BYTEFRAY_ROOT/BATTLE2_ROOT/BATTLE_ROOT env var (true after a
+        # normal install, which sets one system-wide). In a portable,
+        # no-installer, no-env-var checkout, get_data_root() falls back to
+        # "the directory containing the running executable" -- a
+        # *different* directory for this Designer process (its own onedir
+        # folder) than for a sibling battle2.exe/battle-cli.exe child, so
+        # the child would silently look for agents this process just wrote
+        # in the wrong place ("Unknown agent") without this override.
+        env.insert("BYTEFRAY_ROOT", str(root))
 
         proc = self._start_process(command, env, root, label="RunMatch")
 
@@ -404,6 +416,9 @@ class AgentDesigner(QMainWindow):
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
         env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        # See _on_advanced_run: forces the child onto this process's exact
+        # data root instead of relying on inheritance alone.
+        env.insert("BYTEFRAY_ROOT", str(root))
 
         proc = self._start_process(command, env, root, label="RunMatch")
 
@@ -536,6 +551,12 @@ class AgentDesigner(QMainWindow):
         source = [str(self.battle_root), str(self.battle_root / "engine" / "src")]
         env.insert("PYTHONPATH", sep.join(source + ([existing] if existing else [])))
         env.insert("BATTLE_AGENTS_DIR", str(self.battle_root / "agents"))
+        # See the identical override in _on_validate_agent/_on_test_agent:
+        # forces the child to resolve the same data root as this process
+        # instead of relying on inheritance alone, which only reproduces it
+        # in an installed (env-var-configured) deployment, not a portable,
+        # no-installer checkout.
+        env.insert("BYTEFRAY_ROOT", str(self.battle_root))
 
         proc = self._start_process(command, env, self.battle_root, label="Tournament")
 
@@ -612,9 +633,8 @@ class AgentDesigner(QMainWindow):
         self.development.setBusy(True)
 
         # Same child environment construction already used for match
-        # launch: the child inherits this process's environment (so a
-        # custom BYTEFRAY_ROOT/BATTLE2_ROOT/BATTLE_ROOT is honored
-        # identically), plus a PYTHONPATH extension for a source checkout.
+        # launch (see _on_advanced_run), plus a PYTHONPATH extension for a
+        # source checkout.
         env = QProcessEnvironment.systemEnvironment()
         root = self.battle_root
         eng = str(root / "engine" / "src")
@@ -623,6 +643,7 @@ class AgentDesigner(QMainWindow):
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
         env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        env.insert("BYTEFRAY_ROOT", str(root))
 
         proc = self._start_process(command, env, root, label="Validate")
         proc.start()
@@ -681,9 +702,8 @@ class AgentDesigner(QMainWindow):
         self.development.setBusy(True)
 
         # Same child environment construction already used for match
-        # launch/validate: the child inherits this process's environment
-        # (so a custom BYTEFRAY_ROOT/BATTLE2_ROOT/BATTLE_ROOT is honored
-        # identically), plus a PYTHONPATH extension for a source checkout.
+        # launch/validate (see _on_advanced_run), plus a PYTHONPATH
+        # extension for a source checkout.
         env = QProcessEnvironment.systemEnvironment()
         root = self.battle_root
         eng = str(root / "engine" / "src")
@@ -692,6 +712,7 @@ class AgentDesigner(QMainWindow):
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
         env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        env.insert("BYTEFRAY_ROOT", str(root))
 
         proc = self._start_process(command, env, root, label="AgentTest")
         proc.start()

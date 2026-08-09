@@ -1031,6 +1031,59 @@ def test_hanging_development_test_does_not_block_gui_event_loop(monkeypatch, tmp
 
 
 # ---------------------------------------------------------------------------
+# Data-root propagation to the child process
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gui
+def test_development_test_child_env_forces_designers_own_data_root(monkeypatch, tmp_path):
+    """A Development Test child must resolve the exact same data root this
+    process did, not silently recompute its own.
+
+    Regression test for a real bug found during v0.5.0 manual release
+    verification: the child environment relied on inheriting
+    BYTEFRAY_ROOT/BATTLE2_ROOT/BATTLE_ROOT from the OS environment, which
+    only reproduces the same root when it was itself set from an explicit
+    env var (true after a normal install). In a portable, no-installer
+    checkout, get_data_root() falls back to "the directory containing the
+    running executable" -- a *different* directory for the Designer's own
+    onedir folder than for a sibling battle2.exe child -- so the child
+    could not find an agent this process had just written
+    ("Unknown agent ...").
+    """
+    _make_app()
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
+    from battle_engine.agent_scaffold import create_agent
+
+    from app.agent_designer import AgentDesigner
+
+    designer = AgentDesigner()
+    try:
+        create_agent("env_check_agent", data_root=data_root)
+        designer.refresh_agents(select="env_check_agent")
+
+        # Simulate the portable/no-env-var scenario this bug depended on:
+        # the OS environment the child would otherwise inherit no longer
+        # carries any explicit root, even though this Designer instance's
+        # own battle_root is still the one resolved above.
+        monkeypatch.delenv("BYTEFRAY_ROOT", raising=False)
+        monkeypatch.delenv("BATTLE2_ROOT", raising=False)
+        monkeypatch.delenv("BATTLE_ROOT", raising=False)
+
+        designer._on_test_agent()
+        assert designer._proc is not None
+        child_env = designer._proc.processEnvironment()
+        assert child_env.contains("BYTEFRAY_ROOT")
+        assert child_env.value("BYTEFRAY_ROOT") == str(designer.battle_root)
+        assert designer.battle_root == data_root
+
+        designer._dispose_process()
+    finally:
+        designer.deleteLater()
+
+
+# ---------------------------------------------------------------------------
 # Replay handoff
 # ---------------------------------------------------------------------------
 
