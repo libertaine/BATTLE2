@@ -16,15 +16,35 @@ def _resource_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _starter_source_dir(name: str) -> Path:
+    return _resource_root() / "engine" / "src" / "battle_engine" / "data" / "starter_agents" / name
+
+
+def _expected_starter_files(data_root: Path) -> set[Path]:
+    """Every file a starter ships, mapped into the destination catalog.
+
+    The four native VM starters ship only ``agent.yaml``; the Python
+    starters (added in v0.6.1) also ship ``agent.py`` -- computed from the
+    actual source tree rather than hard-coded, so this stays correct
+    regardless of which starters carry how many files.
+    """
+
+    expected: set[Path] = set()
+    for name in STARTER_AGENT_NAMES:
+        source_dir = _starter_source_dir(name)
+        for source in source_dir.rglob("*"):
+            if source.is_file():
+                relative = source.relative_to(source_dir)
+                expected.add((data_root / "agents" / name / relative).resolve())
+    return expected
+
+
 def test_empty_data_root_receives_all_starters_and_creates_agents_directory(tmp_path):
     data_root = tmp_path / "Writable Data With Spaces"
 
     created = ensure_starter_agents(resource_root=_resource_root(), data_root=data_root)
 
-    expected = {
-        (data_root / "agents" / name / "agent.yaml").resolve()
-        for name in STARTER_AGENT_NAMES
-    }
+    expected = _expected_starter_files(data_root)
     assert set(created) == expected
     assert all(path.is_file() for path in expected)
 
@@ -49,14 +69,14 @@ def test_repeated_initialization_is_idempotent(tmp_path):
     first = ensure_starter_agents(resource_root=_resource_root(), data_root=tmp_path)
     second = ensure_starter_agents(resource_root=_resource_root(), data_root=tmp_path)
 
-    assert len(first) == len(STARTER_AGENT_NAMES)
+    assert len(first) == len(_expected_starter_files(tmp_path))
     assert second == []
 
 
 def test_source_resource_lookup_uses_repository_resources(tmp_path):
     created = ensure_starter_agents(data_root=tmp_path)
 
-    assert len(created) == len(STARTER_AGENT_NAMES)
+    assert len(created) == len(_expected_starter_files(tmp_path))
 
 
 def test_installed_linux_initializes_starters_in_xdg_data_home(
@@ -73,10 +93,7 @@ def test_installed_linux_initializes_starters_in_xdg_data_home(
     first = ensure_starter_agents(resource_root=_resource_root())
     second = ensure_starter_agents(resource_root=_resource_root())
 
-    assert set(first) == {
-        (data_root / "agents" / name / "agent.yaml").resolve()
-        for name in STARTER_AGENT_NAMES
-    }
+    assert set(first) == _expected_starter_files(data_root)
     assert second == []
 
 

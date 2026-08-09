@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 from battle_engine import cli, command, legacy
+from battle_engine.starters import STARTER_AGENT_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -442,7 +443,7 @@ def test_agents_command_initializes_starters_idempotently(tmp_path):
     )
     assert first.returncode == 0, first.stderr
     manifests = sorted(path.parent.name for path in (data_root / "agents").glob("*/agent.yaml"))
-    assert manifests == ["runner", "seeker", "spiral", "writer"]
+    assert manifests == sorted(STARTER_AGENT_NAMES)
     runner = data_root / "agents" / "runner" / "agent.yaml"
     runner.write_text('{"name": "runner", "user_note": "keep"}\n', encoding="utf-8")
 
