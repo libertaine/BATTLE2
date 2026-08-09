@@ -24,6 +24,7 @@ import re
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
+from itertools import zip_longest
 from pathlib import Path
 from typing import Any
 
@@ -280,6 +281,14 @@ def build_matrix(request: EvaluationRequest, evaluation_id: str) -> tuple[Evalua
         for opponent_id in request.opponent_ids:
             for seed in request.seeds:
                 ordinal += 1
+                # `ordinal` is included so a repeated (role, subject_id,
+                # opponent_id, seed) tuple -- explicitly preserved as
+                # distinct cells above -- still gets a distinct schedule_id.
+                # Without it, duplicate cells collide in the resume-state
+                # lookup dict (EvaluationService._resolve_from_state keys
+                # prior cells by schedule_id), which silently misattributes
+                # one duplicate's persisted state to another and can demote
+                # a legitimately never-yet-run duplicate to "corrupted".
                 schedule_id = stable_id(
                     "evaluation-cell",
                     {
@@ -288,6 +297,7 @@ def build_matrix(request: EvaluationRequest, evaluation_id: str) -> tuple[Evalua
                         "subject_id": subject_id,
                         "opponent_id": opponent_id,
                         "seed": seed,
+                        "ordinal": ordinal,
                     },
                 )
                 label = (
@@ -372,72 +382,82 @@ def classify(candidate_outcome: str, baseline_outcome: str) -> str:
 def compare_candidate_baseline(
     cells: Sequence[EvaluationCell],
 ) -> tuple[ComparisonEntry, ...]:
-    candidate_cells = {
-        (cell.opponent_id, cell.seed): cell for cell in cells if cell.subject_role == CANDIDATE
-    }
-    baseline_cells = {
-        (cell.opponent_id, cell.seed): cell for cell in cells if cell.subject_role == BASELINE
-    }
-    keys = sorted(set(candidate_cells) | set(baseline_cells))
+    # Grouped into lists (not a plain {(opponent_id, seed): cell} dict) and
+    # paired positionally below so a repeated (opponent_id, seed) pair --
+    # explicitly preserved as distinct cells by build_matrix -- produces one
+    # comparison entry per duplicate occurrence instead of silently
+    # collapsing all but the last-seen duplicate on each side into a single
+    # entry (which previously undercounted "of {total} matched cells" and
+    # dropped some duplicates from the comparison entirely).
+    candidate_by_key: dict[tuple[str, int], list[EvaluationCell]] = {}
+    for cell in cells:
+        if cell.subject_role == CANDIDATE:
+            candidate_by_key.setdefault((cell.opponent_id, cell.seed), []).append(cell)
+    baseline_by_key: dict[tuple[str, int], list[EvaluationCell]] = {}
+    for cell in cells:
+        if cell.subject_role == BASELINE:
+            baseline_by_key.setdefault((cell.opponent_id, cell.seed), []).append(cell)
+    keys = sorted(set(candidate_by_key) | set(baseline_by_key))
 
     entries: list[ComparisonEntry] = []
     for opponent_id, seed in keys:
-        candidate_cell = candidate_cells.get((opponent_id, seed))
-        baseline_cell = baseline_cells.get((opponent_id, seed))
-        if candidate_cell is None or baseline_cell is None:
-            entries.append(
-                ComparisonEntry(
-                    opponent_id=opponent_id,
-                    seed=seed,
-                    classification="inconclusive",
-                    candidate_outcome=candidate_cell.outcome if candidate_cell else None,
-                    baseline_outcome=baseline_cell.outcome if baseline_cell else None,
-                    reason="cell missing on one side",
+        candidate_list = candidate_by_key.get((opponent_id, seed), [])
+        baseline_list = baseline_by_key.get((opponent_id, seed), [])
+        for candidate_cell, baseline_cell in zip_longest(candidate_list, baseline_list):
+            if candidate_cell is None or baseline_cell is None:
+                entries.append(
+                    ComparisonEntry(
+                        opponent_id=opponent_id,
+                        seed=seed,
+                        classification="inconclusive",
+                        candidate_outcome=candidate_cell.outcome if candidate_cell else None,
+                        baseline_outcome=baseline_cell.outcome if baseline_cell else None,
+                        reason="cell missing on one side",
+                    )
                 )
+                continue
+            if not candidate_cell.is_scored or not baseline_cell.is_scored:
+                entries.append(
+                    ComparisonEntry(
+                        opponent_id=opponent_id,
+                        seed=seed,
+                        classification="inconclusive",
+                        candidate_outcome=candidate_cell.outcome,
+                        baseline_outcome=baseline_cell.outcome,
+                        reason=(
+                            f"candidate={candidate_cell.status}/{candidate_cell.outcome} "
+                            f"baseline={baseline_cell.status}/{baseline_cell.outcome}"
+                        ),
+                    )
+                )
+                continue
+            assert candidate_cell.outcome is not None and baseline_cell.outcome is not None
+            classification = classify(candidate_cell.outcome, baseline_cell.outcome)
+            candidate_score_diff = (
+                None
+                if candidate_cell.score_subject is None or candidate_cell.score_opponent is None
+                else candidate_cell.score_subject - candidate_cell.score_opponent
             )
-            continue
-        if not candidate_cell.is_scored or not baseline_cell.is_scored:
+            baseline_score_diff = (
+                None
+                if baseline_cell.score_subject is None or baseline_cell.score_opponent is None
+                else baseline_cell.score_subject - baseline_cell.score_opponent
+            )
             entries.append(
                 ComparisonEntry(
                     opponent_id=opponent_id,
                     seed=seed,
-                    classification="inconclusive",
+                    classification=classification,
                     candidate_outcome=candidate_cell.outcome,
                     baseline_outcome=baseline_cell.outcome,
-                    reason=(
-                        f"candidate={candidate_cell.status}/{candidate_cell.outcome} "
-                        f"baseline={baseline_cell.status}/{baseline_cell.outcome}"
-                    ),
+                    candidate_score=candidate_cell.score_subject,
+                    baseline_score=baseline_cell.score_subject,
+                    candidate_score_differential=candidate_score_diff,
+                    baseline_score_differential=baseline_score_diff,
+                    candidate_territory=candidate_cell.territory_subject,
+                    baseline_territory=baseline_cell.territory_subject,
                 )
             )
-            continue
-        assert candidate_cell.outcome is not None and baseline_cell.outcome is not None
-        classification = classify(candidate_cell.outcome, baseline_cell.outcome)
-        candidate_score_diff = (
-            None
-            if candidate_cell.score_subject is None or candidate_cell.score_opponent is None
-            else candidate_cell.score_subject - candidate_cell.score_opponent
-        )
-        baseline_score_diff = (
-            None
-            if baseline_cell.score_subject is None or baseline_cell.score_opponent is None
-            else baseline_cell.score_subject - baseline_cell.score_opponent
-        )
-        entries.append(
-            ComparisonEntry(
-                opponent_id=opponent_id,
-                seed=seed,
-                classification=classification,
-                candidate_outcome=candidate_cell.outcome,
-                baseline_outcome=baseline_cell.outcome,
-                candidate_score=candidate_cell.score_subject,
-                baseline_score=baseline_cell.score_subject,
-                candidate_score_differential=candidate_score_diff,
-                baseline_score_differential=baseline_score_diff,
-                candidate_territory=candidate_cell.territory_subject,
-                baseline_territory=baseline_cell.territory_subject,
-            )
-        )
     return tuple(entries)
 
 

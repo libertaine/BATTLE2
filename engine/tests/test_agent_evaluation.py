@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -147,9 +148,13 @@ def test_matrix_preserves_repeated_opponent_and_seed_as_distinct_cells():
     )
     matrix = build_matrix(request, "evaluation_x")
     assert len(matrix) == 4
-    # Every cell is distinct by schedule_id despite identical inputs producing
-    # identical (opponent, seed) pairs -- ordinal is baked into the label/dir.
+    # Every cell is distinct by both artifact_dir and schedule_id despite
+    # identical inputs producing identical (opponent, seed) pairs -- ordinal
+    # is baked into the label/dir and into the schedule_id hash itself, so a
+    # repeated cell can't collide in a schedule_id-keyed lookup (regression
+    # for the resume/comparison bugs this collision used to cause).
     assert len({cell.artifact_dir for cell in matrix}) == 4
+    assert len({cell.schedule_id for cell in matrix}) == 4
 
 
 def test_candidate_may_equal_an_opponent(tmp_path):
@@ -456,7 +461,33 @@ def test_paired_candidate_baseline_evaluation_end_to_end(tmp_path):
 
     assert len(result.cells) == 4
     assert len(result.aggregates) == 2
-    assert len(result.comparison) == 2  # (opp, 1) and (opp, 2)
+    assert len(result.comparison) == 2
+
+
+def test_paired_evaluation_with_duplicate_seed_produces_one_comparison_entry_per_duplicate(
+    tmp_path,
+):
+    """Regression: a repeated (opponent, seed) pair must not collapse in
+    compare_candidate_baseline's grouping -- each duplicate candidate cell
+    needs its own paired baseline cell and its own ComparisonEntry, not just
+    the last-seen duplicate on each side (which previously undercounted
+    "of {total} matched cells" and silently dropped some duplicates)."""
+
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    scaffold_create_agent("base", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    service = EvaluationService()
+    request = _request(
+        tmp_path,
+        candidate_id="cand",
+        baseline_id="base",
+        opponent_ids=("opp",),
+        seeds=(1, 1, 2),
+    )
+    result = service.run(request)
+
+    assert len(result.cells) == 6  # 2 subjects x 1 opponent x 3 seeds (incl. duplicate)
+    assert len(result.comparison) == 3  # one entry per (opp, seed) occurrence, not 2
 
 
 def test_reproduction_command_matches_a_standalone_agents_test_rerun(tmp_path):
@@ -541,6 +572,43 @@ def test_init_failures_excluded_from_win_rate_but_visible_in_aggregate(tmp_path)
 # --------------------------------------------------------------------------
 # Resume / retry (Sec 14/18)
 # --------------------------------------------------------------------------
+
+
+def test_resume_reexecutes_never_run_duplicate_cell_instead_of_corrupting_it(tmp_path):
+    """Regression: a repeated (opponent, seed) pair used to collide in the
+    resume-state lookup dict (both cells shared one schedule_id), so if only
+    one duplicate had actually completed when an evaluation was interrupted,
+    the still-pending duplicate was misclassified "corrupted" on resume
+    (its own artifact_dir legitimately has no result.json yet -- that's not
+    corruption, it just never ran) instead of simply being re-executed."""
+
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    service = EvaluationService()
+    request = _request(tmp_path, candidate_id="cand", opponent_ids=("opp",), seeds=(1, 1, 2))
+    first = service.run(request)
+    assert all(cell.status == "completed" for cell in first.cells)
+
+    # Simulate an interruption: drop the second seed=1 duplicate's cell
+    # record and delete its artifact directory, as if it never ran.
+    duplicates = [cell for cell in first.cells if cell.seed == 1]
+    assert len(duplicates) == 2
+    never_ran = duplicates[1]
+    state_path = first.state_path
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+    data["cells"] = [
+        entry
+        for entry in data["cells"]
+        if Path(entry["artifact_dir"]).name != never_ran.artifact_dir.name
+    ]
+    data["complete"] = False
+    state_path.write_text(json.dumps(data), encoding="utf-8")
+    shutil.rmtree(never_ran.artifact_dir, ignore_errors=True)
+
+    second = service.run(request)
+    by_dir = {cell.artifact_dir.name: cell for cell in second.cells}
+    assert by_dir[never_ran.artifact_dir.name].status == "completed"
+    assert by_dir[never_ran.artifact_dir.name].outcome in ("win", "loss", "tie")
 
 
 def test_resume_trusts_completed_cell_without_rerunning(tmp_path):
