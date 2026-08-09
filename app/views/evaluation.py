@@ -167,10 +167,10 @@ def _classification_label(classification: str) -> str:
 
 
 def _find_cell(
-    presentation: EvaluationPresentation, role: str, opponent_id: str, seed: int
+    presentation: EvaluationPresentation, schedule_id: str
 ) -> EvaluationCellPresentation | None:
     for cell in presentation.cells:
-        if cell.subject_role == role and cell.opponent_id == opponent_id and cell.seed == seed:
+        if cell.schedule_id == schedule_id:
             return cell
     return None
 
@@ -304,7 +304,9 @@ class EvaluationResultsDialog(QDialog):
     ) -> EvaluationCellPresentation | None:
         if isinstance(payload, EvaluationCellPresentation):
             return payload
-        return _find_cell(self._presentation, "candidate", payload.opponent_id, payload.seed)
+        if payload.candidate_schedule_id is None:
+            return None
+        return _find_cell(self._presentation, payload.candidate_schedule_id)
 
     def _on_test_agent_lab(self) -> None:
         payload = self._selected_payload()

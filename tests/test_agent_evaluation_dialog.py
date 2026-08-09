@@ -214,6 +214,60 @@ def test_results_dialog_comparison_mode_selection_and_signals(tmp_path):
 
 
 @pytest.mark.gui
+def test_results_dialog_duplicate_seed_open_replay_resolves_correct_duplicate(tmp_path):
+    """Regression: a repeated (opponent, seed) pair produces two comparison
+    rows (engine-side fix ab54a87). Before candidate_schedule_id was threaded
+    through ComparisonEntry/EvaluationComparisonPresentation, ``_find_cell``
+    resolved a selected comparison row's candidate cell by
+    ``(role, opponent_id, seed)`` alone, which always returned the *first*
+    matching duplicate cell regardless of which row was actually selected --
+    reintroducing, in the Designer's drill-down, the exact class of bug
+    ab54a87 fixed at the engine layer. Selecting the second duplicate's row
+    and clicking "Open Replay" must resolve to the second duplicate's own
+    artifact_dir, not the first's."""
+    _make_app()
+    from battle_engine.agent_evaluation import EvaluationRequest, EvaluationService
+
+    from app.services.designer_workflows import read_evaluation_presentation
+    from app.views.evaluation import EvaluationResultsDialog
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "baseline")
+    _write_python_agent(tmp_path, "opponent")
+
+    service = EvaluationService()
+    request = EvaluationRequest(
+        candidate_id="candidate",
+        baseline_id="baseline",
+        opponent_ids=("opponent",),
+        seeds=(1, 1),
+        output_dir=tmp_path / "eval-out",
+        ticks=15,
+        data_root=tmp_path,
+    )
+    result = service.run(request)
+    presentation = read_evaluation_presentation(result.state_path)
+    assert len(presentation.comparison) == 2  # one entry per duplicate, not collapsed to one
+
+    candidate_cells = [cell for cell in presentation.cells if cell.subject_role == "candidate"]
+    assert len(candidate_cells) == 2
+    assert candidate_cells[0].artifact_dir != candidate_cells[1].artifact_dir
+    assert candidate_cells[0].schedule_id != candidate_cells[1].schedule_id
+
+    dialog = EvaluationResultsDialog(presentation)
+    try:
+        captured_replay: list[Path] = []
+        dialog.openReplayRequested.connect(lambda p: captured_replay.append(p))
+
+        dialog.resultsList.setCurrentRow(1)  # the second duplicate's comparison row
+        dialog._on_open_replay()
+        assert captured_replay
+        assert captured_replay[0].parent == candidate_cells[1].artifact_dir
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
 def test_results_dialog_cells_only_mode_without_baseline(tmp_path):
     _make_app()
     from app.services.designer_workflows import read_evaluation_presentation

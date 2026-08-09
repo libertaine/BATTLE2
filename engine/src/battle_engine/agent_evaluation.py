@@ -239,6 +239,15 @@ class ComparisonEntry:
     candidate_territory: float | None = None
     baseline_territory: float | None = None
     reason: str | None = None
+    # A repeated (opponent_id, seed) pair produces multiple ComparisonEntry
+    # rows (see compare_candidate_baseline below); these carry each row's
+    # exact paired cell identity so a consumer (the Designer results dialog)
+    # can resolve the specific duplicate a row was built from instead of
+    # re-deriving it from (opponent_id, seed) alone, which -- absent this --
+    # always resolves to the *first* matching duplicate regardless of which
+    # row was actually selected.
+    candidate_schedule_id: str | None = None
+    baseline_schedule_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -413,6 +422,8 @@ def compare_candidate_baseline(
                         candidate_outcome=candidate_cell.outcome if candidate_cell else None,
                         baseline_outcome=baseline_cell.outcome if baseline_cell else None,
                         reason="cell missing on one side",
+                        candidate_schedule_id=candidate_cell.schedule_id if candidate_cell else None,
+                        baseline_schedule_id=baseline_cell.schedule_id if baseline_cell else None,
                     )
                 )
                 continue
@@ -428,6 +439,8 @@ def compare_candidate_baseline(
                             f"candidate={candidate_cell.status}/{candidate_cell.outcome} "
                             f"baseline={baseline_cell.status}/{baseline_cell.outcome}"
                         ),
+                        candidate_schedule_id=candidate_cell.schedule_id,
+                        baseline_schedule_id=baseline_cell.schedule_id,
                     )
                 )
                 continue
@@ -456,6 +469,8 @@ def compare_candidate_baseline(
                     baseline_score_differential=baseline_score_diff,
                     candidate_territory=candidate_cell.territory_subject,
                     baseline_territory=baseline_cell.territory_subject,
+                    candidate_schedule_id=candidate_cell.schedule_id,
+                    baseline_schedule_id=baseline_cell.schedule_id,
                 )
             )
     return tuple(entries)

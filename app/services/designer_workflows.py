@@ -215,6 +215,7 @@ def build_designer_evaluate_command(
 
 @dataclass(frozen=True)
 class EvaluationCellPresentation:
+    schedule_id: str
     subject_role: str
     subject_id: str
     opponent_id: str
@@ -245,6 +246,7 @@ class EvaluationComparisonPresentation:
     baseline_outcome: str | None
     rerun_candidate: str
     rerun_baseline: str | None
+    candidate_schedule_id: str | None
 
 
 @dataclass(frozen=True)
@@ -281,6 +283,7 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
 
     cells = tuple(
         EvaluationCellPresentation(
+            schedule_id=str(cell.get("schedule_id", "")),
             subject_role=str(cell.get("subject_role", "")),
             subject_id=str(cell.get("subject_id", "")),
             opponent_id=str(cell.get("opponent_id", "")),
@@ -317,6 +320,7 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
                 if baseline_id
                 else None
             ),
+            candidate_schedule_id=row.get("candidate_schedule_id"),
         )
         for row in data.get("comparison", ())
     )
