@@ -136,10 +136,15 @@ metadata belongs with later result/replay normalization.
 
 - Python/VM and Python/blob mixed matches are rejected.
 - Python entrants are not vulnerable to arena code corruption.
-- No hard timeout or process isolation can interrupt a non-returning callback.
-  Per-callback workers would require action-level IPC and arena synchronization;
-  whole-match worker containment is the preferred future direction, but requires
-  a Windows-spawn-safe request, replay, cleanup, and packaging protocol.
+- `bytefray run`/tournament still run every Python entrant in-process with
+  no hard timeout, exactly as above -- a non-returning callback there is
+  still only interruptible by an operator's Ctrl-C/`SystemExit`. As of the
+  (unreleased) Agent Lab work, `bytefray agents test`/`agents validate`
+  optionally run each Python entrant's `load`/`reset`/`act` calls through
+  one whole-match-lifetime worker subprocess instead, with a per-call
+  timeout; see `docs/specs/agent_lab.md`. This is development-time hang
+  containment, not a security sandbox, and is not (yet) available to
+  `bytefray run`/tournament.
 - Python replication and vulnerable-core designs are not implemented.
 - Headless Python-only tournaments orchestrate Agent API v1 matches through the
   native service; mixed-runtime tournament divisions remain unsupported.

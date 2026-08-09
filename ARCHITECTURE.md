@@ -431,3 +431,55 @@ closed out v0.4 as the tagged `v0.4.0` release described throughout this
 document. Do not treat any further feedback-loop tooling described in
 future specs under `docs/specs/` as already built until it lands and this
 document is updated to describe it.
+
+## Agent Lab (v0.5, unreleased)
+
+Development branch (`v0.5-agent-lab`) work, not yet released; see
+`docs/specs/agent_lab.md` for the full design. Where v0.4 built
+create → validate → test → replay, Agent Lab attacks
+inspect → debug → modify → repeat: deterministic behavioral tracing of
+the Python Agent API boundary, and development-time hang containment for
+a `reset()`/`act()` call that never returns.
+
+`battle_engine.agent_trace` defines `bytefray.agent_trace` v1, a
+separate, versioned JSONL artifact independent of `battle2.replay`/
+`battle2.result` — one record per `reset()`/`act()` call attempt
+(Observation, AgentAction or diagnostic, wall time). `MatchRequest`
+(`battle_engine.match_service`) gains two independently optional fields,
+`trace_path` and `agent_call_timeout`, both defaulting to `None`; `bytefray
+run` and the tournament service never set either, so their code path is
+the unmodified v0.4.0 `PythonEntrantController`. `bytefray agents
+test`/`agents validate` set both by default at their CLI entry points
+(library callers keep an unsupervised, untimed default for backward
+compatibility with existing programmatic callers/tests).
+
+When `agent_call_timeout` is set, `battle_engine.supervised_runtime.
+SupervisedPythonEntrantController` replaces the in-process controller:
+one whole-match-lifetime worker subprocess per Python entrant
+(`battle_engine.agent_worker`, spawned via the existing
+`launchers.build_agents_command` pattern through a hidden `agents
+_worker` verb — no `multiprocessing`, no new executable) owns that
+entrant's `load`/`reset`/`act` calls; the parent still owns the arena and
+applies every action, so execution semantics are unchanged, only
+production is relocated. A newline-delimited-JSON protocol over the
+worker's stdin/stdout, read via a dedicated per-worker reader thread and
+a bounded `queue.get(timeout=...)`, gives every call a timeout on both
+Windows and POSIX. A stalled call reports a new diagnostic
+(`agent_load_timeout`/`agent_reset_timeout`/`agent_action_timeout`/
+`agent_worker_exited`/`agent_worker_protocol_error`, reusing the existing
+`RuntimeDiagnostic` shape) and forfeits that entrant exactly as an
+equivalent in-process exception already did.
+`battle_engine.process_containment` ties each worker's lifetime to its
+parent (a Windows Job Object / POSIX `PDEATHSIG`) so a worker stuck in a
+hung call cannot outlive a parent that is itself force-killed. This is
+development-time hang **containment**, not a security sandbox — worker
+code runs with the same OS privileges as the parent.
+
+`battle_engine.agent_inspect` (`bytefray agents inspect`/`agents
+diverge`) and the Designer's `TraceInspectorDialog`
+(`app/views/trace_inspector.py`, reached from a new "Inspect Trace"
+button on the existing Agent Development tab) both read an
+already-written trace file and execute no agent code, so neither needs a
+timeout or process boundary. `runs/agents_test/<agent-id>/<run-label>/`
+gains an optional `trace.jsonl` fourth file alongside the existing
+`replay.jsonl`/`result.json`/`summary.json` — additive only.

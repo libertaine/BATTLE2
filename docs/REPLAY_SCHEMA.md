@@ -146,6 +146,14 @@ was shown before its 3rd callback in tick 7" would be reconstructing agent
 *diagnostic* history, not match state, and is intentionally left out of the
 canonical replay guarantee.
 
+That future feature is `bytefray.agent_trace` (see
+`docs/specs/agent_lab.md`, unreleased Agent Lab work): a separate,
+optional, versioned JSONL artifact carrying exactly the per-callback
+Observation/Action/diagnostic history described above. It is not part of
+this schema and does not change `battle2.replay` in any way -- confirming
+the "intentionally left out" boundary drawn here rather than revisiting
+it.
+
 ### Known limitations carried forward
 
 - Reconstruction requires a linear scan of `memory_diffs` from tick 0; there

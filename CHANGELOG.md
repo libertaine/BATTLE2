@@ -5,6 +5,54 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+v0.5's primary theme is **Agent Lab**: v0.4 closed the
+create → validate → test → inspect → modify → repeat loop's first half;
+v0.5 attacks the second half -- understanding *why* an agent behaved the
+way it did, and containing an agent that never returns. Development
+branch only; not yet released. See `docs/specs/agent_lab.md`.
+
+### Added
+
+- `bytefray.agent_trace` v1: a new, separate, versioned JSONL artifact
+  recording each Python entrant's `reset()`/`act()` call boundary data
+  (Observation, AgentAction, diagnostic, wall time) -- independent of and
+  never folded into `battle2.replay`/`battle2.result`.
+- Supervised worker-subprocess execution: `agents test`/`agents
+  validate` can now run a Python entrant's `load`/`reset`/`act` calls
+  through one whole-match-lifetime worker subprocess per entrant, with a
+  configurable per-call timeout (`--timeout`, default 5s). A stalled call
+  is reported with a new diagnostic (`agent_load_timeout`,
+  `agent_reset_timeout`, `agent_action_timeout`, `agent_worker_exited`,
+  `agent_worker_protocol_error`) and the entrant is forfeited (or, for a
+  load/reset stall, the match never starts) exactly as an equivalent
+  in-process exception already was -- the match continues with any
+  surviving entrant. Development-time hang containment only, not a
+  security sandbox. `bytefray run`/tournament are unaffected: both new
+  `MatchRequest` fields default to off.
+- `bytefray agents inspect <run>` / `bytefray agents diverge <a> <b>`:
+  headless CLI inspection of a development trace (summary, one tick's
+  decisions, decisions around a tick, failures only) and first-divergence
+  comparison between two traces. Executes no agent code.
+- Designer: an "Inspect Trace" button and Timeout(s) option in the
+  existing Agent Development tab, backed by a new, modest
+  `TraceInspectorDialog` (tick/agent navigation, no source editor, no
+  general debugger).
+- `runs/agents_test/<agent-id>/<run-label>/` gains an optional
+  `trace.jsonl` sibling alongside the existing `replay.jsonl`/
+  `result.json`/`summary.json` -- additive only, on by default.
+
+### Fixed
+
+- A worker subprocess stuck inside a hung `act()`/`reset()` could
+  survive indefinitely as an orphan process if its immediate parent was
+  itself abruptly killed (e.g. the Designer's `_dispose_process()`
+  killing a supervised `agents test` mid-hang) -- the worker has no
+  opportunity to notice its parent died via the cooperative EOF path
+  while stuck in the agent's own tight loop. Fixed with OS-level
+  containment (`battle_engine.process_containment`): a Windows Job
+  Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` on the parent side,
+  `prctl(PR_SET_PDEATHSIG, SIGKILL)` on POSIX.
+
 ## [0.4.0] - 2026-08-08
 
 v0.4's primary theme is **Agent Authoring & Development Feedback Loop**:
