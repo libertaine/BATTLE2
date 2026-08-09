@@ -5,6 +5,27 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-09
+
+Patch release: Linux virtual-environment compatibility for Agent Lab
+supervised workers, plus dynamic-agent packaging hygiene.
+
+### Fixed
+
+- Linux supervised Agent Lab workers (`agents test`/`agents validate`) now
+  preserve the active virtual environment's interpreter identity instead of
+  resolving `sys.executable`'s symlink chain to the base interpreter it was
+  created from. The previous resolution walked past a standard Linux venv's
+  `bin/python` symlink to a base interpreter lacking the venv's
+  site-packages, so every supervised worker subprocess failed with
+  `No module named battle_engine`.
+- Dynamic Python agent imports no longer leave `__pycache__`/`.pyc` files
+  beside agent source -- including the bundled reference opponent under
+  `battle_engine/data/...` -- preventing source-checkout pollution and
+  wheel/sdist packaging contamination.
+- Linux type checking no longer reports the Windows-only
+  `ctypes.WinDLL` access as an `attr-defined` error.
+
 ## [0.5.0] - 2026-08-09
 
 v0.5's primary theme is **Agent Lab**: v0.4 closed the
