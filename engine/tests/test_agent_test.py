@@ -588,6 +588,65 @@ def test_invalid_seed_exits_two():
     assert caught.value.code == 2
 
 
+def test_invalid_timeout_exits_two():
+    with pytest.raises(SystemExit) as caught:
+        main(["example", "--timeout", "0.01"])
+    assert caught.value.code == 2
+
+
+def test_hanging_tested_agent_is_forfeited_under_cli_default_timeout(tmp_path):
+    """The CLI's default supervised timeout recovers a genuinely hung act()
+    without the process hanging -- the central Agent Lab hang-containment
+    proof, exercised at the real `bytefray agents test` boundary. Bounded
+    externally by hang_safety_timeout in case the containment itself has a
+    bug (see docs/specs/agent_lab.md's fault-injection requirements)."""
+
+    from _hang_safety import hang_safety_timeout
+
+    # _write_python_agent's act() body is a single expression; scaffold the
+    # manifest with it, then overwrite agent.py with a real infinite loop
+    # (which can't be expressed as one expression).
+    _write_python_agent(tmp_path, "hangy", "None")
+    (tmp_path / "agents" / "hangy" / "agent.py").write_text(
+        """
+class Agent:
+    def reset(self, context):
+        pass
+    def act(self, observation):
+        while True:
+            pass
+def create_agent():
+    return Agent()
+""",
+        encoding="utf-8",
+    )
+
+    with hang_safety_timeout(60):
+        outcome = run_development_test(
+            "hangy", data_root=tmp_path, resource_root=ROOT, timeout=1.0, ticks=3
+        )
+
+    assert isinstance(outcome, DevelopmentTestOutcome)
+    diagnostic = outcome.match_result.agents_by_id["A"].diagnostic
+    assert diagnostic is not None
+    assert diagnostic.code == "agent_action_timeout"
+    assert outcome.trace_path is not None
+    assert outcome.trace_path.exists()
+
+
+def test_no_trace_flag_omits_trace_artifact(tmp_path):
+    _write_python_agent(tmp_path, "example", "AgentAction(ActionKind.NOP)")
+
+    outcome = run_development_test(
+        "example", data_root=tmp_path, resource_root=ROOT, trace=False, ticks=3
+    )
+
+    assert isinstance(outcome, DevelopmentTestOutcome)
+    assert outcome.trace_path is None
+    run_dir = outcome.match_result.replay_path.parent
+    assert not (run_dir / "trace.jsonl").exists()
+
+
 def test_battle2_alias_behaves_identically(tmp_path):
     data_root = tmp_path / "data-root"
     env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))

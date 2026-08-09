@@ -424,6 +424,131 @@ def test_reset_failure_diagnostic_matches_real_match_exactly(tmp_path):
 
 
 # --------------------------------------------------------------------------
+# Supervised (--timeout) hang containment
+# --------------------------------------------------------------------------
+
+
+def test_default_call_stays_unsupervised(tmp_path):
+    """validate_agent()'s own default (timeout=None) must remain exactly
+    the v0.4.0 in-process, untimed call -- every caller above already
+    depends on this; a hang here would hang the whole test suite with no
+    external safety net, which is itself evidence the default is
+    unsupervised (see docs/specs/agent_lab.md §7)."""
+
+    _write_agent(tmp_path, "example", source=VALID_SOURCE)
+
+    result = validate_agent("example", data_root=tmp_path)
+
+    assert result.agent_id == "example"
+
+
+def test_supervised_act_timeout_is_reported(tmp_path):
+    from _hang_safety import hang_safety_timeout
+
+    _write_agent(
+        tmp_path,
+        "hangy",
+        source=(
+            "class Agent:\n"
+            "    def reset(self, context): pass\n"
+            "    def act(self, observation):\n"
+            "        while True:\n"
+            "            pass\n"
+            "def create_agent(): return Agent()\n"
+        ),
+    )
+
+    with hang_safety_timeout(30), pytest.raises(AgentValidationFailedError) as caught:
+        validate_agent("hangy", data_root=tmp_path, timeout=1.0)
+
+    assert caught.value.diagnostic.code == "agent_action_timeout"
+    assert caught.value.diagnostic.stage == "action"
+
+
+def test_supervised_reset_timeout_is_reported(tmp_path):
+    from _hang_safety import hang_safety_timeout
+
+    _write_agent(
+        tmp_path,
+        "hangy_reset",
+        source=(
+            "class Agent:\n"
+            "    def reset(self, context):\n"
+            "        while True:\n"
+            "            pass\n"
+            "    def act(self, observation): return None\n"
+            "def create_agent(): return Agent()\n"
+        ),
+    )
+
+    with hang_safety_timeout(30), pytest.raises(AgentValidationFailedError) as caught:
+        validate_agent("hangy_reset", data_root=tmp_path, timeout=1.0)
+
+    assert caught.value.diagnostic.code == "agent_reset_timeout"
+    assert caught.value.diagnostic.stage == "reset"
+
+
+def test_supervised_success_matches_unsupervised_action(tmp_path):
+    """Supervised and unsupervised dry runs of the identical agent/seed
+    must reach the identical dry-run action -- the single-call analogue of
+    the whole-match determinism proof in test_agent_lab_integration.py."""
+
+    _write_agent(tmp_path, "example", source=VALID_SOURCE)
+
+    unsupervised = validate_agent("example", data_root=tmp_path)
+    supervised = validate_agent("example", data_root=tmp_path, timeout=5.0)
+
+    assert unsupervised.dry_run_action == supervised.dry_run_action
+    assert unsupervised.api_version == supervised.api_version
+
+
+def test_supervised_trace_path_writes_a_trace(tmp_path):
+    _write_agent(tmp_path, "example", source=VALID_SOURCE)
+    trace_path = tmp_path / "trace.jsonl"
+
+    validate_agent("example", data_root=tmp_path, timeout=5.0, trace_path=trace_path)
+
+    assert trace_path.exists()
+    from battle_engine.agent_trace import read_trace
+
+    document = read_trace(trace_path)
+    assert document.header.supervised is True
+    assert len(document.decisions) == 1
+    assert document.decisions[0].diagnostic is None
+
+
+def test_cli_default_is_supervised_and_reports_timeout(tmp_path, monkeypatch, capsys):
+    from _hang_safety import hang_safety_timeout
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _write_agent(
+        tmp_path,
+        "hangy",
+        source=(
+            "class Agent:\n"
+            "    def reset(self, context): pass\n"
+            "    def act(self, observation):\n"
+            "        while True:\n"
+            "            pass\n"
+            "def create_agent(): return Agent()\n"
+        ),
+    )
+
+    with hang_safety_timeout(30):
+        exit_code = main(["hangy", "--timeout", "1"])
+
+    assert exit_code == 2
+    err = capsys.readouterr().err
+    assert "code: agent_action_timeout" in err
+
+
+def test_invalid_cli_timeout_exits_two():
+    with pytest.raises(SystemExit) as caught:
+        main(["example", "--timeout", "0.001"])
+    assert caught.value.code == 2
+
+
+# --------------------------------------------------------------------------
 # Custom data root
 # --------------------------------------------------------------------------
 
