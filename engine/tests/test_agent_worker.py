@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 from _hang_safety import hang_safety_timeout
@@ -287,6 +291,91 @@ def test_call_reports_protocol_error_on_malformed_response(tmp_path: Path) -> No
     handle._queue.put('{"no_ok_key": true}\n')
     result = handle._call({"cmd": "act"}, timeout=1.0)
     assert result.status is WorkerCallStatus.PROTOCOL_ERROR
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}"], capture_output=True, text=True, check=False
+        )
+        return str(pid) in result.stdout
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def test_worker_does_not_survive_a_hard_kill_of_its_own_parent(tmp_path: Path) -> None:
+    """Regression test for a real orphan-process bug found during Agent Lab
+    development: a worker stuck in a hung reset()/act() cannot notice its
+    parent died via EOF-on-stdin (it never returns to the read loop), so
+    without OS-level containment (Windows Job Object / POSIX PDEATHSIG,
+    see battle_engine.process_containment) it survives forever as an
+    orphan when its immediate parent is abruptly killed -- exactly what
+    the Designer's QProcess._dispose_process()'s unconditional kill() does
+    to a supervised ``agents test`` process. Reproduced here with a
+    second, disposable Python process standing in for that parent: it
+    starts a worker, prints the worker's PID, and then blocks forever so
+    the test can kill it out from under the worker.
+    """
+
+    engine_src = str(Path(__file__).resolve().parents[1] / "engine" / "src")
+    client_src = str(Path(__file__).resolve().parents[1] / "client" / "src")
+    directory = tmp_path / "agents" / "hangy"
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {"kind": "python", "api_version": 1, "entrypoint": "agent.py:create_agent", "version": "1.0"}
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(RESET_HANGS_SOURCE, encoding="utf-8")
+
+    parent_script = f"""
+import sys, threading, time
+from pathlib import Path
+sys.path.insert(0, {engine_src!r})
+sys.path.insert(0, {client_src!r})
+from battle_engine.agents import resolve_agent
+from battle_engine.agent_worker import AgentWorkerHandle
+
+spec = resolve_agent(Path({str(tmp_path)!r}), "hangy")
+handle = AgentWorkerHandle(agent_id="A", slot=0)
+handle.start()
+print(handle._proc.pid, flush=True)
+handle.load(spec, timeout=10.0)
+threading.Thread(
+    target=lambda: handle.reset(
+        match_seed=1, api_version=1, arena_size=4096, tick_limit=1, action_budget=1, timeout=60.0
+    ),
+    daemon=True,
+).start()
+time.sleep(60)
+"""
+
+    with hang_safety_timeout(30):
+        parent = subprocess.Popen(
+            [sys.executable, "-c", parent_script], stdout=subprocess.PIPE, text=True
+        )
+        try:
+            worker_pid_line = parent.stdout.readline()
+            worker_pid = int(worker_pid_line.strip())
+            time.sleep(1.5)  # let the worker genuinely enter the hung reset()
+            assert _pid_is_alive(worker_pid), "worker should still be running before the kill"
+
+            parent.kill()  # the abrupt kill under test, standing in for QProcess.kill()
+            parent.wait(timeout=10)
+
+            deadline = time.time() + 10
+            while time.time() < deadline and _pid_is_alive(worker_pid):
+                time.sleep(0.2)
+            assert not _pid_is_alive(worker_pid), (
+                f"worker pid {worker_pid} outlived its abruptly killed parent"
+            )
+        finally:
+            if parent.poll() is None:
+                parent.kill()
 
 
 def test_call_reports_exited_on_eof(tmp_path: Path) -> None:

@@ -57,6 +57,11 @@ from battle_engine.agent_api import (
 )
 from battle_engine.agents import AgentSpec
 from battle_engine.launchers import build_agents_command
+from battle_engine.process_containment import (
+    ChildLifetimeBinding,
+    bind_child_to_parent_lifetime,
+    die_with_parent,
+)
 from battle_engine.python_runtime import (
     RuntimeDiagnostic,
     derive_agent_seed,
@@ -111,6 +116,7 @@ class AgentWorkerHandle:
         self._reader: threading.Thread | None = None
         self._stderr_tail: deque[str] = deque(maxlen=20)
         self._stderr_reader: threading.Thread | None = None
+        self._lifetime_binding: ChildLifetimeBinding | None = None
 
     def start(self) -> None:
         command = build_agents_command(WORKER_SUBCOMMAND, [])
@@ -122,6 +128,12 @@ class AgentWorkerHandle:
             text=True,
             bufsize=1,
         )
+        # Tie the worker's lifetime to this parent process (Windows Job
+        # Object / POSIX PDEATHSIG, see battle_engine.process_containment)
+        # so a hung worker cannot outlive a parent that is itself
+        # force-killed -- e.g. the Designer's QProcess._dispose_process()
+        # killing a supervised `agents test` while its worker is mid-hang.
+        self._lifetime_binding = bind_child_to_parent_lifetime(self._proc)
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader.start()
         self._stderr_reader = threading.Thread(target=self._read_stderr, daemon=True)
@@ -280,6 +292,14 @@ class AgentWorkerHandle:
             self._reader.join(timeout=timeout)
         if self._stderr_reader is not None:
             self._stderr_reader.join(timeout=timeout)
+        # Release last: the process is already confirmed terminated (or
+        # was force-killed above) by this point, so releasing the lifetime
+        # binding here can only ever close a handle for an already-dead
+        # process -- never accidentally trigger kill-on-close against a
+        # process this call intended to keep alive.
+        if self._lifetime_binding is not None:
+            self._lifetime_binding.close()
+            self._lifetime_binding = None
 
 
 # --------------------------------------------------------------------------
@@ -434,8 +454,12 @@ def run_worker(*, stdin: Any = None, stdout: Any = None) -> int:
     Redirects ``sys.stdout`` to ``sys.stderr`` before any agent code can
     possibly run, so agent ``print()`` output cannot corrupt the protocol
     stream on the real stdout pipe (``out``, captured before redirection).
+    Also asks the OS (best-effort) to end this process if its parent dies
+    -- see :func:`battle_engine.process_containment.die_with_parent`; on
+    Windows this is instead handled by the parent's Job Object.
     """
 
+    die_with_parent()
     in_stream = stdin if stdin is not None else sys.stdin
     out_stream = stdout if stdout is not None else sys.stdout
     sys.stdout = sys.stderr
