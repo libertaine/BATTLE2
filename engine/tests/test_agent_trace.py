@@ -146,6 +146,32 @@ def test_unsupported_schema_version_raises_trace_format_error(tmp_path: Path) ->
         read_trace(path)
 
 
+def test_truncated_final_line_raises_actionable_trace_format_error(tmp_path: Path) -> None:
+    """Documents the deliberate durability/tolerance decision for a trace
+    that was interrupted mid-write (e.g. the writing process was killed):
+    TraceWriter's flush-per-record discipline means a genuinely truncated
+    file always ends with a syntactically incomplete trailing fragment,
+    never a torn earlier record (see TraceWriter's docstring). read_trace
+    treats that trailing fragment as a hard, precisely-located parse
+    error rather than silently dropping it -- a loud "corrupt at line N"
+    is more useful for a debugging artifact than quietly losing data the
+    author might have needed. This is the chosen alternative to silent
+    truncation tolerance; if that decision changes, this test should
+    change with it.
+    """
+
+    path = tmp_path / "trace.jsonl"
+    path.write_text(
+        '{"schema": "bytefray.agent_trace", "schema_version": 1, "record_type": "header", '
+        '"match_seed": 1, "agents": {}, "supervised": false}\n'
+        '{"record_type": "decision", "tick": 3, "agent_id": "A", "action_sl',  # cut mid-write
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TraceFormatError, match=r"trace\.jsonl:2.*invalid JSON"):
+        read_trace(path)
+
+
 def test_missing_required_field_raises_trace_format_error(tmp_path: Path) -> None:
     path = tmp_path / "trace.jsonl"
     path.write_text(
@@ -214,6 +240,131 @@ def test_first_divergence_finds_differing_action(tmp_path: Path) -> None:
     assert divergence.record_a.action.value == 165
     assert divergence.record_b is not None and divergence.record_b.action is not None
     assert divergence.record_b.action.value == 200
+
+
+def test_first_divergence_ignores_wall_time_only_differences(tmp_path: Path) -> None:
+    """Divergence semantics audit (continuation-phase item 11): two traces
+    that recorded the identical decision but took different wall-clock
+    time to get there must never be reported as behaviorally diverged --
+    ``wall_time_ms`` is timing noise, not a behavioral fact, and
+    ``first_divergence`` only compares ``action``/``diagnostic``.
+    """
+
+    path_a = tmp_path / "a.jsonl"
+    path_b = tmp_path / "b.jsonl"
+    with TraceWriter(path_a) as writer:
+        writer.write_header(TraceHeader(match_seed=1, agents={"A": "a"}, supervised=True, agent_call_timeout=5.0))
+        writer.write_decision(
+            DecisionRecord(
+                tick=1, agent_id="A", action_slot=0, wall_time_ms=0.05,
+                observation=TraceObservation(
+                    tick=1, agent_id="A", pc=0, register_a=0, register_p=0,
+                    zero_flag=False, last_read=None, alive=True,
+                ),
+                action=TraceAction(kind="nop"), diagnostic=None,
+            )
+        )
+    with TraceWriter(path_b) as writer:
+        writer.write_header(TraceHeader(match_seed=1, agents={"A": "a"}, supervised=True, agent_call_timeout=5.0))
+        writer.write_decision(
+            DecisionRecord(
+                tick=1, agent_id="A", action_slot=0, wall_time_ms=4321.9,
+                observation=TraceObservation(
+                    tick=1, agent_id="A", pc=0, register_a=0, register_p=0,
+                    zero_flag=False, last_read=None, alive=True,
+                ),
+                action=TraceAction(kind="nop"), diagnostic=None,
+            )
+        )
+
+    assert first_divergence(read_trace(path_a), read_trace(path_b)) is None
+
+
+def test_first_divergence_finds_action_vs_diagnostic(tmp_path: Path) -> None:
+    """One trace succeeded (an action) where the other failed (a
+    diagnostic) at the same (tick, agent, slot) key -- this must be
+    reported as a divergence even though both records are otherwise
+    well-formed and present."""
+
+    path_a = tmp_path / "a.jsonl"
+    path_b = tmp_path / "b.jsonl"
+    with TraceWriter(path_a) as writer:
+        writer.write_header(TraceHeader(match_seed=1, agents={"A": "a"}, supervised=True, agent_call_timeout=5.0))
+        writer.write_decision(
+            DecisionRecord(
+                tick=1, agent_id="A", action_slot=0, wall_time_ms=0.1,
+                observation=TraceObservation(
+                    tick=1, agent_id="A", pc=0, register_a=0, register_p=0,
+                    zero_flag=False, last_read=None, alive=True,
+                ),
+                action=TraceAction(kind="nop"), diagnostic=None,
+            )
+        )
+    with TraceWriter(path_b) as writer:
+        writer.write_header(TraceHeader(match_seed=1, agents={"A": "a"}, supervised=True, agent_call_timeout=5.0))
+        writer.write_decision(
+            DecisionRecord(
+                tick=1, agent_id="A", action_slot=0, wall_time_ms=5000.0,
+                observation=TraceObservation(
+                    tick=1, agent_id="A", pc=0, register_a=0, register_p=0,
+                    zero_flag=False, last_read=None, alive=True,
+                ),
+                action=None,
+                diagnostic=TraceDiagnostic(
+                    code="agent_action_timeout", stage="action",
+                    message="Python agent A act() did not return within 5s.",
+                ),
+            )
+        )
+
+    divergence = first_divergence(read_trace(path_a), read_trace(path_b))
+
+    assert divergence is not None
+    assert divergence.tick == 1
+    assert divergence.reason == "action/diagnostic differ"
+    assert divergence.record_a is not None and divergence.record_a.action is not None
+    assert divergence.record_b is not None and divergence.record_b.diagnostic is not None
+
+
+def test_first_divergence_ignores_header_agent_metadata_differences(tmp_path: Path) -> None:
+    """Header metadata (agent display names, supervised flag, timeout) is
+    run configuration, not a behavioral fact about decisions -- two traces
+    with different header agent names but identical decisions must not be
+    reported as diverged.
+    """
+
+    path_a = tmp_path / "a.jsonl"
+    path_b = tmp_path / "b.jsonl"
+    with TraceWriter(path_a) as writer:
+        writer.write_header(
+            TraceHeader(match_seed=1, agents={"A": "my_agent"}, supervised=True, agent_call_timeout=5.0)
+        )
+        writer.write_decision(
+            DecisionRecord(
+                tick=1, agent_id="A", action_slot=0, wall_time_ms=0.1,
+                observation=TraceObservation(
+                    tick=1, agent_id="A", pc=0, register_a=0, register_p=0,
+                    zero_flag=False, last_read=None, alive=True,
+                ),
+                action=TraceAction(kind="nop"), diagnostic=None,
+            )
+        )
+    with TraceWriter(path_b) as writer:
+        writer.write_header(
+            TraceHeader(match_seed=99, agents={"A": "a_completely_different_name"}, supervised=False)
+        )
+        writer.write_decision(
+            DecisionRecord(
+                tick=1, agent_id="A", action_slot=0, wall_time_ms=0.1,
+                observation=TraceObservation(
+                    tick=1, agent_id="A", pc=0, register_a=0, register_p=0,
+                    zero_flag=False, last_read=None, alive=True,
+                ),
+                action=TraceAction(kind="nop"), diagnostic=None,
+            )
+        )
+
+    assert first_divergence(read_trace(path_a), read_trace(path_b)) is None
 
 
 def test_first_divergence_reports_length_mismatch(tmp_path: Path) -> None:

@@ -91,6 +91,31 @@ def create_agent():
     return Agent()
 """
 
+READS_STDIN_SOURCE = """
+from battle_engine.agent_api import ActionKind, AgentAction
+
+class Agent:
+    def reset(self, context):
+        pass
+
+    def act(self, observation):
+        # An agent calling input() must not be able to steal the next
+        # protocol request line off the real stdin pipe -- it should see
+        # an immediate EOFError against the worker's rebound, empty
+        # agent-visible stdin instead. Report which happened via the
+        # write value so the test can assert on it without any extra
+        # channel.
+        try:
+            input()
+            saw_eof = False
+        except EOFError:
+            saw_eof = True
+        return AgentAction(ActionKind.WRITE, observation.pc, 1 if saw_eof else 0)
+
+def create_agent():
+    return Agent()
+"""
+
 
 def _spec(root: Path, name: str, source: str):
     directory = root / "agents" / name
@@ -143,6 +168,47 @@ def test_load_reset_act_round_trip(tmp_path: Path) -> None:
             handle.close()
 
     assert handle.exit_code == 0
+
+
+def test_agent_calling_input_does_not_desync_the_protocol(tmp_path: Path) -> None:
+    """Regression test for the worker-protocol-ownership hardening: an
+    agent's own ``input()`` call must hit the worker's rebound,
+    already-at-EOF agent-visible stdin (an immediate ``EOFError``), never
+    the real stdin pipe carrying the next protocol request. Two
+    consecutive ``act()`` calls (not just one) prove the protocol stays
+    in sync afterward -- a desync would either hang the second call or
+    have it observe the wrong response.
+    """
+
+    spec = _spec(tmp_path, "reads_stdin", READS_STDIN_SOURCE)
+    handle = AgentWorkerHandle(agent_id="A", slot=0)
+    with hang_safety_timeout(30):
+        try:
+            handle.start()
+            assert handle.load(spec, timeout=10.0).status is WorkerCallStatus.OK
+            assert handle.reset(
+                match_seed=1, api_version=1, arena_size=4096, tick_limit=2, action_budget=1, timeout=10.0
+            ).status is WorkerCallStatus.OK
+
+            first = handle.act(_observation(1), action_slot=0, timeout=10.0)
+            assert first.status is WorkerCallStatus.OK
+            assert first.payload is not None
+            assert first.payload["action"] == {"kind": "write", "operand": 0, "value": 1}
+
+            second = handle.act(_observation(2), action_slot=0, timeout=10.0)
+            assert second.status is WorkerCallStatus.OK
+            assert second.payload is not None
+            assert second.payload["action"] == {"kind": "write", "operand": 0, "value": 1}
+        finally:
+            handle.close()
+
+    assert handle.exit_code == 0
+
+
+def test_worker_main_rejects_unexpected_arguments() -> None:
+    from battle_engine.agent_worker import main as worker_main
+
+    assert worker_main(["--bogus"]) == 2
 
 
 def test_load_failure_reports_diagnostic(tmp_path: Path) -> None:
@@ -254,6 +320,46 @@ def test_close_without_start_is_a_no_op() -> None:
     handle = AgentWorkerHandle(agent_id="A", slot=0)
     handle.close()  # never started -- must not raise
     handle.kill()
+
+
+def test_close_after_start_without_any_call_cleans_up(tmp_path: Path) -> None:
+    """A worker that was started but never got as far as a load/reset/act
+    call (e.g. the caller decided not to proceed) must still be cleanly
+    closeable -- close() must not assume any prior call happened.
+    """
+
+    handle = AgentWorkerHandle(agent_id="A", slot=0)
+    with hang_safety_timeout(30):
+        handle.start()
+        handle.close()
+
+    assert handle.exit_code is not None
+
+
+def test_close_recovers_a_hung_worker_without_an_explicit_kill(tmp_path: Path) -> None:
+    """Exercises close()'s own graceful-shutdown-then-force-kill fallback
+    directly, rather than relying on the caller to have already called
+    kill() (every other hang-related test above calls kill() explicitly
+    first). A worker stuck in a tight ``act()`` loop cannot read the
+    ``shutdown`` request off its own stdin, so close() must fall through
+    to its force-kill path and still leave no process behind.
+    """
+
+    spec = _spec(tmp_path, "act_hangs2", ACT_HANGS_SOURCE)
+    handle = AgentWorkerHandle(agent_id="A", slot=0)
+    with hang_safety_timeout(30):
+        handle.start()
+        assert handle.load(spec, timeout=10.0).status is WorkerCallStatus.OK
+        assert handle.reset(
+            match_seed=1, api_version=1, arena_size=4096, tick_limit=1, action_budget=1, timeout=10.0
+        ).status is WorkerCallStatus.OK
+
+        act_result = handle.act(_observation(), action_slot=0, timeout=1.0)
+        assert act_result.status is WorkerCallStatus.TIMEOUT
+
+        handle.close(timeout=2.0)  # no explicit kill() first
+
+    assert handle.exit_code is not None
 
 
 def test_call_reports_protocol_error_on_malformed_response(tmp_path: Path) -> None:

@@ -162,3 +162,59 @@ def test_trace_decision_tick_matches_replay_forfeit_tick(tmp_path: Path) -> None
                 if getattr(event, "event_type", None) == "forfeit" and event.victim == "A":
                     forfeit_ticks.append(record.tick)
     assert forfeit_ticks == [3]
+
+
+WRITES_ADDRESS_7_ON_TICK_2_SOURCE = """
+from battle_engine.agent_api import ActionKind, AgentAction
+
+class Agent:
+    def reset(self, context):
+        pass
+
+    def act(self, observation):
+        if observation.tick == 2:
+            return AgentAction(ActionKind.WRITE, 7, 99)
+        return AgentAction(ActionKind.NOP)
+
+def create_agent():
+    return Agent()
+"""
+
+
+def test_trace_write_decision_tick_matches_replay_memory_diff_tick(tmp_path: Path) -> None:
+    """A second, success-path correlation case alongside the forfeit one
+    above: a trace decision recording a successful WRITE action at tick N
+    corresponds to the *same* tick N's canonical replay MemoryDiff -- the
+    tick a decision is recorded under already reflects that tick's
+    post-action engine state (docs/specs/agent_lab.md §5's documented
+    before/after semantics), not tick N-1 or N+1.
+    """
+
+    with hang_safety_timeout(60):
+        _result, replay_path, trace_path = _run(
+            tmp_path, "write_correlation",
+            source_a=WRITES_ADDRESS_7_ON_TICK_2_SOURCE, source_b=DETERMINISTIC_SOURCE,
+            agent_call_timeout=5.0, ticks=5,
+        )
+
+    document = read_trace(trace_path)
+    # The agent repeats the same WRITE for every action slot of tick 2
+    # (the default action budget is 8 per tick), so several identical
+    # decision records are expected -- what matters for tick-correlation
+    # is that every one of them is recorded under tick 2, never 1 or 3.
+    write_decisions = [
+        d for d in document.decisions
+        if d.agent_id == "A" and d.action is not None and d.action.kind == "write"
+    ]
+    assert write_decisions
+    assert {d.tick for d in write_decisions} == {2}
+    assert all(d.action.operand == 7 and d.action.value == 99 for d in write_decisions)
+
+    diff_ticks_for_address_7 = []
+    for record in iter_replay(replay_path):
+        if isinstance(record, TickSnapshot):
+            for diff in record.memory_diffs:
+                if diff.address == 7 and diff.owner == "A":
+                    diff_ticks_for_address_7.append(record.tick)
+    assert diff_ticks_for_address_7
+    assert set(diff_ticks_for_address_7) == {2}
