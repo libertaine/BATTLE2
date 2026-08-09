@@ -23,10 +23,12 @@ from __future__ import annotations
 import argparse
 import random
 import sys
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from battle_engine.agent_api import (
+    ActionKind,
     AgentAction,
     AgentManifestError,
     AgentValidationError,
@@ -34,6 +36,8 @@ from battle_engine.agent_api import (
     Observation,
     load_python_agent,
 )
+from battle_engine.agent_trace import ResetRecord, TraceAction, TraceHeader, TraceObservation, TraceWriter
+from battle_engine.agent_worker import AgentWorkerHandle, WorkerCallStatus
 from battle_engine.agents import resolve_agent
 from battle_engine.config import Config
 from battle_engine.paths import get_data_root
@@ -41,6 +45,7 @@ from battle_engine.python_runtime import (
     InvalidPythonActionError,
     RuntimeDiagnostic,
     _safe_message,
+    _to_trace_diagnostic,
     derive_agent_seed,
     diagnose_action_exception,
     diagnose_invalid_action,
@@ -48,6 +53,7 @@ from battle_engine.python_runtime import (
     diagnose_reset_failure,
     validate_action,
 )
+from battle_engine.supervised_runtime import diagnostic_for_worker_result
 
 # The fixture's synthetic slot identity is deliberately the real slot
 # letter a single Python entrant would receive in a real match, not the
@@ -59,6 +65,9 @@ VALIDATION_AGENT_ID = "A"
 VALIDATION_SEED = Config().seed
 VALIDATION_ARENA_SIZE = Config().arena_size
 VALIDATION_SLOT = 0
+DEFAULT_AGENT_TIMEOUT = 5.0
+MIN_AGENT_TIMEOUT = 0.1
+MAX_AGENT_TIMEOUT = 300.0
 
 
 @dataclass(frozen=True)
@@ -155,8 +164,19 @@ def _format_dry_run_action(action: AgentAction) -> str:
     return " ".join(parts)
 
 
-def _validate_agent(agent_id: str, *, data_root: Path | None) -> ValidationResult:
+def _validate_agent(
+    agent_id: str,
+    *,
+    data_root: Path | None,
+    timeout: float | None = None,
+    trace_path: Path | None = None,
+) -> ValidationResult:
     root = (data_root or get_data_root()).expanduser().resolve()
+    # None means "unsupervised" (this function's own default, matching
+    # every existing caller/test's v0.4.0 behavior exactly) -- only
+    # main() resolves a bare `bytefray agents validate` invocation's
+    # implicit timeout to DEFAULT_AGENT_TIMEOUT. See
+    # docs/specs/agent_lab.md §7.
 
     # Stage 1: discovery.
     try:
@@ -196,6 +216,54 @@ def _validate_agent(agent_id: str, *, data_root: Path | None) -> ValidationResul
             )
         )
 
+    trace_writer = _open_validation_trace_writer(
+        trace_path, api_version=spec.api_version, timeout=timeout
+    )
+    try:
+        if timeout is None:
+            return _validate_agent_unsupervised(agent_id, spec, trace_writer=trace_writer)
+        return _validate_agent_supervised(agent_id, spec, timeout=timeout, trace_writer=trace_writer)
+    finally:
+        if trace_writer is not None:
+            trace_writer.close()
+
+
+def _open_validation_trace_writer(
+    trace_path: Path | None, *, api_version: int | None, timeout: float | None
+) -> TraceWriter | None:
+    if trace_path is None:
+        return None
+    writer = TraceWriter(trace_path)
+    writer.write_header(
+        TraceHeader(
+            match_seed=VALIDATION_SEED,
+            agents={VALIDATION_AGENT_ID: "validate"},
+            supervised=timeout is not None,
+            agent_call_timeout=timeout,
+        )
+    )
+    return writer
+
+
+def _trace_validation_reset(
+    trace_writer: TraceWriter | None, start: float, diagnostic: RuntimeDiagnostic | None
+) -> None:
+    if trace_writer is None:
+        return
+    trace_writer.write_reset(
+        ResetRecord(
+            agent_id=VALIDATION_AGENT_ID,
+            wall_time_ms=(time.perf_counter() - start) * 1000,
+            diagnostic=_to_trace_diagnostic(diagnostic),
+        )
+    )
+
+
+def _validate_agent_unsupervised(
+    agent_id: str, spec: Any, *, trace_writer: TraceWriter | None
+) -> ValidationResult:
+    """Stages 3-5, unmodified from v0.4.0: in-process, untimed. See module docstring."""
+
     # Stage 3: manifest/API version/entry point, import/factory, and
     # contract checking -- one indivisible call to the real production
     # loader. Not split into three CLI-visible sub-stages: doing so would
@@ -212,52 +280,206 @@ def _validate_agent(agent_id: str, *, data_root: Path | None) -> ValidationResul
 
     # Stage 4: deterministic reset.
     context = build_validation_context(api_version)
+    reset_start = time.perf_counter()
     try:
         loaded.instance.reset(context)
     except Exception as exc:
         # Exception, not BaseException: KeyboardInterrupt/SystemExit must
         # propagate rather than being reported as an ordinary validation
         # failure, matching PythonEntrantController's identical narrowing.
-        raise AgentValidationFailedError(
-            diagnose_reset_failure(exc, agent_id=VALIDATION_AGENT_ID, slot=VALIDATION_SLOT)
-        ) from exc
+        diagnostic = diagnose_reset_failure(exc, agent_id=VALIDATION_AGENT_ID, slot=VALIDATION_SLOT)
+        _trace_validation_reset(trace_writer, reset_start, diagnostic)
+        raise AgentValidationFailedError(diagnostic) from exc
+    _trace_validation_reset(trace_writer, reset_start, None)
 
     # Stage 5: one deterministic act(), validated by the real action
     # validator -- not a reimplementation.
     observation = build_validation_observation()
+    act_start = time.perf_counter()
     try:
         action = loaded.instance.act(observation)
     except Exception as exc:
-        raise AgentValidationFailedError(
-            diagnose_action_exception(
-                exc,
-                agent_id=VALIDATION_AGENT_ID,
-                slot=VALIDATION_SLOT,
-                tick=observation.tick,
-                action_slot=0,
-            )
-        ) from exc
+        diagnostic = diagnose_action_exception(
+            exc,
+            agent_id=VALIDATION_AGENT_ID,
+            slot=VALIDATION_SLOT,
+            tick=observation.tick,
+            action_slot=0,
+        )
+        _trace_decision(trace_writer, observation, act_start, None, diagnostic)
+        raise AgentValidationFailedError(diagnostic) from exc
 
     try:
         validated_action = validate_action(action)
     except InvalidPythonActionError as exc:
-        raise AgentValidationFailedError(
-            diagnose_invalid_action(
-                exc,
-                agent_id=VALIDATION_AGENT_ID,
-                slot=VALIDATION_SLOT,
-                tick=observation.tick,
-                action_slot=0,
-            )
-        ) from exc
+        diagnostic = diagnose_invalid_action(
+            exc,
+            agent_id=VALIDATION_AGENT_ID,
+            slot=VALIDATION_SLOT,
+            tick=observation.tick,
+            action_slot=0,
+        )
+        _trace_decision(trace_writer, observation, act_start, None, diagnostic)
+        raise AgentValidationFailedError(diagnostic) from exc
 
+    _trace_decision(
+        trace_writer,
+        observation,
+        act_start,
+        TraceAction(kind=validated_action.kind.value, operand=validated_action.operand, value=validated_action.value),
+        None,
+    )
     return ValidationResult(
         agent_id=agent_id, api_version=api_version, dry_run_action=validated_action
     )
 
 
-def validate_agent(agent_id: str, *, data_root: Path | None = None) -> ValidationResult:
+def _trace_decision(
+    trace_writer: TraceWriter | None,
+    observation: Observation,
+    start: float,
+    action: TraceAction | None,
+    diagnostic: RuntimeDiagnostic | None,
+) -> None:
+    if trace_writer is None:
+        return
+    from battle_engine.agent_trace import DecisionRecord
+
+    trace_writer.write_decision(
+        DecisionRecord(
+            tick=observation.tick,
+            agent_id=VALIDATION_AGENT_ID,
+            action_slot=0,
+            wall_time_ms=(time.perf_counter() - start) * 1000,
+            observation=TraceObservation(
+                tick=observation.tick,
+                agent_id=observation.agent_id,
+                pc=observation.pc,
+                register_a=observation.register_a,
+                register_p=observation.register_p,
+                zero_flag=observation.zero_flag,
+                last_read=observation.last_read,
+                alive=observation.alive,
+            ),
+            action=action,
+            diagnostic=_to_trace_diagnostic(diagnostic),
+        )
+    )
+
+
+def _validate_agent_supervised(
+    agent_id: str, spec: Any, *, timeout: float, trace_writer: TraceWriter | None
+) -> ValidationResult:
+    """Stages 3-5 via one whole-dry-run-lifetime worker subprocess, with a timeout.
+
+    Mirrors :class:`battle_engine.supervised_runtime.SupervisedPythonEntrantController`
+    at one-call granularity -- see ``docs/specs/agent_lab.md`` §6/§10.
+    """
+
+    handle = AgentWorkerHandle(agent_id=VALIDATION_AGENT_ID, slot=VALIDATION_SLOT)
+    handle.start()
+    try:
+        load_result = handle.load(spec, timeout=timeout)
+        if load_result.status is not WorkerCallStatus.OK:
+            diagnostic = diagnostic_for_worker_result(
+                load_result,
+                agent_id=VALIDATION_AGENT_ID,
+                slot=VALIDATION_SLOT,
+                stage="load",
+                timeout=timeout,
+                exit_code=handle.exit_code,
+            )
+            raise AgentValidationFailedError(diagnostic)
+
+        assert load_result.payload is not None
+        api_version = load_result.payload["metadata"]["api_version"]
+
+        reset_start = time.perf_counter()
+        reset_result = handle.reset(
+            match_seed=VALIDATION_SEED,
+            api_version=api_version,
+            arena_size=VALIDATION_ARENA_SIZE,
+            tick_limit=1,
+            action_budget=1,
+            timeout=timeout,
+        )
+        if reset_result.status is not WorkerCallStatus.OK:
+            diagnostic = diagnostic_for_worker_result(
+                reset_result,
+                agent_id=VALIDATION_AGENT_ID,
+                slot=VALIDATION_SLOT,
+                stage="reset",
+                timeout=timeout,
+                exit_code=handle.exit_code,
+            )
+            _trace_validation_reset(trace_writer, reset_start, diagnostic)
+            raise AgentValidationFailedError(diagnostic)
+        _trace_validation_reset(trace_writer, reset_start, None)
+
+        observation = build_validation_observation()
+        act_start = time.perf_counter()
+        act_result = handle.act(observation, action_slot=0, timeout=timeout)
+        if act_result.status is not WorkerCallStatus.OK:
+            diagnostic = diagnostic_for_worker_result(
+                act_result,
+                agent_id=VALIDATION_AGENT_ID,
+                slot=VALIDATION_SLOT,
+                stage="action",
+                timeout=timeout,
+                exit_code=handle.exit_code,
+                tick=observation.tick,
+                action_slot=0,
+            )
+            _trace_decision(trace_writer, observation, act_start, None, diagnostic)
+            raise AgentValidationFailedError(diagnostic)
+
+        assert act_result.payload is not None
+        action_payload = act_result.payload.get("action")
+        if action_payload is None:
+            exc = InvalidPythonActionError("act() must return one AgentAction")
+            diagnostic = diagnose_invalid_action(
+                exc, agent_id=VALIDATION_AGENT_ID, slot=VALIDATION_SLOT, tick=observation.tick, action_slot=0
+            )
+            _trace_decision(trace_writer, observation, act_start, None, diagnostic)
+            raise AgentValidationFailedError(diagnostic)
+
+        validated_action = AgentAction(
+            kind=ActionKind(action_payload["kind"]),
+            operand=action_payload.get("operand"),
+            value=action_payload.get("value"),
+        )
+        _trace_decision(
+            trace_writer,
+            observation,
+            act_start,
+            TraceAction(**action_payload),
+            None,
+        )
+        return ValidationResult(
+            agent_id=agent_id, api_version=api_version, dry_run_action=validated_action
+        )
+    finally:
+        handle.close()
+
+
+def validate_agent(
+    agent_id: str,
+    *,
+    data_root: Path | None = None,
+    timeout: float | None = None,
+    trace_path: Path | None = None,
+) -> ValidationResult:
     """Validate one Python agent's Agent API v1 contract with one dry-run tick.
+
+    ``timeout=None`` (the default) is unsupervised, in-process, and
+    untimed -- byte-for-byte the v0.4.0 behavior every existing caller and
+    test already depends on. Passing a ``timeout`` runs the same dry run
+    through one whole-call-lifetime worker subprocess instead
+    (``docs/specs/agent_lab.md`` §6), so a hung ``reset()``/``act()`` is
+    reported and recovered rather than hanging this call forever;
+    ``bytefray agents validate``'s CLI entry point (:func:`main`) supplies
+    a default timeout so the *interactive* default is safe even though
+    this function's own default is not.
 
     Raises :class:`AgentValidationFailedError` at the first failing stage
     (discovery, kind, load, reset, or act); returns a
@@ -269,7 +491,7 @@ def validate_agent(agent_id: str, *, data_root: Path | None = None) -> Validatio
     """
 
     try:
-        return _validate_agent(agent_id, data_root=data_root)
+        return _validate_agent(agent_id, data_root=data_root, timeout=timeout, trace_path=trace_path)
     except AgentValidationFailedError:
         raise
     except Exception as exc:
@@ -296,15 +518,47 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("agent_id", help="agent's discovery id to validate")
+    parser.add_argument(
+        "--timeout",
+        type=_timeout_value,
+        default=None,
+        help=(
+            f"per-call load/reset/act timeout in seconds for supervised worker "
+            f"execution (default: {DEFAULT_AGENT_TIMEOUT:g}; range "
+            f"{MIN_AGENT_TIMEOUT:g}-{MAX_AGENT_TIMEOUT:g}). Development-time hang "
+            "containment only -- not a security sandbox."
+        ),
+    )
+    parser.add_argument(
+        "--trace-path",
+        type=Path,
+        default=None,
+        help="write a bytefray.agent_trace v1 file for this dry run (default: none)",
+    )
     return parser
+
+
+def _timeout_value(value: str) -> float:
+    parsed = float(value)
+    if not (MIN_AGENT_TIMEOUT <= parsed <= MAX_AGENT_TIMEOUT):
+        raise argparse.ArgumentTypeError(
+            f"must be between {MIN_AGENT_TIMEOUT} and {MAX_AGENT_TIMEOUT} seconds"
+        )
+    return parsed
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     agent_id = args.agent_id
+    # The CLI is supervised by default, matching agents test's identical
+    # policy (docs/specs/agent_lab.md §7) -- validate_agent()'s own
+    # default stays unsupervised for existing library callers/tests.
+    effective_timeout = DEFAULT_AGENT_TIMEOUT if args.timeout is None else args.timeout
 
     try:
-        result = validate_agent(agent_id)
+        result = validate_agent(
+            agent_id, timeout=effective_timeout, trace_path=args.trace_path
+        )
     except AgentValidationFailedError as exc:
         diagnostic = exc.diagnostic
         print(f"agent: {agent_id}", file=sys.stderr)
@@ -320,6 +574,8 @@ def main(argv: list[str] | None = None) -> int:
     print("status: valid")
     print(f"api_version: {result.api_version}")
     print(f"dry_run_action: {_format_dry_run_action(result.dry_run_action)}")
+    if args.trace_path is not None:
+        print(f"trace: {args.trace_path}")
     return 0
 
 

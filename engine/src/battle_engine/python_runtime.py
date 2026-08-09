@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+import time
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
@@ -18,6 +19,14 @@ from battle_engine.agent_api import (
     MatchContext,
     Observation,
     load_python_agent,
+)
+from battle_engine.agent_trace import (
+    DecisionRecord,
+    ResetRecord,
+    TraceAction,
+    TraceDiagnostic,
+    TraceObservation,
+    TraceWriter,
 )
 from battle_engine.config import Config
 from battle_engine.results import resolve_winner
@@ -161,6 +170,118 @@ def diagnose_invalid_action(
     )
 
 
+def diagnose_load_timeout(*, agent_id: str, slot: int, timeout: float) -> RuntimeDiagnostic:
+    """Build the diagnostic for a supervised worker that did not finish loading in time.
+
+    See ``docs/specs/agent_lab.md`` §7 -- development-time hang
+    containment, not a security sandbox.
+    """
+
+    return RuntimeDiagnostic(
+        code="agent_load_timeout",
+        stage="load",
+        message=f"Python agent {agent_id} did not finish loading within {timeout:g}s.",
+        agent_id=agent_id,
+        slot=slot,
+    )
+
+
+def diagnose_reset_timeout(*, agent_id: str, slot: int, timeout: float) -> RuntimeDiagnostic:
+    """Build the diagnostic for a supervised worker whose ``reset()`` did not return in time."""
+
+    return RuntimeDiagnostic(
+        code="agent_reset_timeout",
+        stage="reset",
+        message=f"Python agent {agent_id} reset() did not return within {timeout:g}s.",
+        agent_id=agent_id,
+        slot=slot,
+    )
+
+
+def diagnose_action_timeout(
+    *, agent_id: str, slot: int, tick: int, action_slot: int, timeout: float
+) -> RuntimeDiagnostic:
+    """Build the diagnostic for a supervised worker whose ``act()`` did not return in time."""
+
+    return RuntimeDiagnostic(
+        code="agent_action_timeout",
+        stage="action",
+        message=f"Python agent {agent_id} act() did not return within {timeout:g}s.",
+        agent_id=agent_id,
+        slot=slot,
+        tick=tick,
+        action_slot=action_slot,
+    )
+
+
+def diagnose_worker_exited(
+    *,
+    agent_id: str,
+    slot: int,
+    stage: str,
+    tick: int | None = None,
+    action_slot: int | None = None,
+    exit_code: int | None = None,
+) -> RuntimeDiagnostic:
+    """Build the diagnostic for a supervised worker process that exited unexpectedly."""
+
+    suffix = f" (exit code {exit_code})" if exit_code is not None else " (exit code unknown)"
+    return RuntimeDiagnostic(
+        code="agent_worker_exited",
+        stage=stage,
+        message=(
+            f"Python agent {agent_id}'s supervised worker process exited unexpectedly "
+            f"during {stage}{suffix}."
+        ),
+        agent_id=agent_id,
+        slot=slot,
+        exception_type="WorkerExited",
+        tick=tick,
+        action_slot=action_slot,
+    )
+
+
+def diagnose_worker_protocol_error(
+    *,
+    agent_id: str,
+    slot: int,
+    stage: str,
+    detail: str,
+    tick: int | None = None,
+    action_slot: int | None = None,
+) -> RuntimeDiagnostic:
+    """Build the diagnostic for a supervised worker response that could not be parsed."""
+
+    return RuntimeDiagnostic(
+        code="agent_worker_protocol_error",
+        stage=stage,
+        message=(
+            f"Python agent {agent_id}'s supervised worker sent an unexpected response "
+            f"during {stage}: {detail}"
+        ),
+        agent_id=agent_id,
+        slot=slot,
+        exception_type="WorkerProtocolError",
+        tick=tick,
+        action_slot=action_slot,
+    )
+
+
+def _to_trace_diagnostic(diagnostic: RuntimeDiagnostic | None) -> TraceDiagnostic | None:
+    if diagnostic is None:
+        return None
+    return TraceDiagnostic(
+        code=diagnostic.code,
+        stage=diagnostic.stage,
+        message=diagnostic.message,
+        agent_id=diagnostic.agent_id,
+        slot=diagnostic.slot,
+        exception_type=diagnostic.exception_type,
+        tick=diagnostic.tick,
+        action_slot=diagnostic.action_slot,
+    )
+
+
 @dataclass
 class PythonEntrantState:
     agent_id: str
@@ -291,11 +412,43 @@ def apply_action(action: AgentAction, state: PythonEntrantState, vm: VM) -> None
         state.pc = operand & 0xFFFFFFFF
 
 
+def forfeit_entrant(
+    state: PythonEntrantState, diagnostic: RuntimeDiagnostic
+) -> dict[str, Any]:
+    """Mark one entrant forfeited and build its replay ``forfeit`` event.
+
+    A free function (not a method) so both :class:`PythonEntrantController`
+    and :class:`~battle_engine.supervised_runtime.SupervisedPythonEntrantController`
+    apply the identical forfeit bookkeeping for an exception, an invalid
+    action, or (supervised only) a timeout/worker-crash diagnostic.
+    """
+
+    state.alive = False
+    state.entrant_termination = "forfeit"
+    state.diagnostic = diagnostic
+    return {
+        "type": "forfeit",
+        "victim": state.agent_id,
+        "reason": diagnostic.code,
+        "stage": diagnostic.stage,
+        "tick": diagnostic.tick,
+        "action_slot": diagnostic.action_slot,
+    }
+
+
 class PythonEntrantController:
     """Run Python-only entrants with the existing sequential native quota model."""
 
-    def __init__(self, config: Config, entrants: tuple[Any, ...], max_ticks: int):
+    def __init__(
+        self,
+        config: Config,
+        entrants: tuple[Any, ...],
+        max_ticks: int,
+        *,
+        trace_writer: TraceWriter | None = None,
+    ):
         self.config = config
+        self.trace_writer = trace_writer
         if config.arena_size <= 0 or config.instr_per_tick <= 0 or max_ticks <= 0:
             diagnostic = RuntimeDiagnostic(
                 code="match_configuration_invalid",
@@ -341,6 +494,7 @@ class PythonEntrantController:
                 action_budget=config.instr_per_tick,
                 rng=state.rng,
             )
+            reset_start = time.perf_counter()
             try:
                 loaded.instance.reset(context)
             except Exception as exc:
@@ -351,27 +505,72 @@ class PythonEntrantController:
                 diagnostic = diagnose_reset_failure(
                     exc, agent_id=entrant.agent_id, slot=slot
                 )
+                self._trace_reset(entrant.agent_id, reset_start, diagnostic)
                 raise PythonEntrantInitializationError(diagnostic) from exc
+            self._trace_reset(entrant.agent_id, reset_start, None)
             self.states.append(state)
             self.score[entrant.agent_id] = 0
             self.statistics_collector.initialize_agent(
                 self.statistics, entrant.agent_id
             )
 
+    def _trace_reset(
+        self, agent_id: str, start: float, diagnostic: RuntimeDiagnostic | None
+    ) -> None:
+        if self.trace_writer is None:
+            return
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        self.trace_writer.write_reset(
+            ResetRecord(
+                agent_id=agent_id,
+                wall_time_ms=elapsed_ms,
+                diagnostic=_to_trace_diagnostic(diagnostic),
+            )
+        )
+
+    def _trace_decision(
+        self,
+        state: "PythonEntrantState",
+        tick: int,
+        action_slot: int,
+        start: float,
+        observation: Observation,
+        action: AgentAction | None,
+        diagnostic: RuntimeDiagnostic | None,
+    ) -> None:
+        if self.trace_writer is None:
+            return
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        trace_action = (
+            None
+            if action is None
+            else TraceAction(kind=action.kind.value, operand=action.operand, value=action.value)
+        )
+        self.trace_writer.write_decision(
+            DecisionRecord(
+                tick=tick,
+                agent_id=state.agent_id,
+                action_slot=action_slot,
+                wall_time_ms=elapsed_ms,
+                observation=TraceObservation(
+                    tick=observation.tick,
+                    agent_id=observation.agent_id,
+                    pc=observation.pc,
+                    register_a=observation.register_a,
+                    register_p=observation.register_p,
+                    zero_flag=observation.zero_flag,
+                    last_read=observation.last_read,
+                    alive=observation.alive,
+                ),
+                action=trace_action,
+                diagnostic=_to_trace_diagnostic(diagnostic),
+            )
+        )
+
     def _forfeit(
         self, state: PythonEntrantState, diagnostic: RuntimeDiagnostic
     ) -> dict[str, Any]:
-        state.alive = False
-        state.entrant_termination = "forfeit"
-        state.diagnostic = diagnostic
-        return {
-            "type": "forfeit",
-            "victim": state.agent_id,
-            "reason": diagnostic.code,
-            "stage": diagnostic.stage,
-            "tick": diagnostic.tick,
-            "action_slot": diagnostic.action_slot,
-        }
+        return forfeit_entrant(state, diagnostic)
 
     def run(self, sink: ReplaySink, *, verbose: bool) -> PythonRuntimeResult:
         replay = ReplayPublisher(sink)
@@ -398,27 +597,31 @@ class PythonEntrantController:
                     for action_slot in range(self.config.instr_per_tick):
                         if not state.alive:
                             break
+                        observation = _observation(tick, state)
+                        act_start = time.perf_counter()
                         try:
-                            action = state.loaded.instance.act(_observation(tick, state))
+                            action = state.loaded.instance.act(observation)
                             state.cpu_used += 1
                             state.total_actions += 1
+                            self._trace_decision(
+                                state, tick, action_slot, act_start, observation, action, None
+                            )
                             apply_action(action, state, self.vm)
                             if action.kind is ActionKind.HALT:
                                 state.entrant_termination = "normal_halt"
                                 events.append({"type": "death", "victim": state.agent_id})
                         except InvalidPythonActionError as exc:
-                            events.append(
-                                self._forfeit(
-                                    state,
-                                    diagnose_invalid_action(
-                                        exc,
-                                        agent_id=state.agent_id,
-                                        slot=state.slot,
-                                        tick=tick,
-                                        action_slot=action_slot,
-                                    ),
-                                )
+                            diagnostic = diagnose_invalid_action(
+                                exc,
+                                agent_id=state.agent_id,
+                                slot=state.slot,
+                                tick=tick,
+                                action_slot=action_slot,
                             )
+                            self._trace_decision(
+                                state, tick, action_slot, act_start, observation, None, diagnostic
+                            )
+                            events.append(self._forfeit(state, diagnostic))
                         except Exception as exc:
                             # Exception, not BaseException: an operator's
                             # Ctrl-C (KeyboardInterrupt) or an agent's own
@@ -429,18 +632,17 @@ class PythonEntrantController:
                             # or runaway Python match short of SIGKILL.
                             state.cpu_used += 1
                             state.total_actions += 1
-                            events.append(
-                                self._forfeit(
-                                    state,
-                                    diagnose_action_exception(
-                                        exc,
-                                        agent_id=state.agent_id,
-                                        slot=state.slot,
-                                        tick=tick,
-                                        action_slot=action_slot,
-                                    ),
-                                )
+                            diagnostic = diagnose_action_exception(
+                                exc,
+                                agent_id=state.agent_id,
+                                slot=state.slot,
+                                tick=tick,
+                                action_slot=action_slot,
                             )
+                            self._trace_decision(
+                                state, tick, action_slot, act_start, observation, None, diagnostic
+                            )
+                            events.append(self._forfeit(state, diagnostic))
 
                 self.statistics_collector.record_tick(
                     self.statistics, self.states, self.vm.writer  # type: ignore[arg-type]
@@ -493,8 +695,14 @@ __all__ = [
     "apply_action",
     "derive_agent_seed",
     "diagnose_action_exception",
+    "diagnose_action_timeout",
     "diagnose_invalid_action",
     "diagnose_load_failure",
+    "diagnose_load_timeout",
     "diagnose_reset_failure",
+    "diagnose_reset_timeout",
+    "diagnose_worker_exited",
+    "diagnose_worker_protocol_error",
+    "forfeit_entrant",
     "validate_action",
 ]

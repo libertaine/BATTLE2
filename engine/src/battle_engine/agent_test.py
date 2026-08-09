@@ -58,6 +58,9 @@ REFERENCE_OPPONENT_NAME = "reference"
 DEFAULT_TICKS = 200
 TESTED_AGENT_SLOT = "A"
 OPPONENT_SLOT = "B"
+DEFAULT_AGENT_TIMEOUT = 5.0
+MIN_AGENT_TIMEOUT = 0.1
+MAX_AGENT_TIMEOUT = 300.0
 
 
 class AgentTestError(RuntimeError):
@@ -90,6 +93,17 @@ def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def _timeout_value(value: str) -> float:
+    """Validate ``--timeout``: development-loop bounds, see docs/specs/agent_lab.md §7."""
+
+    parsed = float(value)
+    if not (MIN_AGENT_TIMEOUT <= parsed <= MAX_AGENT_TIMEOUT):
+        raise argparse.ArgumentTypeError(
+            f"must be between {MIN_AGENT_TIMEOUT} and {MAX_AGENT_TIMEOUT} seconds"
+        )
     return parsed
 
 
@@ -181,6 +195,7 @@ class DevelopmentTestOutcome:
     ticks_requested: int
     match_result: NativeMatchResult
     summary_path: Path
+    trace_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +216,7 @@ class InitializationFailureOutcome:
     agent_id: str
     diagnostic: RuntimeDiagnostic
     opponent_name: str | None = None
+    trace_path: Path | None = None
 
 
 def test_agent(
@@ -209,6 +225,8 @@ def test_agent(
     opponent: str | None = None,
     seed: int | None = None,
     ticks: int | None = None,
+    timeout: float | None = None,
+    trace: bool = True,
     data_root: Path | None = None,
     resource_root: Path | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
@@ -236,6 +254,8 @@ def test_agent(
             opponent=opponent,
             seed=seed,
             ticks=ticks,
+            timeout=timeout,
+            trace=trace,
             data_root=data_root,
             resource_root=resource_root,
         )
@@ -258,6 +278,8 @@ def _test_agent(
     opponent: str | None,
     seed: int | None,
     ticks: int | None,
+    timeout: float | None,
+    trace: bool,
     data_root: Path | None,
     resource_root: Path | None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
@@ -265,6 +287,12 @@ def _test_agent(
     resources = resource_root or get_resource_root()
     effective_seed = Config().seed if seed is None else seed
     effective_ticks = DEFAULT_TICKS if ticks is None else ticks
+    # Unlike --seed/--ticks, None here means "unsupervised" (this
+    # function's own default, matching every existing caller/test's
+    # v0.4.0 behavior exactly), not "apply the CLI's 5s default" -- only
+    # main() resolves a bare `bytefray agents test` invocation's implicit
+    # timeout to DEFAULT_AGENT_TIMEOUT. See docs/specs/agent_lab.md §7.
+    effective_timeout = timeout
 
     tested_spec = _resolve_python_entrant(agent_id, data_root=root, role="test agent")
 
@@ -299,6 +327,7 @@ def _test_agent(
         ) from exc
 
     replay_path = run_dir / "replay.jsonl"
+    trace_path = (run_dir / "trace.jsonl") if trace else None
     request = MatchRequest(
         config=Config(seed=effective_seed),
         entrants=(
@@ -308,14 +337,19 @@ def _test_agent(
         max_ticks=effective_ticks,
         replay_path=replay_path,
         verbose=False,
+        trace_path=trace_path,
+        agent_call_timeout=effective_timeout,
     )
 
     try:
         match_result = NativeMatchService().run(request)
     except PythonEntrantInitializationError as exc:
         diagnostic = exc.diagnostic
+        outcome_trace_path = trace_path if trace_path is not None and trace_path.exists() else None
         if diagnostic.agent_id == TESTED_AGENT_SLOT:
-            return InitializationFailureOutcome(agent_id=agent_id, diagnostic=diagnostic)
+            return InitializationFailureOutcome(
+                agent_id=agent_id, diagnostic=diagnostic, trace_path=outcome_trace_path
+            )
         if diagnostic.agent_id == OPPONENT_SLOT:
             if opponent is not None:
                 # An explicitly selected opponent is user-provided agent
@@ -323,7 +357,10 @@ def _test_agent(
                 # like the tested agent itself -- its initialization
                 # failure is a test result (exit 0), not a tool failure.
                 return InitializationFailureOutcome(
-                    agent_id=agent_id, diagnostic=diagnostic, opponent_name=opponent_name
+                    agent_id=agent_id,
+                    diagnostic=diagnostic,
+                    opponent_name=opponent_name,
+                    trace_path=outcome_trace_path,
                 )
             # The internal reference opponent is Bytefray-owned
             # infrastructure, not user code under evaluation; its failure
@@ -365,6 +402,7 @@ def _test_agent(
         ticks_requested=effective_ticks,
         match_result=match_result,
         summary_path=summary_path,
+        trace_path=trace_path if trace_path is not None and trace_path.exists() else None,
     )
 
 
@@ -454,8 +492,11 @@ def _print_completed_match(outcome: DevelopmentTestOutcome) -> None:
     print(f"result: {match_result.result_path}")
     print(f"replay: {match_result.replay_path}")
     print(f"summary: {outcome.summary_path}")
+    print(f"trace: {outcome.trace_path if outcome.trace_path is not None else 'none'}")
     print()
     print(f"Run 'bytefray replay {match_result.replay_path}' to inspect it.")
+    if outcome.trace_path is not None:
+        print(f"Run 'bytefray agents inspect {outcome.trace_path.parent}' to inspect decisions.")
 
 
 def _print_initialization_failure(outcome: InitializationFailureOutcome) -> None:
@@ -475,6 +516,7 @@ def _print_initialization_failure(outcome: InitializationFailureOutcome) -> None
         print(f"detail: {diagnostic.exception_type}")
     print("result: none")
     print("replay: none")
+    print(f"trace: {outcome.trace_path if outcome.trace_path is not None else 'none'}")
 
 
 def _print_tool_error(agent_id: str, exc: AgentTestError) -> None:
@@ -514,11 +556,35 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ticks", type=_positive_int, default=None, help="tick budget (default: 200)"
     )
+    parser.add_argument(
+        "--timeout",
+        type=_timeout_value,
+        default=None,
+        help=(
+            f"per-call load/reset/act timeout in seconds for supervised worker "
+            f"execution (default: {DEFAULT_AGENT_TIMEOUT:g}; range "
+            f"{MIN_AGENT_TIMEOUT:g}-{MAX_AGENT_TIMEOUT:g}). Development-time hang "
+            "containment only -- not a security sandbox."
+        ),
+    )
+    parser.add_argument(
+        "--no-trace",
+        dest="trace",
+        action="store_false",
+        default=True,
+        help="do not write the trace.jsonl development-trace artifact",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    # The CLI (and anything shelling out to it, e.g. the Designer) is
+    # supervised by default -- an interactive/end-user entry point should
+    # not hang forever even when the caller never thought to pass
+    # --timeout. Direct library callers (existing tests, other tooling)
+    # keep test_agent()'s own unsupervised default unless they opt in.
+    effective_timeout = DEFAULT_AGENT_TIMEOUT if args.timeout is None else args.timeout
 
     try:
         outcome = test_agent(
@@ -526,6 +592,8 @@ def main(argv: list[str] | None = None) -> int:
             opponent=args.opponent,
             seed=args.seed,
             ticks=args.ticks,
+            timeout=effective_timeout,
+            trace=args.trace,
         )
     except AgentTestError as exc:
         _print_tool_error(args.agent_id, exc)

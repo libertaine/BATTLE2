@@ -88,13 +88,33 @@ def _agents(argv: list[str]) -> int:
         from battle_engine.agent_test import main as test_main
 
         return test_main(argv[1:])
+    if argv and argv[0] == "inspect":
+        from battle_engine.agent_inspect import inspect_main
+
+        return inspect_main(argv[1:])
+    if argv and argv[0] == "diverge":
+        from battle_engine.agent_inspect import diverge_main
+
+        return diverge_main(argv[1:])
+    if argv and argv[0] == "_worker":
+        # Internal, undocumented: a hidden supervised-execution worker
+        # subprocess (docs/specs/agent_lab.md §6), reached only by
+        # battle_engine.agent_worker.AgentWorkerHandle spawning another
+        # invocation of this same executable. Never invoked directly by a
+        # user and deliberately omitted from --help text.
+        from battle_engine.agent_worker import main as worker_main
+
+        return worker_main(argv[1:])
     if argv == ["--help"] or argv == ["-h"]:
         return _simple_help(
             "agents",
             "List agents discovered under the configured Bytefray agents "
             "directory, 'agents create <agent-id>' to scaffold a new one, "
-            "'agents validate <agent-id>' to dry-run one Python agent, or "
-            "'agents test <agent-id>' to run a short development match.",
+            "'agents validate <agent-id>' to dry-run one Python agent, "
+            "'agents test <agent-id>' to run a short development match, "
+            "'agents inspect <run-dir>' to inspect a development trace, or "
+            "'agents diverge <run-a> <run-b>' to find the first tick two "
+            "traces disagree.",
         )
     if argv:
         parser = argparse.ArgumentParser(prog="bytefray agents", add_help=False)

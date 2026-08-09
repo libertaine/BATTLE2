@@ -15,6 +15,7 @@ import tempfile
 from types import MappingProxyType
 from typing import Any, Mapping, cast
 
+from battle_engine.agent_trace import TraceHeader, TraceWriter
 from battle_engine.config import Config
 from battle_engine.core import Kernel
 from battle_engine.python_runtime import (
@@ -25,6 +26,7 @@ from battle_engine.python_runtime import (
     TerminationReason,
     derive_agent_seed,
 )
+from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.replay import (
     MatchResult as ReplayMatchResult,
     ReplayHeader,
@@ -60,13 +62,26 @@ class MatchEntrant:
 
 @dataclass(frozen=True)
 class MatchRequest:
-    """Complete input required to execute one homogeneous native match."""
+    """Complete input required to execute one homogeneous native match.
+
+    ``trace_path`` and ``agent_call_timeout`` are Agent Lab's two
+    independently optional development-time additions
+    (``docs/specs/agent_lab.md`` §4). Both default to ``None`` -- the
+    "normal match path" (``bytefray run``/tournament) never sets either,
+    so it executes the exact unmodified v0.4.0
+    :class:`~battle_engine.python_runtime.PythonEntrantController` code
+    path. Only Python compositions honor either field; a VM match request
+    that happens to set them is a no-op, since VM matches have no Python
+    Agent API boundary to trace or supervise.
+    """
 
     config: Config
     entrants: tuple[MatchEntrant, ...]
     max_ticks: int
     replay_path: Path
     verbose: bool = True
+    trace_path: Path | None = None
+    agent_call_timeout: float | None = None
 
 
 @dataclass(frozen=True)
@@ -320,14 +335,58 @@ def _remove_python_artifacts(replay_path: Path, summary_path: Path) -> None:
             ) from exc
 
 
+def _open_trace_writer(request: MatchRequest) -> TraceWriter | None:
+    if request.trace_path is None:
+        return None
+    writer = TraceWriter(request.trace_path)
+    writer.write_header(
+        TraceHeader(
+            match_seed=request.config.seed,
+            agents={entrant.agent_id: entrant.name for entrant in request.entrants},
+            supervised=request.agent_call_timeout is not None,
+            agent_call_timeout=request.agent_call_timeout,
+        )
+    )
+    return writer
+
+
 def _run_python_match(
     request: MatchRequest, replay_path: Path, summary_path: Path
 ) -> NativeMatchResult:
     _remove_python_artifacts(replay_path, summary_path)
+    trace_writer = _open_trace_writer(request)
     try:
-        controller = PythonEntrantController(
-            request.config, request.entrants, request.max_ticks
-        )
+        return _run_python_match_traced(request, replay_path, summary_path, trace_writer)
+    finally:
+        # The trace writer must stay open across both controller
+        # construction (reset records) and controller.run() (decision
+        # records) -- it is only safe to close once both are done,
+        # regardless of success or failure.
+        if trace_writer is not None:
+            trace_writer.close()
+
+
+def _run_python_match_traced(
+    request: MatchRequest,
+    replay_path: Path,
+    summary_path: Path,
+    trace_writer: TraceWriter | None,
+) -> NativeMatchResult:
+    try:
+        if request.agent_call_timeout is not None:
+            controller: PythonEntrantController | SupervisedPythonEntrantController = (
+                SupervisedPythonEntrantController(
+                    request.config,
+                    request.entrants,
+                    request.max_ticks,
+                    agent_call_timeout=request.agent_call_timeout,
+                    trace_writer=trace_writer,
+                )
+            )
+        else:
+            controller = PythonEntrantController(
+                request.config, request.entrants, request.max_ticks, trace_writer=trace_writer
+            )
     except PythonEntrantInitializationError:
         _remove_python_artifacts(replay_path, summary_path)
         raise
