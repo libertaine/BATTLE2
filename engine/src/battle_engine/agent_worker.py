@@ -21,9 +21,16 @@ worker requests) and stdout (worker -> parent responses), one object per
 line, flushed immediately. The worker's own ``sys.stdout`` is redirected
 to ``sys.stderr`` *before* any agent code ever runs, so an agent's own
 ``print()`` calls cannot corrupt the protocol stream; only this module's
-own :func:`_respond` writes to the real stdout pipe. The child's stderr is
-drained by a dedicated thread into a small ring buffer (crash context only)
-so a chatty agent cannot deadlock the child on a full OS pipe buffer.
+own :func:`_respond` writes to the real stdout pipe. Symmetrically,
+agent-visible ``sys.stdin`` is rebound to a closed/empty stream before any
+agent code runs (see :func:`run_worker`): the protocol loop keeps reading
+requests from the real pipe via a local reference captured first, so an
+agent that calls ``input()`` gets an immediate, well-behaved ``EOFError``
+instead of stealing the next line the parent meant as a protocol request
+-- see the module-level note in :func:`run_worker` for why this matters.
+The child's stderr is drained by a dedicated thread into a small ring
+buffer (crash context only) so a chatty agent cannot deadlock the child on
+a full OS pipe buffer.
 
 Because Windows pipes to a child process are not portably ``select()``-able,
 timeouts are implemented with one dedicated reader thread per worker that
@@ -35,6 +42,7 @@ and POSIX without new native dependencies.
 
 from __future__ import annotations
 
+import io
 import json
 import queue
 import random
@@ -454,6 +462,21 @@ def run_worker(*, stdin: Any = None, stdout: Any = None) -> int:
     Redirects ``sys.stdout`` to ``sys.stderr`` before any agent code can
     possibly run, so agent ``print()`` output cannot corrupt the protocol
     stream on the real stdout pipe (``out``, captured before redirection).
+
+    Protocol ownership of stdin is exclusive the same way: this function's
+    own read loop iterates the real stdin pipe through the local
+    ``in_stream`` reference captured *before* ``sys.stdin`` is rebound, so
+    the loop keeps working normally, but any agent code that reads
+    ``sys.stdin`` directly or calls the builtin ``input()`` -- both of
+    which would otherwise race the protocol loop for the *same* underlying
+    line -- now hits an empty, already-at-EOF stream instead (``input()``
+    raises ``EOFError`` immediately). Without this, an agent calling
+    ``input()`` mid-``act()`` could silently consume the next line the
+    parent meant as a protocol request (e.g. the next ``act``/``shutdown``
+    request), permanently desynchronizing the wire protocol -- see
+    ``docs/specs/agent_lab.md``'s worker-protocol-ownership note. stderr is
+    left untouched and available to agent code for diagnostics.
+
     Also asks the OS (best-effort) to end this process if its parent dies
     -- see :func:`battle_engine.process_containment.die_with_parent`; on
     Windows this is instead handled by the parent's Job Object.
@@ -463,6 +486,7 @@ def run_worker(*, stdin: Any = None, stdout: Any = None) -> int:
     in_stream = stdin if stdin is not None else sys.stdin
     out_stream = stdout if stdout is not None else sys.stdout
     sys.stdout = sys.stderr
+    sys.stdin = io.StringIO()
 
     state = _WorkerState()
     for raw_line in in_stream:
@@ -495,8 +519,23 @@ def run_worker(*, stdin: Any = None, stdout: Any = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``bytefray agents _worker`` entry point (internal, undocumented)."""
+    """``bytefray agents _worker`` entry point (internal, undocumented).
 
+    Takes no arguments -- :func:`battle_engine.launchers.build_agents_command`
+    always spawns it with an empty argument list. Rejecting anything else
+    outright (rather than silently ignoring it) means a stray or malformed
+    direct invocation fails fast and visibly instead of blocking forever
+    on stdin, which would otherwise look identical to the worker doing its
+    job normally.
+    """
+
+    if argv:
+        print(
+            "bytefray agents _worker is an internal, undocumented worker "
+            "protocol entry point; it takes no arguments.",
+            file=sys.stderr,
+        )
+        return 2
     return run_worker()
 
 

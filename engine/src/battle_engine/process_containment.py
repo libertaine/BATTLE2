@@ -28,7 +28,18 @@ exactly the property a CPU-bound infinite loop needs.
 
 **POSIX (Linux)**: the worker calls ``prctl(PR_SET_PDEATHSIG, SIGKILL)``
 on its own behalf immediately at startup, asking the kernel to deliver
-``SIGKILL`` when its parent thread exits for any reason.
+``SIGKILL`` when its parent thread exits for any reason. This has a
+well-known race: if the parent dies in the window between the worker
+process being created and the worker actually reaching its own
+``prctl()`` call, the signal was armed too late to ever fire, and the
+worker would silently become a permanent orphan despite believing it set
+up containment successfully. :func:`die_with_parent` closes this window
+with the standard mitigation: capture the parent's pid before calling
+``prctl()``, then re-check it immediately after. A changed pid means the
+original parent already exited during that window (this process was
+reparented, typically to init) -- ``die_with_parent`` self-terminates
+immediately in that case rather than trusting a signal that cannot
+arrive.
 
 Both mechanisms are best-effort and never raise: containment failing to
 establish does not prevent Bytefray from working, it only means this one
@@ -40,6 +51,7 @@ other than accidental orphaning -- see ``docs/specs/agent_lab.md`` §17.
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from typing import Any
 
@@ -172,15 +184,25 @@ def die_with_parent() -> None:
     Windows (handled by the parent-side Job Object instead) and on any
     POSIX platform without ``prctl`` (e.g. macOS, which this project does
     not target for headless/worker use) -- never raises.
+
+    Closes the ``prctl`` registration race documented above: if the
+    parent already died in the window before this call, ``os.getppid()``
+    changes (this process is reparented) as an immediate, synchronous side
+    effect of that -- checking it right after ``prctl()`` returns is
+    enough to detect a signal that was armed too late and self-terminate
+    instead of trusting one that will never arrive.
     """
 
     if sys.platform == "win32":
         return
     try:
+        original_ppid = os.getppid()
         libc = ctypes.CDLL("libc.so.6", use_errno=True)
         pr_set_pdeathsig = 1
         sigkill = 9
         libc.prctl(pr_set_pdeathsig, sigkill, 0, 0, 0)
+        if os.getppid() != original_ppid:
+            os.kill(os.getpid(), sigkill)
     except OSError:
         pass
 

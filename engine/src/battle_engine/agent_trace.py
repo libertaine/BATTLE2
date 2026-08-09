@@ -14,6 +14,31 @@ parses trace records. Writing happens from
 :mod:`battle_engine.python_runtime`/:mod:`battle_engine.agent_worker`;
 reading happens from :mod:`battle_engine.agent_inspect` (CLI) and the
 Designer's Trace Inspector dialog.
+
+**Compatibility policy**, effective once this schema ships in a release
+(intended to become a stable surface at v0.5, mirroring how
+``battle2.replay``/``battle2.result`` are already versioned protocol
+identifiers -- see ``AGENTS.md``'s "Compatibility requirements"):
+
+- Readers ignore unknown JSON object keys on any record (this module only
+  ever reads the fields it knows about via explicit ``payload.get``/
+  :func:`_required` lookups) -- a future minor addition of a new,
+  optional field is not a breaking change for existing readers.
+- Readers reject any ``schema`` value other than :data:`TRACE_SCHEMA` and
+  any ``schema_version`` other than :data:`TRACE_SCHEMA_VERSION` outright
+  (:func:`_parse_header`) rather than guessing at forward/backward
+  compatibility -- a version bump is a deliberate, visible break, not a
+  silent reinterpretation.
+- Record order is append order, always: a trace file is written strictly
+  sequentially by one writer and read back the same way; nothing in this
+  module reorders, sorts, or buffers records out of the order they were
+  written (see :meth:`TraceDocument.decisions`/``resets``, which are
+  filtered views over the same original ``records`` tuple, not resorted).
+- A structurally malformed record (missing required field, wrong type, a
+  ``record_type`` this reader has never heard of) is a hard
+  :class:`TraceFormatError`, not a value silently skipped -- see
+  :class:`TraceWriter`'s docstring for the parallel decision on malformed
+  *trailing* lines specifically.
 """
 
 from __future__ import annotations
@@ -119,9 +144,31 @@ TraceRecord = TraceHeader | ResetRecord | DecisionRecord
 class TraceWriter:
     """Append-only ``bytefray.agent_trace`` v1 writer.
 
-    Each record is written as one JSON line and flushed immediately, so a
-    partially written trace from a killed/crashed worker is a clean
-    truncated prefix of valid lines, never a corrupt mid-line write.
+    Each record is serialized once, written in two ``write()`` calls (the
+    JSON payload, then a newline), then flushed. Because both writes only
+    append to this process's own buffered text stream and nothing reaches
+    the OS until :meth:`_write`'s single :meth:`flush` call, a process
+    kill either lands strictly before that flush (in which case the file
+    on disk ends exactly at the previous complete record, unchanged) or
+    strictly after it returns (in which case the new record is fully
+    present) -- there is no window in which half of one record's `write()`
+    calls reach disk and the other half doesn't. What this does *not*
+    guarantee is durability against the OS/filesystem itself tearing a
+    single ``flush()``'s underlying write syscall for a pathologically
+    large line (there is no ``fsync``, and POSIX does not promise regular
+    -file write atomicity the way it does for small pipe writes) -- for
+    the realistic decision/reset record sizes this module actually
+    produces, that residual risk is theoretical, not something this
+    module claims to have eliminated. This is deliberately *not* described
+    as transactional durability anywhere in this module or its docs: it is
+    "flush-per-record, single-writer, no torn in-buffer writes," and nothing
+    stronger. :func:`read_trace` treats a malformed trailing line as a hard
+    parse error (with an exact file:line diagnostic) rather than silently
+    dropping it, on the view that for a development-debugging artifact, a
+    loud "this file is corrupt at line N" is more useful than quietly
+    losing data the author might have needed -- see
+    ``docs/specs/agent_lab.md``'s trace-durability note and
+    ``engine/tests/test_agent_trace.py``'s malformed-line coverage.
     """
 
     def __init__(self, path: Path) -> None:
