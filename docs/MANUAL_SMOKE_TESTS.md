@@ -121,6 +121,79 @@ rendered text).
     Test and shows "Stopped by user" rather than any completed/failed
     shape.
 
+### Agent Lab (v0.5, packaged application)
+
+This is the release checklist for the Agent Lab feature set (deterministic
+decision tracing, `agents inspect`/`diverge`, and supervised-timeout hang
+containment) -- see [AGENT_LAB.md](AGENT_LAB.md) for the user-facing
+reference these steps exercise. Automated coverage
+(`engine/tests/test_agent_trace.py`, `test_agent_worker.py`,
+`test_supervised_runtime.py`, `test_agent_inspect.py`,
+`test_agent_lab_integration.py`, `test_process_containment.py`, and the
+`gui`-marked `tests/test_agent_development_*.py` trace-inspector cases)
+covers the mechanics headlessly; this sequence is the human,
+packaged-application confirmation.
+
+1. `bytefray agents create smoke_agent`, then `bytefray agents validate
+   smoke_agent`; confirm `status: valid` and a `trace:` line is **not**
+   printed (no `--trace-path` was passed).
+2. `bytefray agents test smoke_agent`; confirm the printed summary
+   includes a `trace: <path>/trace.jsonl` line and the suggested
+   `bytefray agents inspect <run-dir>` command.
+3. Run the suggested `bytefray agents inspect <run-dir>` command from
+   step 2; confirm the summary reports `failures: 0` and a sane tick
+   range.
+4. `bytefray replay <replay-path>` from step 2's output; confirm it opens
+   the same match the trace describes (spot-check one tick's arena state
+   against `agents inspect --tick N`'s reported action).
+5. Edit `smoke_agent`'s `agent.py` to introduce a **legal but wrong**
+   behavioral bug (e.g. always `WRITE` to address `0` instead of a
+   computed address) -- not an exception, a plain behavioral change.
+   Re-run `agents test`; confirm the match still completes normally (no
+   forfeit) but the outcome changed.
+6. `bytefray agents inspect <new-run-dir> --failures`; confirm `no
+   failures recorded` (the bug is behavioral, not a crash/timeout --
+   `inspect --failures` is the wrong tool for it, which is itself the
+   point of this step).
+7. Fix the bug; re-run `agents test`, then `bytefray agents diverge
+   <buggy-run-dir> <fixed-run-dir>`; confirm `status: diverged` and that
+   the reported tick is the first tick the fix actually changed behavior
+   at (not tick 0, not the last tick).
+8. `bytefray agents diverge <fixed-run-dir> <fixed-run-dir>` (a run
+   against itself, or two separate fixed runs with the same seed);
+   confirm `status: identical`.
+9. Edit `agent.py` to hang inside `act()` (`while True: pass`); run
+   `bytefray agents test smoke_agent --timeout 2`; confirm the command
+   returns within a few seconds (not 200 ticks x hang), the printed
+   summary shows a `forfeit:` line with `code=agent_action_timeout`, and
+   `agents inspect <run-dir> --failures` shows the same diagnostic.
+10. Immediately after step 9, confirm no orphaned worker process remains
+    (Task Manager / `tasklist` on Windows, `ps` on Linux) -- there should
+    be no lingering `battle2`/`bytefray`/Python process beyond the
+    terminal itself.
+11. Launch `battle-agent-designer.exe`, open **Agent Development**,
+    select `smoke_agent` (still hanging from step 9); run **Development
+    Test** with the default Timeout (5s); confirm the Designer stays
+    responsive (window remains movable/resizable, other tabs still
+    clickable) while the test is outstanding, and that it resolves to
+    "Could not be completed" or an equivalent timeout-shaped result
+    within roughly 5-10 seconds rather than hanging the GUI.
+12. Click **Inspect Trace** on the result from step 11 (frozen build):
+    confirm the dialog opens, shows the timeout diagnostic for the
+    correct tick/agent, and that tick/agent navigation and "Failures
+    only" work. Confirm closing the dialog and re-opening it (or running
+    a second Test) does not show stale data from the previous run.
+13. Fix `agent.py` back to a non-hanging implementation; run
+    **Development Test** again from the Designer; confirm **Inspect
+    Trace** now reflects the new, non-hung run, not step 11's stale
+    trace.
+14. Repeat step 10's orphan check after closing the Designer entirely
+    (not just after step 9/11's individual tests) -- confirm no worker
+    process outlives the Designer window closing.
+
+Record the result (date, machine, Windows/Linux, pass/fail per step) here
+or in the PR/issue tracking the release this checklist gates.
+
 ## pMARS / Redcode integration
 
 1. Optionally set `PMARS_CMD` to one pMARS executable path. Windows packaged

@@ -61,10 +61,10 @@ dry_run_action: WRITE operand=232 value=165
 This proves the agent's Agent API v1 contract is satisfied for one
 deterministic dry-run tick — discoverable, loadable, reset successfully,
 and returning one action the current runtime accepts. It does **not**
-prove the agent will win, survive, or avoid failing on a later tick; it
-proves nothing about strategy quality, timeout safety, or sandboxing (no
-runtime timeout/process containment exists yet — see "Not yet
-implemented" below).
+prove the agent will win, survive, or avoid failing on a later tick, and
+it proves nothing about strategy quality, later-tick correctness, or
+security sandboxing — see [Agent Lab](AGENT_LAB.md) for what the `agents
+validate`/`test` timeout does and does not cover.
 
 On failure, `bytefray agents validate` reports a stable machine-readable
 `stage`/`code`, a human-readable `error` message, and exits `2` without a
@@ -82,8 +82,13 @@ Validation is currently supported for Python (`kind: python`) agents
 only; a built-in, blob, Redcode, or unknown agent ID reports a clear
 unsupported/unknown result rather than a misleading pass. See
 [AGENT_API_V1.md](AGENT_API_V1.md) for the full Agent API v1 contract
-this checks. Validation is not sandboxed and has no timeout: `reset`/
-`act` run the same unrestricted in-process Python a real match runs.
+this checks. By default, `bytefray agents validate` runs its `reset()`/
+`act()` calls through a supervised worker process with a 5-second
+per-call timeout (`--timeout`, see [Agent Lab](AGENT_LAB.md)) so a
+genuinely non-returning callback is reported and recovered rather than
+hanging the command forever. This is development-time hang
+**containment**, not a security sandbox: worker code runs with the same
+OS privileges as the CLI itself.
 
 Create a second scaffolded agent (or point at an existing one), validate
 it too, and run them against each other:
@@ -137,9 +142,17 @@ termination: last_agent_standing
 result: <data_root>/runs/agents_test/my_agent/<run-label>/result.json
 replay: <data_root>/runs/agents_test/my_agent/<run-label>/replay.jsonl
 summary: <data_root>/runs/agents_test/my_agent/<run-label>/summary.json
+trace: <data_root>/runs/agents_test/my_agent/<run-label>/trace.jsonl
 
 Run 'bytefray replay <replay-path>' to inspect it.
+Run 'bytefray agents inspect <run-dir>' to inspect decisions.
 ```
+
+Like `validate`, `agents test` runs supervised by default (`--timeout`,
+default 5 seconds) and writes a `trace.jsonl` development-trace artifact
+alongside the usual `replay.jsonl`/`result.json`/`summary.json` unless
+`--no-trace` is passed. See [Agent Lab](AGENT_LAB.md) for what that trace
+records and how to read it with `bytefray agents inspect`/`diverge`.
 
 **Bytefray exits `0` whenever it successfully evaluated user-agent
 behavior, even when that behavior prevented a match from starting.**
@@ -190,6 +203,66 @@ step. If you want to compare more than one opponent, or run more than a
 short development match, use `bytefray tournament` or `bytefray run`
 directly -- see [TOURNAMENTS.md](TOURNAMENTS.md).
 
+## Debugging with Agent Lab: trace, inspect, diverge
+
+`agents validate`/`agents test` cover the first half of the authoring loop
+(**create → validate → test**). Agent Lab covers the second half —
+**inspect → debug → modify → repeat** — by recording exactly what your
+agent saw and decided at each `reset()`/`act()` call, and by containing a
+callback that never returns instead of hanging the tool forever. See
+[docs/AGENT_LAB.md](AGENT_LAB.md) for the full mental model, troubleshooting,
+and more examples; this section is the quick-start version.
+
+**Trace is not replay.** `replay.jsonl` is the canonical match record —
+what actually happened in the arena, tick by tick, and is what
+`bytefray replay` renders. `trace.jsonl` is a separate, optional
+development artifact — what your agent was *shown* (`Observation`) and
+what it *decided* (`AgentAction` or a failure diagnostic) at each call
+that produced that replay. Use replay to see the match; use trace to see
+your agent's reasoning.
+
+**`bytefray agents inspect <run-dir>`** answers "what happened in this
+run?" without re-running any agent code — it only parses the already-written
+`trace.jsonl`:
+
+```bash
+# Summary: record counts, tick range, per-agent failures
+bytefray agents inspect runs/agents_test/my_agent/<run-label>
+
+# Everything my_agent decided on tick 37
+bytefray agents inspect runs/agents_test/my_agent/<run-label> --tick 37 --agent A
+
+# Just the failures (forfeits, timeouts, exceptions)
+bytefray agents inspect runs/agents_test/my_agent/<run-label> --failures
+```
+
+**`bytefray agents diverge <run-a> <run-b>`** answers "where did two runs
+first disagree?" — useful after changing agent code, to confirm a fix
+changed behavior starting at the tick you expect and not earlier:
+
+```bash
+bytefray agents diverge runs/agents_test/my_agent/2024-.../ runs/agents_test/my_agent/2024-.../
+```
+
+It reports `status: identical` (with no divergence) or the first
+`(tick, agent)` where the two traces' actions/diagnostics differ — timing
+fields (`wall_time_ms`) and header metadata are never compared, so two
+runs that made the identical decisions are never reported as diverged
+just because one happened to run faster.
+
+**`--timeout SECONDS`** (both commands, default `5.0`, range `0.1`–`300.0`)
+bounds every `load`/`reset()`/`act()` call. When a call exceeds it, that
+call is reported with a diagnostic (`agent_load_timeout`/
+`agent_reset_timeout`/`agent_action_timeout`) and the affected entrant
+forfeits (or, for a load/reset timeout before tick zero, the match never
+starts) — the tool always gets its console back. **This is
+development-time hang containment, not sandboxing**: a supervised agent
+runs with the same OS privileges as the CLI itself and can still read/write
+files, open network connections, or consume unbounded CPU up to the
+timeout. It only guarantees that Bytefray's own tooling stops *waiting*
+and tells you which phase stalled. Pass `--no-trace` to skip writing
+`trace.jsonl` for one run (it is cheap enough to leave on by default).
+
 ## Using the Agent Designer (GUI)
 
 The same create → validate → test → replay loop is also available from the
@@ -205,31 +278,40 @@ or `bytefray design`), without touching a terminal:
    action, or "Invalid" with the failing stage/code/error -- the same
    outcome the CLI reports, not a re-implementation of it.
 3. **Development Test** runs `bytefray agents test <agent-id>` with the
-   panel's Opponent (default `Reference`), Seed (default `1337`), and
-   Ticks (default `200`) options, mirroring `--opponent`/`--seed`/`--ticks`
-   exactly. The result area shows "Last development test: Complete" with
-   winner/termination/ticks and any forfeits, "Initialization failed" for
-   a pre-tick-zero failure of the tested agent or an explicit opponent (no
-   replay exists in that case), or "Could not be completed" for a
-   tool/infrastructure failure -- kept visually distinct so a bad agent
-   and a broken tool are never confused.
+   panel's Opponent (default `Reference`), Seed (default `1337`), Ticks
+   (default `200`), and **Timeout (s)** (default `5.0`) options, mirroring
+   `--opponent`/`--seed`/`--ticks`/`--timeout` exactly (see "Debugging with
+   Agent Lab" above for what the timeout does). The result area shows
+   "Last development test: Complete" with winner/termination/ticks and any
+   forfeits, "Initialization failed" for a pre-tick-zero failure of the
+   tested agent or an explicit opponent (no replay exists in that case), or
+   "Could not be completed" for a tool/infrastructure failure -- kept
+   visually distinct so a bad agent and a broken tool are never confused.
 4. **Open Replay** (inside the Development Test result) launches the
    existing external Pygame replay viewer for a completed test's replay.
    It is independent of the Simple/Advanced tabs' own "Open Last Replay"
    button -- running a development test never changes what that other
    button opens.
-5. **Open Agent Folder** opens the agent's directory in the OS file
+5. **Inspect Trace** (next to Open Replay) opens the read-only Trace
+   Inspector dialog over that test's `trace.jsonl` -- tick/agent selectors
+   and Prev/Next step through recorded decisions, with a "Failures only"
+   filter. It is enabled whenever the last completed test wrote a trace
+   (always, unless a run used `--no-trace`). Unlike Validate/Test, opening
+   it runs no agent code and cannot hang: it only reads an already-written
+   file, directly on the GUI thread.
+6. **Open Agent Folder** opens the agent's directory in the OS file
    browser so `agent.py` can be edited in an external editor; return to
    the Designer and click Validate/Test again to see the effect.
 
 Only one Designer-owned process (a match, a tournament, a validation, or a
 development test) ever runs at a time: while any of them is active, every
-other Run/Validate/Test control is disabled, exactly as `bytefray agents
-validate`/`test` themselves have no timeout or sandbox for arbitrary user
-Python. A hung agent's process is stopped with the Simple/Advanced tab's
-existing Stop button (which acts on whichever operation is currently
-running) or by closing the Designer window -- never gracefully interrupted
-mid-call, the same limitation the CLI has.
+other Run/Validate/Test control is disabled. Validate/Test are supervised
+by default (the same development-time hang containment described above,
+not a security sandbox) so a hung callback is caught and reported on its
+own; the Simple/Advanced tab's existing Stop button remains available as a
+manual fallback (or closing the Designer window), acting on whichever
+operation is currently running -- never a graceful mid-call interruption,
+just an unconditional process kill.
 
 ## Underlying file format (manual reference)
 
@@ -318,13 +400,21 @@ exception text or tracebacks and do not create opponent kills.
 
 - mixed Python/VM or Python/blob matches;
 - corruptible Python executable cores or arena-based Python mortality;
-- hard timeout/process containment for callbacks;
 - Python replication or redundant-core architectures;
 - human-controlled entrants; and
 - mixed-runtime or GUI-managed tournament execution.
 
-Python code can perform arbitrary in-process computation and a non-returning
-`act()` cannot yet be interrupted safely. Run only agents you trust.
+`bytefray agents validate`/`test` (and the Designer's Validate/Test) are
+supervised with a timeout by default (see "Debugging with Agent Lab"
+above) — a non-returning `act()`/`reset()` there is reported and
+recovered rather than hanging the tool. **`bytefray run` and
+`bytefray tournament` remain unsupervised and untimed**, exactly as
+before Agent Lab: a non-returning `act()` in an ordinary match or
+tournament run still cannot be interrupted safely short of killing the
+process. In every case — supervised or not — Python code can perform
+arbitrary in-process computation and runs with the same OS privileges as
+Bytefray itself; this is development-time hang containment, never a
+security boundary. Run only agents you trust.
 
 ## Other formats
 

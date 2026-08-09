@@ -162,6 +162,7 @@ abbreviated.
 | Windows dev environment quirks | [docs/WINDOWS_DEV_NOTES.md](docs/WINDOWS_DEV_NOTES.md) |
 | Linux wheel install | [docs/LINUX_INSTALL.md](docs/LINUX_INSTALL.md) |
 | Writing agents | [docs/AGENT_AUTHORING.md](docs/AGENT_AUTHORING.md) |
+| Debugging agents: trace, inspect, diverge, timeouts | [docs/AGENT_LAB.md](docs/AGENT_LAB.md) |
 | Agent API v1 contract | [docs/AGENT_API_V1.md](docs/AGENT_API_V1.md) |
 | VM/native rules | [docs/RULES.md](docs/RULES.md) |
 | Result schema | [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md) |
