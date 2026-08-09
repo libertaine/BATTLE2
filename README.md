@@ -43,6 +43,7 @@ AI-generated code and review findings are treated as proposals, not authority. C
 ## Documentation
 
 - [Agent Authoring Guide](docs/AGENT_AUTHORING.md)
+- [Agent Lab: trace, inspect, diverge, timeouts](docs/AGENT_LAB.md)
 - [Agent API v1 Technical Contract](docs/AGENT_API_V1.md)
 - [Current Native VM Rules Reference](docs/RULES.md)
 - [Canonical Result Schema](docs/RESULT_SCHEMA.md)
@@ -75,17 +76,17 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Current release:** [Bytefray v0.4.0](https://github.com/libertaine/Bytefray/releases/tag/v0.4.0).
-The v0.1–v0.3 downloads are historical and have been superseded.
+**Current release:** [Bytefray v0.5.0](https://github.com/libertaine/Bytefray/releases/tag/v0.5.0).
+The v0.1–v0.4 downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Windows installer** | [Bytefray-Setup-0.4.0.exe](https://github.com/libertaine/Bytefray/releases/download/v0.4.0/Bytefray-Setup-0.4.0.exe) | Installs under `C:\Program Files\Bytefray` |
-| 💼 **Portable Windows applications** | [Bytefray-0.4.0-windows-exes.zip](https://github.com/libertaine/Bytefray/releases/download/v0.4.0/Bytefray-0.4.0-windows-exes.zip) | Complete onedir layouts for all four executables |
-| 🐍 **Python wheel** | [bytefray-0.4.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v0.4.0/bytefray-0.4.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
-| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v0.4.0/SHA256SUMS.txt) | SHA-256 values for release assets |
+| 🧰 **Windows installer** | [Bytefray-Setup-0.5.0.exe](https://github.com/libertaine/Bytefray/releases/download/v0.5.0/Bytefray-Setup-0.5.0.exe) | Installs under `C:\Program Files\Bytefray` |
+| 💼 **Portable Windows applications** | [Bytefray-0.5.0-windows-exes.zip](https://github.com/libertaine/Bytefray/releases/download/v0.5.0/Bytefray-0.5.0-windows-exes.zip) | Complete onedir layouts for all four executables |
+| 🐍 **Python wheel** | [bytefray-0.5.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v0.5.0/bytefray-0.5.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v0.5.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---
 
@@ -153,11 +154,24 @@ authoring your own Python agent:
 bytefray agents create my_agent     # scaffold a new Agent API v1 agent
 bytefray agents validate my_agent   # one-tick dry run of the Agent API contract
 bytefray agents test my_agent       # short real match vs. a reference opponent
+bytefray agents inspect <run-dir>   # see what the agent saw/decided at each call
+bytefray agents diverge <a> <b>     # find the first behavioral difference between two runs
 ```
 
-The same loop, plus **Open Replay**, is available without a terminal from the
-Agent Designer's **Agent Development** tab. See the
-[Agent Authoring Guide](docs/AGENT_AUTHORING.md) for the full workflow.
+`validate`/`test` run supervised by default (a `--timeout`-bounded worker
+process, 5s default) so a genuinely non-returning `reset()`/`act()` is
+reported and recovered instead of hanging the command, and both write an
+optional `trace.jsonl` development artifact alongside the usual
+`replay.jsonl`/`result.json` that `inspect`/`diverge` read — this is
+development-time hang **containment**, not a security sandbox; normal
+`bytefray run`/`tournament` execution is unaffected. See
+[Agent Lab](docs/AGENT_LAB.md) for the full trace/inspect/diverge/timeout
+reference.
+
+The same loop, plus **Open Replay** and **Inspect Trace**, is available
+without a terminal from the Agent Designer's **Agent Development** tab.
+See the [Agent Authoring Guide](docs/AGENT_AUTHORING.md) for the full
+workflow.
 
 `battle2` remains a deprecated compatibility alias for `bytefray` — it
 dispatches to the exact same implementation with identical behavior and exit
@@ -276,10 +290,12 @@ agent files.
 | battle-replay-viewer.exe  | View and analyze match replays         | Pygame |
 
 The Agent Designer's **Agent Development** tab brings the CLI's
-create → validate → test → replay agent-authoring loop into the GUI: New
-Agent, Validate, Development Test (with Opponent/Seed/Ticks options), and
-Open Replay. See the [Agent Authoring Guide](docs/AGENT_AUTHORING.md) for
-details.
+create → validate → test → inspect → replay agent-authoring loop into the
+GUI: New Agent, Validate, Development Test (with Opponent/Seed/Ticks/
+Timeout options), Open Replay, and Inspect Trace (opens the read-only
+Trace Inspector dialog over that test's `trace.jsonl`). See the
+[Agent Authoring Guide](docs/AGENT_AUTHORING.md) and
+[Agent Lab](docs/AGENT_LAB.md) for details.
 
 
 

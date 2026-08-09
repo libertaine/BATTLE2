@@ -1,15 +1,18 @@
 # Bytefray Architecture
 
-This document describes Bytefray's architecture as of the v0.4.0 release
+This document describes Bytefray's architecture as of the v0.5.0 release
 (NativeMatchService, Agent API v1 Python-vs-Python matches, canonical
-`battle2.replay` schema v3, the headless tournament service, and the
+`battle2.replay` schema v3, the headless tournament service, the
 `bytefray agents create/validate/test` authoring commands plus the
-Designer's Agent Development tab added in v0.4). It supersedes the
-v0.2-era architecture document; that superseded text remains available in
-git history (see the `v0.2.0` tag) and in
+Designer's Agent Development tab added in v0.4, and the Agent Lab
+deterministic tracing/`agents inspect`/`agents diverge`/supervised
+timeout containment added in v0.5). It supersedes the v0.2-era
+architecture document; that superseded text remains available in git
+history (see the `v0.2.0` tag) and in
 [`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md) for migration context.
-This document describes what exists today (see "v0.4 direction" at the end
-for how the current agent-authoring functionality was delivered in phases).
+This document describes what exists today (see "v0.4.0 delivery history"
+and "Agent Lab (v0.5.0)" at the end for how each milestone was delivered
+in phases).
 
 ## Runtime components
 
@@ -432,14 +435,13 @@ document. Do not treat any further feedback-loop tooling described in
 future specs under `docs/specs/` as already built until it lands and this
 document is updated to describe it.
 
-## Agent Lab (v0.5, unreleased)
+## Agent Lab (v0.5.0)
 
-Development branch (`v0.5-agent-lab`) work, not yet released; see
-`docs/specs/agent_lab.md` for the full design. Where v0.4 built
-create → validate → test → replay, Agent Lab attacks
-inspect → debug → modify → repeat: deterministic behavioral tracing of
-the Python Agent API boundary, and development-time hang containment for
-a `reset()`/`act()` call that never returns.
+Delivered in the v0.5.0 release; see `docs/specs/agent_lab.md` for the
+full design. Where v0.4 built create → validate → test → replay, Agent
+Lab attacks inspect → debug → modify → repeat: deterministic behavioral
+tracing of the Python Agent API boundary, and development-time hang
+containment for a `reset()`/`act()` call that never returns.
 
 `battle_engine.agent_trace` defines `bytefray.agent_trace` v1, a
 separate, versioned JSONL artifact independent of `battle2.replay`/

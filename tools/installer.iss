@@ -1,9 +1,9 @@
-; Bytefray v0.4 Windows installer (Inno Setup 6)
+; Bytefray v0.5 Windows installer (Inno Setup 6)
 ; Formerly BATTLE2. Build from the repository root with:
 ;   ISCC.exe tools\installer.iss
 
 #define AppName "Bytefray"
-#define AppVersion "0.4.0"
+#define AppVersion "0.5.0"
 #define AppPublisher "Bytefray Project"
 #define DistRoot "..\dist\windows"
 #define OutputRoot "..\dist\installer"

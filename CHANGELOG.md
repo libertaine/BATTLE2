@@ -5,11 +5,14 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-09
+
 v0.5's primary theme is **Agent Lab**: v0.4 closed the
 create → validate → test → inspect → modify → repeat loop's first half;
 v0.5 attacks the second half -- understanding *why* an agent behaved the
-way it did, and containing an agent that never returns. Development
-branch only; not yet released. See `docs/specs/agent_lab.md`.
+way it did, and containing an agent that never returns. See
+`docs/specs/agent_lab.md` for the full design rationale and
+[docs/AGENT_LAB.md](docs/AGENT_LAB.md) for the user-facing reference.
 
 ### Added
 
@@ -52,6 +55,20 @@ branch only; not yet released. See `docs/specs/agent_lab.md`.
   containment (`battle_engine.process_containment`): a Windows Job
   Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` on the parent side,
   `prctl(PR_SET_PDEATHSIG, SIGKILL)` on POSIX.
+- A supervised agent calling `input()` during `reset()`/`act()` could read
+  from the same underlying pipe the parent's worker-protocol request loop
+  was using, silently stealing the next protocol request line and
+  permanently desynchronizing the wire protocol. Agent-visible `sys.stdin`
+  is now rebound to a closed/empty stream before any agent code runs
+  (mirroring the existing `sys.stdout` -> `sys.stderr` redirection), so
+  `input()` now raises an immediate `EOFError` instead.
+- Closed a race in the POSIX `PR_SET_PDEATHSIG` registration where a
+  parent that died before the worker reached its own `prctl()` call could
+  leave the signal armed too late to ever fire; `die_with_parent()` now
+  captures the parent pid immediately before registering and
+  self-terminates if it changed right after.
+- The hidden `agents _worker` verb now rejects unexpected arguments
+  instead of silently blocking on stdin.
 
 ## [0.4.0] - 2026-08-08
 
