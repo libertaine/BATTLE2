@@ -5,6 +5,8 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-09
+
 v0.6's primary theme is **Agent Evaluation**: once an agent works and can
 be debugged (v0.4/v0.5), how does an author tell whether it is actually
 getting better? See `docs/specs/agent_evaluation.md` for the full design
@@ -47,6 +49,18 @@ for the user-facing reference.
 - Evaluation is Python-agent-only in v0.6, inheriting `agents test`'s
   existing Python-only boundary rather than introducing a second,
   VM-flavored executor; documented explicitly, not left implicit.
+
+### Fixed
+
+- A repeated opponent or seed in an evaluation matrix (duplicate cells,
+  an explicitly supported matrix shape) could be misidentified as the
+  same cell: resuming an interrupted evaluation could misclassify a
+  legitimately never-run duplicate as corrupted, a candidate/baseline
+  comparison could undercount or silently drop duplicate cells, and the
+  Designer's results dialog could open the wrong duplicate's replay when
+  selecting between them. Duplicate cells now carry a distinct identity
+  throughout scheduling, resume, comparison, and the Designer's
+  drill-down.
 
 ## [0.5.1] - 2026-08-09
 

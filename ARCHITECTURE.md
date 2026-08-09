@@ -1,19 +1,19 @@
 # Bytefray Architecture
 
-This document describes Bytefray's architecture as of the v0.5.0 release
+This document describes Bytefray's architecture as of the v0.6.0 release
 (NativeMatchService, Agent API v1 Python-vs-Python matches, canonical
 `battle2.replay` schema v3, the headless tournament service, the
 `bytefray agents create/validate/test` authoring commands plus the
-Designer's Agent Development tab added in v0.4, and the Agent Lab
+Designer's Agent Development tab added in v0.4, the Agent Lab
 deterministic tracing/`agents inspect`/`agents diverge`/supervised
-timeout containment added in v0.5), plus the unreleased v0.6 Agent
-Evaluation work (`bytefray agents evaluate`, the additive
-`bytefray.evaluation` artifact, and the Designer's Evaluate dialog). It
+timeout containment added in v0.5, and the Agent Evaluation work
+(`bytefray agents evaluate`, the additive `bytefray.evaluation`
+artifact, and the Designer's Evaluate dialog) added in v0.6). It
 supersedes the v0.2-era architecture document; that superseded text
 remains available in git history (see the `v0.2.0` tag) and in
 [`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md) for migration context.
 This document describes what exists today (see "v0.4.0 delivery history",
-"Agent Lab (v0.5.0)", and "Agent Evaluation (v0.6)" at the end for how
+"Agent Lab (v0.5.0)", and "Agent Evaluation (v0.6.0)" at the end for how
 each milestone was delivered).
 
 ## Runtime components
@@ -488,9 +488,10 @@ timeout or process boundary. `runs/agents_test/<agent-id>/<run-label>/`
 gains an optional `trace.jsonl` fourth file alongside the existing
 `replay.jsonl`/`result.json`/`summary.json` — additive only.
 
-## Agent Evaluation (v0.6, unreleased)
+## Agent Evaluation (v0.6.0)
 
-See `docs/specs/agent_evaluation.md` for the full design. Where v0.4
+Delivered in the v0.6.0 release; see `docs/specs/agent_evaluation.md`
+for the full design. Where v0.4
 built create → validate → test → replay and v0.5 built inspect → debug →
 modify → repeat, Agent Evaluation adds the step after "modify": did this
 candidate actually get better?
