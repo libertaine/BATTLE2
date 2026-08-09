@@ -278,11 +278,14 @@ bytefray agents
 
 to see all discovered agents.
 
-Fresh desktop and portable installations initialize four clearly labeled
-starter agents in the writable `agents/` directory: Runner, Writer, Seeker, and
-Spiral. Their canonical manifests are bundled as read-only package resources.
-Initialization copies only missing files and never overwrites custom or edited
-agent files.
+Fresh desktop and portable installations initialize nine clearly labeled
+starter agents in the writable `agents/` directory: the native VM starters
+Runner, Writer, Seeker, and Spiral, plus five Python Agent API v1 agents --
+Claimer, Strider, Hunter, Wanderer, and Adaptive -- demonstrating distinct
+strategies against the Python agent runtime described below (see "Try the
+bundled agents" for what each one does). Their canonical manifests/sources
+are bundled as read-only package resources. Initialization copies only
+missing files and never overwrites custom or edited agent files.
 
 ---
 
@@ -357,6 +360,70 @@ bytefray run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --tick
    ```bash
    bytefray replay --replay path/to/replay.jsonl --renderer pygame
    ```
+
+---
+
+## 🤖 Try the bundled agents
+
+A fresh install initializes nine starter agents into the writable `agents/`
+catalog on first use (`bytefray agents` or any match/tournament run): four
+native VM starters (`runner`, `writer`, `seeker`, `spiral`) and five Python
+Agent API v1 agents demonstrating genuinely different strategies against the
+same restricted API described above.
+
+| Agent | Strategy |
+|---|---|
+| `claimer` | Basic territorial: sweeps the whole arena with a fixed stride, claiming every cell, no reading, no reacting. A good first file to read and copy. |
+| `strider` | Claimer's identical sweep, offset to a different starting point, plus one added idea: spends the match's final stretch re-affirming its earliest-claimed ground rather than continuing to expand. |
+| `hunter` | Aggressor: sweeps like Claimer but occasionally samples a cell instead of writing, and when it finds contested ground (neither blank nor its own), seizes it and its neighbors with a short burst. |
+| `wanderer` | Wildcard: picks a randomized (but seed-deterministic) stride at the start of the match, so its coverage order looks scattered rather than evenly spaced, with the same opportunistic burst instinct as Hunter. |
+| `adaptive` | Hybrid showcase: moves through claim, contest, and defend phases as the match progresses, using the engine's PC/JUMP actions as an explicit phase state machine -- see its source for how that pattern works. |
+
+Each source file's module docstring explains its strategy, the state it
+tracks, what to try changing, and (for several of them) what an earlier,
+less successful version tried and why it didn't work -- read them as
+worked examples of iterating on an agent with `bytefray agents evaluate`,
+not just as finished code.
+
+Run a few matchups to see the differences:
+
+```bash
+bytefray agents test claimer --opponent wanderer --ticks 500
+bytefray replay --replay <printed-replay-path> --renderer pygame
+
+bytefray agents test hunter --opponent adaptive --ticks 500
+```
+
+Then evaluate one bundled agent against several others across a handful of
+seeds, exactly like you would a candidate of your own:
+
+```bash
+bytefray agents evaluate wanderer --opponents claimer,strider,hunter,adaptive \
+  --seeds 1,2,3,4,5
+```
+
+Or compare the `claimer`/`strider` pair directly to see whether Strider's
+one added idea actually pays off (results vary by opponent and seed --
+that is the point of using `evaluate` instead of assuming):
+
+```bash
+bytefray agents evaluate strider --baseline claimer \
+  --opponents hunter,wanderer,adaptive --seeds 1,2,3,4,5
+```
+
+Open an interesting cell in Agent Lab to see exactly what a bundled agent
+decided, tick by tick:
+
+```bash
+bytefray agents test hunter --opponent claimer --ticks 500
+bytefray agents inspect <printed-run-dir>
+```
+
+To start your own agent from one of these instead of the blank scaffold,
+copy a bundled agent's directory from the writable `agents/` catalog
+(printed by `bytefray agents`) into a new agent id and edit `agent.py` --
+there is no separate "start from example" command; copying a file you can
+already see and read is the whole mechanism.
 
 ---
 

@@ -110,6 +110,27 @@ bytefray replay <reported-replay-path>
 See [AGENT_API_V1.md](AGENT_API_V1.md) for the full loading, lifecycle, and
 action contract the generated files satisfy.
 
+## Learning from the bundled agents
+
+`bytefray agents create`'s scaffold is deliberately minimal -- it proves
+the Agent API v1 contract, not a strategy. For actual decision-logic
+ideas, read the five bundled Python starter agents' source
+(`agents/claimer`, `agents/strider`, `agents/hunter`, `agents/wanderer`,
+`agents/adaptive` under the writable data root once initialized): each
+module docstring explains its strategy, the state it tracks, what's
+reasonable to change, and -- for several of them -- what an earlier
+version tried and why it lost in evaluation. They demonstrate patterns
+worth reusing directly: tracking a pending `READ`'s address so a later
+call can act on `Observation.last_read` correctly (every agent beyond
+Claimer needs this), a signature byte to recognize your own already-claimed
+cells (`Observation` carries no ownership map), and Adaptive's use of the
+engine's `pc`/`JUMP` as an explicit phase state machine. There is no
+separate "start from example" scaffold option -- copy one of these
+directories into a new agent id under `agents/` and edit `agent.py`
+directly; the file is the whole starting point. See the main
+[README](../README.md#-try-the-bundled-agents) for compelling matchups to
+try first and an `agents evaluate` example.
+
 ## Development-test your agent
 
 `bytefray agents validate` and `bytefray agents test` answer genuinely

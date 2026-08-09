@@ -1,20 +1,21 @@
 # Bytefray Architecture
 
-This document describes Bytefray's architecture as of the v0.6.0 release
+This document describes Bytefray's architecture as of the v0.6.1 release
 (NativeMatchService, Agent API v1 Python-vs-Python matches, canonical
 `battle2.replay` schema v3, the headless tournament service, the
 `bytefray agents create/validate/test` authoring commands plus the
 Designer's Agent Development tab added in v0.4, the Agent Lab
 deterministic tracing/`agents inspect`/`agents diverge`/supervised
-timeout containment added in v0.5, and the Agent Evaluation work
+timeout containment added in v0.5, the Agent Evaluation work
 (`bytefray agents evaluate`, the additive `bytefray.evaluation`
-artifact, and the Designer's Evaluate dialog) added in v0.6). It
-supersedes the v0.2-era architecture document; that superseded text
-remains available in git history (see the `v0.2.0` tag) and in
+artifact, and the Designer's Evaluate dialog) added in v0.6, and the
+default Python starter-agent roster added in v0.6.1). It supersedes the
+v0.2-era architecture document; that superseded text remains available in
+git history (see the `v0.2.0` tag) and in
 [`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md) for migration context.
 This document describes what exists today (see "v0.4.0 delivery history",
-"Agent Lab (v0.5.0)", and "Agent Evaluation (v0.6.0)" at the end for how
-each milestone was delivered).
+"Agent Lab (v0.5.0)", "Agent Evaluation (v0.6.0)", and "Default Agent
+Build-Out (v0.6.1)" at the end for how each milestone was delivered).
 
 ## Runtime components
 
@@ -561,3 +562,79 @@ Evaluation is Python-agent-only in v0.6, inheriting `agents test`'s
 existing Python-only requirement by construction (its per-cell executor
 *is* `agents test`) rather than introducing a second, VM-flavored
 executor — VM/blob agents remain comparable via `bytefray tournament`.
+
+## Default Agent Build-Out (v0.6.1)
+
+Delivered in the v0.6.1 release. Where v0.3–v0.6 built the authoring,
+debugging, and evaluation *tools*, v0.6.1 addresses first-run *content*:
+before v0.6.1, the only Python (Agent API v1) agent behavior a new user
+ever saw was `battle_engine/data/agent_template`'s scaffold/reference
+agent — a single fixed byte written to a uniformly random address in the
+first 256 bytes of the arena — reused unmodified as both `bytefray agents
+create`'s starting point and `agents test`'s default opponent. Two
+identical copies of it playing each other are then decided almost purely
+by which one is scheduled second within a tick (Python-only matches
+execute entrants in fixed slot order, A before B, every tick — see
+`battle_engine.python_runtime.PythonEntrantController.run`), not by
+strategy. `bytefray agents` also had no Python starters at all: the four
+existing native VM starters (`runner`/`writer`/`seeker`/`spiral`,
+`battle_engine.starters`) never included a Python entrant a new user could
+run, read, or copy.
+
+`battle_engine.starters.STARTER_AGENT_NAMES` gained five entries —
+`claimer`, `strider`, `hunter`, `wanderer`, `adaptive` — each a full
+Agent API v1 agent (`agent.yaml` + `agent.py`) bundled under
+`battle_engine/data/starter_agents/<name>/`, discovered and copied into
+the writable catalog by the same `ensure_starter_agents()` non-destructive
+mechanism the native VM starters already use; no new discovery, catalog,
+or packaging concept was introduced; `[tool.setuptools.package-data]`'s
+existing `battle_engine = ["data/**/*"]` glob already covers the new
+subdirectories. Each agent's module docstring is a self-contained
+explanation of its strategy, the state it tracks, and (for several of
+them) what an earlier, less successful version tried and why it was
+retuned — see each `agent.py` under `battle_engine/data/starter_agents/`
+for specifics, and the README's "Try the bundled agents" section for the
+user-facing summary and example `agents evaluate` invocations.
+
+The design was driven entirely by `bytefray agents evaluate` against the
+engine's actual scoring mechanics (`battle_engine.scoring.ScoringPolicy`,
+`battle_engine.python_runtime`), not assumption. Two findings shaped every
+shipped agent's final form: first, because `Observation` exposes no
+ownership map (only a raw byte value via `READ`) and a first-time `WRITE`
+to any cell is never wasted regardless of what was there before, reading a
+cell before claiming it only pays for itself once genuinely revisiting
+already-owned ground is common — within `agents test`/`evaluate`'s typical
+tick budgets against the default 4096-byte arena, blind full-arena
+coverage essentially never reaches that point, so several early candidate
+designs that read before every write lost consistently to agents that
+simply wrote every action. Second, a bounded "patrol a small home range
+and defend it" agent (prototyped, not shipped — see below) could not be
+tuned to be competitive at all: nothing in this scoring model penalizes
+unrestricted expansion, so any strategy that intentionally limits its own
+footprint loses ground, over a full match, to one that does not. Every
+shipped agent's design reflects one or both lessons; where an agent
+deliberately still spends some of its budget reading (Hunter, Wanderer,
+and Adaptive's `CONTEST` burst), it does so at a low, evaluation-tuned
+frequency rather than on every action.
+
+One additional prototype, `sentinel` (a reactive defender patrolling a
+growing home range, using the engine's P register as its patrol pointer)
+was implemented, iteratively retuned across several evaluation passes, and
+ultimately not shipped: it could not be made competitive against the
+bundled full-arena sweepers within realistic match lengths regardless of
+starting size, anchor placement, or expansion policy — a direct
+consequence of the second finding above. It is not part of
+`STARTER_AGENT_NAMES` and its source was not committed.
+
+`engine/tests/test_default_python_agents.py` adds structural coverage for
+the new roster — clean discovery as `kind: python`, successful validation,
+successful match completion against the reference opponent, and a
+behavioral smoke matrix (every shipped agent against every other) — all
+asserting only that matches complete without infrastructure failure, never
+that a particular agent wins a particular seed (see AGENTS.md's testing
+guidance). `engine/tests/test_starter_agents.py`'s file-count assertions,
+previously hard-coded to the single-file (`agent.yaml`-only) shape every
+native VM starter happens to have, were generalized to compute the
+expected file set from each starter's actual source directory, since the
+Python starters are the first starters to ship more than one file
+(`agent.yaml` and `agent.py`).
