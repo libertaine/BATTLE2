@@ -1,0 +1,509 @@
+"""GUI regression coverage for the v0.6 Agent Evaluation Designer UX.
+
+Covers: the Development tab's "Evaluate…" button enablement, the
+``EvaluationDialog`` input collector, the read-only
+``EvaluationResultsDialog`` (comparison-mode and single-candidate/cells-only
+mode, selection-driven detail text, and its two drill-down signals), and
+``AgentDesigner`` wiring (opening the dialog, building/launching the
+``bytefray agents evaluate`` command, and handling the "Test in Agent Lab"/
+"Open Replay" drill-down actions). Real (not mocked)
+``battle_engine.agent_evaluation.EvaluationService`` runs are used to
+produce the ``evaluation.json`` fixtures the results-dialog tests read,
+per the existing Designer test suite's convention of exercising the real
+backend rather than duplicating its behavior in a mock.
+
+Marked ``gui`` like the existing Designer tests: excluded from the default
+headless run, exercised by the dedicated display-backed workflow.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _make_app():
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    return QApplication.instance() or QApplication([])
+
+
+def _write_python_agent(root: Path, name: str, action: str = "AgentAction(ActionKind.NOP)") -> None:
+    directory = root / "agents" / name
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {"kind": "python", "api_version": 1, "entrypoint": "agent.py:create_agent", "version": "1.0"}
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        f"""
+from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): return {action}
+def create_agent(): return Agent()
+""",
+        encoding="utf-8",
+    )
+
+
+def _run_real_evaluation(tmp_path: Path, *, baseline: bool) -> Path:
+    """Produce a real ``evaluation.json`` via the actual service (no mocking)."""
+
+    from battle_engine.agent_evaluation import EvaluationRequest, EvaluationService
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    if baseline:
+        _write_python_agent(tmp_path, "baseline")
+
+    service = EvaluationService()
+    request = EvaluationRequest(
+        candidate_id="candidate",
+        baseline_id="baseline" if baseline else None,
+        opponent_ids=("opponent",),
+        seeds=(1,),
+        output_dir=tmp_path / "eval-out",
+        ticks=15,
+        data_root=tmp_path,
+    )
+    result = service.run(request)
+    return result.state_path
+
+
+# ---------------------------------------------------------------------------
+# Development panel: Evaluate button
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gui
+def test_evaluate_button_enablement_mirrors_test_and_validate():
+    _make_app()
+    from app.services.agent_catalog import AgentRow
+    from app.views.development import AgentDevelopmentPanel
+
+    panel = AgentDevelopmentPanel()
+    try:
+        assert not panel.btnEvaluate.isEnabled()
+        row = AgentRow(name="candidate", path="agents/candidate", blob_path=None, meta={"kind": "python"})
+        panel.setAgents([row])
+        panel.selectAgent("candidate")
+        assert panel.btnEvaluate.isEnabled()
+        assert panel.btnTest.isEnabled()
+        panel.setBusy(True)
+        assert not panel.btnEvaluate.isEnabled()
+        panel.setBusy(False)
+        assert panel.btnEvaluate.isEnabled()
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
+def test_python_agent_names_reflects_catalog():
+    _make_app()
+    from app.services.agent_catalog import AgentRow
+    from app.views.development import AgentDevelopmentPanel
+
+    panel = AgentDevelopmentPanel()
+    try:
+        rows = [
+            AgentRow(name="a", path="agents/a", blob_path=None, meta={"kind": "python"}),
+            AgentRow(name="b", path="agents/b", blob_path=None, meta={"kind": "python"}),
+            AgentRow(name="vm", path="agents/vm", blob_path=None, meta={"kind": "builtin"}),
+        ]
+        panel.setAgents(rows)
+        assert panel.python_agent_names() == ["a", "b"]
+    finally:
+        panel.deleteLater()
+
+
+# ---------------------------------------------------------------------------
+# EvaluationDialog
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gui
+def test_evaluation_dialog_collects_fields(tmp_path):
+    _make_app()
+    from app.views.evaluation import EvaluationDialog
+
+    dialog = EvaluationDialog(
+        ["candidate", "opponent_a", "opponent_b"],
+        default_candidate="candidate",
+        default_output=tmp_path / "out",
+    )
+    try:
+        assert dialog.candidate_id() == "candidate"
+        assert dialog.baseline_id() is None
+        dialog.baselineCombo.setCurrentIndex(dialog.baselineCombo.findData("opponent_a"))
+        assert dialog.baseline_id() == "opponent_a"
+
+        for index in range(dialog.opponentsList.count()):
+            item = dialog.opponentsList.item(index)
+            if item.text() in ("opponent_a", "opponent_b"):
+                item.setSelected(True)
+        assert set(dialog.opponent_ids()) == {"opponent_a", "opponent_b"}
+
+        dialog.seedsEdit.setText("1,2,3")
+        assert dialog.seeds_text() == "1,2,3"
+        dialog.ticksSpin.setValue(50)
+        assert dialog.ticks() == 50
+        assert dialog.output_path() == tmp_path / "out"
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_evaluation_dialog_defaults_to_no_preselected_candidate_when_absent(tmp_path):
+    _make_app()
+    from app.views.evaluation import EvaluationDialog
+
+    dialog = EvaluationDialog(
+        ["only_agent"], default_candidate=None, default_output=tmp_path / "out"
+    )
+    try:
+        assert dialog.candidate_id() == "only_agent"
+    finally:
+        dialog.deleteLater()
+
+
+# ---------------------------------------------------------------------------
+# EvaluationResultsDialog
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gui
+def test_results_dialog_comparison_mode_selection_and_signals(tmp_path):
+    _make_app()
+    from app.services.designer_workflows import read_evaluation_presentation
+    from app.views.evaluation import EvaluationResultsDialog
+
+    state_path = _run_real_evaluation(tmp_path, baseline=True)
+    presentation = read_evaluation_presentation(state_path)
+    assert presentation.comparison  # sanity: paired evaluation produced comparison rows
+
+    dialog = EvaluationResultsDialog(presentation)
+    try:
+        assert dialog.resultsList.count() == len(presentation.comparison)
+        dialog.resultsList.setCurrentRow(0)
+        assert dialog.btnTestAgentLab.isEnabled()
+        assert "candidate" in dialog.detailText.toPlainText()
+
+        captured_lab: list[tuple[str, str, int]] = []
+        captured_replay: list[Path] = []
+        dialog.testInAgentLabRequested.connect(lambda s, o, seed: captured_lab.append((s, o, seed)))
+        dialog.openReplayRequested.connect(lambda p: captured_replay.append(p))
+
+        dialog._on_test_agent_lab()
+        assert captured_lab == [("candidate", "opponent", 1)]
+
+        dialog._on_open_replay()
+        assert captured_replay
+        assert captured_replay[0].name == "replay.jsonl"
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_results_dialog_cells_only_mode_without_baseline(tmp_path):
+    _make_app()
+    from app.services.designer_workflows import read_evaluation_presentation
+    from app.views.evaluation import EvaluationResultsDialog
+
+    state_path = _run_real_evaluation(tmp_path, baseline=False)
+    presentation = read_evaluation_presentation(state_path)
+    assert not presentation.comparison
+
+    dialog = EvaluationResultsDialog(presentation)
+    try:
+        assert dialog.resultsList.count() == len(presentation.cells)
+        dialog.resultsList.setCurrentRow(0)
+        assert dialog.btnTestAgentLab.isEnabled()
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_results_dialog_no_selection_disables_actions(tmp_path):
+    _make_app()
+    from app.services.designer_workflows import read_evaluation_presentation
+    from app.views.evaluation import EvaluationResultsDialog
+
+    state_path = _run_real_evaluation(tmp_path, baseline=False)
+    presentation = read_evaluation_presentation(state_path)
+
+    dialog = EvaluationResultsDialog(presentation)
+    try:
+        assert not dialog.btnTestAgentLab.isEnabled()
+        assert not dialog.btnOpenReplay.isEnabled()
+    finally:
+        dialog.deleteLater()
+
+
+# ---------------------------------------------------------------------------
+# AgentDesigner wiring
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gui
+def test_designer_evaluate_is_noop_without_python_agents(monkeypatch, tmp_path):
+    _make_app()
+    import app.agent_designer as agent_designer_module
+    from app.agent_designer import AgentDesigner
+
+    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    designer = AgentDesigner()
+    try:
+        opened = []
+        informed = []
+        monkeypatch.setattr(
+            "app.agent_designer.EvaluationDialog",
+            lambda *a, **k: opened.append(1) or pytest.fail("must not open with no agents"),
+        )
+        monkeypatch.setattr(
+            agent_designer_module.QMessageBox,
+            "information",
+            staticmethod(lambda *a, **k: informed.append(1)),
+        )
+        designer._on_evaluate()
+        assert not opened
+        assert informed  # the "no Python agents yet" notice was shown
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_evaluate_launches_process_on_accept(monkeypatch, tmp_path):
+    _make_app()
+    from app.agent_designer import AgentDesigner
+    from app.services.agent_catalog import AgentRow
+
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    designer = AgentDesigner()
+    try:
+        designer.development.setAgents(
+            [
+                AgentRow(name="candidate", path="agents/candidate", blob_path=None, meta={"kind": "python"}),
+                AgentRow(name="opponent", path="agents/opponent", blob_path=None, meta={"kind": "python"}),
+            ]
+        )
+        designer.development.selectAgent("candidate")
+
+        class _AcceptingDialog:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return True
+
+            def candidate_id(self):
+                return "candidate"
+
+            def baseline_id(self):
+                return None
+
+            def opponent_ids(self):
+                return ("opponent",)
+
+            def seeds_text(self):
+                return "1,2"
+
+            def seed_range_text(self):
+                return ""
+
+            def ticks(self):
+                return 30
+
+            def output_path(self):
+                return tmp_path / "designer-eval-out"
+
+        monkeypatch.setattr("app.agent_designer.EvaluationDialog", _AcceptingDialog)
+
+        started = []
+
+        class _FakeProc:
+            def start(self):
+                started.append(True)
+
+        def _fake_start_process(command, env, working_directory, *, label):
+            assert label == "Evaluate"
+            assert command[0]  # non-empty program
+            assert "evaluate" in command
+            designer._proc = _FakeProc()
+            return designer._proc
+
+        monkeypatch.setattr(designer, "_start_process", _fake_start_process)
+
+        designer._on_evaluate()
+
+        assert designer._active_workflow == "evaluate"
+        assert started == [True]
+        assert designer._evaluation_output == (tmp_path / "designer-eval-out").resolve()
+        assert designer._evaluation_ticks == 30
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_evaluate_shows_warning_on_invalid_request(monkeypatch, tmp_path):
+    _make_app()
+    import app.agent_designer as agent_designer_module
+    from app.agent_designer import AgentDesigner
+    from app.services.agent_catalog import AgentRow
+
+    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    designer = AgentDesigner()
+    try:
+        designer.development.setAgents(
+            [AgentRow(name="candidate", path="agents/candidate", blob_path=None, meta={"kind": "python"})]
+        )
+        designer.development.selectAgent("candidate")
+
+        class _EmptyOpponentsDialog:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return True
+
+            def candidate_id(self):
+                return "candidate"
+
+            def baseline_id(self):
+                return None
+
+            def opponent_ids(self):
+                return ()  # invalid: no opponents selected
+
+            def seeds_text(self):
+                return "1"
+
+            def seed_range_text(self):
+                return ""
+
+            def ticks(self):
+                return 30
+
+            def output_path(self):
+                return tmp_path / "out"
+
+        monkeypatch.setattr("app.agent_designer.EvaluationDialog", _EmptyOpponentsDialog)
+
+        warned = []
+        monkeypatch.setattr(
+            agent_designer_module.QMessageBox,
+            "warning",
+            staticmethod(lambda *a, **k: warned.append(a)),
+        )
+
+        designer._active_workflow = "match"
+        designer._on_evaluate()
+
+        assert warned
+        assert designer._active_workflow == "match"  # unchanged: never launched
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_present_evaluation_result_opens_results_dialog(monkeypatch, tmp_path):
+    _make_app()
+    from app.agent_designer import AgentDesigner
+
+    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "designer-data"))
+    designer = AgentDesigner()
+    try:
+        state_path = _run_real_evaluation(tmp_path, baseline=True)
+        designer._evaluation_output = state_path.parent
+        designer._log_target = designer.advanced
+
+        received = []
+
+        class _RecordingResultsDialog:
+            def __init__(self, presentation, parent=None):
+                received.append(presentation)
+                self.testInAgentLabRequested = _NullSignal()
+                self.openReplayRequested = _NullSignal()
+
+            def exec(self):
+                return None
+
+        class _NullSignal:
+            def connect(self, *_a, **_k):
+                pass
+
+        monkeypatch.setattr("app.agent_designer.EvaluationResultsDialog", _RecordingResultsDialog)
+
+        designer._present_evaluation_result(0)
+
+        assert len(received) == 1
+        assert received[0].candidate_id == "candidate"
+        assert received[0].baseline_id == "baseline"
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_evaluation_test_in_agent_lab_launches_agents_test(monkeypatch, tmp_path):
+    _make_app()
+    from app.agent_designer import AgentDesigner
+
+    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    designer = AgentDesigner()
+    try:
+        designer._evaluation_ticks = 40
+        captured = {}
+
+        class _FakeProc:
+            def start(self):
+                captured["started"] = True
+
+        def _fake_start_process(command, env, working_directory, *, label):
+            captured["command"] = command
+            captured["label"] = label
+            return _FakeProc()
+
+        monkeypatch.setattr(designer, "_start_process", _fake_start_process)
+
+        designer._on_evaluation_test_in_agent_lab("candidate", "opponent", 7)
+
+        assert captured["label"] == "AgentLabTest"
+        assert captured["started"] is True
+        assert designer._active_workflow == "evaluation_agent_lab_test"
+        assert "candidate" in captured["command"]
+        assert "--opponent" in captured["command"]
+        assert "opponent" in captured["command"]
+        assert "7" in captured["command"]
+        assert "40" in captured["command"]
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_evaluation_open_replay_delegates_to_launcher(monkeypatch, tmp_path):
+    _make_app()
+    from app.agent_designer import AgentDesigner
+
+    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    designer = AgentDesigner()
+    try:
+        launched = []
+        monkeypatch.setattr(
+            "app.agent_designer.open_pygame_client_direct",
+            lambda root, replay: launched.append((root, replay)),
+        )
+        replay_path = tmp_path / "replay.jsonl"
+        designer._on_evaluation_open_replay(replay_path)
+        assert launched == [(designer.battle_root, replay_path)]
+    finally:
+        designer.deleteLater()

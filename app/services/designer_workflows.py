@@ -5,11 +5,19 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
-from battle_engine.launchers import build_tournament_command
+from battle_engine.agent_evaluation import (
+    EvaluationConfigurationError,
+    parse_opponents,
+    parse_seed_list,
+    parse_seed_range,
+    read_evaluation,
+    rerun_command,
+)
+from battle_engine.launchers import build_agents_command, build_tournament_command
 from battle_engine.result_model import read_result
 
 from app.services.agent_catalog import AgentRow
@@ -139,4 +147,186 @@ def read_tournament_presentation(state_path: Path) -> TournamentPresentation:
         rejected=counts["rejected"],
         corrupted=counts["corrupted"],
         standings=tuple(data.get("standings", ())),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Agent Evaluation (v0.6) -- see docs/specs/agent_evaluation.md Sec 13
+# ---------------------------------------------------------------------------
+
+
+def build_designer_evaluate_command(
+    *,
+    candidate_id: str,
+    baseline_id: str | None,
+    opponent_ids: Iterable[str],
+    seeds_text: str,
+    seed_range_text: str,
+    ticks: int,
+    output_dir: Path,
+) -> list[str]:
+    """Build the ``bytefray agents evaluate`` argument list for one Designer run.
+
+    Reuses ``battle_engine.agent_evaluation``'s own opponent/seed parsers
+    rather than a second, Designer-specific implementation (Sec 13's
+    explicit "share the CLI's parser" requirement) -- a
+    :class:`~battle_engine.agent_evaluation.EvaluationConfigurationError`
+    from either parser is re-raised as :class:`DesignerValidationError` so
+    the dialog can present it the same way every other Designer validation
+    error already is.
+    """
+
+    candidate = candidate_id.strip()
+    if not candidate:
+        raise DesignerValidationError("Candidate is required.")
+    baseline = baseline_id.strip() if baseline_id else None
+    if baseline == candidate:
+        raise DesignerValidationError("Candidate and baseline must be different agents.")
+    opponents = tuple(opponent_ids)
+    if not opponents:
+        raise DesignerValidationError("Select at least one opponent.")
+    if seeds_text.strip() and seed_range_text.strip():
+        raise DesignerValidationError("Use either explicit seeds or a seed range, not both.")
+    if ticks < 1:
+        raise DesignerValidationError("Ticks must be greater than zero.")
+    output = output_dir.expanduser().resolve()
+    if output.exists() and not output.is_dir():
+        raise DesignerValidationError("Evaluation output must be a directory.")
+
+    try:
+        parse_opponents(",".join(opponents))
+        if seeds_text.strip():
+            parse_seed_list(seeds_text)
+        elif seed_range_text.strip():
+            parse_seed_range(seed_range_text)
+    except EvaluationConfigurationError as exc:
+        raise DesignerValidationError(str(exc)) from exc
+
+    arguments = [candidate, "--opponents", ",".join(opponents)]
+    if baseline:
+        arguments.extend(("--baseline", baseline))
+    if seeds_text.strip():
+        arguments.extend(("--seeds", seeds_text.strip()))
+    elif seed_range_text.strip():
+        arguments.extend(("--seed-range", seed_range_text.strip()))
+    arguments.extend(("--ticks", str(ticks), "--output", str(output)))
+    return build_agents_command("evaluate", arguments)
+
+
+@dataclass(frozen=True)
+class EvaluationCellPresentation:
+    subject_role: str
+    subject_id: str
+    opponent_id: str
+    seed: int
+    status: str
+    outcome: str | None
+    artifact_dir: Path
+    score_subject: float | None
+    score_opponent: float | None
+
+
+@dataclass(frozen=True)
+class EvaluationAggregatePresentation:
+    subject_role: str
+    subject_id: str
+    matches_played: int
+    wins: int
+    losses: int
+    ties: int
+
+
+@dataclass(frozen=True)
+class EvaluationComparisonPresentation:
+    opponent_id: str
+    seed: int
+    classification: str
+    candidate_outcome: str | None
+    baseline_outcome: str | None
+    rerun_candidate: str
+    rerun_baseline: str | None
+
+
+@dataclass(frozen=True)
+class EvaluationPresentation:
+    evaluation_id: str
+    candidate_id: str
+    baseline_id: str | None
+    ticks: int
+    state_path: Path
+    cells: tuple[EvaluationCellPresentation, ...]
+    aggregates: tuple[EvaluationAggregatePresentation, ...]
+    comparison: tuple[EvaluationComparisonPresentation, ...]
+
+
+def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
+    """Read a canonical ``evaluation.json`` into a typed, Qt-free presentation.
+
+    Reads the artifact itself, never CLI stdout -- the same "authoritative
+    source is the canonical artifact" precedent
+    ``read_match_presentation``/``read_tournament_presentation`` already
+    established (Sec 13).
+    """
+
+    path = state_path.expanduser().resolve()
+    try:
+        data = read_evaluation(path)
+    except EvaluationConfigurationError as exc:
+        raise DesignerValidationError(str(exc)) from exc
+
+    candidate_id = str(data.get("candidate_id", ""))
+    baseline_id = data.get("baseline_id")
+    ticks = int(data.get("ticks", 0))
+    base_dir = path.parent
+
+    cells = tuple(
+        EvaluationCellPresentation(
+            subject_role=str(cell.get("subject_role", "")),
+            subject_id=str(cell.get("subject_id", "")),
+            opponent_id=str(cell.get("opponent_id", "")),
+            seed=int(cell.get("seed", 0)),
+            status=str(cell.get("status", "")),
+            outcome=cell.get("outcome"),
+            artifact_dir=(base_dir / str(cell.get("artifact_dir", ""))),
+            score_subject=cell.get("score_subject"),
+            score_opponent=cell.get("score_opponent"),
+        )
+        for cell in data.get("cells", ())
+    )
+    aggregates = tuple(
+        EvaluationAggregatePresentation(
+            subject_role=str(row.get("subject_role", "")),
+            subject_id=str(row.get("subject_id", "")),
+            matches_played=int(row.get("matches_played", 0)),
+            wins=int(row.get("wins", 0)),
+            losses=int(row.get("losses", 0)),
+            ties=int(row.get("ties", 0)),
+        )
+        for row in data.get("aggregates", ())
+    )
+    comparison = tuple(
+        EvaluationComparisonPresentation(
+            opponent_id=str(row.get("opponent_id", "")),
+            seed=int(row.get("seed", 0)),
+            classification=str(row.get("classification", "")),
+            candidate_outcome=row.get("candidate_outcome"),
+            baseline_outcome=row.get("baseline_outcome"),
+            rerun_candidate=rerun_command(candidate_id, str(row.get("opponent_id", "")), int(row.get("seed", 0)), ticks),
+            rerun_baseline=(
+                rerun_command(str(baseline_id), str(row.get("opponent_id", "")), int(row.get("seed", 0)), ticks)
+                if baseline_id
+                else None
+            ),
+        )
+        for row in data.get("comparison", ())
+    )
+    return EvaluationPresentation(
+        evaluation_id=str(data.get("evaluation_id", "")),
+        candidate_id=candidate_id,
+        baseline_id=baseline_id,
+        ticks=ticks,
+        state_path=path,
+        cells=cells,
+        aggregates=aggregates,
+        comparison=comparison,
     )

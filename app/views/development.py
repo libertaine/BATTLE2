@@ -140,6 +140,7 @@ class AgentDevelopmentPanel(QWidget):
     testRequested = Signal()
     openTestReplayRequested = Signal()
     inspectTraceRequested = Signal()
+    evaluateRequested = Signal()
 
     def __init__(self, catalog=None) -> None:  # catalog kept for parity with other panels
         super().__init__()
@@ -220,6 +221,17 @@ class AgentDevelopmentPanel(QWidget):
         test_layout.addLayout(replay_row)
         root.addWidget(test)
 
+        evaluation = QGroupBox("Evaluation")
+        evaluation_layout = QVBoxLayout(evaluation)
+        self.btnEvaluate = QPushButton("Evaluate…")
+        self.btnEvaluate.setEnabled(False)
+        self.btnEvaluate.setToolTip(
+            "Run a deterministic candidate/baseline evaluation matrix against "
+            "explicit opponents and seeds. See docs/AGENT_LAB.md."
+        )
+        evaluation_layout.addWidget(self.btnEvaluate)
+        root.addWidget(evaluation)
+
         status = QGroupBox("Status")
         status_layout = QVBoxLayout(status)
         self.statusLabel = QLabel("No agent selected.")
@@ -234,6 +246,7 @@ class AgentDevelopmentPanel(QWidget):
         self.btnTest.clicked.connect(self.testRequested.emit)
         self.btnOpenTestReplay.clicked.connect(self.openTestReplayRequested.emit)
         self.btnInspectTrace.clicked.connect(self.inspectTraceRequested.emit)
+        self.btnEvaluate.clicked.connect(self.evaluateRequested.emit)
         self.agentCombo.currentTextChanged.connect(self._on_combo_changed)
 
         self.opponentCombo.addItem("Reference", None)
@@ -341,6 +354,10 @@ class AgentDevelopmentPanel(QWidget):
         self.ticksSpin.setEnabled(not busy)
         self.timeoutSpin.setEnabled(not busy)
         self._update_enablement()
+
+    def python_agent_names(self) -> list[str]:
+        """Every discovered Python agent's display name, for the Evaluate dialog."""
+        return [row.name for row in self._rows]
 
     def showValidating(self, agent_id: str) -> None:
         self.statusLabel.setStyleSheet(_NEUTRAL_STYLE)
@@ -483,6 +500,7 @@ class AgentDevelopmentPanel(QWidget):
         self.btnOpenFolder.setEnabled(can_open_folder and not self._busy)
         self.btnTest.setEnabled(has_agent and not self._busy)
         self.btnValidate.setEnabled(has_agent and not self._busy)
+        self.btnEvaluate.setEnabled(has_agent and not self._busy)
 
     def _render_idle_status(self) -> None:
         if self._current_agent_name:

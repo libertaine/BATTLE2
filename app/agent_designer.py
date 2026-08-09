@@ -24,9 +24,11 @@ from app.services.agent_workflows import (
 )
 from app.services.designer_workflows import (
     DesignerValidationError,
+    build_designer_evaluate_command,
     build_designer_tournament_command,
     match_artifact_paths,
     new_match_run_directory,
+    read_evaluation_presentation,
     read_match_presentation,
     read_tournament_presentation,
     validate_homogeneous,
@@ -34,6 +36,7 @@ from app.services.designer_workflows import (
 from app.services.engine import open_pygame_client_direct
 from app.views.advanced import AdvancedPanel
 from app.views.development import AgentDevelopmentPanel, NewAgentDialog
+from app.views.evaluation import EvaluationDialog, EvaluationResultsDialog
 from app.views.simple import SimplePanel
 from app.views.tournament import TournamentDialog
 
@@ -64,6 +67,8 @@ class AgentDesigner(QMainWindow):
         self._last_replay = None                  # <-- init replay capture
         self._result_path = None
         self._tournament_output = None
+        self._evaluation_output = None
+        self._evaluation_ticks = None
         self._active_workflow = "match"
         self._validate_agent_id = None
         self._validate_stdout = ""
@@ -113,6 +118,7 @@ class AgentDesigner(QMainWindow):
             self.development.testRequested.connect(self._on_test_agent)
             self.development.openTestReplayRequested.connect(self._on_open_test_replay)
             self.development.inspectTraceRequested.connect(self._on_inspect_trace)
+            self.development.evaluateRequested.connect(self._on_evaluate)
             self.tabs.addTab(self.development, "Agent Development")
         except Exception as e:
             QMessageBox.warning(
@@ -348,11 +354,15 @@ class AgentDesigner(QMainWindow):
             self._validate_stdout += out
             self._validate_stderr += err
             return
-        if self._active_workflow == "test":
+        if self._active_workflow in ("test", "evaluation_agent_lab_test"):
             # Same reasoning as validation: a development test's
             # stdout/stderr is the structured `label: value` payload
             # docs/specs/agent_test.md Sec 11 documents, not human log
-            # narration -- buffer it for parsing at process exit.
+            # narration -- buffer it for parsing at process exit. An Agent
+            # Lab rerun launched from the Evaluate results dialog is the
+            # exact same `agents test` invocation shape, so it reuses this
+            # identical buffering/parsing path (docs/specs/agent_evaluation.md
+            # Sec 10).
             self._test_stdout += out
             self._test_stderr += err
             return
@@ -447,8 +457,11 @@ class AgentDesigner(QMainWindow):
                 self.development.show_test_stopped(test_agent_id)
         if was_validating or was_testing:
             return  # Validate/Test have no Simple/Advanced log target to narrate the stop.
+        if self._active_workflow == "evaluation_agent_lab_test":
+            return  # Same reasoning: this is a bare agents-test rerun, not a logged workflow.
         if self._log_target:
-            self._log_target.appendLog("[RunMatch] stopped.\n")
+            label = "Evaluate" if self._active_workflow == "evaluate" else "RunMatch"
+            self._log_target.appendLog(f"[{label}] stopped.\n")
 
     def _on_proc_finished(self, proc, code, status):
         if proc is not self._proc:
@@ -463,11 +476,23 @@ class AgentDesigner(QMainWindow):
         if self._active_workflow == "test":
             self._present_test_result(code)
             return
-        label = "Tournament" if self._active_workflow == "tournament" else "RunMatch"
+        if self._active_workflow == "evaluation_agent_lab_test":
+            self._present_evaluation_agent_lab_test_result(code)
+            return
+        label = (
+            "Tournament"
+            if self._active_workflow == "tournament"
+            else "Evaluate"
+            if self._active_workflow == "evaluate"
+            else "RunMatch"
+        )
         if self._log_target:
             self._log_target.appendLog(f"[{label}] finished with exit code {code}\n")
         if self._active_workflow == "tournament":
             self._present_tournament_result(code)
+            return
+        if self._active_workflow == "evaluate":
+            self._present_evaluation_result(code)
             return
         if code == 0 and self._result_path:
             try:
@@ -583,6 +608,153 @@ class AgentDesigner(QMainWindow):
                 f"  {row.get('agent_id')}: W={row.get('wins')} L={row.get('losses')} "
                 f"T={row.get('ties')} score={row.get('score_total')}\n"
             )
+
+    def _on_evaluate(self) -> None:
+        """Open the Evaluate dialog and launch ``bytefray agents evaluate`` (v0.6).
+
+        Same out-of-process reasoning as Validate/Test/Tournament -- an
+        evaluation runs an entire matrix of arbitrary, un-timed-out user
+        Python matches -- and shares the identical single ``self._proc``
+        slot, so an Evaluate click while any process is already active is a
+        no-op (docs/specs/agent_evaluation.md Sec 13).
+        """
+        if not hasattr(self, "development"):
+            return
+        if self._proc is not None and self._proc.state() != QProcess.NotRunning:
+            return
+        names = self.development.python_agent_names()
+        if not names:
+            QMessageBox.information(
+                self, "Evaluate", "No Python agents are available yet. Create one first."
+            )
+            return
+        row = self.development.selectedAgentRow()
+        default_candidate = row.name if row is not None else None
+        default_output = self.battle_root / "runs" / "evaluations" / "designer-evaluation"
+        dialog = EvaluationDialog(
+            names, default_candidate=default_candidate, default_output=default_output, parent=self
+        )
+        if not dialog.exec():
+            return
+        try:
+            command = build_designer_evaluate_command(
+                candidate_id=dialog.candidate_id(),
+                baseline_id=dialog.baseline_id(),
+                opponent_ids=dialog.opponent_ids(),
+                seeds_text=dialog.seeds_text(),
+                seed_range_text=dialog.seed_range_text(),
+                ticks=dialog.ticks(),
+                output_dir=dialog.output_path(),
+            )
+        except (DesignerValidationError, OSError) as exc:
+            QMessageBox.warning(self, "Invalid Evaluation", str(exc))
+            return
+
+        self._evaluation_output = dialog.output_path().expanduser().resolve()
+        self._evaluation_ticks = dialog.ticks()
+        self._active_workflow = "evaluate"
+        self._log_target = self.advanced if hasattr(self, "advanced") else self.simple
+        self.simple.setBusy(True)
+        self.advanced.setBusy(True)
+        self.development.setBusy(True)
+
+        env = QProcessEnvironment.systemEnvironment()
+        sep = ";" if sys.platform == "win32" else ":"
+        existing = env.value("PYTHONPATH") or ""
+        source = [str(self.battle_root), str(self.battle_root / "engine" / "src")]
+        env.insert("PYTHONPATH", sep.join(source + ([existing] if existing else [])))
+        env.insert("BATTLE_AGENTS_DIR", str(self.battle_root / "agents"))
+        # Same forced-root override as _on_tournament/_on_validate_agent/_on_test_agent.
+        env.insert("BYTEFRAY_ROOT", str(self.battle_root))
+
+        proc = self._start_process(command, env, self.battle_root, label="Evaluate")
+        self._log_target.appendLog(f"[Evaluate] output: {self._evaluation_output}\n")
+        proc.start()
+
+    def _present_evaluation_result(self, code: int) -> None:
+        if not self._evaluation_output:
+            return
+        if code == 2:
+            # An invalid request; the process's own stderr (piped to the log
+            # target by _pipe_proc_output) already explains why. No
+            # evaluation.json to read.
+            return
+        state_path = self._evaluation_output / "evaluation.json"
+        try:
+            presentation = read_evaluation_presentation(state_path)
+        except (OSError, ValueError, KeyError, DesignerValidationError) as exc:
+            if self._log_target:
+                self._log_target.appendLog(f"[Evaluate] Could not read results: {exc}\n")
+            return
+        if self._log_target:
+            self._log_target.appendLog(f"[Evaluate] {presentation.evaluation_id}\n")
+        dialog = EvaluationResultsDialog(presentation, parent=self)
+        dialog.testInAgentLabRequested.connect(self._on_evaluation_test_in_agent_lab)
+        dialog.openReplayRequested.connect(self._on_evaluation_open_replay)
+        dialog.exec()
+
+    def _on_evaluation_test_in_agent_lab(self, subject_id: str, opponent_id: str, seed: int) -> None:
+        """Rerun one exact evaluation cell through ``agents test`` and inspect it.
+
+        Reuses the Development tab's own ``agents test``/Trace Inspector
+        machinery unmodified -- an evaluation cell's rerun command is
+        byte-for-byte a plain ``agents test`` invocation
+        (docs/specs/agent_evaluation.md Sec 8/Sec 10), so this handler
+        launches exactly that, then opens the same ``TraceInspectorDialog``
+        Inspect Trace already uses, rather than inventing a second
+        inspection path.
+        """
+        if self._proc is not None and self._proc.state() != QProcess.NotRunning:
+            return
+        ticks = self._evaluation_ticks or 200
+        arguments = [subject_id, "--opponent", opponent_id, "--seed", str(seed), "--ticks", str(ticks)]
+        try:
+            command = build_agents_command("test", arguments)
+        except FileNotFoundError as exc:
+            QMessageBox.critical(self, "Agent Lab Test Failed", str(exc))
+            return
+
+        self._active_workflow = "evaluation_agent_lab_test"
+        self._test_agent_id = subject_id
+        self._test_stdout = ""
+        self._test_stderr = ""
+        self.simple.setBusy(True)
+        self.advanced.setBusy(True)
+        if hasattr(self, "development"):
+            self.development.setBusy(True)
+
+        env = QProcessEnvironment.systemEnvironment()
+        root = self.battle_root
+        eng = str(root / "engine" / "src")
+        cli = str(root / "client" / "src")
+        sep = ";" if sys.platform == "win32" else ":"
+        existing = env.value("PYTHONPATH") or ""
+        env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
+        env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        env.insert("BYTEFRAY_ROOT", str(root))
+
+        proc = self._start_process(command, env, root, label="AgentLabTest")
+        proc.start()
+
+    def _present_evaluation_agent_lab_test_result(self, code: int) -> None:
+        presentation = build_development_test_presentation(
+            code, self._test_stdout, self._test_stderr, agent_id=self._test_agent_id or ""
+        )
+        if presentation.trace_path is not None and Path(presentation.trace_path).is_file():
+            from app.views.trace_inspector import TraceInspectorDialog
+
+            dialog = TraceInspectorDialog(Path(presentation.trace_path), parent=self)
+            dialog.exec()
+        else:
+            QMessageBox.warning(
+                self, "Agent Lab Test", "The rerun did not produce a trace to inspect."
+            )
+
+    def _on_evaluation_open_replay(self, replay_path: Path) -> None:
+        try:
+            open_pygame_client_direct(self.battle_root, Path(replay_path))
+        except (FileNotFoundError, OSError) as exc:
+            QMessageBox.critical(self, "Replay Launch Failed", str(exc))
 
     def _on_new_agent(self) -> None:
         dialog = NewAgentDialog(self.battle_root, parent=self)
