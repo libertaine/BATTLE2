@@ -530,7 +530,7 @@ class PythonEntrantController:
 
     def _trace_decision(
         self,
-        state: "PythonEntrantState",
+        state: PythonEntrantState,
         tick: int,
         action_slot: int,
         start: float,

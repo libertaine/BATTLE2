@@ -12,7 +12,6 @@ import importlib
 import sys
 from collections.abc import Sequence
 
-
 COMMANDS = ("run", "tournament", "replay", "design", "agents")
 
 BATTLE2_DEPRECATION_NOTICE = (

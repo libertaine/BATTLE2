@@ -278,7 +278,10 @@ def test_tested_agent_reset_failure_before_tick_zero(tmp_path):
     run_root = tmp_path / "runs" / "agents_test" / "broken_reset"
     run_dirs = list(run_root.iterdir())
     assert len(run_dirs) == 1
-    assert list(run_dirs[0].iterdir()) == []
+    # No replay/result/summary (the match never started), but a trace.jsonl
+    # is expected: it is written on by default and captures exactly the
+    # reset() failure diagnostic above -- see docs/specs/agent_lab.md §12.
+    assert [path.name for path in run_dirs[0].iterdir()] == ["trace.jsonl"]
 
 
 def test_explicit_opponent_reset_failure_is_a_completed_test_result(tmp_path):
@@ -309,7 +312,9 @@ def test_explicit_opponent_reset_failure_is_a_completed_test_result(tmp_path):
     run_root = tmp_path / "runs" / "agents_test" / "example"
     run_dirs = list(run_root.iterdir())
     assert len(run_dirs) == 1
-    assert list(run_dirs[0].iterdir()) == []
+    # See test_tested_agent_reset_failure_before_tick_zero above: a
+    # trace.jsonl is expected even though the match never started.
+    assert [path.name for path in run_dirs[0].iterdir()] == ["trace.jsonl"]
 
 
 def test_explicit_opponent_reset_failure_cli_output(tmp_path, monkeypatch, capsys):

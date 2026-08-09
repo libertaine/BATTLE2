@@ -7,13 +7,14 @@ remain outside this native boundary.
 
 from __future__ import annotations
 
-import os
-from dataclasses import asdict, dataclass, field, replace
 import hashlib
-from pathlib import Path
+import os
 import tempfile
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping, cast
+from typing import Any, cast
 
 from battle_engine.agent_trace import TraceHeader, TraceWriter
 from battle_engine.config import Config
@@ -26,9 +27,10 @@ from battle_engine.python_runtime import (
     TerminationReason,
     derive_agent_seed,
 )
-from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.replay import (
     MatchResult as ReplayMatchResult,
+)
+from battle_engine.replay import (
     ReplayHeader,
     RuntimeKind,
     iter_replay,
@@ -41,6 +43,7 @@ from battle_engine.result_model import (
     write_json_atomic,
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
+from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
 
@@ -56,7 +59,7 @@ class MatchEntrant:
     python_spec: Any | None = None
 
     @classmethod
-    def python(cls, agent_id: str, name: str, start: int, spec: Any) -> "MatchEntrant":
+    def python(cls, agent_id: str, name: str, start: int, spec: Any) -> MatchEntrant:
         return cls(agent_id, name, start, None, "python", spec)
 
 

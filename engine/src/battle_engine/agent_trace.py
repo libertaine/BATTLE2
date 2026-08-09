@@ -19,9 +19,10 @@ Designer's Trace Inspector dialog.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Mapping, TextIO, Union
+from typing import Any, TextIO
 
 TRACE_SCHEMA = "bytefray.agent_trace"
 TRACE_SCHEMA_VERSION = 1
@@ -112,7 +113,7 @@ class DecisionRecord:
     record_type: str = "decision"
 
 
-TraceRecord = Union[TraceHeader, ResetRecord, DecisionRecord]
+TraceRecord = TraceHeader | ResetRecord | DecisionRecord
 
 
 class TraceWriter:
@@ -145,7 +146,7 @@ class TraceWriter:
     def close(self) -> None:
         self._fh.close()
 
-    def __enter__(self) -> "TraceWriter":
+    def __enter__(self) -> TraceWriter:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -251,7 +252,7 @@ class TraceDocument:
 
     path: Path
     header: TraceHeader
-    records: tuple[Union[ResetRecord, DecisionRecord], ...]
+    records: tuple[ResetRecord | DecisionRecord, ...]
 
     @property
     def decisions(self) -> tuple[DecisionRecord, ...]:
@@ -275,7 +276,7 @@ class TraceDocument:
         low, high = tick - window, tick + window
         return tuple(d for d in self.decisions if low <= d.tick <= high)
 
-    def failures(self) -> tuple[Union[ResetRecord, DecisionRecord], ...]:
+    def failures(self) -> tuple[ResetRecord | DecisionRecord, ...]:
         return tuple(r for r in self.records if r.diagnostic is not None)
 
 
@@ -286,7 +287,7 @@ def read_trace(path: Path) -> TraceDocument:
         raise TraceFormatError(f"Trace file not found: {path}")
 
     header: TraceHeader | None = None
-    records: list[Union[ResetRecord, DecisionRecord]] = []
+    records: list[ResetRecord | DecisionRecord] = []
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:

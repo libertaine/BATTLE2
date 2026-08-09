@@ -40,7 +40,13 @@ from battle_engine.agent_api import (
     MatchContext,
     Observation,
 )
-from battle_engine.agent_trace import DecisionRecord, ResetRecord, TraceAction, TraceObservation, TraceWriter
+from battle_engine.agent_trace import (
+    DecisionRecord,
+    ResetRecord,
+    TraceAction,
+    TraceObservation,
+    TraceWriter,
+)
 from battle_engine.agent_worker import AgentWorkerHandle, WorkerCallResult, WorkerCallStatus
 from battle_engine.config import Config
 from battle_engine.python_runtime import (

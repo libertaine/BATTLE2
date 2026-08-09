@@ -26,6 +26,7 @@ import sys
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from battle_engine.agent_api import (
     ActionKind,
@@ -36,7 +37,13 @@ from battle_engine.agent_api import (
     Observation,
     load_python_agent,
 )
-from battle_engine.agent_trace import ResetRecord, TraceAction, TraceHeader, TraceObservation, TraceWriter
+from battle_engine.agent_trace import (
+    ResetRecord,
+    TraceAction,
+    TraceHeader,
+    TraceObservation,
+    TraceWriter,
+)
 from battle_engine.agent_worker import AgentWorkerHandle, WorkerCallStatus
 from battle_engine.agents import resolve_agent
 from battle_engine.config import Config

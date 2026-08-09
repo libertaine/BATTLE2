@@ -107,7 +107,7 @@ class AgentWorkerHandle:
         self.agent_id = agent_id
         self.slot = slot
         self._proc: subprocess.Popen[str] | None = None
-        self._queue: "queue.Queue[Any]" = queue.Queue()
+        self._queue: queue.Queue[Any] = queue.Queue()
         self._reader: threading.Thread | None = None
         self._stderr_tail: deque[str] = deque(maxlen=20)
         self._stderr_reader: threading.Thread | None = None
@@ -313,8 +313,8 @@ class _WorkerState:
 
 
 def _handle_load(state: _WorkerState, request: dict[str, Any], out: Any) -> None:
-    agent_id = request.get("agent_id")
-    slot = request.get("slot")
+    agent_id: str = request.get("agent_id") or ""
+    slot: int = request.get("slot") or 0
     state.agent_id, state.slot = agent_id, slot
     payload = request.get("spec") or {}
     spec = AgentSpec(
@@ -323,7 +323,7 @@ def _handle_load(state: _WorkerState, request: dict[str, Any], out: Any) -> None
         dir=Path(payload.get("dir", ".")),
         blob=None,
         defaults={},
-        kind=payload.get("kind"),
+        kind=payload.get("kind") or "",
         api_version=payload.get("api_version"),
         version=payload.get("version"),
         source_path=None,
@@ -332,7 +332,7 @@ def _handle_load(state: _WorkerState, request: dict[str, Any], out: Any) -> None
     try:
         loaded = load_python_agent(spec)
     except AgentValidationError as exc:
-        diagnostic = diagnose_load_failure(exc, agent_id=agent_id, slot=slot or 0)
+        diagnostic = diagnose_load_failure(exc, agent_id=agent_id, slot=slot)
         _respond(out, {"ok": False, "diagnostic": asdict(diagnostic)})
         return
     state.loaded = loaded
