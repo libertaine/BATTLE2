@@ -112,10 +112,15 @@ Established by direct source reading (`engine/src/battle_engine`, `app/`,
    `version`, `source_path`, `entry_point`. Source content digests
    (`hashlib.sha256(source_path.read_bytes())`) are already computed this
    same way in two places (`tournament_service._entrant_identity`,
-   `match_service.canonical_match_id`) — a third, evaluation-specific
-   copy of this recipe would be a needless fourth implementation of the
-   same three lines; it is reused via a small shared helper instead
-   (§8).
+   `match_service.canonical_match_id`), but each builds a differently
+   *shaped* identity dict for a different purpose (a `MatchEntrant`-keyed
+   tournament identity; a richer, slot/derived-seed-aware match identity)
+   — forcing both into one shared function generic enough to serve a
+   third, Python-`AgentSpec`-only evaluation identity would produce a
+   more complex, multi-purpose function than any one caller actually
+   needs, the premature-abstraction trap `CLAUDE.md` warns against. Only
+   the true one-line common primitive (hash the source file's bytes, or
+   `None` if it isn't a file) is worth sharing; see §8's revised scope.
 9. **`battle_engine.project_info.get_project_info()`** already exposes
    package version, Agent API version, result/replay schema versions —
    exactly the "engine/runtime version" and "Agent API version" fields
@@ -351,33 +356,36 @@ exactly this sanitization).
 ## 8. Identity and reproducibility
 
 ```python
-def _agent_identity(spec: AgentSpec) -> dict[str, Any]:
+def source_digest(source_path: Path | None) -> str | None:
+    """Shared one-line primitive: hash an entry-point source file's bytes."""
+    if source_path is None or not source_path.is_file():
+        return None
+    return hashlib.sha256(source_path.read_bytes()).hexdigest()
+
+
+def agent_identity(spec: AgentSpec) -> dict[str, Any]:
     return {
         "agent_id": spec.name,
         "kind": spec.kind,
         "api_version": spec.api_version,
         "agent_version": spec.version,
         "entry_point": spec.entry_point,
-        "source_sha256": (
-            hashlib.sha256(spec.source_path.read_bytes()).hexdigest()
-            if spec.source_path is not None and spec.source_path.is_file()
-            else None
-        ),
+        "source_sha256": source_digest(spec.source_path),
     }
 ```
 
-This is the same three-line digest recipe `tournament_service.
-_entrant_identity` and `match_service.canonical_match_id` already use,
-factored into one place both future callers and this module share (a
-genuine three-times-duplicated recipe is exactly what `AGENTS.md`'s "don't
-opportunistically refactor" carve-out does *not* protect — three
-independent, subtly-driftable copies of an identity-relevant hash is a
-correctness risk, not a style preference). `_agent_identity` lives in
-`agent_evaluation.py` and is imported by `tournament_service.py` and
-`match_service.py` in place of their own inline copies — the only
-cross-module edit this spec makes outside the new files themselves, and
-purely a call-site substitution with identical output (verified by
-existing tournament/match-service tests, which do not need to change).
+`source_digest` is the one genuinely shared primitive underlying all
+three existing content-digest call sites (`tournament_service.
+_entrant_identity`, `match_service.canonical_match_id`, and this new
+`agent_identity`) — each site still builds its own differently-shaped
+identity dict for its own purpose (§2 finding 8 revises the original plan
+to unify those dicts, which would have been a premature abstraction).
+`agent_identity` itself is local to `agent_evaluation.py`: it is
+Python-`AgentSpec`-only, has no notion of a match slot or derived seed,
+and is not a fit for `tournament_service`/`match_service`'s VM-aware,
+`MatchEntrant`-keyed identity dicts. No cross-module call-site changes are
+made to `tournament_service.py`/`match_service.py` — their existing
+identity code is left exactly as it already was and already tested.
 
 `evaluation_id = stable_id("evaluation", {...})` hashes: candidate
 identity, baseline identity (or `None`), opponent identities (list, in
@@ -754,11 +762,10 @@ content, §16).
   full existing `agents test` CLI/library/Designer behavior is unchanged
   (existing tests for `agent_test.py` require no modification beyond
   additive coverage for the new parameter itself).
-- `tournament_service.py`/`match_service.py`'s identity-digest call sites
-  are refactored to call the shared `_agent_identity`/digest helper (§8)
-  with identical output — a pure internal call-site substitution, no
-  behavior change, covered by the existing tournament/match-service test
-  suites continuing to pass unmodified.
+- `tournament_service.py`/`match_service.py` are not modified at all
+  (§8 revises the original plan to unify identity-dict shapes across
+  modules); their existing test suites are unaffected by construction,
+  not merely "expected to still pass."
 - No Agent API v1 change. No VM/Python match-composition change — every
   evaluation cell is a plain two-slot Python-vs-Python `agents test`
   match, subject to the exact same "Python entrants only" constraint
@@ -825,9 +832,8 @@ recorded in user documentation (§19) rather than left implicit.
     artifacts at the given path with `exist_ok=True`; every existing
     `test_agent`/`agents test` test continues to pass unmodified
     (regression proof that the default path is untouched).
-  - `_agent_identity` shared-helper regression: `tournament_service`/
-    `match_service`'s own identity-hash tests (already existing) continue
-    to pass unmodified after the call-site substitution (§8, §16).
+  - `source_digest`/`agent_identity`: a real source file hashes correctly;
+    a missing/non-file `source_path` returns `None` rather than raising.
 - CLI (`engine/tests/test_agent_evaluation_cli.py`, or folded into the
   above module): argument parsing (comma lists, seed range, mutually
   exclusive seed flags), `--dry-run` prints the matrix and runs nothing,

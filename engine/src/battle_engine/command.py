@@ -87,6 +87,10 @@ def _agents(argv: list[str]) -> int:
         from battle_engine.agent_test import main as test_main
 
         return test_main(argv[1:])
+    if argv and argv[0] == "evaluate":
+        from battle_engine.agent_evaluation import main as evaluate_main
+
+        return evaluate_main(argv[1:])
     if argv and argv[0] == "inspect":
         from battle_engine.agent_inspect import inspect_main
 
@@ -111,9 +115,10 @@ def _agents(argv: list[str]) -> int:
             "directory, 'agents create <agent-id>' to scaffold a new one, "
             "'agents validate <agent-id>' to dry-run one Python agent, "
             "'agents test <agent-id>' to run a short development match, "
-            "'agents inspect <run-dir>' to inspect a development trace, or "
+            "'agents inspect <run-dir>' to inspect a development trace, "
             "'agents diverge <run-a> <run-b>' to find the first tick two "
-            "traces disagree.",
+            "traces disagree, or 'agents evaluate <candidate-id>' to run a "
+            "deterministic candidate/baseline evaluation matrix.",
         )
     if argv:
         parser = argparse.ArgumentParser(prog="bytefray agents", add_help=False)

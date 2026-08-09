@@ -229,6 +229,7 @@ def test_agent(
     trace: bool = True,
     data_root: Path | None = None,
     resource_root: Path | None = None,
+    run_dir: Path | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     """Run one short, real development match for ``agent_id``.
 
@@ -246,6 +247,17 @@ def test_agent(
     module, not the agent under test) is caught once here and reported as
     an ``agent_test_internal_error`` diagnostic, mirroring
     ``agent_validation.validate_agent``'s identical top-level catch-all.
+
+    ``run_dir``, when given, is used verbatim as the run's artifact
+    directory (created with ``exist_ok=True`` -- the caller owns its
+    lifecycle) instead of this function's own default
+    ``<data_root>/runs/agents_test/<agent_id>/<run_label>/`` (created with
+    ``exist_ok=False``). Every existing caller leaves this ``None`` and
+    sees byte-for-byte unchanged behavior; only
+    ``battle_engine.agent_evaluation`` passes it, to place each evaluation
+    cell's artifacts under its own ``matches/`` tree while reusing this
+    function as the per-cell executor (see ``docs/specs/agent_evaluation.md``
+    Sec 6).
     """
 
     try:
@@ -258,6 +270,7 @@ def test_agent(
             trace=trace,
             data_root=data_root,
             resource_root=resource_root,
+            run_dir=run_dir,
         )
     except AgentTestError:
         raise
@@ -282,6 +295,7 @@ def _test_agent(
     trace: bool,
     data_root: Path | None,
     resource_root: Path | None,
+    run_dir: Path | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = resource_root or get_resource_root()
@@ -315,16 +329,22 @@ def _test_agent(
         )
         opponent_name = opponent
 
-    run_label = _run_label(opponent_name)
-    run_dir = root / "runs" / "agents_test" / agent_id / run_label
+    if run_dir is None:
+        run_label = _run_label(opponent_name)
+        effective_run_dir = root / "runs" / "agents_test" / agent_id / run_label
+        exist_ok = False
+    else:
+        effective_run_dir = run_dir
+        exist_ok = True
     try:
-        run_dir.mkdir(parents=True, exist_ok=False)
+        effective_run_dir.mkdir(parents=True, exist_ok=exist_ok)
     except OSError as exc:
         raise _tool_error(
             stage="artifact",
             code="output_directory_failed",
             message=f"Could not create development-test output directory: {exc}",
         ) from exc
+    run_dir = effective_run_dir
 
     replay_path = run_dir / "replay.jsonl"
     trace_path = (run_dir / "trace.jsonl") if trace else None
