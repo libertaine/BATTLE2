@@ -8,8 +8,40 @@ This changelog records notable user- and developer-visible changes to Bytefray
 v0.4's primary theme is **Agent Authoring & Development Feedback Loop**:
 tightening the loop an agent author works in, from writing an agent to
 seeing how it performs. The intended user journey is
-create → validate → test → inspect → modify → repeat. No implementation
-work for this theme has landed yet.
+create → validate → test → inspect → modify → repeat. Phases 1-4c have
+landed (both the CLI and the Designer GUI); Phase 4d (integration polish,
+documentation, and frozen-app verification) is in progress.
+
+### Added
+
+- Added `bytefray agents create <agent-id>`, scaffolding a minimal Agent
+  API v1 Python agent from a bundled template resource into the writable
+  data root (Phase 1).
+- Added `bytefray agents validate <agent-id>`, a single-tick dry run
+  (discover, load, `reset()`, one `act()`) reusing the production
+  loader/action-validator and reporting a stable stage/code diagnostic on
+  failure, with no runtime timeout or sandbox (Phase 2).
+- Added `bytefray agents test <agent-id> [--opponent <id>] [--seed <n>]
+  [--ticks <n>]`, a short (200-tick default) real match run through the
+  exact `NativeMatchService` boundary against an internal reference Python
+  opponent or another discovered agent, writing the same canonical
+  `replay.jsonl`/`result.json`/`summary.json` artifacts any other native
+  match writes under `runs/agents_test/<agent-id>/<run-label>/`. A tested
+  agent's own forfeit, death, loss, or pre-tick-zero initialization
+  failure -- and an explicit `--opponent`'s own initialization failure --
+  are all successfully-evaluated development tests (exit `0`); only the
+  internal reference opponent failing to initialize, or an unknown/
+  non-Python agent/opponent, is a tool failure (exit `2`) (Phase 3).
+- Added an **Agent Development** tab to the PySide6 Agent Designer,
+  bringing the same create → validate → test → replay loop into the GUI:
+  `New Agent` (a direct, in-process scaffold call), out-of-process
+  `Validate` and `Test` (with Opponent/Seed/Ticks options) sharing the
+  Designer's existing `QProcess`/single-active-process machinery, typed
+  completed/initialization-failed/tool-failure presentation read from the
+  same canonical CLI output and `result.json` the CLI itself produces, and
+  an `Open Replay` action independent of the Simple/Advanced tabs' own
+  "Open Last Replay" (Phase 4a-4c; see
+  `docs/specs/agent_designer_workflow.md`).
 
 ### Changed
 

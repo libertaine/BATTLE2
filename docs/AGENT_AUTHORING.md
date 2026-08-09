@@ -190,6 +190,47 @@ step. If you want to compare more than one opponent, or run more than a
 short development match, use `bytefray tournament` or `bytefray run`
 directly -- see [TOURNAMENTS.md](TOURNAMENTS.md).
 
+## Using the Agent Designer (GUI)
+
+The same create → validate → test → replay loop is also available from the
+PySide6 Agent Designer's **Agent Development** tab (`battle-agent-designer`
+or `bytefray design`), without touching a terminal:
+
+1. **New Agent…** prompts for an agent id and calls the identical scaffold
+   used by `bytefray agents create` (an id that would be rejected by the
+   CLI is rejected here too, with the same rule shown inline). The new
+   agent is selected automatically once created.
+2. **Validate** runs `bytefray agents validate <agent-id>` out-of-process
+   and shows "Last validation: Valid" with the API version and dry-run
+   action, or "Invalid" with the failing stage/code/error -- the same
+   outcome the CLI reports, not a re-implementation of it.
+3. **Development Test** runs `bytefray agents test <agent-id>` with the
+   panel's Opponent (default `Reference`), Seed (default `1337`), and
+   Ticks (default `200`) options, mirroring `--opponent`/`--seed`/`--ticks`
+   exactly. The result area shows "Last development test: Complete" with
+   winner/termination/ticks and any forfeits, "Initialization failed" for
+   a pre-tick-zero failure of the tested agent or an explicit opponent (no
+   replay exists in that case), or "Could not be completed" for a
+   tool/infrastructure failure -- kept visually distinct so a bad agent
+   and a broken tool are never confused.
+4. **Open Replay** (inside the Development Test result) launches the
+   existing external Pygame replay viewer for a completed test's replay.
+   It is independent of the Simple/Advanced tabs' own "Open Last Replay"
+   button -- running a development test never changes what that other
+   button opens.
+5. **Open Agent Folder** opens the agent's directory in the OS file
+   browser so `agent.py` can be edited in an external editor; return to
+   the Designer and click Validate/Test again to see the effect.
+
+Only one Designer-owned process (a match, a tournament, a validation, or a
+development test) ever runs at a time: while any of them is active, every
+other Run/Validate/Test control is disabled, exactly as `bytefray agents
+validate`/`test` themselves have no timeout or sandbox for arbitrary user
+Python. A hung agent's process is stopped with the Simple/Advanced tab's
+existing Stop button (which acts on whichever operation is currently
+running) or by closing the Designer window -- never gracefully interrupted
+mid-call, the same limitation the CLI has.
+
 ## Underlying file format (manual reference)
 
 The scaffold command has no template selection — this section documents the

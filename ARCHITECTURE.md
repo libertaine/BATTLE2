@@ -178,13 +178,32 @@ holds PySide6/Pygame-oriented tools that are adjacent consumers of the
 engine, not part of `battle_engine.core`.
 
 - **`app/agent_designer.py` is the actual, sole supported Agent Designer
-  entry point.** It is a PySide6 `QMainWindow` application (Simple/Advanced
-  tabs, a homogeneous VM-vs-VM or Python-vs-Python match launcher, a
-  tournament launcher dialog, and an About surface) built from
-  `app.services.*` and `app.views.*`. It is reached two ways: the
-  `battle-agent-designer` console script
-  (`battle_engine.legacy:agent_designer`, which lazily imports
-  `app.agent_designer` and calls its `main()`) and `bytefray design`
+  entry point.** It is a PySide6 `QMainWindow` application with three tabs
+  (Simple, Advanced, and Agent Development) built from `app.services.*` and
+  `app.views.*`. Simple/Advanced launch a homogeneous VM-vs-VM or
+  Python-vs-Python match; a Tools-menu dialog launches a tournament. The
+  **Agent Development** tab (`app/views/development.py`, v0.4 Phase 4a-4c)
+  brings the `create → validate → test → replay` authoring loop
+  (`docs/specs/agent_designer_workflow.md`) into the GUI: `New Agent` calls
+  `battle_engine.agent_scaffold.create_agent` directly in-process (no
+  agent-author code runs during scaffolding), while `Validate` and `Test`
+  each run `bytefray agents validate`/`bytefray agents test` out-of-process
+  via the same `QProcess` machinery — and the same single active-process
+  slot — as Simple/Advanced/Tournament, because both execute arbitrary,
+  un-timed-out user Python. Their structured `label: value` stdout/stderr
+  is parsed by `app/services/agent_workflows.py` (Qt-free) into typed
+  presentation dataclasses (`ValidationPresentation`,
+  `DevelopmentTestPresentation`) that distinguish an agent-development
+  outcome (valid/invalid, completed/initialization-failed) from a
+  tool/infrastructure failure; a completed test's winner/termination/replay
+  path are read from the exact canonical `result.json` a real match writes,
+  not re-derived from CLI text. A development test's own replay is opened
+  through the existing `open_pygame_client_direct` launcher but is
+  deliberately kept independent of Simple/Advanced's "Open Last Replay"
+  target, so switching tabs never repoints that button at a development
+  test's replay. It is reached two ways: the `battle-agent-designer`
+  console script (`battle_engine.legacy:agent_designer`, which lazily
+  imports `app.agent_designer` and calls its `main()`) and `bytefray design`
   (`battle_engine.command._design`, same lazy import). Both reject stray
   arguments and print a usage message for `--help` without importing
   PySide6.
@@ -380,7 +399,16 @@ other native match writes, under `<data_root>/runs/agents_test/<agent-id>/
 <run-label>/`. A tested agent's own forfeit, death, or loss within a
 completed match is still a successful evaluation (exit `0`); only a
 tool/infrastructure failure — an unknown or non-Python agent/opponent, or
-an opponent that fails to initialize — is exit `2`. Do not treat any
-further feedback-loop tooling described in future specs under
+the internal bundled reference opponent failing to initialize — is exit
+`2` (an explicit `--opponent`'s own initialization failure is exit `0`
+too, for the identical reason: it is user-provided agent code being
+evaluated by the test, exactly like the tested agent itself). Phase 4
+(`docs/specs/agent_designer_workflow.md`; Phase 4a-4c landed) brought this
+same loop into the PySide6 Agent Designer as a third "Agent Development"
+tab — see the Desktop application section above for how Validate/Test are
+wired through the existing `QProcess`/single-active-process machinery
+without forking any Phase 1-3 semantic. Phase 4d (integration polish,
+documentation, and frozen-app verification) is the remaining slice. Do not
+treat any further feedback-loop tooling described in future specs under
 `docs/specs/` as already built until it lands and this document is
 updated to describe it.

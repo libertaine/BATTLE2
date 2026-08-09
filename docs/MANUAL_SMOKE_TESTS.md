@@ -77,6 +77,50 @@ is either wired into a consumer or removed.
 This remains manual because widget layout, native dialogs, and subprocess handoff
 need human inspection across supported desktop environments.
 
+### Agent Development tab (v0.4 Phase 4, packaged application)
+
+The automated `gui`-marked suite (`tests/test_agent_development_*.py`)
+exercises this tab's Qt plumbing against stubbed and real subprocesses
+under `QT_QPA_PLATFORM=offscreen`; the sequence below is the interactive,
+packaged-application confirmation that automation cannot substitute for
+(real window focus, real `battle2.exe` sibling-executable resolution from
+the standalone `battle-agent-designer.exe`, and human judgment of the
+rendered text).
+
+1. Launch `battle-agent-designer.exe`; open the **Agent Development** tab.
+2. **New Agent** with a fresh id; confirm it appears, selected, in all
+   three tabs' agent combos (Simple, Advanced, Agent Development).
+3. **Validate** the new agent (its unmodified template): confirm "Last
+   validation: Valid" with `API: 1` and a `WRITE operand=... value=165`
+   dry-run action.
+4. **Development Test** with defaults (Reference opponent, seed 1337,
+   ticks 200): confirm "Last development test: Complete" with a
+   winner/termination/ticks line, `Open Replay` enabled, and that clicking
+   it opens the existing external Pygame viewer showing the same replay.
+5. Change the seed and/or ticks, and separately re-run Test against an
+   explicit Python opponent (create a second agent first); confirm the
+   options are reflected in the result text.
+6. **Open Agent Folder**: confirm Windows Explorer opens the correct
+   directory.
+7. Edit `agent.py` externally to raise inside `reset()`; return to the
+   Designer without restarting it; **Validate** again: confirm the
+   `reset`-stage failure renders as "Last validation: Invalid" and does
+   not confuse the prior "Valid" result with the new one.
+8. **Development Test** the same broken agent: confirm "Last development
+   test: Initialization failed" with `Stage: reset`/`Code:
+   agent_reset_failed`, no `Open Replay` button enabled, and text stating
+   no replay was created because the match did not start (an
+   agent-development outcome, not an application/tool failure).
+9. Repeat step 8 with an explicit `--opponent` whose `agent.py` raises in
+   `reset()`: confirm the result names the opponent (`Opponent: ...`), not
+   the tested agent, as the entrant that failed to initialize.
+10. Confirm a Simple-tab match launch is disabled while a development test
+    is running, and vice versa (Validate/Test disabled during a
+    Simple/Advanced/Tournament run).
+11. Confirm Stop (Simple or Advanced tab) cancels an in-flight Validate or
+    Test and shows "Stopped by user" rather than any completed/failed
+    shape.
+
 ## pMARS / Redcode integration
 
 1. Optionally set `PMARS_CMD` to one pMARS executable path. Windows packaged
