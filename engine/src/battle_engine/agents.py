@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict
 
+import yaml
+
 from battle_engine.agent_api import AgentManifestError
 
 __all__ = [
@@ -36,7 +38,8 @@ def _agents_root(root: Path) -> Path:
 
 def _read_json_like(path: Path) -> Dict[str, Any]:
     """
-    Parse agent.yaml as JSON (no YAML dependency).
+    Parse agent.yaml as JSON, falling back to YAML (the format the
+    `agents create` scaffold actually writes).
     Allows:
       - // and # comments (stripped)
       - simple trailing comma cleanup
@@ -59,15 +62,14 @@ def _read_json_like(path: Path) -> Dict[str, Any]:
     try:
         data = json.loads(cleansed)
     except json.JSONDecodeError:
-        # 2) Fallback: YAML if available
-        try:
-            import importlib
-
-            yaml = importlib.import_module("yaml")
-        except Exception:
-            raise ValueError(
-                f"{path} is not valid JSON. Convert to JSON, or 'pip install pyyaml' to allow YAML."
-            )
+        # 2) Fallback: YAML. PyYAML is an unconditional core dependency (see
+        # pyproject.toml), so this is a plain module-level import rather than
+        # a dynamic importlib lookup -- a dynamic import is invisible to
+        # PyInstaller's static analysis and previously left `yaml` out of
+        # frozen builds whose entry point didn't happen to reach it through
+        # another path (battle-cli.exe, battle-agent-designer.exe,
+        # battle-replay-viewer.exe all failed to parse any agent.yaml as a
+        # result; only battle2.exe worked, and only by accident).
         data = yaml.safe_load(cleansed) or {}
 
     if not isinstance(data, dict):
