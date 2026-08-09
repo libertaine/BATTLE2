@@ -16,6 +16,19 @@ EXPECTED_FILES = {
     "battle_engine/data/starter_agents/seeker/agent.yaml",
     "battle_engine/data/starter_agents/spiral/agent.yaml",
     "battle_engine/data/starter_agents/writer/agent.yaml",
+    # Python (Agent API v1) starter agents added in v0.6.1 -- each ships
+    # both a manifest and a source file, unlike the manifest-only native
+    # VM starters above.
+    "battle_engine/data/starter_agents/claimer/agent.yaml",
+    "battle_engine/data/starter_agents/claimer/agent.py",
+    "battle_engine/data/starter_agents/strider/agent.yaml",
+    "battle_engine/data/starter_agents/strider/agent.py",
+    "battle_engine/data/starter_agents/hunter/agent.yaml",
+    "battle_engine/data/starter_agents/hunter/agent.py",
+    "battle_engine/data/starter_agents/wanderer/agent.yaml",
+    "battle_engine/data/starter_agents/wanderer/agent.py",
+    "battle_engine/data/starter_agents/adaptive/agent.yaml",
+    "battle_engine/data/starter_agents/adaptive/agent.py",
     "battle_engine/data/agent_template/agent.yaml",
     "battle_engine/data/agent_template/agent.py",
 }

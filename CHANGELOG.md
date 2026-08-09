@@ -5,6 +5,62 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-09
+
+v0.6.1's theme is **Default Agent Build-Out**: v0.6.1 doesn't change
+architecture — it makes the first-run experience worth having. Before
+this release, the only Python (Agent API v1) agent behavior a new user
+ever saw was the `agents create` scaffold/reference agent, a single fixed
+byte written to a random address in a small slice of the arena; two
+copies of it playing each other are decided almost entirely by which one
+happens to move second within a tick, not by strategy. See
+ARCHITECTURE.md's new "Default Agent Build-Out (v0.6.1)" section for the
+full design rationale, including the empirical findings (via `bytefray
+agents evaluate` against the engine's actual scoring mechanics) that
+shaped every shipped agent's final design, and one prototype (a bounded
+"patrol and defend" agent) that was tuned repeatedly and ultimately not
+shipped because it could not be made competitive.
+
+### Added
+
+- Five new bundled Python (Agent API v1) starter agents — `claimer`,
+  `strider`, `hunter`, `wanderer`, `adaptive` — added to
+  `battle_engine.starters.STARTER_AGENT_NAMES` alongside the existing
+  four native VM starters, discovered and initialized into the writable
+  `agents/` catalog by the same non-destructive `ensure_starter_agents()`
+  mechanism (no new discovery, catalog, or packaging concept). Each
+  demonstrates a distinct, readable strategy against the restricted
+  Python Agent API (territorial sweeping, denial/aggression, randomized
+  coverage, and a phase-based hybrid using the engine's PC/JUMP actions
+  as an explicit state machine) and includes a module docstring
+  explaining its strategy, the state it tracks, what's reasonable to
+  change, and — for several of them — what an earlier, less successful
+  version tried and why it was retuned. `claimer`/`strider` form a
+  visible basic/improved progression pair intended to make `agents
+  evaluate`'s candidate-vs-baseline comparison immediately concrete.
+- A README "Try the bundled agents" section describing each agent,
+  compelling example matchups, an `agents evaluate` example comparing the
+  `claimer`/`strider` progression pair, and how to inspect a match in
+  Agent Lab. `docs/AGENT_AUTHORING.md` gained a "Learning from the bundled
+  agents" section pointing authors at the new agents' source as worked
+  examples, since there is no separate "start from example" scaffold
+  option — copying a bundled agent's directory is the mechanism.
+- `engine/tests/test_default_python_agents.py`: structural coverage for
+  the new roster (clean discovery, successful validation, successful
+  match completion against the reference opponent, and a behavioral
+  smoke matrix of every shipped agent against every other), asserting
+  only that matches complete without infrastructure failure, never that
+  a particular agent wins a particular seed.
+
+### Fixed
+
+- `engine/tests/test_starter_agents.py`'s starter-file-count assertions
+  were hard-coded to the single-file (`agent.yaml`-only) shape every
+  native VM starter happens to have; generalized to compute the expected
+  file set from each starter's actual source directory, since the new
+  Python starters are the first to ship more than one file (`agent.yaml`
+  and `agent.py`).
+
 ## [0.6.0] - 2026-08-09
 
 v0.6's primary theme is **Agent Evaluation**: once an agent works and can
