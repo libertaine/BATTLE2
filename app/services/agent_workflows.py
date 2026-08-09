@@ -174,6 +174,7 @@ class DevelopmentTestPresentation:
     ticks_requested: int | None = None
     match: MatchPresentation | None = None
     summary_path: Path | None = None
+    trace_path: Path | None = None
     forfeits: tuple[ForfeitDiagnostic, ...] = ()
     stage: str | None = None
     code: str | None = None
@@ -296,6 +297,8 @@ def _build_completed_test(
 
     summary_text = fields.get("summary")
     summary_path = None if not summary_text or summary_text == "none" else Path(summary_text)
+    trace_text = fields.get("trace")
+    trace_path = None if not trace_text or trace_text == "none" else Path(trace_text)
 
     return DevelopmentTestPresentation(
         agent_id=fields.get("agent", agent_id),
@@ -306,6 +309,7 @@ def _build_completed_test(
         ticks_requested=ticks_requested,
         match=match,
         summary_path=summary_path,
+        trace_path=trace_path,
         forfeits=forfeits,
     )
 
@@ -321,6 +325,8 @@ def _build_initialization_failure(
             f"{', '.join(missing)}.",
             raw_output=raw_output,
         )
+    trace_text = fields.get("trace")
+    trace_path = None if not trace_text or trace_text == "none" else Path(trace_text)
     return DevelopmentTestPresentation(
         agent_id=fields.get("agent", agent_id),
         outcome="initialization_failed",
@@ -329,6 +335,7 @@ def _build_initialization_failure(
         code=fields["code"],
         error=fields["error"],
         detail=fields.get("detail"),
+        trace_path=trace_path,
     )
 
 

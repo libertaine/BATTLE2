@@ -29,13 +29,14 @@ from battle_engine.agent_scaffold import (
     ScaffoldResult,
     create_agent,
 )
-from battle_engine.agent_test import DEFAULT_TICKS
+from battle_engine.agent_test import DEFAULT_AGENT_TIMEOUT, DEFAULT_TICKS
 from battle_engine.config import Config
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -138,6 +139,7 @@ class AgentDevelopmentPanel(QWidget):
     validateRequested = Signal()
     testRequested = Signal()
     openTestReplayRequested = Signal()
+    inspectTraceRequested = Signal()
 
     def __init__(self, catalog=None) -> None:  # catalog kept for parity with other panels
         super().__init__()
@@ -147,6 +149,7 @@ class AgentDevelopmentPanel(QWidget):
         self._last_validation: Optional[ValidationPresentation] = None
         self._last_test: Optional[DevelopmentTestPresentation] = None
         self._last_test_replay: Optional[Path] = None
+        self._last_test_trace: Optional[Path] = None
 
         root = QVBoxLayout(self)
 
@@ -187,6 +190,16 @@ class AgentDevelopmentPanel(QWidget):
         self.ticksSpin.setRange(1, _MAX_SPINBOX_INT)
         self.ticksSpin.setValue(_DEFAULT_TEST_TICKS)
         options_row.addWidget(self.ticksSpin)
+        options_row.addWidget(QLabel("Timeout (s)"))
+        self.timeoutSpin = QDoubleSpinBox()
+        self.timeoutSpin.setDecimals(1)
+        self.timeoutSpin.setRange(0.1, 300.0)
+        self.timeoutSpin.setValue(DEFAULT_AGENT_TIMEOUT)
+        self.timeoutSpin.setToolTip(
+            "Per-call load/reset/act timeout for supervised worker execution.\n"
+            "Development-time hang containment only -- not a security sandbox."
+        )
+        options_row.addWidget(self.timeoutSpin)
         test_layout.addLayout(options_row)
 
         self.btnTest = QPushButton("Test")
@@ -197,9 +210,14 @@ class AgentDevelopmentPanel(QWidget):
         self.testStatusLabel.setWordWrap(True)
         test_layout.addWidget(self.testStatusLabel)
 
+        replay_row = QHBoxLayout()
         self.btnOpenTestReplay = QPushButton("Open Replay")
         self.btnOpenTestReplay.setEnabled(False)
-        test_layout.addWidget(self.btnOpenTestReplay)
+        replay_row.addWidget(self.btnOpenTestReplay)
+        self.btnInspectTrace = QPushButton("Inspect Trace")
+        self.btnInspectTrace.setEnabled(False)
+        replay_row.addWidget(self.btnInspectTrace)
+        test_layout.addLayout(replay_row)
         root.addWidget(test)
 
         status = QGroupBox("Status")
@@ -215,6 +233,7 @@ class AgentDevelopmentPanel(QWidget):
         self.btnValidate.clicked.connect(self.validateRequested.emit)
         self.btnTest.clicked.connect(self.testRequested.emit)
         self.btnOpenTestReplay.clicked.connect(self.openTestReplayRequested.emit)
+        self.btnInspectTrace.clicked.connect(self.inspectTraceRequested.emit)
         self.agentCombo.currentTextChanged.connect(self._on_combo_changed)
 
         self.opponentCombo.addItem("Reference", None)
@@ -269,6 +288,13 @@ class AgentDevelopmentPanel(QWidget):
     def selected_ticks(self) -> int:
         return self.ticksSpin.value()
 
+    def selected_timeout(self) -> float:
+        return self.timeoutSpin.value()
+
+    def last_test_trace_path(self) -> Optional[Path]:
+        """The last completed test's trace path, or ``None`` if unavailable."""
+        return self._last_test_trace
+
     def last_test_replay_path(self) -> Optional[Path]:
         """The last completed test's replay path, or ``None`` if unavailable.
 
@@ -313,6 +339,7 @@ class AgentDevelopmentPanel(QWidget):
         self.opponentCombo.setEnabled(not busy)
         self.seedSpin.setEnabled(not busy)
         self.ticksSpin.setEnabled(not busy)
+        self.timeoutSpin.setEnabled(not busy)
         self._update_enablement()
 
     def showValidating(self, agent_id: str) -> None:
@@ -365,11 +392,13 @@ class AgentDevelopmentPanel(QWidget):
         self.testStatusLabel.setStyleSheet(_NEUTRAL_STYLE)
         self.testStatusLabel.setText(f"Testing {agent_id} vs {opponent_label}…")
         self.btnOpenTestReplay.setEnabled(False)
+        self.btnInspectTrace.setEnabled(False)
 
     def show_test_result(self, presentation: DevelopmentTestPresentation) -> None:
         self._last_test = presentation
         if presentation.outcome == "tool_error":
             self._last_test_replay = None
+            self._last_test_trace = None
             lines = ["Last development test: Could not be completed"]
             if presentation.error:
                 lines.append(presentation.error)
@@ -380,6 +409,11 @@ class AgentDevelopmentPanel(QWidget):
             self.testStatusLabel.setText("\n".join(lines))
         elif presentation.outcome == "initialization_failed":
             self._last_test_replay = None
+            self._last_test_trace = (
+                presentation.trace_path
+                if presentation.trace_path is not None and presentation.trace_path.is_file()
+                else None
+            )
             lines = ["Last development test: Initialization failed", f"Agent: {presentation.agent_id}"]
             if presentation.opponent:
                 lines.append(f"Opponent: {presentation.opponent}")
@@ -400,6 +434,11 @@ class AgentDevelopmentPanel(QWidget):
             self._last_test_replay = (
                 replay_path if replay_path is not None and Path(replay_path).is_file() else None
             )
+            self._last_test_trace = (
+                presentation.trace_path
+                if presentation.trace_path is not None and presentation.trace_path.is_file()
+                else None
+            )
             lines = ["Last development test: Complete", f"Agent: {presentation.agent_id}"]
             if presentation.opponent:
                 lines.append(f"Opponent: {presentation.opponent}")
@@ -417,6 +456,7 @@ class AgentDevelopmentPanel(QWidget):
             self.testStatusLabel.setStyleSheet(_NEUTRAL_STYLE)
             self.testStatusLabel.setText("\n".join(lines))
         self.btnOpenTestReplay.setEnabled(self._last_test_replay is not None)
+        self.btnInspectTrace.setEnabled(self._last_test_trace is not None)
 
     def show_test_tool_failure(self, agent_id: str, message: str) -> None:
         self.show_test_result(
@@ -428,9 +468,11 @@ class AgentDevelopmentPanel(QWidget):
     def show_test_stopped(self, agent_id: str) -> None:
         self._last_test = None
         self._last_test_replay = None
+        self._last_test_trace = None
         self.testStatusLabel.setStyleSheet(_NEUTRAL_STYLE)
         self.testStatusLabel.setText(f"Last development test: Stopped by user ({agent_id}).")
         self.btnOpenTestReplay.setEnabled(False)
+        self.btnInspectTrace.setEnabled(False)
 
     # ---- Internal ----
     def _update_enablement(self) -> None:
@@ -469,5 +511,7 @@ class AgentDevelopmentPanel(QWidget):
             self._render_idle_status()
             self._last_test = None
             self._last_test_replay = None
+            self._last_test_trace = None
             self.btnOpenTestReplay.setEnabled(False)
+            self.btnInspectTrace.setEnabled(False)
             self._render_idle_test_status()

@@ -112,6 +112,7 @@ class AgentDesigner(QMainWindow):
             self.development.validateRequested.connect(self._on_validate_agent)
             self.development.testRequested.connect(self._on_test_agent)
             self.development.openTestReplayRequested.connect(self._on_open_test_replay)
+            self.development.inspectTraceRequested.connect(self._on_inspect_trace)
             self.tabs.addTab(self.development, "Agent Development")
         except Exception as e:
             QMessageBox.warning(
@@ -655,12 +656,14 @@ class AgentDesigner(QMainWindow):
         opponent_id = self.development.selected_opponent_id()
         seed = self.development.selected_seed()
         ticks = self.development.selected_ticks()
+        timeout = self.development.selected_timeout()
 
         arguments = [agent_id]
         if opponent_id is not None:
             arguments.extend(("--opponent", opponent_id))
         arguments.extend(("--seed", str(seed)))
         arguments.extend(("--ticks", str(ticks)))
+        arguments.extend(("--timeout", str(timeout)))
 
         try:
             command = build_agents_command("test", arguments)
@@ -719,6 +722,24 @@ class AgentDesigner(QMainWindow):
             open_pygame_client_direct(self.battle_root, Path(path))
         except (FileNotFoundError, OSError) as exc:
             QMessageBox.critical(self, "Replay Launch Failed", str(exc))
+
+    def _on_inspect_trace(self) -> None:
+        """Open the Trace Inspector over the last development test's trace.
+
+        Unlike Validate/Test/Open Replay, this executes no agent code and
+        reads no live process -- it only parses an already-written
+        ``trace.jsonl`` (docs/specs/agent_lab.md §11) -- so it runs
+        directly on the GUI thread with no QProcess/busy-state involved.
+        """
+        if not hasattr(self, "development"):
+            return
+        path = self.development.last_test_trace_path()
+        if not path:
+            return
+        from app.views.trace_inspector import TraceInspectorDialog
+
+        dialog = TraceInspectorDialog(Path(path), parent=self)
+        dialog.exec()
 
     def _on_open_agent_folder(self) -> None:
         if not hasattr(self, "development"):
