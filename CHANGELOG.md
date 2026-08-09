@@ -69,6 +69,15 @@ way it did, and containing an agent that never returns. See
   self-terminates if it changed right after.
 - The hidden `agents _worker` verb now rejects unexpected arguments
   instead of silently blocking on stdin.
+- `battle-cli.exe`, `battle-agent-designer.exe`, and
+  `battle-replay-viewer.exe` could fail to discover or parse any
+  `agent.yaml` at all (`... is not valid JSON. Convert to JSON, or 'pip
+  install pyyaml' to allow YAML.`) because PyYAML's import was dynamic
+  and therefore invisible to PyInstaller's static analysis; only
+  `battle2.exe` happened to bundle it, by accident, via an unrelated
+  unused module. PyYAML is now imported statically wherever agent
+  manifests are parsed, so all four frozen executables bundle it
+  reliably.
 
 ## [0.4.0] - 2026-08-08
 
