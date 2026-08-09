@@ -45,6 +45,28 @@ def build_tournament_command(arguments: Sequence[str]) -> list[str]:
     ]
 
 
+def build_agents_command(subcommand: str, arguments: Sequence[str]) -> list[str]:
+    """Build a non-shell command for a ``bytefray agents <subcommand>`` verb.
+
+    Mirrors :func:`build_match_command`/:func:`build_tournament_command`
+    exactly. Only ``validate``/``test`` are routed through this builder --
+    ``agents create`` (scaffolding) executes no agent-author code and is
+    called directly, in-process, instead (see
+    ``docs/specs/agent_designer_workflow.md``).
+    """
+    options = list(arguments)
+    if is_frozen_application():
+        return [str(_packaged_executable("battle2")), "agents", subcommand, *options]
+    return [
+        str(normalize_root(sys.executable)),
+        "-m",
+        "battle_engine",
+        "agents",
+        subcommand,
+        *options,
+    ]
+
+
 def build_designer_match_arguments(
     *,
     ticks: object,

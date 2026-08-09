@@ -48,6 +48,17 @@ def test_source_replay_uses_client_module_and_keeps_path_one_argument(monkeypatc
     ]
 
 
+def test_source_agents_command_uses_primary_dispatcher(monkeypatch, tmp_path):
+    python = tmp_path / "Python With Spaces" / "python.exe"
+    _set_source(monkeypatch, python)
+
+    command = launchers.build_agents_command("validate", ["my_agent"])
+
+    assert command == [
+        str(python.resolve()), "-m", "battle_engine", "agents", "validate", "my_agent",
+    ]
+
+
 def test_source_tournament_uses_primary_dispatcher(monkeypatch, tmp_path):
     python = tmp_path / "Python With Spaces" / "python.exe"
     _set_source(monkeypatch, python)
@@ -72,10 +83,12 @@ def test_frozen_commands_use_packaged_sibling_executables(monkeypatch, tmp_path)
 
     match_command = launchers.build_match_command(["--ticks", "5"])
     tournament_command = launchers.build_tournament_command(["alpha", "beta"])
+    agents_command = launchers.build_agents_command("validate", ["my_agent"])
     replay_command = launchers.build_replay_command(tmp_path / "Replay One.jsonl")
 
     assert match_command == [str(battle2.resolve()), "run", "--ticks", "5"]
     assert tournament_command == [str(battle2.resolve()), "tournament", "alpha", "beta"]
+    assert agents_command == [str(battle2.resolve()), "agents", "validate", "my_agent"]
     assert replay_command[:3] == [
         str(viewer.resolve()),
         "--replay",
@@ -104,6 +117,7 @@ def test_frozen_commands_support_current_onedir_sibling_layout(monkeypatch, tmp_
 
 @pytest.mark.parametrize("builder, executable_name", [
     (lambda: launchers.build_match_command([]), "battle2.exe"),
+    (lambda: launchers.build_agents_command("validate", ["x"]), "battle2.exe"),
     (lambda: launchers.build_replay_command(Path("replay.jsonl")), "battle-replay-viewer.exe"),
 ])
 def test_missing_packaged_executable_has_clear_error(

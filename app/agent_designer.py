@@ -5,7 +5,11 @@ import os
 import sys
 from pathlib import Path
 
-from battle_engine.launchers import build_designer_match_arguments, build_match_command
+from battle_engine.launchers import (
+    build_agents_command,
+    build_designer_match_arguments,
+    build_match_command,
+)
 from battle_engine.paths import get_data_root
 from battle_engine.project_info import get_project_info
 from battle_engine.starters import ensure_starter_agents
@@ -14,7 +18,10 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QTabWidget
 
 from app.services.agent_catalog import AgentCatalog
-from app.services.engine import open_pygame_client_direct
+from app.services.agent_workflows import (
+    build_development_test_presentation,
+    build_validation_presentation,
+)
 from app.services.designer_workflows import (
     DesignerValidationError,
     build_designer_tournament_command,
@@ -24,7 +31,9 @@ from app.services.designer_workflows import (
     read_tournament_presentation,
     validate_homogeneous,
 )
+from app.services.engine import open_pygame_client_direct
 from app.views.advanced import AdvancedPanel
+from app.views.development import AgentDevelopmentPanel, NewAgentDialog
 from app.views.simple import SimplePanel
 from app.views.tournament import TournamentDialog
 
@@ -56,6 +65,12 @@ class AgentDesigner(QMainWindow):
         self._result_path = None
         self._tournament_output = None
         self._active_workflow = "match"
+        self._validate_agent_id = None
+        self._validate_stdout = ""
+        self._validate_stderr = ""
+        self._test_agent_id = None
+        self._test_stdout = ""
+        self._test_stderr = ""
         self.catalog = AgentCatalog(battle_root)
 
         # Tabs + panels
@@ -89,6 +104,22 @@ class AgentDesigner(QMainWindow):
                 f"Failed to initialize Advanced panel with battle_root={battle_root}\n\n{e}",
             )
 
+        try:
+            self.development = AgentDevelopmentPanel(catalog=self.catalog)
+            self.development.refreshAgentsRequested.connect(self.refresh_agents)
+            self.development.newAgentRequested.connect(self._on_new_agent)
+            self.development.openFolderRequested.connect(self._on_open_agent_folder)
+            self.development.validateRequested.connect(self._on_validate_agent)
+            self.development.testRequested.connect(self._on_test_agent)
+            self.development.openTestReplayRequested.connect(self._on_open_test_replay)
+            self.tabs.addTab(self.development, "Agent Development")
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Agent Development Panel Unavailable",
+                f"Failed to initialize Agent Development panel with battle_root={battle_root}\n\n{e}",
+            )
+
         self.setCentralWidget(self.tabs)
         self._build_menus()
         self.resize(1000, 720)
@@ -104,8 +135,15 @@ class AgentDesigner(QMainWindow):
         help_menu.addAction("About Bytefray", self._on_about)
 
     @Slot()
-    def refresh_agents(self) -> None:
-        """Repopulate agent dropdowns in both panels from the shared catalog."""
+    def refresh_agents(self, *, select: str | None = None) -> None:
+        """Repopulate agent dropdowns in every panel from the shared catalog.
+
+        This is the single centralized catalog-refresh entry point: every
+        panel's combo is repopulated from one fresh ``list_agents()`` call,
+        preserving each combo's own current selection where still present.
+        ``select`` additionally selects a specific agent in the Agent
+        Development tab afterward (used after a successful "New Agent").
+        """
         try:
             rows = self.catalog.list_agents()  # returns list of AgentRow
             names = [r.name for r in rows] or ["(none found)"]
@@ -113,6 +151,10 @@ class AgentDesigner(QMainWindow):
                 self.simple.setAgents(names)
             if hasattr(self, "advanced"):
                 self.advanced.setAgents(names)
+            if hasattr(self, "development"):
+                self.development.setAgents(rows)
+                if select:
+                    self.development.selectAgent(select)
         except Exception as e:
             QMessageBox.warning(self, "Agent Load Failed", str(e))
 
@@ -253,6 +295,8 @@ class AgentDesigner(QMainWindow):
         # disable controls; set log target (again, just to be explicit)
         self.simple.setBusy(True)
         self.advanced.setBusy(True)
+        if hasattr(self, "development"):
+            self.development.setBusy(True)
         self._log_target = self.advanced
         self._result_path = result_path
         self._active_workflow = "match"
@@ -283,6 +327,22 @@ class AgentDesigner(QMainWindow):
             return  # Stale signal from a process this window has already moved past.
         out = bytes(proc.readAllStandardOutput()).decode("utf-8", "ignore")
         err = bytes(proc.readAllStandardError()).decode("utf-8", "ignore")
+        if self._active_workflow == "validate":
+            # Validation's stdout/stderr is the structured `label: value`
+            # payload itself (docs/specs/agent_validation.md Sec 3.4), not
+            # human log narration -- buffer it for parsing at process exit
+            # instead of piping it into a Simple/Advanced log panel.
+            self._validate_stdout += out
+            self._validate_stderr += err
+            return
+        if self._active_workflow == "test":
+            # Same reasoning as validation: a development test's
+            # stdout/stderr is the structured `label: value` payload
+            # docs/specs/agent_test.md Sec 11 documents, not human log
+            # narration -- buffer it for parsing at process exit.
+            self._test_stdout += out
+            self._test_stderr += err
+            return
         text = (out or "") + (err or "")
         if text:
             # send to active tab’s log
@@ -329,6 +389,8 @@ class AgentDesigner(QMainWindow):
 
         # disable controls while running
         self.simple.setBusy(True)
+        if hasattr(self, "development"):
+            self.development.setBusy(True)
         self._result_path = result_path
         self._active_workflow = "match"
 
@@ -354,9 +416,21 @@ class AgentDesigner(QMainWindow):
         proc.start()
 
     def _on_stop_run(self):
+        was_validating = self._active_workflow == "validate"
+        was_testing = self._active_workflow == "test"
+        validate_agent_id = self._validate_agent_id
+        test_agent_id = self._test_agent_id
         self._dispose_process()
         self.simple.setBusy(False)
         self.advanced.setBusy(False)
+        if hasattr(self, "development"):
+            self.development.setBusy(False)
+            if was_validating and validate_agent_id:
+                self.development.show_stopped(validate_agent_id)
+            elif was_testing and test_agent_id:
+                self.development.show_test_stopped(test_agent_id)
+        if was_validating or was_testing:
+            return  # Validate/Test have no Simple/Advanced log target to narrate the stop.
         if self._log_target:
             self._log_target.appendLog("[RunMatch] stopped.\n")
 
@@ -365,6 +439,14 @@ class AgentDesigner(QMainWindow):
             return  # Stale signal from a process this window has already moved past.
         self.simple.setBusy(False)
         self.advanced.setBusy(False)
+        if hasattr(self, "development"):
+            self.development.setBusy(False)
+        if self._active_workflow == "validate":
+            self._present_validation_result(code)
+            return
+        if self._active_workflow == "test":
+            self._present_test_result(code)
+            return
         label = "Tournament" if self._active_workflow == "tournament" else "RunMatch"
         if self._log_target:
             self._log_target.appendLog(f"[{label}] finished with exit code {code}\n")
@@ -395,7 +477,14 @@ class AgentDesigner(QMainWindow):
         self.simple.setBusy(False)
         self.advanced.setBusy(False)
         message = f"[{label}] failed to start '{program}': {error}"
-        self._log_target.appendLog(message + "\n")
+        if hasattr(self, "development"):
+            self.development.setBusy(False)
+            if self._active_workflow == "validate":
+                self.development.show_tool_failure(self._validate_agent_id or "", message)
+            elif self._active_workflow == "test":
+                self.development.show_test_tool_failure(self._test_agent_id or "", message)
+        if self._active_workflow not in ("validate", "test"):
+            self._log_target.appendLog(message + "\n")
         QMessageBox.critical(self, f"{label} Failed", message)
 
     def _on_open_replay(self):
@@ -438,6 +527,8 @@ class AgentDesigner(QMainWindow):
         self._log_target = self.advanced if hasattr(self, "advanced") else self.simple
         self.simple.setBusy(True)
         self.advanced.setBusy(True)
+        if hasattr(self, "development"):
+            self.development.setBusy(True)
         env = QProcessEnvironment.systemEnvironment()
         sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
@@ -470,6 +561,177 @@ class AgentDesigner(QMainWindow):
                 f"  {row.get('agent_id')}: W={row.get('wins')} L={row.get('losses')} "
                 f"T={row.get('ties')} score={row.get('score_total')}\n"
             )
+
+    def _on_new_agent(self) -> None:
+        dialog = NewAgentDialog(self.battle_root, parent=self)
+        if not dialog.exec() or dialog.result is None:
+            return
+        result = dialog.result
+        self.refresh_agents(select=result.agent_id)
+        if hasattr(self, "development"):
+            self.development.setStatus(
+                f"Created agent '{result.agent_id}'.\n"
+                f"manifest: {result.manifest_path}\n"
+                f"source: {result.source_path}"
+            )
+
+    def _on_validate_agent(self) -> None:
+        """Validate the selected Python agent out-of-process (QProcess).
+
+        Validation executes arbitrary, unsandboxed, un-timed-out user
+        Python during import/factory construction/``reset()``/``act()``
+        (docs/specs/agent_designer_workflow.md Sec 5) -- it must never run
+        synchronously on this (the GUI) thread. Shares the existing single
+        ``self._proc`` slot/lifecycle machinery with match/tournament
+        launch (Sec 14.1), so a Validate click while any process is already
+        active is a no-op rather than replacing the in-flight run.
+        """
+        if not hasattr(self, "development"):
+            return
+        if self._proc is not None and self._proc.state() != QProcess.NotRunning:
+            return  # A process (match/tournament/validate/test) is already active.
+        row = self.development.selectedAgentRow()
+        if row is None:
+            return
+        agent_id = row.name
+
+        try:
+            command = build_agents_command("validate", [agent_id])
+        except FileNotFoundError as exc:
+            self.development.show_tool_failure(agent_id, str(exc))
+            return
+
+        self._active_workflow = "validate"
+        self._validate_agent_id = agent_id
+        self._validate_stdout = ""
+        self._validate_stderr = ""
+        self.development.showValidating(agent_id)
+        self.simple.setBusy(True)
+        self.advanced.setBusy(True)
+        self.development.setBusy(True)
+
+        # Same child environment construction already used for match
+        # launch: the child inherits this process's environment (so a
+        # custom BYTEFRAY_ROOT/BATTLE2_ROOT/BATTLE_ROOT is honored
+        # identically), plus a PYTHONPATH extension for a source checkout.
+        env = QProcessEnvironment.systemEnvironment()
+        root = self.battle_root
+        eng = str(root / "engine" / "src")
+        cli = str(root / "client" / "src")
+        sep = ";" if sys.platform == "win32" else ":"
+        existing = env.value("PYTHONPATH") or ""
+        env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
+        env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+
+        proc = self._start_process(command, env, root, label="Validate")
+        proc.start()
+
+    def _present_validation_result(self, code: int) -> None:
+        if not hasattr(self, "development"):
+            return
+        presentation = build_validation_presentation(
+            code, self._validate_stdout, self._validate_stderr, agent_id=self._validate_agent_id or ""
+        )
+        self.development.show_validation_result(presentation)
+
+    def _on_test_agent(self) -> None:
+        """Development-test the selected Python agent out-of-process (QProcess).
+
+        Same process-boundary reasoning as ``_on_validate_agent`` --
+        ``agents test`` executes up to 200 (default) ticks of fully
+        arbitrary, un-timed-out user Python (docs/specs/agent_designer_workflow.md
+        Sec 5/Sec 11) -- and shares the identical single ``self._proc``
+        slot/lifecycle machinery, so a Test click while any process is
+        already active is a no-op rather than replacing the in-flight run.
+        """
+        if not hasattr(self, "development"):
+            return
+        if self._proc is not None and self._proc.state() != QProcess.NotRunning:
+            return  # A process (match/tournament/validate/test) is already active.
+        row = self.development.selectedAgentRow()
+        if row is None:
+            return
+        agent_id = row.name
+        opponent_id = self.development.selected_opponent_id()
+        seed = self.development.selected_seed()
+        ticks = self.development.selected_ticks()
+
+        arguments = [agent_id]
+        if opponent_id is not None:
+            arguments.extend(("--opponent", opponent_id))
+        arguments.extend(("--seed", str(seed)))
+        arguments.extend(("--ticks", str(ticks)))
+
+        try:
+            command = build_agents_command("test", arguments)
+        except FileNotFoundError as exc:
+            self.development.show_test_tool_failure(agent_id, str(exc))
+            return
+
+        self._active_workflow = "test"
+        self._test_agent_id = agent_id
+        self._test_stdout = ""
+        self._test_stderr = ""
+        self.development.showTesting(agent_id, opponent_id or "reference")
+        self.simple.setBusy(True)
+        self.advanced.setBusy(True)
+        self.development.setBusy(True)
+
+        # Same child environment construction already used for match
+        # launch/validate: the child inherits this process's environment
+        # (so a custom BYTEFRAY_ROOT/BATTLE2_ROOT/BATTLE_ROOT is honored
+        # identically), plus a PYTHONPATH extension for a source checkout.
+        env = QProcessEnvironment.systemEnvironment()
+        root = self.battle_root
+        eng = str(root / "engine" / "src")
+        cli = str(root / "client" / "src")
+        sep = ";" if sys.platform == "win32" else ":"
+        existing = env.value("PYTHONPATH") or ""
+        env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
+        env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+
+        proc = self._start_process(command, env, root, label="AgentTest")
+        proc.start()
+
+    def _present_test_result(self, code: int) -> None:
+        if not hasattr(self, "development"):
+            return
+        presentation = build_development_test_presentation(
+            code, self._test_stdout, self._test_stderr, agent_id=self._test_agent_id or ""
+        )
+        self.development.show_test_result(presentation)
+
+    def _on_open_test_replay(self) -> None:
+        """Open a development test's own replay -- independent of "Open Last Replay".
+
+        Deliberately does not touch ``self._last_replay`` (Sec 13 of the
+        Phase 4 spec): a development test's replay must never silently
+        become the Simple/Advanced "Open Last Replay" target, since a user
+        bouncing between tabs should never be surprised by which replay
+        that button opens.
+        """
+        if not hasattr(self, "development"):
+            return
+        path = self.development.last_test_replay_path()
+        if not path:
+            return
+        try:
+            open_pygame_client_direct(self.battle_root, Path(path))
+        except (FileNotFoundError, OSError) as exc:
+            QMessageBox.critical(self, "Replay Launch Failed", str(exc))
+
+    def _on_open_agent_folder(self) -> None:
+        if not hasattr(self, "development"):
+            return
+        row = self.development.selectedAgentRow()
+        if row is None:
+            QMessageBox.information(self, "Open Agent Folder", "Select an agent first.")
+            return
+        path = Path(row.path)
+        if not path.is_dir():
+            QMessageBox.warning(self, "Open Agent Folder", f"Agent folder not found:\n{path}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _on_open_output_folder(self) -> None:
         path = self._tournament_output or (
