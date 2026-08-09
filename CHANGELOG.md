@@ -5,6 +5,49 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+v0.6's primary theme is **Agent Evaluation**: once an agent works and can
+be debugged (v0.4/v0.5), how does an author tell whether it is actually
+getting better? See `docs/specs/agent_evaluation.md` for the full design
+rationale and `docs/AGENT_LAB.md`'s new "Evaluating a candidate" section
+for the user-facing reference.
+
+### Added
+
+- `bytefray agents evaluate <candidate-id> --opponents <id,id,...>
+  [--baseline <id>] [--seeds <n,n,...> | --seed-range <a:b>] [--ticks <n>]
+  [--output <dir>] [--retry-failed] [--dry-run] [--quiet]`: a
+  deterministic evaluation matrix -- the candidate (and optional
+  baseline) each play every listed opponent at every explicit seed --
+  built directly over `NativeMatchService` and executed one cell at a
+  time via the exact `agents test` boundary (`agent_test.test_agent`,
+  now with an additive, optional `run_dir` parameter), so every cell is
+  byte-for-byte reproducible as a plain `agents test` invocation.
+  Produces `bytefray.evaluation` v1 (`evaluation.json`), an additive
+  artifact that references (never duplicates) each cell's canonical
+  `replay.jsonl`/`result.json`. Supports resume (identical to
+  `tournament`'s verified-trust pattern) and `--retry-failed`.
+- Per-cell outcome classification distinguishes a real completed match
+  (`win`/`loss`/`tie`, forfeits already folded in via the existing
+  `winner` field) from a pre-tick-zero initialization failure of either
+  side (`subject_init_failed`/`opponent_init_failed`, both valid
+  evaluation outcomes, neither a tool failure) from a genuine
+  infrastructure/tool failure (`failed`, excluded from all aggregation).
+- A deterministic candidate-vs-baseline comparator classifies each
+  matched `(opponent, seed)` cell as `improved`/`regressed`/`unchanged`
+  using only the engine's own `win`/`tie`/`loss` outcome rank -- never a
+  score- or territory-derived "better" verdict -- with score/territory
+  reported alongside as supporting, non-lossy data. Win rates are always
+  shown with their raw counts (`"n/m (p%)"`), never a bare percentage.
+- Designer: an "Evaluate…" button on the existing Agent Development tab
+  opens a modest configuration dialog and, on completion, a read-only
+  results dialog (aggregate summary, comparison/cell list, and two
+  drill-down actions -- rerun the selected cell in Agent Lab, or open
+  its replay) -- no new top-level tab, reusing the existing
+  `TraceInspectorDialog`/replay launcher unmodified.
+- Evaluation is Python-agent-only in v0.6, inheriting `agents test`'s
+  existing Python-only boundary rather than introducing a second,
+  VM-flavored executor; documented explicitly, not left implicit.
+
 ## [0.5.1] - 2026-08-09
 
 Patch release: Linux virtual-environment compatibility for Agent Lab

@@ -6,13 +6,15 @@ This document describes Bytefray's architecture as of the v0.5.0 release
 `bytefray agents create/validate/test` authoring commands plus the
 Designer's Agent Development tab added in v0.4, and the Agent Lab
 deterministic tracing/`agents inspect`/`agents diverge`/supervised
-timeout containment added in v0.5). It supersedes the v0.2-era
-architecture document; that superseded text remains available in git
-history (see the `v0.2.0` tag) and in
+timeout containment added in v0.5), plus the unreleased v0.6 Agent
+Evaluation work (`bytefray agents evaluate`, the additive
+`bytefray.evaluation` artifact, and the Designer's Evaluate dialog). It
+supersedes the v0.2-era architecture document; that superseded text
+remains available in git history (see the `v0.2.0` tag) and in
 [`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md) for migration context.
-This document describes what exists today (see "v0.4.0 delivery history"
-and "Agent Lab (v0.5.0)" at the end for how each milestone was delivered
-in phases).
+This document describes what exists today (see "v0.4.0 delivery history",
+"Agent Lab (v0.5.0)", and "Agent Evaluation (v0.6)" at the end for how
+each milestone was delivered).
 
 ## Runtime components
 
@@ -485,3 +487,76 @@ already-written trace file and execute no agent code, so neither needs a
 timeout or process boundary. `runs/agents_test/<agent-id>/<run-label>/`
 gains an optional `trace.jsonl` fourth file alongside the existing
 `replay.jsonl`/`result.json`/`summary.json` — additive only.
+
+## Agent Evaluation (v0.6, unreleased)
+
+See `docs/specs/agent_evaluation.md` for the full design. Where v0.4
+built create → validate → test → replay and v0.5 built inspect → debug →
+modify → repeat, Agent Evaluation adds the step after "modify": did this
+candidate actually get better?
+
+`battle_engine.agent_evaluation.EvaluationService` is a new, headless
+orchestrator sibling to `TournamentService` — both sit over
+`NativeMatchService`, but schedule genuinely different experiment shapes.
+A tournament schedules a symmetric round-robin among peers; an evaluation
+schedules a candidate (and optional baseline) each playing an explicit,
+author-chosen opponent/seed matrix, with literal (never re-derived)
+seeds, so any cell is directly reproducible. `EvaluationService` does not
+wrap or extend `TournamentService` — it reuses `agent_test.test_agent`
+itself as its per-cell executor (a small, additive `run_dir` parameter on
+`test_agent` lets the evaluation service place each cell's artifacts
+under its own `matches/` tree), so every evaluation cell is executed by
+the exact same code path `bytefray agents test` uses standalone, and a
+cell's reproduction command is always exactly `bytefray agents test
+<subject> --opponent <opponent> --seed <seed> --ticks <ticks>`.
+
+Per-cell outcomes are classified into `win`/`loss`/`tie` (a real
+completed match — forfeits are already folded into these via the
+existing `winner` field, same as any other match), `subject_init_failed`/
+`opponent_init_failed` (a pre-tick-zero initialization failure of either
+side — a valid evaluation outcome, not a tool failure, since no
+`result.json` exists to aggregate), or `failed` (a genuine
+infrastructure/tool error, excluded from all aggregation). A
+candidate-vs-baseline comparison classifies each matched `(opponent,
+seed)` cell `improved`/`regressed`/`unchanged` using only the engine's
+own `win > tie > loss` outcome rank — score and territory are reported
+alongside every cell as supporting data but never independently produce
+that classification, deliberately avoiding both an opaque single
+"strength" number and an unjustified secondary ranking across dimensions
+`scoring.py`/`RESULT_SCHEMA.md` do not themselves treat as ordered.
+
+The evaluation artifact, `evaluation.json` (`bytefray.evaluation` v1,
+following the newer `bytefray.*` schema-naming precedent
+`bytefray.agent_trace` established rather than the pre-rename `battle2.*`
+canonical-protocol namespace), is additive and independently versioned:
+it references each cell's canonical `replay.jsonl`/`result.json` by
+relative path rather than duplicating their content, and is written with
+the same atomic-JSON-checkpoint discipline (`result_model.
+write_json_atomic`) `tournament.json` already uses. Resume reuses
+`TournamentService`'s verified-trust resume pattern, adapted to one
+cell's two-entrant shape: a recorded `completed` cell's `result.json` is
+trusted only after its entrant order, seed, `match_id`, and replay digest
+are all re-verified against what the scheduled cell expects; a mismatch
+demotes it to `corrupted` rather than being silently trusted or silently
+re-run.
+
+`bytefray agents evaluate` (`battle_engine.agent_evaluation.main`, wired
+through `command.py`'s existing `agents` dispatch) always runs
+unsupervised and untraced — the intended workflow is bulk evaluation
+first, then a single, targeted `bytefray agents test`/`agents inspect`
+rerun of exactly the cell that looks interesting, reusing Agent Lab's
+existing tracing/inspection machinery unmodified rather than adding a
+second one. The Designer's Agent Development tab gains an "Evaluate…"
+button (`app/views/evaluation.py`'s `EvaluationDialog`) that launches the
+same CLI out-of-process (the existing `QProcess`/single-active-process
+machinery, since evaluation runs arbitrary user Python) and, on
+completion, a read-only `EvaluationResultsDialog` reading the canonical
+`evaluation.json` (`app/services/designer_workflows.
+read_evaluation_presentation`) with two drill-down actions on a selected
+cell: rerun it through Agent Lab (reusing the existing
+`TraceInspectorDialog` unmodified) or open its replay.
+
+Evaluation is Python-agent-only in v0.6, inheriting `agents test`'s
+existing Python-only requirement by construction (its per-cell executor
+*is* `agents test`) rather than introducing a second, VM-flavored
+executor — VM/blob agents remain comparable via `bytefray tournament`.

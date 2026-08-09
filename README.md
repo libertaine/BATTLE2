@@ -156,6 +156,8 @@ bytefray agents validate my_agent   # one-tick dry run of the Agent API contract
 bytefray agents test my_agent       # short real match vs. a reference opponent
 bytefray agents inspect <run-dir>   # see what the agent saw/decided at each call
 bytefray agents diverge <a> <b>     # find the first behavioral difference between two runs
+bytefray agents evaluate my_agent --opponents opponent_a,opponent_b --seeds 1,2,3
+                                     # deterministic candidate/baseline evaluation matrix
 ```
 
 `validate`/`test` run supervised by default (a `--timeout`-bounded worker
@@ -164,9 +166,13 @@ reported and recovered instead of hanging the command, and both write an
 optional `trace.jsonl` development artifact alongside the usual
 `replay.jsonl`/`result.json` that `inspect`/`diverge` read — this is
 development-time hang **containment**, not a security sandbox; normal
-`bytefray run`/`tournament` execution is unaffected. See
-[Agent Lab](docs/AGENT_LAB.md) for the full trace/inspect/diverge/timeout
-reference.
+`bytefray run`/`tournament` execution is unaffected. `evaluate` answers a
+different question than `tournament`: not "who wins a round robin" but
+"did this specific candidate improve against these specific opponents and
+seeds" (optionally compared against a `--baseline`) — reusing the exact
+`agents test` execution boundary per cell, so every result is directly
+reproducible. See [Agent Lab](docs/AGENT_LAB.md) for the full
+trace/inspect/diverge/timeout/evaluate reference.
 
 The same loop, plus **Open Replay** and **Inspect Trace**, is available
 without a terminal from the Agent Designer's **Agent Development** tab.

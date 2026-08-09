@@ -247,3 +247,143 @@ the protocol — `print()` for debug output is safe (it lands on stderr,
 visible in the worker's captured crash context on a later failure), but
 an agent should not depend on reading interactively from stdin in either
 supervised or unsupervised mode.
+
+## Evaluating a candidate
+
+Validating, testing, and debugging an agent (above, and
+[AGENT_AUTHORING.md](AGENT_AUTHORING.md)) tell you whether it works. They
+don't tell you whether it's *getting better*. That's what `bytefray
+agents evaluate` answers: run a candidate (and, optionally, a baseline to
+compare against) against an explicit set of opponents and seeds, and see
+where it won, lost, and — if you gave it a baseline — where it improved
+or regressed. See [docs/specs/agent_evaluation.md](specs/agent_evaluation.md)
+for the full design rationale.
+
+### Evaluation vs. tournament
+
+`bytefray tournament` answers "who won, what are the standings" for a
+symmetric group of peers — every entrant plays every other entrant once
+per round. `bytefray agents evaluate` answers a different question: "did
+*this* candidate improve relative to *this* baseline," against an
+asymmetric, author-chosen matrix — the candidate (and baseline) each play
+every listed opponent at every explicit seed; opponents never play each
+other. If you want standings among a group of peers, use `tournament`. If
+you're iterating on one agent and want to know whether your last change
+helped, use `agents evaluate`.
+
+### Running an evaluation
+
+```bash
+bytefray agents evaluate my_agent \
+    --opponents opponent_a,opponent_b \
+    --seeds 1,2,3,4,5 \
+    --ticks 200
+```
+
+This prints the resolved match count before running anything:
+
+```text
+candidate: my_agent
+baseline: none
+opponents: opponent_a, opponent_b
+seeds: 1, 2, 3, 4, 5
+ticks: 200
+subjects: 1  opponents: 2  seeds: 5
+matches: 10
+```
+
+Add `--dry-run` to see this and stop without running a single match.
+Compare against a previous version of your agent (kept under a different
+discovery id) with `--baseline`:
+
+```bash
+bytefray agents evaluate my_agent_v2 \
+    --baseline my_agent_v1 \
+    --opponents opponent_a,opponent_b \
+    --seeds 1,2,3,4,5
+```
+
+Seeds can also be given as an inclusive range instead of a list:
+`--seed-range 1000:1010`. Every seed you specify is used exactly as
+given — an evaluation cell's match seed is never re-derived from a parent
+seed the way tournament match seeds are, so a cell is always directly
+reproducible (see "Inspecting a regression" below).
+
+### Reading the results
+
+Without `--baseline`, you get one aggregate per subject:
+
+```text
+[candidate] my_agent
+  win rate: 7/10 (70%)
+  wins=7 losses=2 ties=1 played=10
+  score_avg=42.1 score_differential_avg=6.3 ticks_avg=198
+  territory_avg=54.20% territory_differential_avg=8.40%
+```
+
+Win rate is always shown with its raw counts (`7/10`), never a bare
+percentage — a small sample is still a small sample no matter how it's
+formatted. With `--baseline`, you additionally get a per-cell comparison:
+
+```text
+comparison: 2 improved, 1 regressed, 6 unchanged, 1 inconclusive (of 10 matched cells)
+regressions:
+  opponent=opponent_b seed=4
+    candidate: loss  baseline: tie
+    rerun candidate: bytefray agents test my_agent_v2 --opponent opponent_b --seed 4 --ticks 200
+    rerun baseline:  bytefray agents test my_agent_v1 --opponent opponent_b --seed 4 --ticks 200
+```
+
+`improved`/`regressed`/`unchanged` come from one deterministic rule: the
+candidate's and baseline's own `win`/`tie`/`loss` outcome at the same
+`(opponent, seed)` cell, ranked `win > tie > loss`. Nothing else —
+not score, not territory — ever flips this classification; those are
+reported alongside every cell as supporting data, never as a hidden
+tiebreaker. A cell where either side failed to initialize (a fact about
+that side's own code, not a real match) is reported separately as
+**inconclusive**, not silently folded into "unchanged."
+
+### Inspecting a regression
+
+Every regressed (or otherwise interesting) cell comes with the exact
+command to reproduce it, because an evaluation cell's inputs (candidate,
+opponent, seed, ticks) are the *entire* input `agents test` needs —
+there's no separate match-configuration surface for the two to disagree
+about:
+
+```bash
+bytefray agents test my_agent_v2 --opponent opponent_b --seed 4 --ticks 200
+bytefray agents inspect <printed-run-dir>
+```
+
+This is the same `agents test`/`agents inspect` loop described earlier in
+this document — evaluation doesn't add a second tracing mechanism.
+Bulk evaluation itself always runs **untraced and unsupervised**
+(no `trace.jsonl`, no timeout) because tracing/supervision cost real wall
+time per match and most of a matrix's cells are never the ones you need
+to look at closely; rerunning the one cell you care about through
+`agents test` gets you a full trace at negligible extra cost.
+
+### Resuming and retrying
+
+Rerunning the identical `bytefray agents evaluate` command against the
+same `--output` directory resumes: every already-completed cell is
+trusted (after verifying its recorded seed/entrants/`match_id` and replay
+digest, exactly like `tournament`'s resume behavior) rather than rerun.
+`--retry-failed` reruns only cells that recorded a genuine tool/
+infrastructure failure — an agent's own loss, forfeit, or initialization
+failure is a valid evaluation outcome and is never retried implicitly.
+
+### Limitations
+
+Evaluation is Python-agent-only in v0.6 — it reuses `agents test` as its
+per-cell executor, and `agents test` requires Python-kind agents. VM/blob
+agents can already be compared with `bytefray tournament`.
+
+### In the Designer
+
+The Agent Development tab's **Evaluate…** button opens the same
+configuration options as the CLI, then shows results in a table with the
+same aggregate/comparison data described above. Selecting a cell enables
+**Test Candidate in Agent Lab** (reruns that exact cell through `agents
+test` and opens the Trace Inspector on it) and **Open Replay**.
