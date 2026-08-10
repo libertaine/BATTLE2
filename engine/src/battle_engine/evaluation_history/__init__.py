@@ -27,6 +27,7 @@ from .discovery import (
 from .models import (
     AdaptedCell,
     ArtifactLocation,
+    ArtifactPathEscapeError,
     ArtifactReadError,
     ConfidenceValue,
     EvaluationSummary,
@@ -34,9 +35,11 @@ from .models import (
     HealthCode,
     HealthReport,
     SchemaSupport,
+    resolve_contained_path,
 )
 from .v1_adapter import adapt_v1
 from .v2_adapter import adapt_v2
+from .verification import CellVerificationOutcome, SummaryVerification, verify_cell, verify_summary
 
 __all__ = [
     "AdaptedCell",
@@ -44,8 +47,10 @@ __all__ = [
     "AmbiguousSelectorError",
     "ArtifactListing",
     "ArtifactLocation",
+    "ArtifactPathEscapeError",
     "ArtifactReadError",
     "BaselineContext",
+    "CellVerificationOutcome",
     "ComparisonDenominators",
     "ComparisonRow",
     "ConfidenceValue",
@@ -55,11 +60,15 @@ __all__ = [
     "HealthCode",
     "HealthReport",
     "SchemaSupport",
+    "SummaryVerification",
     "adapt_any",
     "adapt_v1",
     "adapt_v2",
     "align",
     "default_roots",
     "discover",
+    "resolve_contained_path",
     "resolve_selector",
+    "verify_cell",
+    "verify_summary",
 ]

@@ -62,6 +62,7 @@ class HealthCode(str, Enum):
     UNKNOWN_LEGACY_CONDITION = "unknown_legacy_condition"
     NON_PORTABLE_ABSOLUTE_PATH = "non_portable_absolute_path"
     DUPLICATE_IDENTITY_LOCATION = "duplicate_identity_location"
+    ARTIFACT_PATH_ESCAPE = "artifact_path_escape"
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,38 @@ class ArtifactReadError(Exception):
     def __init__(self, message: str, *, code: HealthCode):
         super().__init__(message)
         self.code = code
+
+
+class ArtifactPathEscapeError(ArtifactReadError):
+    """A cell-recorded relative path resolves outside its evaluation directory (M4)."""
+
+    def __init__(self, message: str):
+        super().__init__(message, code=HealthCode.ARTIFACT_PATH_ESCAPE)
+
+
+def resolve_contained_path(base_dir: Path, relative: str | Path) -> Path:
+    """Resolve ``relative`` (a stored ``artifact_dir``/nested path) beneath ``base_dir``.
+
+    Refuses ``../`` traversal, absolute paths (Windows drive-qualified or
+    POSIX-rooted), and symlink escapes -- anything whose fully resolved
+    location does not fall under ``base_dir``'s own fully resolved location
+    raises :class:`ArtifactPathEscapeError` rather than being silently
+    attributed to this evaluation (M4). ``Path.resolve()`` also normalizes
+    case/drive on Windows, so containment is checked post-resolution, not
+    via string prefix comparison.
+    """
+
+    base_resolved = Path(base_dir).resolve()
+    candidate = Path(base_dir) / Path(relative)
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError:
+        raise ArtifactPathEscapeError(
+            f"{relative!r} resolves to {resolved}, which escapes the evaluation "
+            f"directory {base_resolved}"
+        ) from None
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -136,6 +169,13 @@ class AdaptedCell:
     condition_occurrence_index: ConfidenceValue
     condition_fingerprint: ConfidenceValue
     opponent_identity: ConfidenceValue  # dict | None
+    # Deep-verification eligibility/outcome (B3/Sec 15). ``None`` means
+    # verification was never attempted -- ordinary (non-``--verify``)
+    # adaptation always leaves both ``None`` so callers can never mistake
+    # "not checked" for "checked and passed". Only ``verify_summary()``
+    # (``evaluation_history.verification``) populates these.
+    verified: bool | None = None
+    verify_error: str | None = None
 
     @property
     def is_scored(self) -> bool:
@@ -161,6 +201,8 @@ class AdaptedCell:
             "condition_occurrence_index": self.condition_occurrence_index.to_json(),
             "condition_fingerprint": self.condition_fingerprint.to_json(),
             "opponent_identity": self.opponent_identity.to_json(),
+            "verified": self.verified,
+            "verify_error": self.verify_error,
         }
 
 
@@ -252,6 +294,7 @@ def evaluation_cells_from_raw(
 __all__ = [
     "AdaptedCell",
     "ArtifactLocation",
+    "ArtifactPathEscapeError",
     "ArtifactReadError",
     "ConfidenceValue",
     "EvaluationSummary",
@@ -261,4 +304,5 @@ __all__ = [
     "SchemaSupport",
     "evaluation_cells_from_raw",
     "file_modified_at",
+    "resolve_contained_path",
 ]

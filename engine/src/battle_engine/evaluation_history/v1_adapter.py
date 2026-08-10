@@ -29,6 +29,7 @@ from battle_engine.result_model import read_result
 from .models import (
     AdaptedCell,
     ArtifactLocation,
+    ArtifactPathEscapeError,
     ArtifactReadError,
     ConfidenceValue,
     EvaluationSummary,
@@ -37,6 +38,7 @@ from .models import (
     SchemaSupport,
     evaluation_cells_from_raw,
     file_modified_at,
+    resolve_contained_path,
 )
 
 V1_SCHEMA_NAME = "bytefray.evaluation"
@@ -47,7 +49,12 @@ def _recover_effective_conditions(raw_cells: list[dict[str, Any]], base_dir: Pat
     for raw in raw_cells:
         if raw.get("status") != "completed" or raw.get("outcome") not in ("win", "loss", "tie"):
             continue
-        artifact_dir = base_dir / str(raw.get("artifact_dir", "."))
+        try:
+            artifact_dir = resolve_contained_path(base_dir, str(raw.get("artifact_dir", ".")))
+        except ArtifactPathEscapeError:
+            # M4: never attribute a path outside the evaluation directory to
+            # this evaluation, even for best-effort v1 recovery.
+            continue
         result_path = artifact_dir / "result.json"
         if not result_path.is_file():
             continue

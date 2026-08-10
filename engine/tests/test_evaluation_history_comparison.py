@@ -39,6 +39,7 @@ def _cell(
     opponent_sha: str = "opp-sha",
     unknown_occurrence: bool = False,
     unknown_opponent_identity: bool = False,
+    verified: bool | None = None,
 ) -> AdaptedCell:
     return AdaptedCell(
         schedule_id=f"sched-{opponent_id}-{seed}-{occurrence}",
@@ -65,6 +66,7 @@ def _cell(
             if unknown_opponent_identity
             else ConfidenceValue.recorded(_identity(opponent_id, sha=opponent_sha))
         ),
+        verified=verified,
     )
 
 
@@ -157,12 +159,37 @@ def test_candidate_logical_id_change_is_reported_as_different_candidates():
     assert result.denominators.directly_comparable == 1
 
 
-def test_identical_candidate_fingerprint_with_differing_outcome_is_anomaly():
+def test_identical_candidate_fingerprint_with_differing_outcome_is_not_anomaly_without_verification():
+    """B3: a reproducibility anomaly must never be claimed from evidence that
+    was only read and recomputed from each artifact's own recorded fields --
+    only a genuinely deep-verified (``--verify``) comparison may claim one,
+    even when the candidate identity fingerprint alone already matches."""
+
     left = _summary(candidate_sha="same-sha", cells=(_cell(outcome="win"),))
     right = _summary(candidate_sha="same-sha", cells=(_cell(outcome="loss"),))
     result = align(left, right)
+    assert result.deep_verified is False
+    assert result.reproducibility_anomalies == ()
+    assert result.rows[0].verdict == "regressed"
+    assert result.rows[0].reproducibility_anomaly is False
+
+
+def test_identical_candidate_fingerprint_with_differing_outcome_is_anomaly_when_deep_verified():
+    left = _summary(candidate_sha="same-sha", cells=(_cell(outcome="win", verified=True),))
+    right = _summary(candidate_sha="same-sha", cells=(_cell(outcome="loss", verified=True),))
+    result = align(left, right, deep_verified=True)
     assert result.reproducibility_anomalies
     assert result.reproducibility_anomalies[0].verdict == "regressed"
+
+
+def test_identical_candidate_fingerprint_deep_verified_but_one_cell_unverified_is_not_anomaly():
+    """Passing ``--verify`` alone is not enough -- the specific cells being
+    compared must themselves have actually verified."""
+
+    left = _summary(candidate_sha="same-sha", cells=(_cell(outcome="win", verified=True),))
+    right = _summary(candidate_sha="same-sha", cells=(_cell(outcome="loss", verified=False),))
+    result = align(left, right, deep_verified=True)
+    assert result.reproducibility_anomalies == ()
 
 
 def test_opponent_source_change_prevents_direct_comparison():
@@ -261,28 +288,44 @@ def test_baseline_absent_on_one_side():
     assert result.baseline_context.identity_status == "absent_one"
 
 
-def test_baseline_same_identity_used_as_control():
-    baseline_cell_left = AdaptedCell(
-        schedule_id="b-left", subject_role="baseline", subject_id="baseline", opponent_id="opponent",
-        seed=1, status="completed", outcome="tie", match_id="m1", artifact_dir="d1",
-        score_subject=1.0, score_opponent=1.0, territory_subject=None, territory_opponent=None,
+def _baseline_cell(schedule_id: str, match_id: str, artifact_dir: str, outcome: str, score_subject: float, *, verified: bool | None = None) -> AdaptedCell:
+    return AdaptedCell(
+        schedule_id=schedule_id, subject_role="baseline", subject_id="baseline", opponent_id="opponent",
+        seed=1, status="completed", outcome=outcome, match_id=match_id, artifact_dir=artifact_dir,
+        score_subject=score_subject, score_opponent=1.0, territory_subject=None, territory_opponent=None,
         opponent_index=ConfidenceValue.recorded(0), seed_index=ConfidenceValue.recorded(0),
         condition_occurrence_index=ConfidenceValue.recorded(0),
         condition_fingerprint=ConfidenceValue.recorded("fp"),
         opponent_identity=ConfidenceValue.recorded(_identity("opponent")),
+        verified=verified,
     )
-    baseline_cell_right = AdaptedCell(
-        schedule_id="b-right", subject_role="baseline", subject_id="baseline", opponent_id="opponent",
-        seed=1, status="completed", outcome="win", match_id="m2", artifact_dir="d2",
-        score_subject=5.0, score_opponent=1.0, territory_subject=None, territory_opponent=None,
-        opponent_index=ConfidenceValue.recorded(0), seed_index=ConfidenceValue.recorded(0),
-        condition_occurrence_index=ConfidenceValue.recorded(0),
-        condition_fingerprint=ConfidenceValue.recorded("fp"),
-        opponent_identity=ConfidenceValue.recorded(_identity("opponent")),
+
+
+def test_baseline_same_identity_used_as_control_but_not_anomaly_without_verification():
+    left = _summary(
+        baseline_id="baseline", cells=(_baseline_cell("b-left", "m1", "d1", "tie", 1.0),)
     )
-    left = _summary(baseline_id="baseline", cells=(baseline_cell_left,))
-    right = _summary(baseline_id="baseline", cells=(baseline_cell_right,))
+    right = _summary(
+        baseline_id="baseline", cells=(_baseline_cell("b-right", "m2", "d2", "win", 5.0),)
+    )
     result = align(left, right)
+    assert result.baseline_context.identity_status == "same"
+    # B3: a control-anomaly claim ("the same baseline diverged under
+    # identical conditions") requires deep-verified evidence, same as the
+    # main reproducibility-anomaly claim -- never from recomputed-only data.
+    assert result.baseline_context.control_anomaly is False
+
+
+def test_baseline_same_identity_control_anomaly_when_deep_verified():
+    left = _summary(
+        baseline_id="baseline",
+        cells=(_baseline_cell("b-left", "m1", "d1", "tie", 1.0, verified=True),),
+    )
+    right = _summary(
+        baseline_id="baseline",
+        cells=(_baseline_cell("b-right", "m2", "d2", "win", 5.0, verified=True),),
+    )
+    result = align(left, right, deep_verified=True)
     assert result.baseline_context.identity_status == "same"
     assert result.baseline_context.control_anomaly is True  # tie -> win under identical conditions
 

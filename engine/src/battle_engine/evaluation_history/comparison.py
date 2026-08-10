@@ -96,6 +96,11 @@ class AlignedComparison:
     ambiguous_duplicate_groups: tuple[tuple[Any, ...], ...]
     reproducibility_anomalies: tuple[ComparisonRow, ...]
     denominators: ComparisonDenominators
+    # Whether this comparison ran against deep-verified evidence (B3/Sec 15,
+    # `--verify`) -- an ordinary comparison always leaves this False, and
+    # its output must say so plainly rather than implying its evidence was
+    # verified.
+    deep_verified: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -112,6 +117,7 @@ class AlignedComparison:
             "ambiguous_duplicate_groups": [list(group) for group in self.ambiguous_duplicate_groups],
             "reproducibility_anomalies": [row.to_json() for row in self.reproducibility_anomalies],
             "denominators": self.denominators.to_json(),
+            "deep_verified": self.deep_verified,
         }
 
 
@@ -177,6 +183,7 @@ def _align_cell_sets(
     right_rules_id: str | None,
     *,
     identical_candidate_fingerprint: bool,
+    deep_verified: bool = False,
 ) -> tuple[
     list[ComparisonRow],
     list[AdaptedCell],
@@ -229,11 +236,20 @@ def _align_cell_sets(
                 continue
             assert left_cell.outcome is not None and right_cell.outcome is not None
             outcome_verdict = verdict(left_cell.outcome, right_cell.outcome)
+            # A reproducibility anomaly is a claim that identical inputs
+            # produced different outcomes -- it must never rest on evidence
+            # that was merely read and recomputed from the artifact's own
+            # recorded fields. Requiring `deep_verified` (this comparison
+            # ran with `--verify`) plus both individual cells having
+            # actually verified is what makes that claim trustworthy
+            # (B3/Sec 14 "verified baseline-control claims must require
+            # genuinely verified eligible cells").
             anomaly = (
-                identical_candidate_fingerprint
+                deep_verified
+                and identical_candidate_fingerprint
                 and outcome_verdict != "unchanged"
-                and left_cell.match_id is not None
-                and right_cell.match_id is not None
+                and left_cell.verified is True
+                and right_cell.verified is True
             )
             row = ComparisonRow(
                 opponent_id=right_cell.opponent_id,
@@ -259,8 +275,20 @@ def _align_cell_sets(
     return rows, unmatched_left, unmatched_right, changed_condition, anomalies
 
 
-def align(left: EvaluationSummary, right: EvaluationSummary) -> AlignedComparison:
-    """Right (new) relative to left (old) -- Sec 14. Orientation is always explicit."""
+def align(
+    left: EvaluationSummary, right: EvaluationSummary, *, deep_verified: bool = False
+) -> AlignedComparison:
+    """Right (new) relative to left (old) -- Sec 14. Orientation is always explicit.
+
+    ``deep_verified`` must be ``True`` only when the caller has already run
+    ``evaluation_history.verification.verify_summary`` on *both* ``left``
+    and ``right`` (i.e. ``bytefray agents evaluations compare --verify``) --
+    it gates reproducibility-anomaly and baseline-control-anomaly detection
+    (B3/Sec 14), which must never rest on evidence that was only read and
+    recomputed from the artifacts' own recorded fields. An ordinary
+    (non-``--verify``) comparison leaves this ``False`` and its output must
+    say so plainly rather than implying its evidence was verified.
+    """
 
     left_id = left.candidate_identity
     right_id = right.candidate_identity
@@ -290,6 +318,7 @@ def align(left: EvaluationSummary, right: EvaluationSummary) -> AlignedCompariso
         right_cfp,
         right_rules,
         identical_candidate_fingerprint=identical_candidate_fingerprint,
+        deep_verified=deep_verified,
     )
 
     # Baseline context (Sec 14.3).
@@ -318,9 +347,15 @@ def align(left: EvaluationSummary, right: EvaluationSummary) -> AlignedCompariso
             right_cfp,
             right_rules,
             identical_candidate_fingerprint=True,
+            deep_verified=deep_verified,
         )
         control_rows = tuple(control_result[0])
-        control_anomaly = any(row.verdict != "unchanged" for row in control_rows if row.verdict != "inconclusive")
+        # A verified baseline-control claim ("the same baseline diverged
+        # under nominally identical conditions") reuses the exact same
+        # per-row `reproducibility_anomaly` gate as the main comparison --
+        # never a weaker `verdict != "unchanged"` check that would fire on
+        # unverified evidence.
+        control_anomaly = any(row.reproducibility_anomaly for row in control_rows)
 
     baseline_context = BaselineContext(
         left_baseline_id=left.baseline_id,
@@ -363,6 +398,7 @@ def align(left: EvaluationSummary, right: EvaluationSummary) -> AlignedCompariso
         ambiguous_duplicate_groups=(),
         reproducibility_anomalies=tuple(anomalies),
         denominators=denominators,
+        deep_verified=deep_verified,
     )
 
 

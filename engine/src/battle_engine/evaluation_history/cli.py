@@ -10,6 +10,7 @@ from pathlib import Path
 from .comparison import align
 from .discovery import AmbiguousSelectorError, adapt_any, discover, resolve_selector
 from .models import ArtifactReadError
+from .verification import verify_summary
 
 
 def _print_list_row(entry, verbose: bool = False) -> None:
@@ -77,18 +78,13 @@ def _cmd_show(args: argparse.Namespace) -> int:
     verified = False
     verify_error: str | None = None
     if args.verify:
-        from battle_engine.result_model import ReplayIntegrityError, verify_result_replay
-
-        for cell in summary.cells:
-            if cell.status != "completed" or cell.outcome not in ("win", "loss", "tie"):
-                continue
-            result_path = summary.location.directory / cell.artifact_dir / "result.json"
-            try:
-                verify_result_replay(result_path)
-            except (ReplayIntegrityError, OSError, ValueError) as exc:
-                verify_error = f"{cell.schedule_id}: {exc}"
-                break
-        verified = verify_error is None
+        summary, verification = verify_summary(summary)
+        verified = verification.all_eligible_verified
+        if verification.failed:
+            first = verification.failed[0]
+            verify_error = f"{first.schedule_id}: {first.error}"
+        elif verification.eligible_count == 0:
+            verify_error = "no eligible (completed/scored) cells to verify"
 
     if args.json:
         data = summary.to_json()
@@ -98,7 +94,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
     else:
         _print_show(summary, verified=verified if args.verify else None, verify_error=verify_error)
 
-    if args.verify and verify_error is not None:
+    if args.verify and not verified:
         return 1
     return 0
 
@@ -134,6 +130,23 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None) -> 
         print(f"verified: {verified}" + (f"  ({verify_error})" if verify_error else ""))
 
 
+def _verify_side(summary):
+    """Deep-verify one side of a comparison; returns (summary, error-or-None).
+
+    Shared by both sides of ``compare --verify`` -- the same "no vacuous
+    verified=true for zero eligible cells" rule ``show --verify`` applies
+    (B3/Sec 15).
+    """
+
+    summary, verification = verify_summary(summary)
+    if verification.failed:
+        first = verification.failed[0]
+        return summary, f"{first.schedule_id}: {first.error}"
+    if verification.eligible_count == 0:
+        return summary, "no eligible (completed/scored) cells to verify"
+    return summary, None
+
+
 def _cmd_compare(args: argparse.Namespace) -> int:
     roots = [Path(r) for r in (args.root or [])]
     try:
@@ -150,22 +163,44 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    result = align(left, right)
+    left_verify_error: str | None = None
+    right_verify_error: str | None = None
+    if args.verify:
+        left, left_verify_error = _verify_side(left)
+        right, right_verify_error = _verify_side(right)
+
+    result = align(left, right, deep_verified=bool(args.verify))
 
     if args.json:
-        print(json.dumps(result.to_json(), indent=2, sort_keys=True))
+        data = result.to_json()
+        data["left_verify_error"] = left_verify_error
+        data["right_verify_error"] = right_verify_error
+        print(json.dumps(data, indent=2, sort_keys=True))
     else:
-        _print_compare(left, right, result)
+        _print_compare(left, right, result, left_verify_error, right_verify_error)
 
+    if args.verify and (left_verify_error is not None or right_verify_error is not None):
+        return 1
     if result.denominators.directly_comparable == 0 and not result.rows:
         return 1
     return 0
 
 
-def _print_compare(left, right, result) -> None:
+def _print_compare(left, right, result, left_verify_error=None, right_verify_error=None) -> None:
     print(f"orientation: {result.orientation}")
     print(f"left:  {left.evaluation_id}  candidate={left.candidate_id}")
     print(f"right: {right.evaluation_id}  candidate={right.candidate_id}")
+    if result.deep_verified:
+        print(
+            "evidence: deep-verified (--verify)"
+            + ("" if left_verify_error is None else f"  LEFT FAILED: {left_verify_error}")
+            + ("" if right_verify_error is None else f"  RIGHT FAILED: {right_verify_error}")
+        )
+    else:
+        print(
+            "evidence: NOT deep-verified -- read and recomputed from each artifact's own "
+            "recorded fields only; pass --verify to cross-check nested result/replay artifacts"
+        )
     if result.candidate_changed:
         print("candidate identity: DIFFERENT CANDIDATES (logical id changed)")
     elif result.candidate_diff:
@@ -186,7 +221,7 @@ def _print_compare(left, right, result) -> None:
         f"changed_condition={d.changed_condition}  corrupt_or_missing={d.corrupt_or_missing}"
     )
     if result.reproducibility_anomalies:
-        print("REPRODUCIBILITY ANOMALIES (identical verified candidate, differing outcome):")
+        print("REPRODUCIBILITY ANOMALIES (deep-verified identical candidate, differing outcome):")
         for row in result.reproducibility_anomalies:
             print(f"  opponent={row.opponent_id} seed={row.seed} left={row.left_outcome} right={row.right_outcome}")
     for row in result.rows:

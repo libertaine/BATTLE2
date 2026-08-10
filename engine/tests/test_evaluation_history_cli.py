@@ -179,6 +179,172 @@ def test_cli_compare_no_comparable_cells_exits_1(tmp_path: Path, capsys):
     assert code == 1
 
 
+# ---------------------------------------------------------------------------
+# B3: `compare --verify` must actually deep-verify
+# ---------------------------------------------------------------------------
+
+
+def test_cli_compare_verify_both_sides_verified(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "evidence: deep-verified (--verify)" in out
+    assert "LEFT FAILED" not in out
+    assert "RIGHT FAILED" not in out
+
+
+def test_cli_compare_verify_json_reports_deep_verified_true(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    out = capsys.readouterr().out
+    assert code == 0
+    data = json.loads(out)
+    assert data["deep_verified"] is True
+    assert data["left_verify_error"] is None
+    assert data["right_verify_error"] is None
+
+
+def test_cli_compare_ordinary_comparison_is_not_deep_verified(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "evidence: NOT deep-verified" in out
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert data["deep_verified"] is False
+
+
+def test_cli_compare_verify_detects_missing_nested_result(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    data = json.loads((left_dir / "evaluation.json").read_text(encoding="utf-8"))
+    result_path = left_dir / data["cells"][0]["artifact_dir"] / "result.json"
+    result_path.unlink()
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "LEFT FAILED" in out
+
+
+def test_cli_compare_verify_detects_tampered_evaluation_outcome(tmp_path: Path, capsys):
+    """The nested result/replay are untouched and internally consistent, but
+    the evaluation.json cell's own recorded outcome was tampered -- deep
+    verification must catch the mismatch between the canonical result's
+    winner and what the evaluation cell claims."""
+
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    eval_path = left_dir / "evaluation.json"
+    data = json.loads(eval_path.read_text(encoding="utf-8"))
+    real_outcome = data["cells"][0]["outcome"]
+    data["cells"][0]["outcome"] = "loss" if real_outcome != "loss" else "win"
+    eval_path.write_text(json.dumps(data), encoding="utf-8")
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "LEFT FAILED" in out
+
+
+def test_cli_compare_verify_detects_wrong_result_seed(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    eval_data = json.loads((left_dir / "evaluation.json").read_text(encoding="utf-8"))
+    result_path = left_dir / eval_data["cells"][0]["artifact_dir"] / "result.json"
+    result_data = json.loads(result_path.read_text(encoding="utf-8"))
+    result_data["reproducibility"]["seed"] = 999999
+    result_path.write_text(json.dumps(result_data), encoding="utf-8")
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "LEFT FAILED" in out
+
+
+def test_cli_compare_verify_detects_wrong_match_id(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    eval_path = left_dir / "evaluation.json"
+    data = json.loads(eval_path.read_text(encoding="utf-8"))
+    data["cells"][0]["match_id"] = "evaluation-match_deadbeefdeadbeefdeadbeef"
+    eval_path.write_text(json.dumps(data), encoding="utf-8")
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "LEFT FAILED" in out
+
+
+def test_cli_compare_verify_selected_side_failure_does_not_block_the_other(tmp_path: Path, capsys):
+    """Only the side with the injected fault is reported as failed."""
+
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    eval_data = json.loads((left_dir / "evaluation.json").read_text(encoding="utf-8"))
+    result_path = left_dir / eval_data["cells"][0]["artifact_dir"] / "result.json"
+    result_path.unlink()
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "LEFT FAILED" in out
+    assert "RIGHT FAILED" not in out
+
+
+def test_cli_compare_verify_zero_eligible_cells_is_not_vacuously_verified(tmp_path: Path, capsys):
+    """No completed/scored cells on one side must never be silently reported
+    as ``deep_verified``/``verified`` (no vacuous verified=true)."""
+
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    eval_path = right_dir / "evaluation.json"
+    data = json.loads(eval_path.read_text(encoding="utf-8"))
+    data["cells"][0]["status"] = "failed"
+    data["cells"][0]["outcome"] = None
+    eval_path.write_text(json.dumps(data), encoding="utf-8")
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "RIGHT FAILED" in out
+    assert "no eligible" in out
+
+
 def test_cli_invalid_verb_exits_2():
     with pytest.raises(SystemExit) as excinfo:
         evaluations_main(["bogus-verb"])
