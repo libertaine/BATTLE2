@@ -598,33 +598,73 @@ user-facing summary and example `agents evaluate` invocations.
 
 The design was driven entirely by `bytefray agents evaluate` against the
 engine's actual scoring mechanics (`battle_engine.scoring.ScoringPolicy`,
-`battle_engine.python_runtime`), not assumption. Two findings shaped every
-shipped agent's final form: first, because `Observation` exposes no
-ownership map (only a raw byte value via `READ`) and a first-time `WRITE`
-to any cell is never wasted regardless of what was there before, reading a
-cell before claiming it only pays for itself once genuinely revisiting
-already-owned ground is common — within `agents test`/`evaluate`'s typical
-tick budgets against the default 4096-byte arena, blind full-arena
-coverage essentially never reaches that point, so several early candidate
-designs that read before every write lost consistently to agents that
-simply wrote every action. Second, a bounded "patrol a small home range
-and defend it" agent (prototyped, not shipped — see below) could not be
-tuned to be competitive at all: nothing in this scoring model penalizes
-unrestricted expansion, so any strategy that intentionally limits its own
-footprint loses ground, over a full match, to one that does not. Every
-shipped agent's design reflects one or both lessons; where an agent
-deliberately still spends some of its budget reading (Hunter, Wanderer,
-and Adaptive's `CONTEST` burst), it does so at a low, evaluation-tuned
-frequency rather than on every action.
+`battle_engine.python_runtime`), not assumption, through many iterative
+rounds. Claimer — a disciplined, uninterrupted blind sweep, never reading,
+never stopping — was treated as the fixed strong-baseline strategy
+throughout; the rest of the portfolio was designed and repeatedly retuned
+around it rather than by weakening it. Several findings shaped every
+shipped agent's final form:
 
-One additional prototype, `sentinel` (a reactive defender patrolling a
-growing home range, using the engine's P register as its patrol pointer)
-was implemented, iteratively retuned across several evaluation passes, and
-ultimately not shipped: it could not be made competitive against the
-bundled full-arena sweepers within realistic match lengths regardless of
-starting size, anchor placement, or expansion policy — a direct
-consequence of the second finding above. It is not part of
-`STARTER_AGENT_NAMES` and its source was not committed.
+- Because `Observation` exposes no ownership map (only a raw byte value
+  via `READ`) and a first-time `WRITE` to any cell is never wasted
+  regardless of what was there before, reading a cell before claiming it
+  only pays for itself once genuinely revisiting already-owned ground is
+  common — within `agents test`/`evaluate`'s typical tick budgets against
+  the default 4096-byte arena, blind full-arena coverage essentially
+  never reaches that point. Several candidate designs that read before
+  every write, at any frequency above a low, occasional sampling rate,
+  measured worse than agents that simply wrote every action.
+- Two entrants sweeping with the *same* stride are walking the same
+  cyclic sequence of addresses, just entered at the same or a different
+  point. This looks harmless but is not: whichever one's writes to a
+  shared cell land later in real tick time wins that cell every time, so
+  an agent whose stride happens to match another's — even coincidentally,
+  even in an otherwise well-designed agent — can end up either trivially
+  dominating or trivially losing to it for reasons that have nothing to
+  do with either one's actual strategy. This surfaced three separate
+  times during development (Hunter's dense sweep initially reused
+  Claimer's stride and became a strict superset of it; Strider's rolling
+  defense initially reused Claimer's stride and won every contested cell
+  by construction; Strider's replacement stride then coincidentally
+  matched Adaptive's). Every shipped agent now uses a distinct stride from
+  every other, and the module docstrings note the failure mode explicitly
+  so a reader extending this pattern doesn't reintroduce it.
+- Score accumulates every tick a cell is owned, and there is no combat —
+  only overwrite-based denial. An opponent that never stops expanding
+  eventually sweeps through nearly the whole arena and, because a
+  candidate's writes are scheduled before its opponent's every tick (see
+  `agent_test.TESTED_AGENT_SLOT`/`OPPONENT_SLOT` and the Python scheduling
+  order above), wins any cell it reaches after the candidate already
+  claimed it. Consequently, any strategy that pauses or bounds its own
+  expansion — to patrol a fixed region, to read before writing, to hold a
+  phase that stops claiming new ground — cedes ground over the course of
+  a full match to one that simply never stops. This is almost certainly a
+  fact about the current scoring model rather than a tuning mistake in
+  any one agent; see "Known Limitations" in the CHANGELOG for why it is
+  recorded here rather than addressed in this release.
+
+Two prototypes were built, retuned across several evaluation passes each,
+and not shipped as a result of the third finding above. `sentinel` (a
+reactive defender patrolling a growing home range, using the engine's P
+register as its patrol pointer) never exceeded a small fraction of the
+arena regardless of starting size, anchor placement, or expansion policy.
+An early version of `hunter` (a scanner that read for contested ground and
+burst-attacked it) lost consistently for the same underlying reason before
+being redesigned into its shipped form (an early wide dispersal followed
+by dense fill-in, always writing, never reading more than occasionally).
+Neither rejected version's source was committed. Adaptive is the one
+shipped agent that still deliberately pauses expansion (its `CONTEST` and
+`DEFEND` phases), specifically to demonstrate the engine's `PC`/`JUMP`
+actions as a phase state machine; it is, honestly and by design, the
+weakest of the five bundled agents — evaluation puts it at 0% against the
+other four in both the development and held-out seed matrices — kept for
+that demonstration value rather than for competitiveness (see its own
+module docstring for the full reasoning). The final development-matrix
+standing across the five shipped agents: Claimer and Hunter each win
+around three-quarters of their matches (Hunter loses only to Claimer),
+Strider is close to even, Wanderer wins roughly a quarter, and Adaptive
+wins none — real matchup texture rather than a single dominant agent,
+while still leaving Claimer as the strongest performer throughout.
 
 `engine/tests/test_default_python_agents.py` adds structural coverage for
 the new roster — clean discovery as `kind: python`, successful validation,

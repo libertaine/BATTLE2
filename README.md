@@ -371,13 +371,13 @@ native VM starters (`runner`, `writer`, `seeker`, `spiral`) and five Python
 Agent API v1 agents demonstrating genuinely different strategies against the
 same restricted API described above.
 
-| Agent | Strategy |
-|---|---|
-| `claimer` | Basic territorial: sweeps the whole arena with a fixed stride, claiming every cell, no reading, no reacting. A good first file to read and copy. |
-| `strider` | Claimer's identical sweep, offset to a different starting point, plus one added idea: spends the match's final stretch re-affirming its earliest-claimed ground rather than continuing to expand. |
-| `hunter` | Aggressor: sweeps like Claimer but occasionally samples a cell instead of writing, and when it finds contested ground (neither blank nor its own), seizes it and its neighbors with a short burst. |
-| `wanderer` | Wildcard: picks a randomized (but seed-deterministic) stride at the start of the match, so its coverage order looks scattered rather than evenly spaced, with the same opportunistic burst instinct as Hunter. |
-| `adaptive` | Hybrid showcase: moves through claim, contest, and defend phases as the match progresses, using the engine's PC/JUMP actions as an explicit phase state machine -- see its source for how that pattern works. |
+| Agent | Strategy | Roughly |
+|---|---|---|
+| `claimer` | Basic territorial: sweeps the whole arena with a fixed stride, claiming every cell, no reading, no reacting. A good first file to read and copy. | Strong reference -- hard to beat by design. |
+| `hunter` | Disperser: stakes scattered footholds across the whole arena early (a low-discrepancy "golden ratio" stride), then settles into an ordinary dense sweep -- early presence everywhere, not just where it started. | Strong alternative -- beats everything except Claimer. |
+| `strider` | Claimer's sweep with a different stride, plus one added idea: periodically pauses expanding to replay its own most-recently-claimed ground, on a rolling schedule for the whole match, not just once at the end. | Competitive middle ground. |
+| `wanderer` | Wildcard: sweeps with a stride chosen randomly (but seed-deterministically) at the start of the match, so its coverage order looks scattered rather than evenly spaced, with an opportunistic burst when a leap lands on contested ground. | Occasionally competitive. |
+| `adaptive` | Hybrid showcase: moves through claim, contest, and defend phases as the match progresses, using the engine's PC/JUMP actions as an explicit phase state machine. Deliberately the weakest of the five -- see its source docstring for why, and what that reveals about this scoring model. | Weakest by design; shipped for its API demonstration value. |
 
 Each source file's module docstring explains its strategy, the state it
 tracks, what to try changing, and (for several of them) what an earlier,
@@ -403,8 +403,10 @@ bytefray agents evaluate wanderer --opponents claimer,strider,hunter,adaptive \
 ```
 
 Or compare the `claimer`/`strider` pair directly to see whether Strider's
-one added idea actually pays off (results vary by opponent and seed --
-that is the point of using `evaluate` instead of assuming):
+added idea (periodically defending recently-claimed ground) actually pays
+off -- it does against some opponents and not others, which is itself the
+point of using `evaluate` instead of assuming a "smarter-sounding" agent
+is automatically better:
 
 ```bash
 bytefray agents evaluate strider --baseline claimer \

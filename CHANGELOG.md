@@ -17,9 +17,11 @@ happens to move second within a tick, not by strategy. See
 ARCHITECTURE.md's new "Default Agent Build-Out (v0.6.1)" section for the
 full design rationale, including the empirical findings (via `bytefray
 agents evaluate` against the engine's actual scoring mechanics) that
-shaped every shipped agent's final design, and one prototype (a bounded
+shaped every shipped agent's final design, one prototype (a bounded
 "patrol and defend" agent) that was tuned repeatedly and ultimately not
-shipped because it could not be made competitive.
+shipped because it could not be made competitive, and an open question
+this work surfaced about the scoring model itself (see "Known
+Limitations" below) that is explicitly out of scope for this release.
 
 ### Added
 
@@ -30,21 +32,31 @@ shipped because it could not be made competitive.
   `agents/` catalog by the same non-destructive `ensure_starter_agents()`
   mechanism (no new discovery, catalog, or packaging concept). Each
   demonstrates a distinct, readable strategy against the restricted
-  Python Agent API (territorial sweeping, denial/aggression, randomized
-  coverage, and a phase-based hybrid using the engine's PC/JUMP actions
-  as an explicit state machine) and includes a module docstring
-  explaining its strategy, the state it tracks, what's reasonable to
-  change, and — for several of them — what an earlier, less successful
-  version tried and why it was retuned. `claimer`/`strider` form a
-  visible basic/improved progression pair intended to make `agents
-  evaluate`'s candidate-vs-baseline comparison immediately concrete.
+  Python Agent API — disciplined territorial sweeping (Claimer), early
+  wide-area dispersal followed by dense fill-in (Hunter), periodic
+  rolling defense of recently-claimed ground (Strider), seed-randomized
+  sweep order (Wanderer), and a phase-based hybrid using the engine's
+  PC/JUMP actions as an explicit state machine (Adaptive) — and includes
+  a module docstring explaining its strategy, the state it tracks, what's
+  reasonable to change, and what earlier, less successful (or
+  structurally broken) versions tried and why. Development-matrix and
+  held-out-seed evaluation (`bytefray agents evaluate`) shows real
+  matchup texture rather than one dominant agent: Claimer and Hunter both
+  win roughly three-quarters of their matches (Hunter loses only to
+  Claimer), Strider sits close to even, Wanderer wins about a quarter,
+  and Adaptive — deliberately the weakest, see "Known Limitations" below
+  — is shipped for its PC/JUMP demonstration value rather than its win
+  rate.
 - A README "Try the bundled agents" section describing each agent,
-  compelling example matchups, an `agents evaluate` example comparing the
-  `claimer`/`strider` progression pair, and how to inspect a match in
-  Agent Lab. `docs/AGENT_AUTHORING.md` gained a "Learning from the bundled
-  agents" section pointing authors at the new agents' source as worked
-  examples, since there is no separate "start from example" scaffold
-  option — copying a bundled agent's directory is the mechanism.
+  compelling example matchups, an `agents evaluate` example comparing
+  Claimer against Strider (Claimer's sibling, built around one added
+  idea — periodic rolling defense — whose payoff turns out to depend on
+  the opponent, a deliberate demonstration of measuring rather than
+  assuming), and how to inspect a match in Agent Lab.
+  `docs/AGENT_AUTHORING.md` gained a "Learning from the bundled agents"
+  section pointing authors at the new agents' source as worked examples,
+  since there is no separate "start from example" scaffold option —
+  copying a bundled agent's directory is the mechanism.
 - `engine/tests/test_default_python_agents.py`: structural coverage for
   the new roster (clean discovery, successful validation, successful
   match completion against the reference opponent, and a behavioral
@@ -60,6 +72,30 @@ shipped because it could not be made competitive.
   file set from each starter's actual source directory, since the new
   Python starters are the first to ship more than one file (`agent.yaml`
   and `agent.py`).
+
+### Known Limitations
+
+- Building this roster surfaced a scoring-model question worth recording
+  for a future release, not acted on here: under the current Python
+  Agent API scoring rules (`ScoringPolicy.score_territory` accrues every
+  tick an entrant owns a cell; there is no combat, only overwrite-based
+  denial), unrestricted "claim as much of the arena as fast as possible,
+  and never stop" strategies appear to be close to dominant. Every
+  attempt in this release to trade raw expansion for something else —
+  reading before writing, patrolling and defending a bounded region,
+  pausing to specialize into distinct phases — measured worse against an
+  opponent that simply never stops expanding, because such an opponent
+  eventually sweeps through nearly the whole arena and, in `bytefray
+  agents evaluate`'s fixed subject-then-opponent tick order, wins any
+  cell it reaches after the subject already claimed it. This is almost
+  certainly why the one bounded prototype (see above) could not be made
+  competitive at any size, and why Adaptive — the one shipped agent that
+  still pauses expansion, to demonstrate `PC`/`JUMP` as a phase
+  state machine — is deliberately the weakest of the five. Changing the
+  scoring model is out of scope for this release (and would be a
+  significant scope increase); this is recorded here as a design
+  observation for whoever next considers richer Python match modes or
+  scoring variants.
 
 ## [0.6.0] - 2026-08-09
 
