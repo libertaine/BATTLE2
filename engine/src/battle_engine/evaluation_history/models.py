@@ -7,12 +7,14 @@ than silently defaulting an absent legacy field to a current-schema value.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from battle_engine.agent_evaluation import ComparisonEntry, EvaluationCell, SubjectAggregate
+from battle_engine.result_model import stable_id
 
 
 class FieldConfidence(str, Enum):
@@ -89,6 +91,11 @@ class HealthCode(str, Enum):
     MISSING_RULES_COMPATIBILITY_ID = "missing_rules_compatibility_id"
     MALFORMED_MATRIX_ELEMENT = "malformed_matrix_element"
     INVALID_EXECUTION_CONTEXT_ENTRY = "invalid_execution_context_entry"
+    # Second closure pass: `execution_contexts` itself can be present but
+    # the wrong container type entirely (e.g. JSON `null`, a string, an
+    # object) -- distinct from one malformed *entry* inside an otherwise
+    # well-typed list.
+    INVALID_EXECUTION_CONTEXTS_CONTAINER = "invalid_execution_contexts_container"
 
 
 @dataclass(frozen=True)
@@ -143,6 +150,76 @@ def resolve_contained_path(base_dir: Path, relative: str | Path) -> Path:
             f"directory {base_resolved}"
         ) from None
     return resolved
+
+
+# Second closure pass ("execution-context validation must fail safely"):
+# the fields that define whether a v2 artifact's recorded execution
+# context is a runtime-compatibility-bearing fact rather than an inert
+# label, and each field's expected JSON type. Centralized here (rather
+# than duplicated in ``v2_adapter.py`` and ``comparison.py`` separately) so
+# discovery-time health reporting and compare-time compatibility checking
+# can never silently disagree about what counts as a valid execution
+# context. Deliberately excludes ``context_id`` (derived *from* these
+# fields, see :func:`execution_context_is_valid`) and ``first_used_at`` (an
+# irrelevant bookkeeping timestamp, not a runtime property) -- this is a
+# narrow runtime-compatibility rule, not general environment provenance.
+EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES: dict[str, type] = {
+    "bytefray_version": str,
+    "agent_api_version": int,
+    "python_version": str,
+    "result_schema_version": int,
+    "replay_schema_version": int,
+    "rules_compatibility_id": str,
+}
+
+
+def _typed_field_present(context: Mapping[str, Any], field: str, expected_type: type) -> bool:
+    if field not in context:
+        return False
+    value = context[field]
+    if expected_type is int and isinstance(value, bool):
+        return False
+    return isinstance(value, expected_type)
+
+
+def execution_context_is_valid(context: Any) -> bool:
+    """Structurally and semantically validate one ``execution_contexts`` entry.
+
+    A context is usable -- for discovery-time ``HEALTHY`` classification
+    *and* for compare-time direct-comparison eligibility -- only if:
+
+    * it is a mapping/object (never a bare string, number, list, etc.);
+    * its ``context_id`` is a non-empty string;
+    * every field in :data:`EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES` is
+      present with the expected type (a required field simply absent, or
+      present with the wrong type, is never treated as vacuously equal to
+      an equally-absent field elsewhere -- absence of evidence is not
+      evidence of compatibility);
+    * ``context_id`` is recomputed, exactly as
+      ``agent_evaluation.current_execution_context`` derives it, from
+      those same required fields, and matches the recorded value --
+      catching a context whose ``context_id`` does not match its own
+      semantic contents (tampered or hand-edited).
+
+    A context missing every field but ``context_id`` (e.g. a hand-edited
+    ``{"context_id": "..."}``) fails here on the required-fields check;
+    it is *never* silently treated as complete just because the caller
+    only inspects ``context_id``.
+    """
+
+    if not isinstance(context, dict):
+        return False
+    context_id = context.get("context_id")
+    if not isinstance(context_id, str) or not context_id:
+        return False
+    for field_name, expected_type in EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES.items():
+        if not _typed_field_present(context, field_name, expected_type):
+            return False
+    recomputed = stable_id(
+        "evaluation-context",
+        {field: context[field] for field in EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES},
+    )
+    return recomputed == context_id
 
 
 @dataclass(frozen=True)
@@ -339,6 +416,7 @@ def evaluation_cells_from_raw(
 
 
 __all__ = [
+    "EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES",
     "AdaptedCell",
     "ArtifactLocation",
     "ArtifactPathEscapeError",
@@ -350,6 +428,7 @@ __all__ = [
     "HealthReport",
     "SchemaSupport",
     "evaluation_cells_from_raw",
+    "execution_context_is_valid",
     "file_modified_at",
     "resolve_contained_path",
 ]

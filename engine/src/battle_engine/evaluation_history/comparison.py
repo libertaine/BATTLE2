@@ -6,7 +6,12 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from .models import AdaptedCell, EvaluationSummary, FieldConfidence
+from .models import (
+    EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES,
+    AdaptedCell,
+    EvaluationSummary,
+    FieldConfidence,
+)
 
 _OUTCOME_RANK = {"loss": 0, "tie": 1, "win": 2}
 
@@ -17,22 +22,33 @@ _OUTCOME_RANK = {"loss": 0, "tie": 1, "win": 2}
 # `context_id` (derived from these) and `first_used_at` (an irrelevant
 # bookkeeping timestamp, not a runtime property) -- this is a narrow
 # runtime-compatibility rule for comparison, not general environment
-# provenance.
-_CONTEXT_REQUIRED_FIELD_TYPES: dict[str, type] = {
-    "bytefray_version": str,
-    "agent_api_version": int,
-    "python_version": str,
-    "result_schema_version": int,
-    "replay_schema_version": int,
-    "rules_compatibility_id": str,
-}
+# provenance. Centralized in `models.EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES`
+# (second closure pass) so this module and `v2_adapter.py`'s health
+# reporting can never silently disagree about what counts as a valid
+# execution context; re-bound here under the original private name so the
+# rest of this module is unaffected.
+_CONTEXT_REQUIRED_FIELD_TYPES = EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES
 
 
 def _context_by_id(summary: EvaluationSummary) -> dict[str, dict[str, Any]]:
+    # Deliberately only checks that context_id itself is a usable lookup
+    # key here -- a context missing required fields or with wrong field
+    # types is still indexed (so a lookup can find *something*), but
+    # `_contexts_compatible` below refuses to call it compatible with
+    # anything (each required field must independently be present with the
+    # expected type on both sides before values are even compared).
+    # `v2_adapter.py` separately guarantees that a *real* (adapted-from-
+    # JSON) summary's `execution_contexts` never contains a structurally
+    # invalid entry at all (including one whose own context_id does not
+    # match its semantic contents) -- this module does not re-derive that
+    # check, since doing so from context_id alone would require
+    # recomputing a hash that legitimate hand-built `EvaluationSummary`
+    # fixtures (as opposed to artifacts round-tripped through
+    # `adapt_v2_data`) have no obligation to reproduce.
     return {
         context["context_id"]: context
         for context in summary.execution_contexts
-        if isinstance(context.get("context_id"), str)
+        if isinstance(context.get("context_id"), str) and context.get("context_id")
     }
 
 

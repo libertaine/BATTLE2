@@ -23,6 +23,7 @@ from .models import (
     HealthReport,
     SchemaSupport,
     evaluation_cells_from_raw,
+    execution_context_is_valid,
     file_modified_at,
 )
 
@@ -280,10 +281,33 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         codes.append(HealthCode.DUPLICATE_SCHEDULE_ID)
         detail.append("duplicate schedule_id values across cells")
 
+    # Second closure pass ("execution-context validation must fail
+    # safely"): normalize and validate the `execution_contexts` container
+    # itself before any iteration touches it. `execution_contexts: null`
+    # (valid JSON, wrong container type) previously reached a bare
+    # `for item in data.get("execution_contexts", ())` -- since the key is
+    # *present* with value `None`, `.get(..., ())` returns `None` itself
+    # (the default only applies when the key is absent), so iterating it
+    # raised an uncaught `TypeError` that aborted discovery of every
+    # sibling in the same scan. `execution_contexts` absent entirely is
+    # legitimate (a v2 artifact with no recorded runtime provenance yet);
+    # present with any other, non-list value is malformed and diagnosed,
+    # never crashed on or silently coerced.
+    execution_contexts_raw = data.get("execution_contexts")
+    if "execution_contexts" not in data:
+        execution_contexts_list: list[Any] = []
+    elif isinstance(execution_contexts_raw, list):
+        execution_contexts_list = execution_contexts_raw
+    else:
+        execution_contexts_list = []
+        codes.append(HealthCode.INVALID_EXECUTION_CONTEXTS_CONTAINER)
+        detail.append(
+            "execution_contexts must be a list, got "
+            f"{'null' if execution_contexts_raw is None else type(execution_contexts_raw).__name__}"
+        )
+
     known_context_ids = {
-        item.get("context_id")
-        for item in data.get("execution_contexts", ())
-        if isinstance(item, dict)
+        item.get("context_id") for item in execution_contexts_list if isinstance(item, dict)
     }
     dangling = sorted(
         {schedule_id for schedule_id, context_id in execution_context_refs if context_id not in known_context_ids}
@@ -295,6 +319,23 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             f"execution_contexts: {', '.join(dangling[:5])}"
             + ("..." if len(dangling) > 5 else "")
         )
+
+    # H2/second closure pass: an execution_contexts entry is usable -- for
+    # both HEALTHY classification here and direct-comparison eligibility in
+    # comparison.py -- only if it passes the full structural+semantic
+    # validity check (right type, every runtime-compatibility field
+    # present with the expected type, and context_id itself consistent
+    # with those fields). A context missing every field but context_id
+    # (e.g. a hand-edited `{"context_id": "..."}`) fails this and is
+    # diagnosed, never silently treated as complete just because a
+    # shallower check only looked at context_id's presence.
+    valid_execution_contexts = [
+        item for item in execution_contexts_list if execution_context_is_valid(item)
+    ]
+    invalid_context_entries = len(execution_contexts_list) - len(valid_execution_contexts)
+    if invalid_context_entries:
+        codes.append(HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY)
+        detail.append(f"{invalid_context_entries} execution_contexts entrie(s) are malformed")
 
     if any(Path(str(raw.get("artifact_dir", ""))).is_absolute() for raw in raw_cells):
         codes.append(HealthCode.NON_PORTABLE_ABSOLUTE_PATH)
@@ -435,20 +476,6 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             + ("..." if len(malformed_elements) > 5 else "")
         )
 
-    # H2: an execution_contexts entry that is not an object, or lacks a
-    # non-empty string context_id, cannot be meaningfully referenced by any
-    # cell -- flagged explicitly rather than silently dropped (it is
-    # already silently excluded from `known_context_ids`/`_context_by_id`
-    # elsewhere, which is correct defensive behavior, but that alone gives
-    # no visible diagnostic that the artifact itself is malformed here).
-    invalid_context_entries = 0
-    for item in data.get("execution_contexts", ()):
-        if not isinstance(item, dict) or not isinstance(item.get("context_id"), str) or not item.get("context_id"):
-            invalid_context_entries += 1
-    if invalid_context_entries:
-        codes.append(HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY)
-        detail.append(f"{invalid_context_entries} execution_contexts entrie(s) are malformed")
-
     # H2: `HEALTHY` is added only now, after every semantic/structural
     # check above has run -- never both `HEALTHY` and a structural-
     # inconsistency code at once.
@@ -484,9 +511,13 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         health=HealthReport(codes=tuple(codes), detail=tuple(detail), verified=False),
         aggregates_recomputed=tuple(aggregates),
         comparison_recomputed=tuple(comparison),
-        execution_contexts=tuple(
-            item for item in data.get("execution_contexts", ()) if isinstance(item, dict)
-        ),
+        # Only fully valid contexts are exposed here -- a malformed entry
+        # (wrong container-level type already excluded above; missing
+        # fields, wrong field types, or a context_id inconsistent with its
+        # own semantic contents) must never be available for
+        # `comparison.py` to find by id and treat as a legitimate
+        # compatibility record (second closure pass).
+        execution_contexts=tuple(valid_execution_contexts),
     )
 
 

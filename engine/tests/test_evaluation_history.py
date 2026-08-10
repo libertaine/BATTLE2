@@ -563,8 +563,188 @@ def test_v2_invalid_execution_context_entry_flagged_with_valid_sibling(tmp_path:
     )
     good_path = tmp_path / "good" / "evaluation.json"
     good_path.parent.mkdir(parents=True)
+    # A context with *only* context_id (every runtime-compatibility field
+    # absent) is itself malformed (second closure pass, Case B) -- the
+    # "good" sibling here has no execution_contexts at all, so this test
+    # stays focused on "one malformed sibling never aborts/contaminates
+    # discovery of another," not on what counts as a valid context (see
+    # test_v2_execution_context_missing_fields_flagged_with_valid_sibling
+    # for that).
+    good_path.write_text(json.dumps(_v2_base(cells=[], execution_contexts=[])), encoding="utf-8")
+
+    bad_summary = adapt_v2(bad_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY not in good_summary.health.codes
+
+
+# ---------------------------------------------------------------------------
+# Second closure pass: execution_contexts validation must fail safely.
+# ---------------------------------------------------------------------------
+
+
+def _real_context(**overrides) -> dict:
+    """A genuinely valid execution context: every required field present
+    with the right type, and context_id correctly recomputed from them
+    exactly as ``agent_evaluation.current_execution_context`` derives it.
+    """
+
+    from battle_engine.result_model import stable_id
+
+    fields = {
+        "bytefray_version": "9.9.9-test",
+        "agent_api_version": 1,
+        "python_version": "3.11.0",
+        "result_schema_version": 1,
+        "replay_schema_version": 3,
+        "rules_compatibility_id": "evaluation-rules-1",
+    }
+    fields.update(overrides)
+    context_id = stable_id("evaluation-context", fields)
+    return {"context_id": context_id, "first_used_at": "2026-01-01T00:00:00Z", **fields}
+
+
+def _consistent_v2_base(**overrides) -> dict:
+    """``_v2_base()`` but with ``evaluation_id`` recomputed to actually
+    match its own ``planned_identities``/``effective_conditions``/
+    ``rules_compatibility_id`` -- ``_v2_base()``'s own placeholder id
+    (``"evaluation-v2_x"``) is *not* self-consistent by construction, so a
+    test asserting a fully ``HEALTHY`` report needs a base that genuinely
+    rehashes, not just one that happens not to trip the specific code under
+    test (see ``test_v2_consistent_planned_identity_matches_evaluation_id_
+    not_flagged`` for the same recipe applied inline)."""
+
+    from battle_engine.result_model import stable_id
+
+    base = _v2_base(**overrides)
+    payload = {
+        "identity_version": base["identity_version"],
+        "candidate": base["planned_identities"]["candidate"],
+        "baseline": base["planned_identities"]["baseline"],
+        "opponents": base["planned_identities"]["opponents"],
+        "seeds": base["seeds"],
+        "ticks": base["ticks"],
+        "effective_conditions": base["effective_conditions"],
+        "rules_compatibility_id": base["rules_compatibility_id"],
+    }
+    base["evaluation_id"] = stable_id("evaluation-v2", payload)
+    return base
+
+
+def test_v2_execution_contexts_null_isolated_with_valid_sibling(tmp_path: Path):
+    """Case A: ``execution_contexts: null`` is valid JSON but the wrong
+    container type -- previously ``data.get("execution_contexts", ())``
+    returned ``None`` verbatim (the default only applies when the key is
+    *absent*, not when present-with-null), and iterating it raised an
+    uncaught ``TypeError`` that would have aborted discovery of every
+    sibling in the same scan. Must now be a typed diagnostic that never
+    escapes, and never contaminate a valid sibling's own discovery."""
+
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_data = _consistent_v2_base(cells=[], matrix_size=0)
+    bad_data["execution_contexts"] = None
+    bad_path.write_text(json.dumps(bad_data), encoding="utf-8")
+
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(json.dumps(_consistent_v2_base(cells=[], matrix_size=0)), encoding="utf-8")
+
+    bad_summary = adapt_v2(bad_path)  # must not raise
+    assert HealthCode.INVALID_EXECUTION_CONTEXTS_CONTAINER in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+    assert bad_summary.execution_contexts == ()
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXTS_CONTAINER not in good_summary.health.codes
+    assert HealthCode.HEALTHY in good_summary.health.codes
+
+    listing = discover(artifacts=[bad_path, good_path])
+    by_path = {entry.location.evaluation_json_path: entry for entry in listing.entries}
+    assert by_path[bad_path.resolve()].summary is not None
+    assert by_path[good_path.resolve()].summary is not None
+
+
+def test_v2_execution_contexts_non_list_container_isolated_with_valid_sibling(tmp_path: Path):
+    """Case A variant: a non-list, non-null container (a bare string here)
+    is exactly as malformed as ``null`` and must be diagnosed the same
+    way, never crash, never contaminate a sibling."""
+
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_data = _consistent_v2_base(cells=[], matrix_size=0)
+    bad_data["execution_contexts"] = "not-a-list"
+    bad_path.write_text(json.dumps(bad_data), encoding="utf-8")
+
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(json.dumps(_consistent_v2_base(cells=[], matrix_size=0)), encoding="utf-8")
+
+    bad_summary = adapt_v2(bad_path)  # must not raise
+    assert HealthCode.INVALID_EXECUTION_CONTEXTS_CONTAINER in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+    assert bad_summary.execution_contexts == ()
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXTS_CONTAINER not in good_summary.health.codes
+    assert HealthCode.HEALTHY in good_summary.health.codes
+
+
+def test_v2_execution_context_missing_fields_flagged_with_valid_sibling(tmp_path: Path):
+    """Case B: a context containing only ``context_id`` -- every
+    behaviorally relevant runtime field absent -- must be flagged
+    malformed, not silently treated as healthy just because a shallower
+    check only looked at context_id's presence."""
+
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(
+        json.dumps(
+            _consistent_v2_base(
+                cells=[], matrix_size=0,
+                execution_contexts=[{"context_id": "evaluation-context_incomplete"}],
+            )
+        ),
+        encoding="utf-8",
+    )
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
     good_path.write_text(
-        json.dumps(_v2_base(cells=[], execution_contexts=[{"context_id": "evaluation-context_ok"}])),
+        json.dumps(_consistent_v2_base(cells=[], matrix_size=0, execution_contexts=[_real_context()])),
+        encoding="utf-8",
+    )
+
+    bad_summary = adapt_v2(bad_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+    assert bad_summary.execution_contexts == ()  # malformed entry never surfaced as usable
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY not in good_summary.health.codes
+    assert HealthCode.HEALTHY in good_summary.health.codes
+    assert len(good_summary.execution_contexts) == 1
+
+
+def test_v2_execution_context_wrong_field_type_flagged_with_valid_sibling(tmp_path: Path):
+    """A context with every required field present, but one of the wrong
+    type (``agent_api_version`` as a string instead of an int), is exactly
+    as malformed as a missing field -- comparing across a type mismatch
+    proves nothing about runtime compatibility."""
+
+    bad_context = _real_context()
+    bad_context["agent_api_version"] = "1"  # wrong type -- str, not int
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(
+        json.dumps(_consistent_v2_base(cells=[], matrix_size=0, execution_contexts=[bad_context])),
+        encoding="utf-8",
+    )
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(
+        json.dumps(_consistent_v2_base(cells=[], matrix_size=0, execution_contexts=[_real_context()])),
         encoding="utf-8",
     )
 
@@ -574,6 +754,149 @@ def test_v2_invalid_execution_context_entry_flagged_with_valid_sibling(tmp_path:
 
     good_summary = adapt_v2(good_path)
     assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY not in good_summary.health.codes
+    assert HealthCode.HEALTHY in good_summary.health.codes
+
+
+def test_v2_execution_context_id_inconsistent_with_fields_flagged_with_valid_sibling(tmp_path: Path):
+    """A context with every required field present and correctly typed,
+    but whose own context_id does not match those semantic contents (e.g.
+    hand-edited/tampered) -- structurally "complete" but not trustworthy,
+    since context_id is supposed to be a deterministic function of exactly
+    those fields (``agent_evaluation.current_execution_context``)."""
+
+    bad_context = _real_context()
+    bad_context["context_id"] = "evaluation-context_doesnotmatch"
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(
+        json.dumps(_consistent_v2_base(cells=[], matrix_size=0, execution_contexts=[bad_context])),
+        encoding="utf-8",
+    )
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(
+        json.dumps(_consistent_v2_base(cells=[], matrix_size=0, execution_contexts=[_real_context()])),
+        encoding="utf-8",
+    )
+
+    bad_summary = adapt_v2(bad_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+    assert bad_summary.execution_contexts == ()
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY not in good_summary.health.codes
+    assert HealthCode.HEALTHY in good_summary.health.codes
+
+
+def test_v2_dangling_execution_context_flagged_with_valid_sibling(tmp_path: Path):
+    cell = {
+        "schedule_id": "s1", "subject_role": "candidate", "subject_id": "candidate",
+        "opponent_id": "opponent", "seed": 1, "status": "completed", "outcome": "win",
+        "execution_context_id": "evaluation-context_doesnotexist",
+    }
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(
+        json.dumps(_consistent_v2_base(cells=[cell], matrix_size=1, execution_contexts=[])), encoding="utf-8"
+    )
+    good_context = _real_context()
+    good_cell = dict(cell, execution_context_id=good_context["context_id"])
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(
+        json.dumps(_consistent_v2_base(cells=[good_cell], matrix_size=1, execution_contexts=[good_context])),
+        encoding="utf-8",
+    )
+
+    bad_summary = adapt_v2(bad_path)
+    assert HealthCode.DANGLING_EXECUTION_CONTEXT in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.DANGLING_EXECUTION_CONTEXT not in good_summary.health.codes
+    assert HealthCode.HEALTHY in good_summary.health.codes
+
+
+def test_v2_complete_valid_execution_context_is_healthy(tmp_path: Path):
+    """Positive control: a fully valid, complete execution context (every
+    required field present and correctly typed, context_id correctly
+    derived from them) used by a real cell must classify HEALTHY."""
+
+    context = _real_context()
+    cell = {
+        "schedule_id": "s1", "subject_role": "candidate", "subject_id": "candidate",
+        "opponent_id": "opponent", "seed": 1, "status": "completed", "outcome": "win",
+        "execution_context_id": context["context_id"],
+    }
+    path = tmp_path / "evaluation.json"
+    path.write_text(
+        json.dumps(_consistent_v2_base(cells=[cell], matrix_size=1, execution_contexts=[context])),
+        encoding="utf-8",
+    )
+    summary = adapt_v2(path)
+    assert summary.health.codes == (HealthCode.HEALTHY,)
+    assert len(summary.execution_contexts) == 1
+    assert summary.execution_contexts[0]["context_id"] == context["context_id"]
+
+
+def test_v2_malformed_execution_context_cannot_participate_in_direct_comparison(tmp_path: Path):
+    """Issue 2, end to end: a v2 artifact's execution_contexts entry that
+    is malformed (Case B: only context_id, every runtime field absent)
+    must, once adapted and compared via align(), never let its
+    referencing cells produce an ordinary improved/regressed/unchanged
+    verdict -- even when both sides reference the identical malformed
+    context id, which a shallower id-equality-only check could otherwise
+    mistake for "the same known runtime"."""
+
+    from battle_engine.evaluation_history import adapt_v2, align
+
+    opponent_identity = {
+        "agent_id": "opponent", "kind": "python", "api_version": 1,
+        "agent_version": "1.0", "entry_point": "agent.py:create_agent",
+        "source_sha256": "abc", "local_source_fingerprint": "def",
+    }
+    malformed_context_id = "evaluation-context_incomplete"
+
+    def _build(outcome: str) -> dict:
+        cell = {
+            "schedule_id": f"s-{outcome}", "subject_role": "candidate", "subject_id": "candidate",
+            "opponent_id": "opponent", "seed": 1, "status": "completed", "outcome": outcome,
+            "condition_occurrence_index": 0, "condition_fingerprint": "fp",
+            "execution_context_id": malformed_context_id,
+        }
+        return _consistent_v2_base(
+            cells=[cell],
+            matrix_size=1,
+            opponent_ids=["opponent"],
+            planned_identities={
+                "candidate": {"agent_id": "candidate"},
+                "baseline": None,
+                "opponents": [opponent_identity],
+            },
+            execution_contexts=[{"context_id": malformed_context_id}],  # Case B
+        )
+
+    left_path = tmp_path / "left" / "evaluation.json"
+    left_path.parent.mkdir(parents=True)
+    left_path.write_text(json.dumps(_build("win")), encoding="utf-8")
+
+    right_path = tmp_path / "right" / "evaluation.json"
+    right_path.parent.mkdir(parents=True)
+    right_path.write_text(json.dumps(_build("loss")), encoding="utf-8")
+
+    left = adapt_v2(left_path)
+    right = adapt_v2(right_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY in left.health.codes
+    assert left.execution_contexts == ()  # the malformed context never surfaced as usable
+    assert right.execution_contexts == ()
+
+    result = align(left, right)
+    assert result.rows  # the cells still strict-aligned on condition
+    assert all(row.verdict == "inconclusive" for row in result.rows)
+    assert result.denominators.directly_comparable == 0
+    assert result.denominators.regressed == 0
+    assert result.denominators.improved == 0
 
 
 def test_v2_missing_effective_conditions_and_rules_id_are_diagnostics_not_silently_healthy(tmp_path: Path):
