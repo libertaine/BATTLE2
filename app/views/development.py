@@ -20,7 +20,6 @@ independent of the Designer's Simple/Advanced "Open Last Replay" state
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
 
 from battle_engine.agent_scaffold import (
     AGENT_ID_PATTERN,
@@ -75,11 +74,11 @@ class NewAgentDialog(QDialog):
     can correct the id and retry.
     """
 
-    def __init__(self, battle_root: Path, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, battle_root: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("New Agent")
         self._battle_root = battle_root
-        self.result: Optional[ScaffoldResult] = None
+        self.result: ScaffoldResult | None = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Agent ID"))
@@ -144,13 +143,13 @@ class AgentDevelopmentPanel(QWidget):
 
     def __init__(self, catalog=None) -> None:  # catalog kept for parity with other panels
         super().__init__()
-        self._rows: List[AgentRow] = []
+        self._rows: list[AgentRow] = []
         self._busy = False
-        self._current_agent_name: Optional[str] = None
-        self._last_validation: Optional[ValidationPresentation] = None
-        self._last_test: Optional[DevelopmentTestPresentation] = None
-        self._last_test_replay: Optional[Path] = None
-        self._last_test_trace: Optional[Path] = None
+        self._current_agent_name: str | None = None
+        self._last_validation: ValidationPresentation | None = None
+        self._last_test: DevelopmentTestPresentation | None = None
+        self._last_test_replay: Path | None = None
+        self._last_test_trace: Path | None = None
 
         root = QVBoxLayout(self)
 
@@ -253,7 +252,7 @@ class AgentDevelopmentPanel(QWidget):
         self._update_enablement()
 
     # ---- API consumed by AgentDesigner ----
-    def setAgents(self, rows: List[AgentRow]) -> None:
+    def setAgents(self, rows: list[AgentRow]) -> None:
         """Repopulate the combo from the full catalog, keeping python agents only."""
         self._rows = [row for row in rows if _is_python_agent(row)]
         names = [row.name for row in self._rows]
@@ -291,7 +290,7 @@ class AgentDevelopmentPanel(QWidget):
         self.opponentCombo.setCurrentIndex(index)
         self.opponentCombo.blockSignals(False)
 
-    def selected_opponent_id(self) -> Optional[str]:
+    def selected_opponent_id(self) -> str | None:
         """The ``--opponent`` value to pass, or ``None`` for the internal reference."""
         return self.opponentCombo.currentData()
 
@@ -304,11 +303,11 @@ class AgentDevelopmentPanel(QWidget):
     def selected_timeout(self) -> float:
         return self.timeoutSpin.value()
 
-    def last_test_trace_path(self) -> Optional[Path]:
+    def last_test_trace_path(self) -> Path | None:
         """The last completed test's trace path, or ``None`` if unavailable."""
         return self._last_test_trace
 
-    def last_test_replay_path(self) -> Optional[Path]:
+    def last_test_replay_path(self) -> Path | None:
         """The last completed test's replay path, or ``None`` if unavailable.
 
         Independent of ``AgentDesigner._last_replay`` (Sec 13 of the Phase
@@ -324,7 +323,7 @@ class AgentDevelopmentPanel(QWidget):
             self.agentCombo.setCurrentIndex(idx)
         self._on_combo_changed(self.agentCombo.currentText())
 
-    def selectedAgentRow(self) -> Optional[AgentRow]:
+    def selectedAgentRow(self) -> AgentRow | None:
         name = self.agentCombo.currentText()
         for row in self._rows:
             if row.name == name:

@@ -29,15 +29,15 @@ class ConfidenceValue:
     confidence: FieldConfidence
 
     @staticmethod
-    def recorded(value: Any) -> "ConfidenceValue":
+    def recorded(value: Any) -> ConfidenceValue:
         return ConfidenceValue(value, FieldConfidence.RECORDED)
 
     @staticmethod
-    def unknown() -> "ConfidenceValue":
+    def unknown() -> ConfidenceValue:
         return ConfidenceValue(None, FieldConfidence.UNKNOWN)
 
     @staticmethod
-    def recovered(value: Any) -> "ConfidenceValue":
+    def recovered(value: Any) -> ConfidenceValue:
         return ConfidenceValue(value, FieldConfidence.RECOVERED)
 
     def to_json(self) -> dict[str, Any]:
@@ -250,8 +250,6 @@ def evaluation_cells_from_raw(
 
 
 __all__ = [
-    "evaluation_cells_from_raw",
-    "file_modified_at",
     "AdaptedCell",
     "ArtifactLocation",
     "ArtifactReadError",
@@ -261,4 +259,6 @@ __all__ = [
     "HealthCode",
     "HealthReport",
     "SchemaSupport",
+    "evaluation_cells_from_raw",
+    "file_modified_at",
 ]

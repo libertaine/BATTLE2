@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from battle_engine.agents import discover_agents_in
 
@@ -12,8 +12,8 @@ from battle_engine.agents import discover_agents_in
 class AgentRow:
     name: str
     path: str
-    blob_path: Optional[str]
-    meta: Dict[str, Any]
+    blob_path: str | None
+    meta: dict[str, Any]
     # Discovery id (``resolve_agent``'s key, == directory name) -- distinct
     # from ``name`` (the display name). Every control that ultimately feeds
     # an id to a CLI invocation (evaluation, test, validate) must use this
@@ -34,10 +34,10 @@ class AgentCatalog:
         override = os.getenv("BATTLE_AGENTS_DIR")
         return Path(override) if override else (self.battle_root / "agents")
 
-    def list_agents(self) -> List[AgentRow]:
+    def list_agents(self) -> list[AgentRow]:
         base = self.agents_dir()
         specs = discover_agents_in(base)
-        rows: List[AgentRow] = []
+        rows: list[AgentRow] = []
         for spec in specs.values():
             meta = dict(spec.manifest)
             declared_blob = meta.get("blob_path")

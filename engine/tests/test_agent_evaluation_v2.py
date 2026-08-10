@@ -143,8 +143,6 @@ def test_v2_first_checkpoint_exists_before_any_cell_executes(two_agents: Path, m
     request = _request(two_agents)
     state_path = request.output_dir / "evaluation.json"
 
-    original = mod.test_agent
-
     def _boom(*args, **kwargs):
         # Checkpoint must already exist by the time the first cell runs.
         data = json.loads(state_path.read_text(encoding="utf-8"))
@@ -330,7 +328,7 @@ def test_v2_condition_occurrence_index_resets_per_distinct_opponent_seed_pair(tw
 
 def test_v2_condition_fingerprint_excludes_candidate_identity(two_agents: Path):
     _write_python_agent(two_agents, "candidate_b")
-    from battle_engine.agent_evaluation import agent_identity, effective_conditions_for
+    from battle_engine.agent_evaluation import effective_conditions_for
     from battle_engine.agents import resolve_agent
 
     conditions = effective_conditions_for(10, 1)

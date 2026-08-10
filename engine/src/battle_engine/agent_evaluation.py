@@ -190,7 +190,7 @@ class ExecutionContext:
 
 def current_execution_context(rules_compatibility_id: str) -> ExecutionContext:
     project = get_project_info()
-    payload = {
+    payload: dict[str, Any] = {
         "bytefray_version": project.version,
         "agent_api_version": project.agent_api_version,
         "python_version": project.python_version,
@@ -199,7 +199,15 @@ def current_execution_context(rules_compatibility_id: str) -> ExecutionContext:
         "rules_compatibility_id": rules_compatibility_id,
     }
     context_id = stable_id("evaluation-context", payload)
-    return ExecutionContext(context_id=context_id, **payload)
+    return ExecutionContext(
+        context_id=context_id,
+        bytefray_version=project.version,
+        agent_api_version=project.agent_api_version,
+        python_version=project.python_version,
+        result_schema_version=project.result_schema_version,
+        replay_schema_version=project.replay_schema_version,
+        rules_compatibility_id=rules_compatibility_id,
+    )
 
 
 def _resolve_python_agent(root: Path, agent_id: str) -> AgentSpec:
@@ -1067,7 +1075,7 @@ class EvaluationService:
         request: EvaluationRequest,
         specs: Mapping[str, AgentSpec],
         planned_identities: Mapping[str, dict[str, Any]],
-        record_context_usage: "Callable[[], str]",
+        record_context_usage: Callable[[], str],
     ) -> EvaluationCell:
         root = request.data_root or get_data_root()
         drift = self._detect_pre_execution_drift(cell, planned_identities, root)

@@ -8,7 +8,13 @@ result_model,replay}`` and must never import Qt/pygame/Designer code
 
 from __future__ import annotations
 
-from .comparison import AlignedComparison, BaselineContext, ComparisonDenominators, ComparisonRow, align
+from .comparison import (
+    AlignedComparison,
+    BaselineContext,
+    ComparisonDenominators,
+    ComparisonRow,
+    align,
+)
 from .discovery import (
     AmbiguousSelectorError,
     ArtifactListing,

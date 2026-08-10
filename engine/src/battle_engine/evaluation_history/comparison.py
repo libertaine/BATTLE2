@@ -227,6 +227,7 @@ def _align_cell_sets(
                 )
                 rows.append(row)
                 continue
+            assert left_cell.outcome is not None and right_cell.outcome is not None
             outcome_verdict = verdict(left_cell.outcome, right_cell.outcome)
             anomaly = (
                 identical_candidate_fingerprint

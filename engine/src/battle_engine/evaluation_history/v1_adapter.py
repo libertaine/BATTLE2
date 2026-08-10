@@ -73,7 +73,7 @@ def _recover_effective_conditions(raw_cells: list[dict[str, Any]], base_dir: Pat
 def _condition_occurrence_indices(raw_cells: list[dict[str, Any]]) -> list[int]:
     """Deterministic, always-recoverable from file order alone (Sec 8/10)."""
 
-    counts: dict[tuple[str, str, Any], int] = {}
+    counts: dict[tuple[Any, Any, Any], int] = {}
     indices = []
     for raw in raw_cells:
         key = (raw.get("subject_role"), raw.get("opponent_id"), raw.get("seed"))

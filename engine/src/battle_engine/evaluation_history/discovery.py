@@ -7,13 +7,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from battle_engine.agent_evaluation import SCHEMA_NAME as V2_SCHEMA_NAME
 from battle_engine.paths import get_data_root
 
-from .models import ArtifactLocation, ArtifactReadError, EvaluationSummary, HealthCode, HealthReport, file_modified_at
+from .models import (
+    ArtifactLocation,
+    ArtifactReadError,
+    EvaluationSummary,
+    HealthCode,
+    HealthReport,
+    file_modified_at,
+)
 from .v1_adapter import V1_SCHEMA_NAME, adapt_v1
 from .v2_adapter import adapt_v2
-
-from battle_engine.agent_evaluation import SCHEMA_NAME as V2_SCHEMA_NAME
 
 
 class AmbiguousSelectorError(ValueError):
