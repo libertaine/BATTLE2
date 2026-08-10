@@ -214,6 +214,9 @@ def adapt_v2(path: Path) -> EvaluationSummary:
                     raw, "condition_fingerprint", expected_type=str
                 ),
                 opponent_identity=opponent_identity,
+                execution_context_id=_recorded_or_unknown(
+                    raw, "execution_context_id", expected_type=str, allow_none=True
+                ),
             )
         )
 
@@ -341,6 +344,9 @@ def adapt_v2(path: Path) -> EvaluationSummary:
         health=HealthReport(codes=tuple(codes), detail=tuple(detail), verified=False),
         aggregates_recomputed=tuple(aggregates),
         comparison_recomputed=tuple(comparison),
+        execution_contexts=tuple(
+            item for item in data.get("execution_contexts", ()) if isinstance(item, dict)
+        ),
     )
 
 

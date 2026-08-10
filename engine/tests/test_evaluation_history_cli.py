@@ -105,6 +105,70 @@ def test_cli_show_json(tmp_path: Path, capsys):
     assert data["candidate_id"] == "candidate"
 
 
+# ---------------------------------------------------------------------------
+# H2: execution-context provenance exposed in show/compare
+# ---------------------------------------------------------------------------
+
+
+def test_cli_show_reports_mixed_execution_contexts(tmp_path: Path, capsys):
+    output_dir = tmp_path / "eval-out"
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent_a")
+    _write_python_agent(tmp_path, "opponent_b")
+    EvaluationService().run(
+        EvaluationRequest(
+            candidate_id="candidate",
+            opponent_ids=("opponent_a", "opponent_b"),
+            seeds=(1,),
+            output_dir=output_dir,
+            ticks=10,
+            data_root=tmp_path,
+        )
+    )
+    eval_path = output_dir / "evaluation.json"
+    data = json.loads(eval_path.read_text(encoding="utf-8"))
+    other_context = dict(
+        data["execution_contexts"][0], context_id="evaluation-context_other", python_version="9.9.9"
+    )
+    data["execution_contexts"].append(other_context)
+    data["cells"][1]["execution_context_id"] = other_context["context_id"]
+    eval_path.write_text(json.dumps(data), encoding="utf-8")
+
+    code = evaluations_main(["show", str(output_dir)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "MIXED EXECUTION CONTEXTS" in out
+
+
+def test_cli_compare_across_incompatible_contexts_is_inconclusive_not_a_regression(
+    tmp_path: Path, capsys
+):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    right_path = right_dir / "evaluation.json"
+    data = json.loads(right_path.read_text(encoding="utf-8"))
+    other_context = dict(
+        data["execution_contexts"][0], context_id="evaluation-context_other", python_version="9.9.9"
+    )
+    data["execution_contexts"] = [other_context]
+    data["cells"][0]["execution_context_id"] = other_context["context_id"]
+    real_outcome = data["cells"][0]["outcome"]
+    data["cells"][0]["outcome"] = "loss" if real_outcome != "loss" else "win"
+    right_path.write_text(json.dumps(data), encoding="utf-8")
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--json"])
+    out = capsys.readouterr().out
+    assert code == 0
+    result = json.loads(out)
+    assert result["rows"][0]["verdict"] == "inconclusive"
+    assert "execution context" in result["rows"][0]["reason"]
+    assert result["denominators"]["regressed"] == 0
+    assert result["denominators"]["improved"] == 0
+
+
 def test_cli_show_unreadable_selector_exits_1(tmp_path: Path, capsys):
     bad_dir = tmp_path / "bad"
     bad_dir.mkdir(parents=True)

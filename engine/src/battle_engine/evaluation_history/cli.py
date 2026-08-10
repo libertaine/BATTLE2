@@ -126,8 +126,33 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None) -> 
     print("cell status counts: " + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())))
     for aggregate in summary.aggregates_recomputed:
         print(f"[{aggregate.subject_role}] {aggregate.subject_id}  win_rate={aggregate.win_rate_display}")
+    _print_execution_contexts(summary)
     if verified is not None:
         print(f"verified: {verified}" + (f"  ({verify_error})" if verify_error else ""))
+
+
+def _print_execution_contexts(summary) -> None:
+    """H2: surface execution provenance -- which runtime(s) actually ran the
+    matrix, and whether cells are split across more than one."""
+
+    if not summary.execution_contexts:
+        print("execution contexts: none recorded (legacy/v1 artifact)")
+        return
+    used_ids = {
+        cell.execution_context_id.value
+        for cell in summary.cells
+        if cell.execution_context_id.value is not None
+    }
+    print(f"execution contexts: {len(summary.execution_contexts)} recorded, {len(used_ids)} used by cells")
+    for context in summary.execution_contexts:
+        marker = "*" if context.get("context_id") in used_ids else " "
+        print(
+            f"  {marker} {context.get('context_id')}: bytefray={context.get('bytefray_version')} "
+            f"python={context.get('python_version')} agent_api={context.get('agent_api_version')} "
+            f"rules={context.get('rules_compatibility_id')}"
+        )
+    if len(used_ids) > 1:
+        print("  MIXED EXECUTION CONTEXTS: this evaluation's cells did not all run under the same runtime.")
 
 
 def _verify_side(summary):

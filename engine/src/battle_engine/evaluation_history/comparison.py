@@ -10,6 +10,48 @@ from .models import AdaptedCell, EvaluationSummary, FieldConfidence
 
 _OUTCOME_RANK = {"loss": 0, "tie": 1, "win": 2}
 
+# H2: fields relevant to whether two execution contexts are the "same
+# runtime" for direct-comparison purposes. Deliberately excludes
+# `context_id` (derived from these) and `first_used_at` (an irrelevant
+# bookkeeping timestamp, not a runtime property) -- this is a narrow
+# runtime-compatibility rule for comparison, not general environment
+# provenance.
+_CONTEXT_COMPATIBILITY_FIELDS = (
+    "bytefray_version",
+    "agent_api_version",
+    "python_version",
+    "result_schema_version",
+    "replay_schema_version",
+    "rules_compatibility_id",
+)
+
+
+def _context_by_id(summary: EvaluationSummary) -> dict[str, dict[str, Any]]:
+    return {
+        context["context_id"]: context
+        for context in summary.execution_contexts
+        if isinstance(context.get("context_id"), str)
+    }
+
+
+def _cell_context(cell: AdaptedCell, context_by_id: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    context_id = cell.execution_context_id.value
+    if not isinstance(context_id, str):
+        return None
+    return context_by_id.get(context_id)
+
+
+def _contexts_compatible(left: dict[str, Any] | None, right: dict[str, Any] | None) -> bool:
+    """H2: both sides' execution context must be *known* and agree on every
+    compatibility-relevant field. An unknown/missing context on either side
+    is never treated as compatible -- absence of evidence is not evidence
+    of compatibility.
+    """
+
+    if left is None or right is None:
+        return False
+    return all(left.get(field) == right.get(field) for field in _CONTEXT_COMPATIBILITY_FIELDS)
+
 
 @dataclass(frozen=True)
 class ComparisonRow:
@@ -184,6 +226,8 @@ def _align_cell_sets(
     *,
     identical_candidate_fingerprint: bool,
     deep_verified: bool = False,
+    left_context_by_id: dict[str, dict[str, Any]] | None = None,
+    right_context_by_id: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[
     list[ComparisonRow],
     list[AdaptedCell],
@@ -236,6 +280,23 @@ def _align_cell_sets(
                 continue
             assert left_cell.outcome is not None and right_cell.outcome is not None
             outcome_verdict = verdict(left_cell.outcome, right_cell.outcome)
+            reason: str | None = None
+            # H2: a materially different or unknown runtime execution
+            # context between the two sides is not grounds to silently
+            # report an ordinary improvement/regression -- equivalence
+            # cannot be established, so an otherwise-differing verdict is
+            # downgraded to inconclusive instead. An *unchanged* verdict is
+            # left alone: reporting "no observed difference" does not claim
+            # cross-runtime equivalence the way improved/regressed would.
+            if outcome_verdict != "unchanged" and not _contexts_compatible(
+                _cell_context(left_cell, left_context_by_id or {}),
+                _cell_context(right_cell, right_context_by_id or {}),
+            ):
+                reason = (
+                    "execution contexts differ or are unknown; cannot confirm "
+                    "improvement/regression across incompatible runtimes"
+                )
+                outcome_verdict = "inconclusive"
             # A reproducibility anomaly is a claim that identical inputs
             # produced different outcomes -- it must never rest on evidence
             # that was merely read and recomputed from the artifact's own
@@ -247,7 +308,7 @@ def _align_cell_sets(
             anomaly = (
                 deep_verified
                 and identical_candidate_fingerprint
-                and outcome_verdict != "unchanged"
+                and outcome_verdict in ("improved", "regressed")
                 and left_cell.verified is True
                 and right_cell.verified is True
             )
@@ -258,6 +319,7 @@ def _align_cell_sets(
                 left_outcome=left_cell.outcome,
                 right_outcome=right_cell.outcome,
                 verdict=outcome_verdict,
+                reason=reason,
                 left_score=left_cell.score_subject,
                 right_score=right_cell.score_subject,
                 left_territory=left_cell.territory_subject,
@@ -309,6 +371,7 @@ def align(
 
     left_cfp, right_cfp = _conditions_fingerprint(left), _conditions_fingerprint(right)
     left_rules, right_rules = _rules_id(left), _rules_id(right)
+    left_contexts, right_contexts = _context_by_id(left), _context_by_id(right)
 
     rows, unmatched_left, unmatched_right, changed_condition, anomalies = _align_cell_sets(
         _candidate_cells(left),
@@ -319,6 +382,8 @@ def align(
         right_rules,
         identical_candidate_fingerprint=identical_candidate_fingerprint,
         deep_verified=deep_verified,
+        left_context_by_id=left_contexts,
+        right_context_by_id=right_contexts,
     )
 
     # Baseline context (Sec 14.3).
@@ -348,6 +413,8 @@ def align(
             right_rules,
             identical_candidate_fingerprint=True,
             deep_verified=deep_verified,
+            left_context_by_id=left_contexts,
+            right_context_by_id=right_contexts,
         )
         control_rows = tuple(control_result[0])
         # A verified baseline-control claim ("the same baseline diverged

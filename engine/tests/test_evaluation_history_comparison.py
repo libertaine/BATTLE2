@@ -17,6 +17,24 @@ from battle_engine.evaluation_history.models import (
 CONDITIONS = {"tick_limit": 10, "arena_size": 4096, "win_mode": "score_fallback"}
 RULES_ID = "evaluation-rules-1"
 
+# H2: both sides default to the *same* recorded execution context, so tests
+# that predate H2 and are not themselves about execution-context
+# compatibility keep getting ordinary improved/regressed verdicts rather
+# than everything degrading to inconclusive for lack of context evidence.
+DEFAULT_CONTEXT_ID = "evaluation-context_default"
+DEFAULT_CONTEXTS = (
+    {
+        "context_id": DEFAULT_CONTEXT_ID,
+        "bytefray_version": "9.9.9-test",
+        "agent_api_version": 1,
+        "python_version": "3.11.0",
+        "result_schema_version": 1,
+        "replay_schema_version": 3,
+        "rules_compatibility_id": RULES_ID,
+        "first_used_at": "2026-01-01T00:00:00Z",
+    },
+)
+
 
 def _identity(agent_id: str, sha: str = "abc123", entry_point: str = "agent.py:create_agent") -> dict:
     return {
@@ -40,6 +58,7 @@ def _cell(
     unknown_occurrence: bool = False,
     unknown_opponent_identity: bool = False,
     verified: bool | None = None,
+    execution_context_id: str | None = DEFAULT_CONTEXT_ID,
 ) -> AdaptedCell:
     return AdaptedCell(
         schedule_id=f"sched-{opponent_id}-{seed}-{occurrence}",
@@ -67,6 +86,11 @@ def _cell(
             else ConfidenceValue.recorded(_identity(opponent_id, sha=opponent_sha))
         ),
         verified=verified,
+        execution_context_id=(
+            ConfidenceValue.recorded(execution_context_id)
+            if execution_context_id is not None
+            else ConfidenceValue.unknown()
+        ),
     )
 
 
@@ -81,6 +105,7 @@ def _summary(
     cells: tuple[AdaptedCell, ...] = (),
     conditions_known: bool = True,
     rules_id: str | None = RULES_ID,
+    execution_contexts: tuple[dict, ...] = DEFAULT_CONTEXTS,
 ) -> EvaluationSummary:
     location = ArtifactLocation(
         evaluation_json_path=Path("evaluation.json"), directory=Path("."), file_modified_at="x"
@@ -122,6 +147,7 @@ def _summary(
         health=HealthReport(),
         aggregates_recomputed=(),
         comparison_recomputed=(),
+        execution_contexts=execution_contexts,
     )
 
 
@@ -146,6 +172,98 @@ def test_right_loss_over_left_win_is_regressed():
     right = _summary(cells=(_cell(outcome="loss"),))
     result = align(left, right)
     assert result.rows[0].verdict == "regressed"
+
+
+# ---------------------------------------------------------------------------
+# H2: narrow runtime-compatibility rule for direct comparison
+# ---------------------------------------------------------------------------
+
+OTHER_CONTEXT_ID = "evaluation-context_other"
+OTHER_CONTEXTS = (
+    {
+        "context_id": OTHER_CONTEXT_ID,
+        "bytefray_version": "9.9.9-test",
+        "agent_api_version": 1,
+        "python_version": "3.12.0",  # the one materially different field
+        "result_schema_version": 1,
+        "replay_schema_version": 3,
+        "rules_compatibility_id": RULES_ID,
+        "first_used_at": "2026-02-02T00:00:00Z",
+    },
+)
+
+
+def test_same_execution_context_reports_ordinary_verdict():
+    left = _summary(cells=(_cell(outcome="win"),))
+    right = _summary(cells=(_cell(outcome="loss"),))
+    result = align(left, right)
+    assert result.rows[0].verdict == "regressed"
+
+
+def test_different_runtime_context_downgrades_regression_to_inconclusive():
+    left = _summary(cells=(_cell(outcome="win"),))
+    right = _summary(
+        cells=(_cell(outcome="loss", execution_context_id=OTHER_CONTEXT_ID),),
+        execution_contexts=OTHER_CONTEXTS,
+    )
+    result = align(left, right)
+    assert result.rows[0].verdict == "inconclusive"
+    assert result.rows[0].reason is not None
+    assert "execution context" in result.rows[0].reason
+    assert result.denominators.regressed == 0
+    assert result.denominators.inconclusive == 1
+
+
+def test_different_runtime_context_does_not_affect_an_unchanged_verdict():
+    """An unchanged verdict does not claim cross-runtime equivalence the way
+    improved/regressed would, so it is left alone even across incompatible
+    contexts."""
+
+    left = _summary(cells=(_cell(outcome="win"),))
+    right = _summary(
+        cells=(_cell(outcome="win", execution_context_id=OTHER_CONTEXT_ID),),
+        execution_contexts=OTHER_CONTEXTS,
+    )
+    result = align(left, right)
+    assert result.rows[0].verdict == "unchanged"
+
+
+def test_missing_execution_context_downgrades_regression_to_inconclusive():
+    left = _summary(cells=(_cell(outcome="win"),))
+    right = _summary(cells=(_cell(outcome="loss", execution_context_id=None),))
+    result = align(left, right)
+    assert result.rows[0].verdict == "inconclusive"
+
+
+def test_retry_under_second_context_is_still_comparable_to_itself():
+    """A resumed cell that kept its original context (never rewritten by a
+    later resuming process under a different context -- Sec 5/6) compares
+    normally against another artifact recorded under that same context."""
+
+    left = _summary(cells=(_cell(outcome="tie"),))
+    right = _summary(cells=(_cell(outcome="win"),))  # both default to DEFAULT_CONTEXT_ID
+    result = align(left, right)
+    assert result.rows[0].verdict == "improved"
+
+
+def test_mixed_context_matrix_only_affects_the_cells_that_actually_differ():
+    left = _summary(
+        cells=(
+            _cell(opponent_id="a", outcome="win"),
+            _cell(opponent_id="b", outcome="win", execution_context_id=OTHER_CONTEXT_ID),
+        ),
+        execution_contexts=DEFAULT_CONTEXTS + OTHER_CONTEXTS,
+    )
+    right = _summary(
+        cells=(
+            _cell(opponent_id="a", outcome="loss"),
+            _cell(opponent_id="b", outcome="loss"),
+        )
+    )
+    result = align(left, right)
+    rows_by_opponent = {row.opponent_id: row for row in result.rows}
+    assert rows_by_opponent["a"].verdict == "regressed"  # same context both sides
+    assert rows_by_opponent["b"].verdict == "inconclusive"  # mismatched context
 
 
 def test_candidate_logical_id_change_is_reported_as_different_candidates():
@@ -298,6 +416,7 @@ def _baseline_cell(schedule_id: str, match_id: str, artifact_dir: str, outcome: 
         condition_fingerprint=ConfidenceValue.recorded("fp"),
         opponent_identity=ConfidenceValue.recorded(_identity("opponent")),
         verified=verified,
+        execution_context_id=ConfidenceValue.recorded(DEFAULT_CONTEXT_ID),
     )
 
 

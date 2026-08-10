@@ -7,7 +7,7 @@ than silently defaulting an absent legacy field to a current-schema value.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -180,6 +180,11 @@ class AdaptedCell:
     # (``evaluation_history.verification``) populates these.
     verified: bool | None = None
     verify_error: str | None = None
+    # H2: the execution context (runtime provenance) this cell was actually
+    # executed/resumed under, referencing an entry in the owning
+    # ``EvaluationSummary.execution_contexts`` -- ``UNKNOWN`` for v1 (which
+    # never recorded this) or a v2 cell that predates/lacks the reference.
+    execution_context_id: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
 
     @property
     def is_scored(self) -> bool:
@@ -200,6 +205,7 @@ class AdaptedCell:
             "score_opponent": self.score_opponent,
             "territory_subject": self.territory_subject,
             "territory_opponent": self.territory_opponent,
+            "execution_context_id": self.execution_context_id.to_json(),
             "opponent_index": self.opponent_index.to_json(),
             "seed_index": self.seed_index.to_json(),
             "condition_occurrence_index": self.condition_occurrence_index.to_json(),
@@ -232,6 +238,11 @@ class EvaluationSummary:
     health: HealthReport
     aggregates_recomputed: tuple[SubjectAggregate, ...]
     comparison_recomputed: tuple[ComparisonEntry, ...]
+    # H2: every execution context this artifact's cells were actually
+    # executed/resumed under, verbatim as recorded (v2 only -- always empty
+    # for v1, which never had this concept). Each cell's own
+    # ``execution_context_id`` references one entry here by ``context_id``.
+    execution_contexts: tuple[dict[str, Any], ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -257,6 +268,7 @@ class EvaluationSummary:
             "health": self.health.to_json(),
             "aggregates_recomputed": [asdict(row) for row in self.aggregates_recomputed],
             "comparison_recomputed": [asdict(row) for row in self.comparison_recomputed],
+            "execution_contexts": [dict(item) for item in self.execution_contexts],
         }
 
 
