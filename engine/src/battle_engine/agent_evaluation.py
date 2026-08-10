@@ -239,11 +239,22 @@ def _expected_cell_match_id(
 
     Mirrors ``agent_test._test_agent``'s own ``MatchRequest`` construction
     exactly (same ``Config(seed=...)``, same fixed A/B slot entrants) so a
-    resumed cell's recorded ``match_id`` can be verified against what this
+    *resumed* cell's recorded ``match_id`` can be verified against what this
     exact (subject, opponent, seed) combination would compute today --
     catching a source-content change the way ``tournament_service``'s
     resume verification already does (docs/specs/agent_evaluation.md
     Sec 14).
+
+    ``canonical_match_id`` reads ``spec.source_path`` from disk at call
+    time (see ``match_service.canonical_match_id``), so this helper is only
+    safe to use against *live, freshly re-resolved* specs (resume, where
+    ``specs`` is this run's own current resolution and is already
+    consistent with this run's freshly computed ``evaluation_id``). It must
+    never be used to verify a cell just executed in *this* process against
+    a frozen preflight snapshot -- a second live read after the fact can
+    silently observe the same (already-drifted) content the executor itself
+    just read, making the comparison pass despite drift. See
+    ``_post_execution_identity_drift`` for that check instead.
     """
 
     request = MatchRequest(
@@ -256,6 +267,73 @@ def _expected_cell_match_id(
         replay_path=Path("."),
     )
     return canonical_match_id(request)
+
+
+# Identity fields recorded both in a frozen ``agent_identity()`` snapshot and
+# in a real match's per-entrant ``NativeAgentResult.metadata`` (Python kind)
+# -- the intersection usable to cross-check "what the executor actually
+# loaded" against "what was planned" without re-reading disk a second time.
+_ACTUAL_IDENTITY_FIELDS = ("source_sha256", "api_version", "agent_version")
+
+
+def _post_execution_identity_drift(
+    cell: EvaluationCell,
+    match_result: NativeMatchResult,
+    planned_identities: Mapping[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Cross-check the executor's own recorded entrant metadata against the frozen plan.
+
+    ``NativeAgentResult.metadata`` for a Python entrant is populated by
+    ``python_runtime.PythonEntrantController``/``match_service.
+    _build_python_result`` from the exact source the executor just loaded
+    and ran -- it is not a second independent disk read performed by this
+    module after the fact. Comparing it against ``planned_identities``
+    (frozen once at preflight, before any cell executed) is therefore the
+    strongest available check that the identity actually used for
+    acceptance corresponds to what the executor actually loaded (Sec 7
+    finding), and -- unlike recomputing ``canonical_match_id`` from a live
+    ``AgentSpec.source_path`` after execution -- cannot be silently
+    defeated by a source edit that is already in place by the time this
+    check runs.
+
+    A residual TOCTOU remains and is documented rather than hidden: inside
+    ``python_runtime.PythonEntrantController.__init__``, the agent module is
+    loaded/executed first and its ``source_sha256`` is computed by a
+    *separate* subsequent ``read_bytes()`` call (see
+    ``PythonEntrantState.source_digest``). An edit landing in that narrow
+    window, or an edit that lands and is then reverted before this
+    function's inputs are captured, is not detectable from outside that
+    call. This module neither introduces nor can close that inner window;
+    it only guarantees that whatever the executor itself recorded as having
+    run is cross-checked against the frozen plan.
+    """
+
+    for role, agent_id, slot in (
+        (cell.subject_role, cell.subject_id, TESTED_AGENT_SLOT),
+        ("opponent", cell.opponent_id, OPPONENT_SLOT),
+    ):
+        planned = planned_identities.get(agent_id)
+        if planned is None:
+            continue
+        agent_result = match_result.agents_by_id.get(slot)
+        if agent_result is None:
+            continue
+        actual_metadata = agent_result.metadata
+        mismatched = sorted(
+            field
+            for field in _ACTUAL_IDENTITY_FIELDS
+            if planned.get(field) != actual_metadata.get(field)
+        )
+        if mismatched:
+            return {
+                "error_code": "post_execution_identity_drift",
+                "error_message": (
+                    f"{role} {agent_id!r} executed identity does not match the "
+                    f"frozen plan (fields: {', '.join(mismatched)}); agent source "
+                    "or configuration changed during execution."
+                )[:240],
+            }
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -843,7 +921,8 @@ class EvaluationService:
         )
         specs = self._validate(request)
         conditions = self._effective_conditions(request)
-        evaluation_id = self._evaluation_id(request, specs, conditions)
+        identities = {agent_id: agent_identity(spec) for agent_id, spec in specs.items()}
+        evaluation_id = self._evaluation_id(request, identities, conditions)
         return specs, evaluation_id
 
     def run(self, request: EvaluationRequest) -> EvaluationResult:
@@ -852,11 +931,15 @@ class EvaluationService:
         # AgentSpec.source_path later -- Sec 7's pre-check compares a fresh
         # resolve against *this* snapshot, not against `specs` (whose
         # source_path would just re-read whatever the file currently
-        # contains, silently defeating drift detection).
+        # contains, silently defeating drift detection). `evaluation_id` is
+        # derived from this exact same dict (never from a second independent
+        # `agent_identity()` call) so the persisted `planned_identities`
+        # payload is *structurally* guaranteed to reproduce the recorded
+        # `evaluation_id` -- see `_evaluation_id` and `_write_state` below.
         planned_identities = {agent_id: agent_identity(spec) for agent_id, spec in specs.items()}
         conditions = self._effective_conditions(request)
         conditions_fp = stable_id("evaluation-conditions", asdict(conditions))
-        evaluation_id = self._evaluation_id(request, specs, conditions)
+        evaluation_id = self._evaluation_id(request, planned_identities, conditions)
         state_path = request.output_dir / "evaluation.json"
         prior = self._load_state(state_path, evaluation_id) if request.resume else {}
         prior_cells = {item["schedule_id"]: item for item in prior.get("cells", ())}
@@ -879,24 +962,34 @@ class EvaluationService:
 
         # First checkpoint: written before any cell executes, so a crash
         # during cell 1 still leaves discoverable lifecycle state (Sec 5).
-        self._write_state(
-            state_path,
-            evaluation_id,
-            request,
-            (),
-            matrix,
-            specs=specs,
-            conditions=conditions,
-            created_at=created_at,
-            lifecycle_state="running",
-            execution_contexts=execution_contexts,
-        )
+        # Only valid for a genuinely *new* evaluation (no prior cells) --
+        # writing an empty ``cells=()`` checkpoint over an *existing*
+        # artifact's already-persisted cells would erase it the instant
+        # resume starts, before a single prior cell has even been
+        # reconstructed/verified (B2). A resumed artifact's own on-disk
+        # state already serves as adequate discoverable state; it is left
+        # untouched until this run has something at least as good to
+        # replace it with.
+        if not prior_cells:
+            self._write_state(
+                state_path,
+                evaluation_id,
+                request,
+                (),
+                matrix,
+                planned_identities=planned_identities,
+                conditions=conditions,
+                created_at=created_at,
+                lifecycle_state="running",
+                execution_contexts=execution_contexts,
+            )
 
         completed: list[EvaluationCell] = []
         drift: dict[str, Any] | None = None
         for cell in matrix:
             previous = prior_cells.get(cell.schedule_id)
             resolved: EvaluationCell | None = None
+            newly_executed = False
             if previous is not None:
                 resolved = self._resolve_from_state(cell, previous, specs, request)
                 if (
@@ -907,21 +1000,32 @@ class EvaluationService:
                     resolved = None
             if resolved is None:
                 resolved = self._execute_cell(
-                    cell, request, specs, planned_identities, record_context_usage
+                    cell, request, planned_identities, record_context_usage
                 )
+                newly_executed = True
             completed.append(resolved)
-            self._write_state(
-                state_path,
-                evaluation_id,
-                request,
-                completed,
-                matrix,
-                specs=specs,
-                conditions=conditions,
-                created_at=created_at,
-                lifecycle_state="running",
-                execution_contexts=execution_contexts,
-            )
+            # Checkpoint only for genuinely new work (a cell just executed
+            # or re-executed in *this* run). A cell merely reconstructed
+            # from prior state is, by definition, already durably on disk;
+            # writing after it anyway would mean a crash partway through
+            # re-verifying a previously *complete* artifact leaves behind a
+            # strictly smaller/worse ``cells`` list and a ``running``
+            # lifecycle than what was already safely persisted (B2) -- the
+            # untouched on-disk artifact is always at least as good as any
+            # partial reconstruction, so it is never overwritten with one.
+            if newly_executed:
+                self._write_state(
+                    state_path,
+                    evaluation_id,
+                    request,
+                    completed,
+                    matrix,
+                    planned_identities=planned_identities,
+                    conditions=conditions,
+                    created_at=created_at,
+                    lifecycle_state="running",
+                    execution_contexts=execution_contexts,
+                )
             if resolved.status == "drift_detected":
                 drift = {
                     "role": resolved.subject_role,
@@ -946,7 +1050,7 @@ class EvaluationService:
             matrix,
             aggregates=aggregates,
             comparison=comparison,
-            specs=specs,
+            planned_identities=planned_identities,
             conditions=conditions,
             created_at=created_at,
             lifecycle_state="aborted" if drift is not None else "finished",
@@ -990,18 +1094,28 @@ class EvaluationService:
     def _evaluation_id(
         self,
         request: EvaluationRequest,
-        specs: dict[str, AgentSpec],
+        identities: Mapping[str, dict[str, Any]],
         conditions: EffectiveConditions,
     ) -> str:
+        """Derive the evaluation id from an already-frozen identity snapshot.
+
+        Deliberately takes ``identities`` (a plain ``agent_id -> agent_identity()``
+        dict), never ``specs``/``AgentSpec`` -- computing identity here via a
+        second, independent ``agent_identity()`` call would re-read each
+        entrant's source file from disk a second time, which could observe
+        different bytes than whatever snapshot the caller persists as
+        ``planned_identities`` if a source edit lands in between. Every
+        caller must build ``identities`` exactly once and pass that same
+        dict to both this method and ``_write_state`` (Sec 7/B1).
+        """
+
         payload = {
             "identity_version": IDENTITY_VERSION,
-            "candidate": agent_identity(specs[request.candidate_id]),
+            "candidate": identities[request.candidate_id],
             "baseline": (
-                agent_identity(specs[request.baseline_id])
-                if request.baseline_id is not None
-                else None
+                identities[request.baseline_id] if request.baseline_id is not None else None
             ),
-            "opponents": [agent_identity(specs[opponent_id]) for opponent_id in request.opponent_ids],
+            "opponents": [identities[opponent_id] for opponent_id in request.opponent_ids],
             "seeds": list(request.seeds),
             "ticks": request.ticks,
             "effective_conditions": asdict(conditions),
@@ -1073,7 +1187,6 @@ class EvaluationService:
         self,
         cell: EvaluationCell,
         request: EvaluationRequest,
-        specs: Mapping[str, AgentSpec],
         planned_identities: Mapping[str, dict[str, Any]],
         record_context_usage: Callable[[], str],
     ) -> EvaluationCell:
@@ -1103,6 +1216,25 @@ class EvaluationService:
                 execution_context_id=record_context_usage(),
             )
         if isinstance(outcome, InitializationFailureOutcome):
+            # A ``RuntimeDiagnostic`` carries no source/version identity
+            # fields (see ``python_runtime.RuntimeDiagnostic``), so unlike a
+            # completed match there is no executor-recorded ground truth to
+            # cross-check here. A live re-resolve against the frozen plan is
+            # the only signal available -- it cannot detect an edit that
+            # lands and then reverts before this point (the same documented
+            # residual as ``_post_execution_identity_drift``), but it does
+            # catch a durable edit that caused the observed initialization
+            # failure, preventing that failure from being silently
+            # attributed to the original, frozen agent (Sec 7 "initialization
+            # failure after intervening source change").
+            post_init_drift = self._detect_pre_execution_drift(cell, planned_identities, root)
+            if post_init_drift is not None:
+                return replace(
+                    cell,
+                    status="drift_detected",
+                    **post_init_drift,
+                    execution_context_id=record_context_usage(),
+                )
             failed_slot = outcome.diagnostic.agent_id
             result_outcome = (
                 "subject_init_failed" if failed_slot == TESTED_AGENT_SLOT else "opponent_init_failed"
@@ -1115,25 +1247,12 @@ class EvaluationService:
                 error_message=" ".join(outcome.diagnostic.message.split())[:240],
                 execution_context_id=record_context_usage(),
             )
-        expected_match_id = _expected_cell_match_id(
-            specs[cell.subject_id],
-            cell.subject_id,
-            specs[cell.opponent_id],
-            cell.opponent_id,
-            cell.seed,
-            request.ticks,
-        )
-        actual_match_id = outcome.match_result.match_id
-        if actual_match_id != expected_match_id:
+        post_drift = _post_execution_identity_drift(cell, outcome.match_result, planned_identities)
+        if post_drift is not None:
             return replace(
                 cell,
                 status="drift_detected",
-                error_code="post_execution_identity_drift",
-                error_message=(
-                    f"actual match ID {actual_match_id!r} does not match the planned "
-                    f"cell's expected ID {expected_match_id!r}; agent source or "
-                    "configuration changed during execution."
-                )[:240],
+                **post_drift,
                 execution_context_id=record_context_usage(),
             )
         return replace(
@@ -1227,7 +1346,7 @@ class EvaluationService:
         cells: Sequence[EvaluationCell],
         matrix: Sequence[EvaluationCell],
         *,
-        specs: Mapping[str, AgentSpec],
+        planned_identities: Mapping[str, dict[str, Any]],
         conditions: EffectiveConditions,
         created_at: str,
         lifecycle_state: str,
@@ -1238,15 +1357,29 @@ class EvaluationService:
         abort_reason: str | None = None,
         abort_detail: Mapping[str, Any] | None = None,
     ) -> None:
+        """Persist one checkpoint. Never re-derives entrant identity from disk.
+
+        ``planned_identities`` must be the exact ``agent_id -> agent_identity()``
+        snapshot ``run()`` built once at preflight (or an unchanged carry-over
+        of a prior artifact's own recorded snapshot -- see the B2 resume
+        path) -- this method only reshapes it into the persisted
+        ``candidate``/``baseline``/``opponents`` structure by lookup, so the
+        written ``planned_identities`` payload is structurally guaranteed to
+        reproduce ``evaluation_id`` (both come from the same frozen dict; see
+        ``_evaluation_id``).
+        """
+
         project = get_project_info()
-        planned_identities = {
-            "candidate": agent_identity(specs[request.candidate_id]),
+        planned_identities_payload = {
+            "candidate": planned_identities[request.candidate_id],
             "baseline": (
-                agent_identity(specs[request.baseline_id])
+                planned_identities[request.baseline_id]
                 if request.baseline_id is not None
                 else None
             ),
-            "opponents": [agent_identity(specs[opponent_id]) for opponent_id in request.opponent_ids],
+            "opponents": [
+                planned_identities[opponent_id] for opponent_id in request.opponent_ids
+            ],
         }
         conditions_dict = asdict(conditions)
         write_json_atomic(
@@ -1262,7 +1395,7 @@ class EvaluationService:
                 "seeds": list(request.seeds),
                 "ticks": request.ticks,
                 "matrix_size": len(matrix),
-                "planned_identities": planned_identities,
+                "planned_identities": planned_identities_payload,
                 "effective_conditions": conditions_dict,
                 "effective_conditions_fingerprint": stable_id(
                     "evaluation-conditions", conditions_dict

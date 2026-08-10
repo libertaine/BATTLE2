@@ -9,6 +9,7 @@ unmodified and still passing.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -284,6 +285,417 @@ def test_v2_source_drift_between_cells_stops_the_matrix(tmp_path: Path, monkeypa
     resumed = service.run(request)
     resumed_data = json.loads(resumed.state_path.read_text(encoding="utf-8"))
     assert resumed_data["lifecycle_state"] == "aborted"
+
+
+# ---------------------------------------------------------------------------
+# B1: frozen-plan TOCTOU -- real file/manifest mutations, not monkeypatched
+# drift detectors. Each test mutates actual bytes on disk in the gap the
+# independent review reproduced (between the pre-execution check and the
+# executor's own resolution/execution) and asserts the evaluation aborts
+# with the drifted cell recorded honestly, never silently accepted.
+# ---------------------------------------------------------------------------
+
+
+def test_toctou_edit_between_precheck_and_execution_is_detected(tmp_path: Path, monkeypatch):
+    """Source changes strictly between the pre-check and ``test_agent``.
+
+    Before the fix, the post-execution check recomputed its "expected"
+    match id by re-reading the same (already-edited) file ``test_agent``
+    itself had just read, so the comparison trivially passed. The fix
+    compares against the identity frozen once at preflight instead.
+    """
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    request = _request(tmp_path)
+    service = EvaluationService()
+
+    import battle_engine.agent_evaluation as mod
+
+    real_test_agent = mod.test_agent
+    agent_path = tmp_path / "agents" / "candidate" / "agent.py"
+    original_source = agent_path.read_text(encoding="utf-8")
+    # Hashed straight off disk (not re-encoded from the text read above) so
+    # this matches exactly what `agent_identity()`'s `source_sha256` hashes
+    # -- avoids a spurious mismatch from newline translation on Windows.
+    original_digest = hashlib.sha256(agent_path.read_bytes()).hexdigest()
+
+    def _edit_then_run(*args, **kwargs):
+        agent_path.write_text(
+            original_source.replace(NOP_ACTION, NOP_ACTION + "  # edited"), encoding="utf-8"
+        )
+        return real_test_agent(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "test_agent", _edit_then_run)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    assert data["lifecycle_state"] == "aborted"
+    assert data["abort_reason"] == "source_drift"
+    cell = data["cells"][0]
+    assert cell["status"] == "drift_detected"
+    assert cell["error_code"] == "post_execution_identity_drift"
+    # The persisted planned identity must still reflect the ORIGINAL
+    # (frozen) content, never the edited file -- proving the write path
+    # never re-reads live disk after the fact (the core B1 invariant).
+    assert data["planned_identities"]["candidate"]["source_sha256"] == original_digest
+
+
+def test_toctou_edit_during_execution_is_detected(tmp_path: Path, monkeypatch):
+    """Source changes inside ``test_agent``'s own execution.
+
+    Hooks ``python_runtime.load_python_agent`` (used by
+    ``PythonEntrantController.__init__``) to edit the opponent's file
+    immediately after it is loaded -- deeper than the module boundary
+    ``agent_evaluation`` itself controls -- and confirms the post-execution
+    check still catches it because it compares the executor's own recorded
+    entrant metadata against the frozen plan, not a second disk read.
+    """
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    request = _request(tmp_path)
+    service = EvaluationService()
+
+    import battle_engine.python_runtime as runtime_mod
+
+    opponent_path = tmp_path / "agents" / "opponent" / "agent.py"
+    original_source = opponent_path.read_text(encoding="utf-8")
+    real_load = runtime_mod.load_python_agent
+
+    def _load_then_edit(spec):
+        loaded = real_load(spec)
+        if spec.name == "opponent":
+            opponent_path.write_text(
+                original_source.replace(NOP_ACTION, NOP_ACTION + "  # edited-during-execution"),
+                encoding="utf-8",
+            )
+        return loaded
+
+    monkeypatch.setattr(runtime_mod, "load_python_agent", _load_then_edit)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    cell = data["cells"][0]
+    assert cell["status"] == "drift_detected"
+    assert cell["error_code"] == "post_execution_identity_drift"
+    assert data["lifecycle_state"] == "aborted"
+
+
+def test_toctou_edit_then_restore_is_not_falsely_flagged(tmp_path: Path, monkeypatch):
+    """A transient edit that fully reverts before ``test_agent`` reads it.
+
+    This is the documented residual TOCTOU window this module cannot
+    close (see ``_post_execution_identity_drift``'s docstring): content
+    that is back to the originally planned bytes by the time anything
+    reads it must complete normally, not be falsely reported as drift.
+    """
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    request = _request(tmp_path)
+    service = EvaluationService()
+
+    import battle_engine.agent_evaluation as mod
+
+    real_test_agent = mod.test_agent
+    agent_path = tmp_path / "agents" / "candidate" / "agent.py"
+    original_source = agent_path.read_text(encoding="utf-8")
+
+    def _edit_restore_then_run(*args, **kwargs):
+        agent_path.write_text(
+            original_source.replace(NOP_ACTION, NOP_ACTION + "  # transient"), encoding="utf-8"
+        )
+        agent_path.write_text(original_source, encoding="utf-8")
+        return real_test_agent(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "test_agent", _edit_restore_then_run)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    assert data["lifecycle_state"] == "finished"
+    assert data["cells"][0]["status"] == "completed"
+
+
+def test_toctou_manifest_entry_point_change_is_detected(tmp_path: Path, monkeypatch):
+    """A manifest entry-point retarget between pre-check and execution.
+
+    Entry-point/factory semantics are part of ``agent_identity()``, but a
+    changed entry point is only observable through what it causes the
+    executor to actually load and run -- this proves that flows through to
+    the post-execution metadata check.
+    """
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    alt_path = tmp_path / "agents" / "candidate" / "alt_agent.py"
+    alt_path.write_text(
+        """
+from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): return AgentAction(ActionKind.NOP)  # a distinct revision
+def create_agent(): return Agent()
+""",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "agents" / "candidate" / "agent.yaml"
+    request = _request(tmp_path)
+    service = EvaluationService()
+
+    import battle_engine.agent_evaluation as mod
+
+    real_test_agent = mod.test_agent
+
+    def _retarget_entry_point_then_run(*args, **kwargs):
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "kind": "python",
+                    "api_version": 1,
+                    "entrypoint": "alt_agent.py:create_agent",
+                    "version": "1.0",
+                }
+            ),
+            encoding="utf-8",
+        )
+        return real_test_agent(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "test_agent", _retarget_entry_point_then_run)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    cell = data["cells"][0]
+    assert cell["status"] == "drift_detected"
+    assert cell["error_code"] == "post_execution_identity_drift"
+
+
+def test_toctou_initialization_failure_after_intervening_source_change_is_flagged_as_drift(
+    tmp_path: Path, monkeypatch
+):
+    """An init failure caused by a post-precheck edit must not be silently
+    attributed to the original, frozen agent as an ordinary
+    ``subject_init_failed`` outcome -- it belongs to a different (edited)
+    revision than what was planned and must abort as drift instead.
+    """
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    request = _request(tmp_path)
+    service = EvaluationService()
+
+    import battle_engine.agent_evaluation as mod
+
+    real_test_agent = mod.test_agent
+    agent_path = tmp_path / "agents" / "candidate" / "agent.py"
+
+    def _break_then_run(*args, **kwargs):
+        agent_path.write_text(
+            """
+from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, context): raise RuntimeError("boom")
+    def act(self, observation): return AgentAction(ActionKind.NOP)
+def create_agent(): return Agent()
+""",
+            encoding="utf-8",
+        )
+        return real_test_agent(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "test_agent", _break_then_run)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    cell = data["cells"][0]
+    assert cell["status"] == "drift_detected"
+    assert cell["outcome"] != "subject_init_failed"
+
+
+def test_persisted_planned_identity_rehashes_to_the_recorded_evaluation_id(two_agents: Path):
+    """The core B1 invariant: recomputing the v2 evaluation-id payload from
+    the persisted ``planned_identities`` must reproduce the stored
+    ``evaluation_id`` exactly -- the artifact can never claim one plan while
+    having persisted a different one.
+    """
+
+    from battle_engine.agent_evaluation import EVALUATION_RULES_COMPATIBILITY_ID
+    from battle_engine.result_model import stable_id
+
+    service = EvaluationService()
+    result = service.run(_request(two_agents))
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    planned = data["planned_identities"]
+    payload = {
+        "identity_version": IDENTITY_VERSION,
+        "candidate": planned["candidate"],
+        "baseline": planned["baseline"],
+        "opponents": planned["opponents"],
+        "seeds": data["seeds"],
+        "ticks": data["ticks"],
+        "effective_conditions": data["effective_conditions"],
+        "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
+    }
+    assert stable_id("evaluation-v2", payload) == data["evaluation_id"]
+
+
+# ---------------------------------------------------------------------------
+# B2: resume must never erase a completed artifact before verification
+# ---------------------------------------------------------------------------
+
+
+def test_resume_failure_before_first_prior_cell_verification_preserves_state(
+    two_agents: Path, monkeypatch
+):
+    """A crash injected in ``_resolve_from_state`` for the very first prior
+    cell must leave the already-persisted (finished) artifact untouched --
+    it must not have been pre-emptively overwritten with an empty
+    ``cells=()`` checkpoint the instant resume started.
+    """
+
+    request = _request(two_agents, opponent_ids=("opponent",), seeds=(1, 2))
+    service = EvaluationService()
+    first = service.run(request)
+    original_bytes = first.state_path.read_bytes()
+    original_data = json.loads(original_bytes)
+    assert original_data["lifecycle_state"] == "finished"
+    assert len(original_data["cells"]) == 2
+
+    import battle_engine.agent_evaluation as mod
+
+    def _boom(self, cell, previous, specs, req):
+        raise RuntimeError("simulated crash before first prior-cell verification")
+
+    monkeypatch.setattr(mod.EvaluationService, "_resolve_from_state", _boom)
+    with pytest.raises(RuntimeError):
+        EvaluationService().run(request)
+
+    assert first.state_path.read_bytes() == original_bytes
+
+
+def test_resume_failure_after_one_prior_cell_verification_preserves_state(
+    two_agents: Path, monkeypatch
+):
+    """A crash after the first prior cell verifies successfully but before
+    the second does must still leave the original finished artifact fully
+    intact -- not a truncated one-cell ``running`` snapshot.
+    """
+
+    request = _request(two_agents, opponent_ids=("opponent",), seeds=(1, 2))
+    service = EvaluationService()
+    first = service.run(request)
+    original_bytes = first.state_path.read_bytes()
+
+    import battle_engine.agent_evaluation as mod
+
+    real_resolve = mod.EvaluationService._resolve_from_state
+    calls = {"n": 0}
+
+    def _boom_on_second(self, cell, previous, specs, req):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("simulated crash after first prior-cell verification")
+        return real_resolve(self, cell, previous, specs, req)
+
+    monkeypatch.setattr(mod.EvaluationService, "_resolve_from_state", _boom_on_second)
+    with pytest.raises(RuntimeError):
+        EvaluationService().run(request)
+
+    assert first.state_path.read_bytes() == original_bytes
+
+
+def test_resume_failure_after_final_prior_cell_verification_preserves_state(
+    two_agents: Path, monkeypatch
+):
+    """A crash after every prior cell has verified (in-memory reconstruction
+    complete) but before the final aggregation/write must still leave the
+    original finished artifact intact -- proves the fixed loop never writes
+    a partial reconstruction mid-flight, only ever the final consolidated
+    state. This is also the "original finished state survives a failed
+    no-op resume" requirement.
+    """
+
+    request = _request(two_agents, opponent_ids=("opponent",), seeds=(1, 2))
+    service = EvaluationService()
+    first = service.run(request)
+    original_bytes = first.state_path.read_bytes()
+
+    import battle_engine.agent_evaluation as mod
+
+    def _boom(self, req, cells):
+        raise RuntimeError("simulated crash after final prior-cell verification")
+
+    monkeypatch.setattr(mod.EvaluationService, "_all_aggregates", _boom)
+    with pytest.raises(RuntimeError):
+        EvaluationService().run(request)
+
+    assert first.state_path.read_bytes() == original_bytes
+
+
+def test_resume_failure_during_retry_preparation_preserves_untouched_cells(
+    two_agents: Path, monkeypatch
+):
+    """A crash while deciding whether a failed cell should be retried must
+    not have already erased a *different*, untouched, already-completed
+    cell earlier in the matrix.
+    """
+
+    request = _request(two_agents, opponent_ids=("opponent",), seeds=(1, 2))
+    service = EvaluationService()
+    first = service.run(request)
+    state_path = first.state_path
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+    # Cell 0 stays a genuine completed cell (untouched); cell 1 is tampered
+    # into a "failed" cell the way a real infra failure would leave it, so
+    # --retry-failed has something to retry.
+    data["cells"][1]["status"] = "failed"
+    data["cells"][1]["outcome"] = None
+    data["cells"][1]["error_code"] = "engine_failed"
+    state_path.write_text(json.dumps(data), encoding="utf-8")
+    original_bytes = state_path.read_bytes()
+
+    import battle_engine.agent_evaluation as mod
+
+    real_resolve = mod.EvaluationService._resolve_from_state
+
+    def _boom_on_retry_candidate(self, cell, previous, specs, req):
+        if previous.get("status") == "failed":
+            raise RuntimeError("simulated crash during retry preparation")
+        return real_resolve(self, cell, previous, specs, req)
+
+    monkeypatch.setattr(mod.EvaluationService, "_resolve_from_state", _boom_on_retry_candidate)
+    from dataclasses import replace as _replace
+
+    with pytest.raises(RuntimeError):
+        EvaluationService().run(_replace(request, retry_failures=True))
+
+    # The untouched completed cell (and the whole artifact) must be exactly
+    # as tampered/persisted before this crashed retry attempt -- no
+    # temporary erasure of cells the retry never even reached.
+    assert state_path.read_bytes() == original_bytes
+
+
+def test_fresh_evaluation_still_gets_the_first_checkpoint_before_any_cell(
+    two_agents: Path, monkeypatch
+):
+    """Regression guard: the B2 fix (skip the pre-loop checkpoint when
+    resuming) must not regress Sec 5's crash-safety guarantee for a
+    genuinely *new* evaluation, which has no prior cells to protect.
+    """
+
+    import battle_engine.agent_evaluation as mod
+
+    request = _request(two_agents)
+    state_path = request.output_dir / "evaluation.json"
+
+    def _boom(*args, **kwargs):
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        assert data["lifecycle_state"] == "running"
+        assert data["cells"] == []
+        raise RuntimeError("simulated crash before first cell finishes")
+
+    monkeypatch.setattr(mod, "test_agent", _boom)
+    with pytest.raises(RuntimeError):
+        EvaluationService().run(request)
 
 
 # ---------------------------------------------------------------------------
