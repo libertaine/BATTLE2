@@ -10,20 +10,22 @@ from .models import AdaptedCell, EvaluationSummary, FieldConfidence
 
 _OUTCOME_RANK = {"loss": 0, "tie": 1, "win": 2}
 
-# H2: fields relevant to whether two execution contexts are the "same
-# runtime" for direct-comparison purposes. Deliberately excludes
+# H2/H3: fields relevant to whether two execution contexts are the "same
+# runtime" for direct-comparison purposes, and the type each must have to
+# count as actually *present* (not just absent-and-therefore-None on both
+# sides, which is not evidence of compatibility). Deliberately excludes
 # `context_id` (derived from these) and `first_used_at` (an irrelevant
 # bookkeeping timestamp, not a runtime property) -- this is a narrow
 # runtime-compatibility rule for comparison, not general environment
 # provenance.
-_CONTEXT_COMPATIBILITY_FIELDS = (
-    "bytefray_version",
-    "agent_api_version",
-    "python_version",
-    "result_schema_version",
-    "replay_schema_version",
-    "rules_compatibility_id",
-)
+_CONTEXT_REQUIRED_FIELD_TYPES: dict[str, type] = {
+    "bytefray_version": str,
+    "agent_api_version": int,
+    "python_version": str,
+    "result_schema_version": int,
+    "replay_schema_version": int,
+    "rules_compatibility_id": str,
+}
 
 
 def _context_by_id(summary: EvaluationSummary) -> dict[str, dict[str, Any]]:
@@ -41,16 +43,40 @@ def _cell_context(cell: AdaptedCell, context_by_id: dict[str, dict[str, Any]]) -
     return context_by_id.get(context_id)
 
 
+def _context_field_present(context: dict[str, Any], field: str, expected_type: type) -> bool:
+    if field not in context:
+        return False
+    value = context[field]
+    if expected_type is int and isinstance(value, bool):
+        return False
+    return isinstance(value, expected_type)
+
+
 def _contexts_compatible(left: dict[str, Any] | None, right: dict[str, Any] | None) -> bool:
-    """H2: both sides' execution context must be *known* and agree on every
+    """H3: both sides' execution context must be *known* and agree on every
     compatibility-relevant field. An unknown/missing context on either side
     is never treated as compatible -- absence of evidence is not evidence
     of compatibility.
+
+    A required field that is simply absent from a context dict (e.g. a
+    hand-edited or malformed ``{"context_id": "..."}`` with nothing else)
+    must never be treated as implicitly equal to an equally-absent field on
+    the other side -- comparing via plain ``.get(field)`` would let two
+    *incomplete* contexts compare ``None == None`` and read as compatible.
+    Each required field must actually be present, with the expected type,
+    on *both* sides before its values are compared at all.
     """
 
     if left is None or right is None:
         return False
-    return all(left.get(field) == right.get(field) for field in _CONTEXT_COMPATIBILITY_FIELDS)
+    for field, expected_type in _CONTEXT_REQUIRED_FIELD_TYPES.items():
+        if not _context_field_present(left, field, expected_type):
+            return False
+        if not _context_field_present(right, field, expected_type):
+            return False
+        if left[field] != right[field]:
+            return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -192,6 +218,14 @@ def _condition_key(
         opponent.get("source_sha256"),
         opponent.get("entry_point"),
         opponent.get("api_version"),
+        # B4: an opponent local-source-only edit (an imported helper/nested
+        # local package, not the entry-point file itself) changes neither
+        # `source_sha256` nor `entry_point` above but is still a genuinely
+        # different opponent revision -- without this, two evaluations
+        # separated only by an opponent helper edit would strict-key-match
+        # and compare directly, silently attributing any outcome delta to
+        # the candidate instead of reporting it as a changed condition.
+        opponent.get("local_source_fingerprint"),
         cell.seed,
         conditions_fp,
         rules_id,
@@ -317,6 +351,7 @@ def _align_cell_sets(
 
     rows: list[ComparisonRow] = []
     anomalies: list[ComparisonRow] = []
+    ambiguous_groups: list[AmbiguousGroup] = []
     unmatched_left: list[AdaptedCell] = list(left_cells)
     unmatched_right: list[AdaptedCell] = list(right_cells)
 
@@ -324,6 +359,29 @@ def _align_cell_sets(
     for key in all_keys:
         left_group = left_by_key.get(key, [])
         right_group = right_by_key.get(key, [])
+        # H4: a strict condition key is supposed to be unique per side (the
+        # occurrence index is meant to disambiguate duplicates). If either
+        # side nonetheless has more than one cell under the identical key,
+        # that uniqueness assumption is already broken -- structurally
+        # ambiguous which cell corresponds to which, so this group is never
+        # zipped positionally (which would silently guess a pairing and
+        # could report an ordinary verdict built from mismatched cells).
+        # Reported as ambiguous instead, consuming every cell in the group.
+        if len(left_group) > 1 or len(right_group) > 1:
+            anchor = left_group[0] if left_group else right_group[0]
+            ambiguous_groups.append(
+                (
+                    anchor.opponent_id,
+                    anchor.seed,
+                    tuple(cell.schedule_id for cell in left_group),
+                    tuple(cell.schedule_id for cell in right_group),
+                )
+            )
+            for cell in left_group:
+                unmatched_left.remove(cell)
+            for cell in right_group:
+                unmatched_right.remove(cell)
+            continue
         for left_cell, right_cell in zip(left_group, right_group):
             unmatched_left.remove(left_cell)
             unmatched_right.remove(right_cell)
@@ -350,20 +408,39 @@ def _align_cell_sets(
             assert left_cell.outcome is not None and right_cell.outcome is not None
             outcome_verdict = verdict(left_cell.outcome, right_cell.outcome)
             reason: str | None = None
-            # H2: a materially different or unknown runtime execution
-            # context between the two sides is not grounds to silently
-            # report an ordinary improvement/regression -- equivalence
-            # cannot be established, so an otherwise-differing verdict is
-            # downgraded to inconclusive instead. An *unchanged* verdict is
-            # left alone: reporting "no observed difference" does not claim
-            # cross-runtime equivalence the way improved/regressed would.
-            if outcome_verdict != "unchanged" and not _contexts_compatible(
+            # B3: when this comparison was run with `--verify`
+            # (`deep_verified` requested), a pair may only keep an ordinary
+            # improved/regressed/unchanged verdict if *both* cells actually,
+            # individually verified. A cell that failed verification, or
+            # was never verified at all despite being eligible, must not
+            # silently keep contributing an ordinary verdict (and therefore
+            # the direct-comparison denominator) just because its outcome
+            # happened to be readable -- that would let a corrupted/tampered
+            # cell masquerade as scientific evidence.
+            if deep_verified and (left_cell.verified is not True or right_cell.verified is not True):
+                unverified_side = "left" if left_cell.verified is not True else "right"
+                other_unverified = left_cell.verified is not True and right_cell.verified is not True
+                reason = (
+                    "both cells failed or were never deep-verified; not a controlled comparison"
+                    if other_unverified
+                    else f"{unverified_side} cell failed or was never deep-verified; not a controlled comparison"
+                )
+                outcome_verdict = "inconclusive"
+            # H3: a materially different or unknown runtime execution
+            # context between the two sides is not grounds to report an
+            # ordinary improvement/regression/unchanged -- equivalence
+            # cannot be established under different (or unknown) runtimes.
+            # Conservative rule for this pass: this downgrades *every*
+            # outcome verdict, including "unchanged" ("no observed
+            # difference" is not the same claim as "confirmed equivalent
+            # under a controlled comparison").
+            elif not _contexts_compatible(
                 _cell_context(left_cell, left_context_by_id or {}),
                 _cell_context(right_cell, right_context_by_id or {}),
             ):
                 reason = (
-                    "execution contexts differ or are unknown; cannot confirm "
-                    "improvement/regression across incompatible runtimes"
+                    "execution contexts differ or are unknown; not a controlled "
+                    "comparison across incompatible or unknown runtimes"
                 )
                 outcome_verdict = "inconclusive"
             # A reproducibility anomaly is a claim that identical inputs
@@ -399,9 +476,10 @@ def _align_cell_sets(
             if anomaly:
                 anomalies.append(row)
 
-    changed_condition, ambiguous_groups, unmatched_left, unmatched_right = _classify_unmatched(
+    changed_condition, more_ambiguous_groups, unmatched_left, unmatched_right = _classify_unmatched(
         unmatched_left, unmatched_right
     )
+    ambiguous_groups.extend(more_ambiguous_groups)
     return rows, unmatched_left, unmatched_right, changed_condition, anomalies, ambiguous_groups
 
 

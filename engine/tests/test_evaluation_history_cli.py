@@ -309,6 +309,90 @@ def test_cli_compare_verify_detects_missing_nested_result(tmp_path: Path, capsys
     assert code == 1
     assert "LEFT FAILED" in out
 
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert data["deep_verified"] is False
+    assert data["denominators"]["directly_comparable"] == 0
+    assert data["denominators"]["improved"] == 0
+    assert data["denominators"]["regressed"] == 0
+    assert data["denominators"]["unchanged"] == 0
+    assert all(row["verdict"] == "inconclusive" for row in data["rows"])
+
+
+def test_cli_compare_verify_detects_missing_replay(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    data = json.loads((left_dir / "evaluation.json").read_text(encoding="utf-8"))
+    replay_path = left_dir / data["cells"][0]["artifact_dir"] / "replay.jsonl"
+    replay_path.unlink()
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "LEFT FAILED" in out
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert data["deep_verified"] is False
+    assert data["denominators"]["directly_comparable"] == 0
+    assert all(row["verdict"] == "inconclusive" for row in data["rows"])
+
+
+def test_cli_compare_verify_detects_replay_digest_mismatch(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    data = json.loads((left_dir / "evaluation.json").read_text(encoding="utf-8"))
+    replay_path = left_dir / data["cells"][0]["artifact_dir"] / "replay.jsonl"
+    with replay_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n")
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "LEFT FAILED" in out
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert data["deep_verified"] is False
+    assert data["denominators"]["directly_comparable"] == 0
+    assert all(row["verdict"] == "inconclusive" for row in data["rows"])
+
+
+def test_cli_compare_verify_detects_wrong_entrant_identity(tmp_path: Path, capsys):
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir)
+    _run(tmp_path, right_dir)
+
+    eval_data = json.loads((left_dir / "evaluation.json").read_text(encoding="utf-8"))
+    result_path = left_dir / eval_data["cells"][0]["artifact_dir"] / "result.json"
+    result_data = json.loads(result_path.read_text(encoding="utf-8"))
+    for entrant in result_data["entrants"]:
+        if entrant["agent_id"] == "B":
+            entrant["metadata"]["source_sha256"] = "0" * 64
+    result_path.write_text(json.dumps(result_data), encoding="utf-8")
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "LEFT FAILED" in out
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert data["deep_verified"] is False
+    assert data["denominators"]["directly_comparable"] == 0
+    assert all(row["verdict"] == "inconclusive" for row in data["rows"])
+
 
 def test_cli_compare_verify_detects_tampered_evaluation_outcome(tmp_path: Path, capsys):
     """The nested result/replay are untouched and internally consistent, but
@@ -332,6 +416,13 @@ def test_cli_compare_verify_detects_tampered_evaluation_outcome(tmp_path: Path, 
     assert code == 1
     assert "LEFT FAILED" in out
 
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert data["deep_verified"] is False
+    assert data["denominators"]["directly_comparable"] == 0
+    assert all(row["verdict"] == "inconclusive" for row in data["rows"])
+
 
 def test_cli_compare_verify_detects_wrong_result_seed(tmp_path: Path, capsys):
     left_dir = tmp_path / "left"
@@ -350,6 +441,13 @@ def test_cli_compare_verify_detects_wrong_result_seed(tmp_path: Path, capsys):
     assert code == 1
     assert "LEFT FAILED" in out
 
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert data["deep_verified"] is False
+    assert data["denominators"]["directly_comparable"] == 0
+    assert all(row["verdict"] == "inconclusive" for row in data["rows"])
+
 
 def test_cli_compare_verify_detects_wrong_match_id(tmp_path: Path, capsys):
     left_dir = tmp_path / "left"
@@ -366,6 +464,13 @@ def test_cli_compare_verify_detects_wrong_match_id(tmp_path: Path, capsys):
     out = capsys.readouterr().out
     assert code == 1
     assert "LEFT FAILED" in out
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert data["deep_verified"] is False
+    assert data["denominators"]["directly_comparable"] == 0
+    assert all(row["verdict"] == "inconclusive" for row in data["rows"])
 
 
 def test_cli_compare_verify_selected_side_failure_does_not_block_the_other(tmp_path: Path, capsys):
@@ -407,6 +512,13 @@ def test_cli_compare_verify_zero_eligible_cells_is_not_vacuously_verified(tmp_pa
     assert code == 1
     assert "RIGHT FAILED" in out
     assert "no eligible" in out
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir), "--verify", "--json"])
+    data = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert data["deep_verified"] is False
+    assert data["denominators"]["directly_comparable"] == 0
+    assert all(row["verdict"] == "inconclusive" for row in data["rows"])
 
 
 def test_cli_invalid_verb_exits_2():

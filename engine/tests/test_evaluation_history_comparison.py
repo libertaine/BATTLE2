@@ -36,7 +36,12 @@ DEFAULT_CONTEXTS = (
 )
 
 
-def _identity(agent_id: str, sha: str = "abc123", entry_point: str = "agent.py:create_agent") -> dict:
+def _identity(
+    agent_id: str,
+    sha: str = "abc123",
+    entry_point: str = "agent.py:create_agent",
+    local_source_fingerprint: str = "lfp-default",
+) -> dict:
     return {
         "agent_id": agent_id,
         "kind": "python",
@@ -44,6 +49,7 @@ def _identity(agent_id: str, sha: str = "abc123", entry_point: str = "agent.py:c
         "agent_version": "1.0",
         "entry_point": entry_point,
         "source_sha256": sha,
+        "local_source_fingerprint": local_source_fingerprint,
     }
 
 
@@ -55,6 +61,7 @@ def _cell(
     status: str = "completed",
     occurrence: int = 0,
     opponent_sha: str = "opp-sha",
+    opponent_local_fingerprint: str = "lfp-default",
     unknown_occurrence: bool = False,
     unknown_opponent_identity: bool = False,
     verified: bool | None = None,
@@ -83,7 +90,9 @@ def _cell(
         opponent_identity=(
             ConfidenceValue.unknown()
             if unknown_opponent_identity
-            else ConfidenceValue.recorded(_identity(opponent_id, sha=opponent_sha))
+            else ConfidenceValue.recorded(
+                _identity(opponent_id, sha=opponent_sha, local_source_fingerprint=opponent_local_fingerprint)
+            )
         ),
         verified=verified,
         execution_context_id=(
@@ -214,10 +223,12 @@ def test_different_runtime_context_downgrades_regression_to_inconclusive():
     assert result.denominators.inconclusive == 1
 
 
-def test_different_runtime_context_does_not_affect_an_unchanged_verdict():
-    """An unchanged verdict does not claim cross-runtime equivalence the way
-    improved/regressed would, so it is left alone even across incompatible
-    contexts."""
+def test_different_runtime_context_downgrades_an_unchanged_verdict_too():
+    """H3: for this pass, the conservative rule applies to *every* outcome
+    verdict, including unchanged -- "no observed difference under
+    different/unknown runtimes" is still not a controlled direct
+    comparison, so it is downgraded to inconclusive exactly like
+    improved/regressed would be, never left as an ordinary "unchanged"."""
 
     left = _summary(cells=(_cell(outcome="win"),))
     right = _summary(
@@ -225,7 +236,43 @@ def test_different_runtime_context_does_not_affect_an_unchanged_verdict():
         execution_contexts=OTHER_CONTEXTS,
     )
     result = align(left, right)
-    assert result.rows[0].verdict == "unchanged"
+    assert result.rows[0].verdict == "inconclusive"
+    assert result.denominators.unchanged == 0
+
+
+INCOMPLETE_CONTEXT_ID = "evaluation-context_incomplete"
+INCOMPLETE_CONTEXTS = ({"context_id": INCOMPLETE_CONTEXT_ID},)  # missing every other required field
+
+
+def test_both_sides_incomplete_execution_context_never_compares_equal():
+    """H3: two *incomplete* context dicts (each only ``{"context_id": ...}``,
+    with no other required field) must never be treated as compatible just
+    because every missing field reads as ``None`` on both sides -- absence
+    of evidence is not evidence of compatibility, even symmetrically."""
+
+    left = _summary(
+        cells=(_cell(outcome="win", execution_context_id=INCOMPLETE_CONTEXT_ID),),
+        execution_contexts=INCOMPLETE_CONTEXTS,
+    )
+    right = _summary(
+        cells=(_cell(outcome="loss", execution_context_id=INCOMPLETE_CONTEXT_ID),),
+        execution_contexts=INCOMPLETE_CONTEXTS,
+    )
+    result = align(left, right)
+    assert result.rows[0].verdict == "inconclusive"
+    assert result.denominators.regressed == 0
+    assert result.denominators.directly_comparable == 0
+
+
+def test_one_side_incomplete_execution_context_never_compares_equal():
+    left = _summary(
+        cells=(_cell(outcome="win", execution_context_id=INCOMPLETE_CONTEXT_ID),),
+        execution_contexts=INCOMPLETE_CONTEXTS,
+    )
+    right = _summary(cells=(_cell(outcome="loss"),))  # full DEFAULT_CONTEXT_ID context
+    result = align(left, right)
+    assert result.rows[0].verdict == "inconclusive"
+    assert result.denominators.directly_comparable == 0
 
 
 def test_missing_execution_context_downgrades_regression_to_inconclusive():
@@ -325,6 +372,27 @@ def test_opponent_source_change_prevents_direct_comparison():
     assert result.denominators.unmatched_right == 0
     assert result.denominators.changed_condition == 1
     assert len(result.changed_condition) == 1
+
+
+def test_opponent_helper_only_edit_prevents_direct_comparison():
+    """B4: an opponent revision separated only by a local-helper edit (the
+    entry file/`source_sha256` and `entry_point` are identical on both
+    sides -- only `local_source_fingerprint` differs) must still be treated
+    as a changed condition, never silently direct-comparable. Before the
+    fix, `local_source_fingerprint` was excluded from the strict condition
+    key, so this exact scenario would have compared directly and
+    attributed any outcome delta to the candidate instead."""
+
+    left = _summary(cells=(_cell(outcome="win", opponent_local_fingerprint="lfp-v1"),))
+    right = _summary(cells=(_cell(outcome="loss", opponent_local_fingerprint="lfp-v2"),))
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 0
+    assert result.denominators.improved == 0
+    assert result.denominators.regressed == 0
+    assert result.denominators.unchanged == 0
+    assert result.denominators.changed_condition == 1
+    assert len(result.changed_condition) == 1
+    assert not result.rows
 
 
 def test_rules_compatibility_mismatch_prevents_direct_comparison():
@@ -435,10 +503,15 @@ def test_symmetric_duplicates_two_and_two_are_ambiguous_not_positionally_zipped(
 
 
 def test_malformed_duplicate_occurrence_indices_never_crash_or_mispair():
-    """Two cells on the same side both claiming condition_occurrence_index=0
-    for the same (opponent, seed) is a corrupted/malformed state -- this
-    must not crash comparison and must never silently mispair the
-    malformed duplicate against an unrelated cell."""
+    """H4: two cells on the same side both claiming
+    condition_occurrence_index=0 for the same (opponent, seed) is a
+    corrupted/malformed state -- the strict-key uniqueness invariant is
+    already broken, so this group must never be zipped positionally
+    (previously: one of the two same-side cells was silently guessed to
+    "match" the single right-side cell purely by dict/zip ordering, which
+    could pair either the win or the loss cell depending on iteration
+    order). This must not crash comparison, and must report the group as
+    ambiguous with zero ordinary direct verdicts, never a guessed pairing."""
 
     left = _summary(
         cells=(
@@ -448,10 +521,42 @@ def test_malformed_duplicate_occurrence_indices_never_crash_or_mispair():
     )
     right = _summary(cells=(_cell(outcome="win", occurrence=0),))
     result = align(left, right)  # must not raise
-    # Exactly one strict-condition-key match is possible; the malformed
-    # extra is left over, never silently paired with anything.
-    assert result.denominators.directly_comparable == 1
-    assert len(result.unmatched_left) == 1
+    assert result.denominators.directly_comparable == 0
+    assert result.denominators.ambiguous_duplicate_groups == 1
+    assert not result.rows
+    assert not result.unmatched_left
+    assert not result.unmatched_right
+
+
+def test_symmetric_malformed_duplicates_on_both_sides_are_not_position_paired():
+    """H4 required test: two cells on *each* side claiming the identical
+    (opponent, seed, condition_occurrence_index=0) coordinate, with
+    reversed outcomes/order between the sides. Zipping positionally would
+    silently produce two ordinary verdicts built from an arbitrary,
+    unverifiable pairing -- this must instead be one ambiguous group with
+    zero ordinary direct verdicts."""
+
+    left = _summary(
+        cells=(
+            _cell(outcome="win", occurrence=0),
+            _cell(outcome="loss", occurrence=0),
+        )
+    )
+    right = _summary(
+        cells=(
+            _cell(outcome="loss", occurrence=0),
+            _cell(outcome="win", occurrence=0),
+        )
+    )
+    result = align(left, right)  # must not raise
+    assert result.denominators.directly_comparable == 0
+    assert result.denominators.improved == 0
+    assert result.denominators.regressed == 0
+    assert result.denominators.unchanged == 0
+    assert result.denominators.ambiguous_duplicate_groups == 1
+    assert not result.rows
+    assert not result.unmatched_left
+    assert not result.unmatched_right
 
 
 def test_heterogeneous_v1_duplicate_outcomes_are_ambiguous_not_paired_by_outcome():

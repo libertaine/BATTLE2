@@ -195,14 +195,23 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         right, right_verify_error = _verify_side(right)
 
     result = align(left, right, deep_verified=bool(args.verify))
+    # B3: `align()`'s own `deep_verified` reflects "--verify was requested"
+    # (which is also what drives its internal per-pair verified-evidence
+    # gating, independent of whether some *other* cell elsewhere failed to
+    # verify) -- but the claim surfaced to a caller/consumer here must be
+    # narrower: true only when verification was requested *and* actually
+    # succeeded on both sides. A side that failed (or had zero eligible
+    # cells) must never be reported as deep-verified.
+    fully_verified = bool(args.verify) and left_verify_error is None and right_verify_error is None
 
     if args.json:
         data = result.to_json()
+        data["deep_verified"] = fully_verified
         data["left_verify_error"] = left_verify_error
         data["right_verify_error"] = right_verify_error
         print(json.dumps(data, indent=2, sort_keys=True))
     else:
-        _print_compare(left, right, result, left_verify_error, right_verify_error)
+        _print_compare(left, right, result, left_verify_error, right_verify_error, fully_verified)
 
     if args.verify and (left_verify_error is not None or right_verify_error is not None):
         return 1
@@ -211,13 +220,21 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
-def _print_compare(left, right, result, left_verify_error=None, right_verify_error=None) -> None:
+def _print_compare(
+    left, right, result, left_verify_error=None, right_verify_error=None, fully_verified=None
+) -> None:
     print(f"orientation: {result.orientation}")
     print(f"left:  {left.evaluation_id}  candidate={left.candidate_id}")
     print(f"right: {right.evaluation_id}  candidate={right.candidate_id}")
-    if result.deep_verified:
+    if fully_verified is None:
+        fully_verified = result.deep_verified and left_verify_error is None and right_verify_error is None
+    if fully_verified:
+        print("evidence: deep-verified (--verify)")
+    elif result.deep_verified:
+        # B3: --verify was requested but failed on at least one side --
+        # never claim "deep-verified" for this comparison's evidence.
         print(
-            "evidence: deep-verified (--verify)"
+            "evidence: NOT deep-verified -- verification failed"
             + ("" if left_verify_error is None else f"  LEFT FAILED: {left_verify_error}")
             + ("" if right_verify_error is None else f"  RIGHT FAILED: {right_verify_error}")
         )
