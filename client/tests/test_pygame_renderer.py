@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from battle_client.analysis import SelectedCellInfo, collect_match_events, selected_cell_info
 from battle_client.player import PlaybackController
@@ -9,9 +11,11 @@ from battle_client.renderers.pygame_renderer import (
     _event_section_start,
     activity_intensity,
     build_hud_lines,
+    choose_initial_window_scale,
     downsample_series,
     format_event_line,
     format_inspector_lines,
+    integer_scale_to_fit,
     resolve_event_click,
     screen_pos_to_address,
     select_history_window,
@@ -204,6 +208,147 @@ def _python_forfeit_session(tmp_path):
     session = ReplaySession()
     session.load(replay_path)
     return session
+
+
+# ---------------------------------------------------------------------------
+# Replay-window sizing (maintenance fix after v0.7.0)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("arena", "expected_grid", "expected_scale", "expected_window"),
+    [
+        (256, (16, 16), 37, (592, 592)),
+        (512, (32, 16), 30, (960, 480)),
+        (1024, (32, 32), 18, (576, 576)),
+    ],
+)
+def test_automatic_initial_window_uses_a_useful_integer_scale(
+    arena, expected_grid, expected_scale, expected_window
+):
+    renderer = PygameRenderer()
+    grid = renderer._resolve_grid_dims(arena)
+    scale = choose_initial_window_scale(*grid, (1728, 972))
+
+    assert grid == expected_grid
+    assert scale == expected_scale
+    assert (grid[0] * scale, grid[1] * scale) == expected_window
+    assert expected_window not in ((64, 64), (128, 64), (128, 128))
+
+
+@pytest.mark.parametrize(
+    ("arena", "expected_window"),
+    [
+        (256, (432, 432)),
+        (512, (576, 288)),
+        (1024, (416, 416)),
+    ],
+)
+def test_automatic_initial_window_shrinks_with_a_small_display(arena, expected_window):
+    renderer = PygameRenderer()
+    grid = renderer._resolve_grid_dims(arena)
+    display_bounds = (576, 432)  # 90% of a 640x480 display
+    scale = choose_initial_window_scale(*grid, display_bounds)
+    window = (grid[0] * scale, grid[1] * scale)
+
+    assert scale >= 1
+    assert window == expected_window
+    assert window[0] <= display_bounds[0]
+    assert window[1] <= display_bounds[1]
+    assert window[0] // grid[0] == window[1] // grid[1] == scale
+
+
+def test_initial_explicit_scale_is_a_display_capped_preference():
+    assert choose_initial_window_scale(32, 16, (1728, 972), requested_scale=4) == 4
+    assert choose_initial_window_scale(32, 16, (1728, 972), requested_scale=100) == 54
+
+
+def test_integer_scale_to_fit_is_positive_and_handles_resize_geometry():
+    assert integer_scale_to_fit(32, 16, (800, 500)) == 25
+    assert integer_scale_to_fit(32, 16, (160, 80)) == 5
+    assert integer_scale_to_fit(32, 16, (0, -1)) == 1
+
+
+def _display_stub(width, height):
+    return SimpleNamespace(
+        display=SimpleNamespace(
+            Info=lambda: SimpleNamespace(current_w=width, current_h=height)
+        ),
+        error=RuntimeError,
+    )
+
+
+def test_configure_window_uses_display_margin_and_preferred_viewport():
+    set_mode_calls = []
+    display = SimpleNamespace(
+        Info=lambda: SimpleNamespace(current_w=1920, current_h=1080),
+        set_mode=lambda size, flags: set_mode_calls.append((size, flags)) or object(),
+        set_caption=lambda title: None,
+    )
+    renderer = PygameRenderer()
+    renderer.pg = SimpleNamespace(
+        display=display,
+        error=RuntimeError,
+        RESIZABLE=1,
+        Surface=lambda size: object(),
+        font=SimpleNamespace(SysFont=lambda name, size: object()),
+    )
+    renderer.grid_cols, renderer.grid_rows = 32, 16
+
+    renderer._configure_window()
+
+    assert renderer._display_safe_bounds == (1728, 972)
+    assert renderer.scale == 30
+    assert set_mode_calls == [((960, 480), 1)]
+
+
+def test_display_bounds_are_captured_before_set_mode_and_reused():
+    info_calls = []
+    renderer = PygameRenderer()
+    renderer.pg = SimpleNamespace(
+        display=SimpleNamespace(
+            Info=lambda: info_calls.append(None)
+            or SimpleNamespace(current_w=1920, current_h=1080)
+        ),
+        error=RuntimeError,
+    )
+
+    assert renderer._display_bounds() == (1728, 972)
+    assert renderer._display_bounds() == (1728, 972)
+    assert len(info_calls) == 1
+
+
+def test_fit_to_display_can_enlarge_and_shrink(monkeypatch):
+    renderer = PygameRenderer()
+    renderer.pg = _display_stub(1920, 1080)
+    renderer.grid_cols, renderer.grid_rows = 32, 16
+    resize_calls = []
+    monkeypatch.setattr(renderer, "_resize_window", lambda: resize_calls.append(renderer.scale))
+
+    renderer.scale = 4
+    renderer._fit_to_display()
+    assert renderer.scale == 54
+
+    renderer.scale = 100
+    renderer._fit_to_display()
+    assert renderer.scale == 54
+    assert resize_calls == [54, 54]
+
+
+def test_manual_rescale_moves_one_step_and_respects_display_limit(monkeypatch):
+    renderer = PygameRenderer()
+    renderer.pg = _display_stub(1920, 1080)
+    renderer.grid_cols, renderer.grid_rows = 32, 16
+    resize_calls = []
+    monkeypatch.setattr(renderer, "_resize_window", lambda: resize_calls.append(renderer.scale))
+
+    renderer.scale = 30
+    renderer._rescale(1)
+    renderer._rescale(-1)
+    assert resize_calls == [31, 30]
+
+    renderer.scale = 54
+    renderer._rescale(1)
+    assert renderer.scale == 54
+    assert resize_calls == [31, 30]
 
 
 # ---------------------------------------------------------------------------

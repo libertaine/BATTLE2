@@ -486,6 +486,13 @@ def test_dispatch_bracket_keys_report_rescale_not_speed(tmp_path):
     assert controller.speed == 1.0  # unaffected -- brackets are not speed keys
 
 
+def test_dispatch_zero_reports_fit_to_display(tmp_path):
+    pygame = pytest.importorskip("pygame")
+    session = _five_tick_session(tmp_path)
+    controller = PlaybackController(session)
+    assert dispatch_key(pygame, pygame.K_0, 0, controller).fit_to_display
+
+
 def test_dispatch_t_reports_toggle_trails(tmp_path):
     pygame = pytest.importorskip("pygame")
     session = _five_tick_session(tmp_path)

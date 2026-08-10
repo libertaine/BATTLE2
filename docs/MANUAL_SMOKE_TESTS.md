@@ -10,7 +10,8 @@ external executable and remain manual release checks.
 
 1. Install the GUI extra and open a newly generated replay with
    `python -m app.replay_viewer` (or `bytefray replay --renderer pygame`).
-2. Confirm playback, window resize/fit behavior, final frame, and close controls.
+2. Confirm the viewer opens at a useful automatically fitted size, then confirm
+   playback, window resize/fit behavior, final frame, and close controls.
 3. At the start prompt, confirm no replay tick is shown until Space is pressed.
 4. During playback, press Space to pause and leave it paused for several seconds;
    confirm tick/event counters do not advance.
@@ -52,6 +53,8 @@ replay and confirm each control:
 - [ ] `End` -- jumps to the final tick.
 - [ ] `+` / `-` -- cycles playback speed through 0.25x/0.5x/1x/2x/4x/8x.
 - [ ] `[` / `]` -- decreases/increases the window's cell scale.
+- [ ] `0` -- fits the arena to the available display, enlarging or shrinking
+      as needed while preserving integer cell scaling.
 - [ ] `T` -- toggles agent trails on/off.
 - [ ] `Q` / `Esc` -- quits the window cleanly (no lingering process).
 

@@ -60,6 +60,13 @@ TERRITORY_GRAPH_MAX_POINTS = 120
 ACTIVITY_WINDOW_TICKS = 30
 ACTIVITY_COLOR: tuple[int, int, int] = (255, 200, 80)
 
+# Ordinary replay launches choose the largest uniform integer cell scale
+# that fits inside this preferred viewport, then clamp it to 90% of the
+# actual display.  This is a target rather than a forced window size: the
+# arena's aspect ratio remains authoritative.
+PREFERRED_WINDOW_SIZE = (960, 600)
+DISPLAY_USAGE_FRACTION = 0.90
+
 # Color palette (unchanged from the prior renderer).
 AGENT_COLORS: dict[str, tuple[int, int, int]] = {
     "A": (220, 70, 70),  # red-ish
@@ -88,9 +95,61 @@ SELECTION_COLOR: tuple[int, int, int] = (255, 255, 0)
 
 HELP_TEXT = (
     "Space play/pause  Right/Left step  Shift+Right/Left seek 10  "
-    "Home/End first/last  +/- speed  [/] zoom  T trails  "
+    "Home/End first/last  +/- speed  [/] zoom  0 fit  T trails  "
     "click event to seek  click cell to inspect  Esc/Q quit"
 )
+
+
+def integer_scale_to_fit(
+    grid_cols: int,
+    grid_rows: int,
+    bounds: tuple[int, int],
+) -> int:
+    """Largest positive integer cell scale fitting ``bounds``.
+
+    A one-pixel scale is the irreducible fallback when given degenerate
+    dimensions or a display smaller than the logical arena grid.  Real
+    supported displays are larger than Bytefray's maximum arena grid, but
+    keeping the helper total prevents zero-sized Pygame windows when a
+    display backend briefly reports unusable dimensions.
+    """
+
+    cols = max(1, int(grid_cols))
+    rows = max(1, int(grid_rows))
+    width = max(1, int(bounds[0]))
+    height = max(1, int(bounds[1]))
+    return max(1, min(width // cols, height // rows))
+
+
+def choose_initial_window_scale(
+    grid_cols: int,
+    grid_rows: int,
+    display_bounds: tuple[int, int],
+    *,
+    requested_scale: int | None = None,
+    preferred_size: tuple[int, int] = PREFERRED_WINDOW_SIZE,
+) -> int:
+    """Choose the initial uniform integer cell scale for a replay window.
+
+    With no explicit request, the preferred viewport selects a useful
+    cross-platform default without forcing one exact pixel geometry.
+    Explicit scales retain their existing meaning as an initial preference,
+    subject to the same display-safety cap as automatic sizing.
+    """
+
+    display_width = max(1, int(display_bounds[0]))
+    display_height = max(1, int(display_bounds[1]))
+    display_scale = integer_scale_to_fit(
+        grid_cols, grid_rows, (display_width, display_height)
+    )
+    if requested_scale is not None:
+        return min(max(1, int(requested_scale)), display_scale)
+
+    target = (
+        min(max(1, int(preferred_size[0])), display_width),
+        min(max(1, int(preferred_size[1])), display_height),
+    )
+    return min(integer_scale_to_fit(grid_cols, grid_rows, target), display_scale)
 
 
 # ---------------------------------------------------------------------------
@@ -480,8 +539,13 @@ def dispatch_key(
 class PygameRenderer:
     """Interactive Pygame replay viewer over a ``ReplaySession``."""
 
-    def __init__(self, scale: int = 4, title: str = "Bytefray - Replay") -> None:
-        self.scale = max(1, int(scale))
+    def __init__(self, scale: int | None = None, title: str = "Bytefray - Replay") -> None:
+        # ``None`` is the ordinary auto-sized launch.  An explicit value is
+        # retained as an initial preference (and capped to the display in
+        # _configure_window).  Once configured, ``self.scale`` remains the
+        # one live integer cell scale used by manual and resize controls.
+        self._requested_scale = None if scale is None else max(1, int(scale))
+        self.scale = self._requested_scale or 1
         self.title = title
 
         self.pg: Any = None
@@ -489,6 +553,11 @@ class PygameRenderer:
         self.grid_surf: Any = None
         self.font: Any = None
         self.hud_font: Any = None
+        # Captured before the first set_mode() call. Some SDL backends report
+        # the current window rather than the desktop from display.Info()
+        # after a mode exists, which would otherwise make later manual/fit
+        # operations treat the current window as their maximum.
+        self._display_safe_bounds: tuple[int, int] | None = None
 
         self.arena = 0
         self.grid_cols = 0
@@ -605,6 +674,7 @@ class PygameRenderer:
 
         self.arena = session.header.config.arena_size if session.header else 0
         self.grid_cols, self.grid_rows = self._resolve_grid_dims(self.arena)
+        self._display_safe_bounds = None
         self._configure_window()
         # Scans every recorded tick once; see _match_events's docstring in
         # __init__ for why this is cached rather than redone per frame.
@@ -628,14 +698,13 @@ class PygameRenderer:
 
     def _configure_window(self) -> None:
         pg = self.pg
-        try:
-            di = pg.display.Info()
-            max_w, max_h = int(di.current_w * 0.90), int(di.current_h * 0.90)
-        except (pg.error, AttributeError, TypeError, ValueError):
-            max_w, max_h = 1920, 1080
-
-        fit_scale = max(1, min(max_w // self.grid_cols, max_h // self.grid_rows))
-        self.scale = max(1, min(self.scale, fit_scale))
+        display_bounds = self._display_bounds()
+        self.scale = choose_initial_window_scale(
+            self.grid_cols,
+            self.grid_rows,
+            display_bounds,
+            requested_scale=self._requested_scale,
+        )
         window_size = (self.grid_cols * self.scale, self.grid_rows * self.scale)
         self.screen = pg.display.set_mode(window_size, pg.RESIZABLE)
         pg.display.set_caption(self.title)
@@ -643,21 +712,41 @@ class PygameRenderer:
         self.font = pg.font.SysFont("consolas", 14)
         self.hud_font = pg.font.SysFont("consolas", 13)
 
+    def _display_bounds(self) -> tuple[int, int]:
+        if self._display_safe_bounds is not None:
+            return self._display_safe_bounds
+        pg = self.pg
+        try:
+            di = pg.display.Info()
+            width = int(di.current_w * DISPLAY_USAGE_FRACTION)
+            height = int(di.current_h * DISPLAY_USAGE_FRACTION)
+        except (pg.error, AttributeError, TypeError, ValueError):
+            width, height = 1920, 1080
+        self._display_safe_bounds = max(1, width), max(1, height)
+        return self._display_safe_bounds
+
     def _resize_window(self) -> None:
         size = (self.grid_cols * self.scale, self.grid_rows * self.scale)
         self.screen = self.pg.display.set_mode(size, self.pg.RESIZABLE)
         self.pg.display.set_caption(self.title)
 
     def _fit_to_display(self) -> None:
-        pg = self.pg
-        try:
-            di = pg.display.Info()
-            max_w, max_h = int(di.current_w * 0.90), int(di.current_h * 0.90)
-        except (pg.error, AttributeError, TypeError, ValueError):
-            max_w, max_h = 1920, 1080
-        fit_scale = max(1, min(max_w // self.grid_cols, max_h // self.grid_rows))
+        fit_scale = integer_scale_to_fit(
+            self.grid_cols, self.grid_rows, self._display_bounds()
+        )
         old = self.scale
-        self.scale = max(1, min(self.scale, fit_scale))
+        self.scale = fit_scale
+        if self.scale != old:
+            self._resize_window()
+
+    def _rescale(self, change: int) -> None:
+        """Apply one manual integer scale step within display-safe bounds."""
+
+        display_scale = integer_scale_to_fit(
+            self.grid_cols, self.grid_rows, self._display_bounds()
+        )
+        old = self.scale
+        self.scale = max(1, min(display_scale, self.scale + change))
         if self.scale != old:
             self._resize_window()
 
@@ -681,15 +770,14 @@ class PygameRenderer:
                     if action.toggle_trails:
                         self.trails_enabled = not self.trails_enabled
                     if action.rescale:
-                        old = self.scale
-                        self.scale = max(1, min(16, self.scale + action.rescale))
-                        if self.scale != old:
-                            self._resize_window()
+                        self._rescale(action.rescale)
                     if action.fit_to_display:
                         self._fit_to_display()
                 elif event.type in (pg.VIDEORESIZE, getattr(pg, "WINDOWRESIZED", 32769)):
                     w, h = getattr(event, "size", self.screen.get_size())
-                    new_scale = max(1, min(w // self.grid_cols, h // self.grid_rows))
+                    new_scale = integer_scale_to_fit(
+                        self.grid_cols, self.grid_rows, (w, h)
+                    )
                     if new_scale != self.scale:
                         self.scale = new_scale
                         self._resize_window()
