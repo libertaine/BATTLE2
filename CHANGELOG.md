@@ -5,35 +5,102 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-10
+
+v0.7.0's theme is **Evaluation History**: past `bytefray agents evaluate`
+runs become a first-class, queryable record instead of a one-off artifact
+you have to locate and read by hand.
+
 ### Added
 
-- `bytefray.evaluation` **v2**: `bytefray agents evaluate` now writes
-  planned resolved identities (candidate/baseline/every opponent
-  occurrence), readable effective execution conditions (full `Config`, not
-  just seed), a narrow evaluation rules-compatibility identifier,
-  `created_at`/`updated_at`/`finished_at` lifecycle timestamps with an
-  atomic first-checkpoint-before-first-cell guarantee, per-cell execution
-  provenance that survives no-op resume, and explicit duplicate-occurrence
-  coordinates. `evaluation_id` remains a deterministic plan identity in a
-  distinct space from v1's (`evaluation-v2_...` vs. `evaluation_...`); v1
-  artifacts remain fully readable and are never rewritten. A source/
-  identity change detected before or during a cell now stops the matrix
-  (`lifecycle_state: "aborted"`, `abort_reason: "source_drift"`) instead of
-  silently mixing agent revisions within one evaluation.
 - `bytefray agents evaluations list|show|compare` — a new, Qt-free
   `battle_engine.evaluation_history` package discovers, adapts (v1 and
   v2), and compares past evaluation artifacts without rerunning anything.
-  `compare` aligns two evaluations' candidate cells by shared condition
-  (excluding candidate identity, which is the variable being compared),
-  preserving duplicate multiplicity and reporting honest denominators;
+  Discovery is artifact-authoritative on-demand scanning (no side database
+  to fall out of sync), supports custom roots and explicit paths, and
+  emits both human-readable and `--json` output. `compare` aligns two
+  evaluations' candidate cells by shared condition (opponent identity
+  including local-source fingerprint, seed, execution conditions, rules
+  identity, and duplicate-occurrence index) — excluding candidate identity,
+  which is the variable actually being compared — treating the newer
+  evaluation's candidate as the change under test against a stable
+  baseline test condition. An opponent, config, runtime-context, or rules
+  change on either side downgrades the affected pair to `inconclusive`
+  rather than producing an unqualified verdict; the candidate's own change
+  is never used as the primary historical verdict. Duplicate cell
+  multiplicity is preserved rather than collapsed, ambiguous duplicate
+  groups are reported explicitly instead of guess-paired, and
   `show --verify`/`compare --verify` add deep replay/result integrity
-  checks for the selected artifact(s) only. See
-  `docs/specs/evaluation_history.md` and `docs/AGENT_LAB.md`'s new
-  "Evaluation history (v0.7)" section.
+  checks — including reproducibility-anomaly detection — for the selected
+  artifact(s) only. See `docs/specs/evaluation_history.md` and
+  `docs/AGENT_LAB.md`'s new "Evaluation history (v0.7)" section.
+- `bytefray.evaluation` **v2**: `bytefray agents evaluate` now writes
+  planned resolved identities (candidate/baseline/every opponent
+  occurrence), readable effective execution conditions (full `Config`, not
+  just seed), an evaluation plan identity, a narrow evaluation
+  rules-compatibility identifier, `created_at`/`updated_at`/`finished_at`
+  lifecycle timestamps with an atomic first-checkpoint-before-first-cell
+  guarantee, per-cell execution provenance (execution contexts) that
+  survives no-op resume, and explicit duplicate-occurrence coordinates.
+  `evaluation_id` remains a deterministic plan identity in a distinct
+  space from v1's (`evaluation-v2_...` vs. `evaluation_...`); v1 artifacts
+  remain fully readable and are never rewritten. A source/identity change
+  detected before or during a cell now stops the matrix
+  (`lifecycle_state: "aborted"`, `abort_reason: "source_drift"`) instead
+  of silently mixing agent revisions within one evaluation.
 - Designer: the Evaluate dialog now passes agent discovery ids (not
   display names) to `bytefray agents evaluate`, and each plan's output
   directory now defaults to that plan's own content-addressed path instead
   of one fixed `designer-evaluation` directory every plan collided on.
+
+### Fixed
+
+- Closed a frozen-plan TOCTOU window and a resume-erasure defect where
+  retrying a checkpointed evaluation could overwrite durable per-cell
+  identity/provenance data instead of leaving completed cells alone.
+- Local (agent-directory) Python source is now fingerprinted with a
+  versioned scheme applied consistently to both the candidate and every
+  opponent occurrence, and reconciled three ways — the identity resolved
+  at plan time, the identity frozen for the executing worker, and a final
+  fingerprint taken after execution — closing a lazy-import drift window
+  where an edit made after planning but read during execution could go
+  undetected.
+- Execution-context comparison (runtime/interpreter identity recorded per
+  cell) is fail-closed: an unknown or unrecoverable context is treated as
+  "not proven equivalent," never as a silent pass, before a comparison
+  pair is allowed a controlled `unchanged`/`improved`/`regressed` verdict.
+- `compare --verify`/`show --verify` now gate the reported verdict and the
+  top-level `deep_verified` flag on cells actually, individually
+  verifying — a `--verify` run whose evidence fails to verify can no
+  longer leave an ordinary verdict or non-zero comparable count standing
+  for the affected pair.
+- Malformed or partially-written v2 evaluation artifacts are isolated per
+  artifact during discovery instead of aborting or contaminating an
+  entire `list`/`compare` run; nested artifact/result/replay path
+  references are containment-checked before being read.
+- v1 artifacts recover duplicate-occurrence identity from all usable
+  cells rather than bailing out on the first ambiguity, and identity
+  version compatibility between v1 and v2 artifacts is handled
+  explicitly rather than by coincidence.
+- Designer: `Validate`/`Test` now resolve agents by discovery id rather
+  than display name, matching the Evaluate dialog fix above.
+
+### Deferred
+
+Explicitly out of scope for v0.7.0 (tracked separately, not silently
+implied by anything above): immutable agent revision storage, a
+run-instance ledger, Elo/rankings or other cross-evaluation statistics,
+VM/Redcode evaluation parity, a Designer History UI, and any
+rules/scoring model redesign.
+
+### Known Limitations
+
+- Bytefray fingerprints agent-local Python source only; imports/
+  dependencies outside the agent's own directory are not covered by
+  source-drift detection.
+- A narrow transient edit-and-restore timing race remains possible: an
+  edit made and reverted within the same fingerprinting window can escape
+  detection.
 
 ## [0.6.1] - 2026-08-09
 

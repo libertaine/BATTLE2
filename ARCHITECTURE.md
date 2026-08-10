@@ -727,16 +727,28 @@ the subject and opponent immediately before every freshly executed cell
 and compares each identity against a snapshot frozen at the start of the
 run (never re-derived from a live `AgentSpec.source_path`, which would
 silently defeat the check by reading whatever the file currently contains
-on both sides of the comparison); it also recomputes the expected
-`match_id` from the planned identity and compares it to the actual
-`NativeMatchResult.match_id` after execution. The first detected drift
-(either check) stops the matrix immediately: no further cells are
-scheduled, every already-completed cell is preserved, the drifted cell
-itself is retained with `status: "drift_detected"` for diagnosis, and the
-final checkpoint sets `lifecycle_state: "aborted"`,
-`abort_reason: "source_drift"` with no `finished_at`. A fresh evaluation
-(implied automatically, since the changed source now hashes to a
-different `evaluation_id`) is required to continue.
+on both sides of the comparison). After execution, `_post_execution_identity_drift`
+compares the frozen planned identity against the identity the *executor
+itself* recorded on `NativeAgentResult.metadata` — never a second,
+independent disk read by this module, which a running agent's own edit
+could equally observe and thus pass despite drift. The required invariant
+(v0.7 closure pass) is three-way: the executor's load-time
+`local_source_fingerprint`, the frozen planned fingerprint, and the
+executor's post-match `local_source_fingerprint_final` (covering lazy
+imports a running agent performed after load) must all agree. The first
+detected drift (pre-execution or post-execution) stops the matrix
+immediately: no further cells are scheduled, every already-completed cell
+is preserved, the drifted cell itself is retained with
+`status: "drift_detected"` for diagnosis, and the final checkpoint sets
+`lifecycle_state: "aborted"`, `abort_reason: "source_drift"` with no
+`finished_at`. A fresh evaluation (implied automatically, since the
+changed source now hashes to a different `evaluation_id`) is required to
+continue. This detects durable source changes only: it fingerprints
+agent-local Python source, not imports/dependencies outside the agent's
+own directory, and a transient edit-and-restore within the same
+fingerprinting window can still escape detection — see
+`docs/specs/evaluation_history.md` §7 for the full residual-limitation
+discussion.
 
 **`battle_engine.evaluation_history`** is a new, Qt-free package
 (`models.py`, `v1_adapter.py`, `v2_adapter.py`, `discovery.py`,
