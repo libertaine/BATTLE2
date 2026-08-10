@@ -1,57 +1,69 @@
-"""Hunter -- an aggressor that hunts for contested ground and seizes it.
+"""Hunter -- a disperser that stakes scattered claims before filling in.
 
-Strategy:
-Hunter's default action is a blind write along its own fixed-stride sweep
--- the same throughput-efficient default Claimer uses, and for the same
-reason: a first-time write is never wasted in this scoring model, so
-there's nothing to gain checking a cell before claiming it (see Claimer's
-docstring). What makes Hunter an aggressor rather than a plain sweeper is
-that occasionally, instead of writing, it reads the next cell to sample
-whether it's already contested -- and whenever one turns out to be
-neither blank nor its own claim byte (the only signal available --
-Observation exposes no ownership map, only raw byte values), it stops
-sweeping and spends a short burst of writes seizing that spot and the
-cells immediately after it, on the theory that ground an opponent
-bothered to take is worth taking back.
+Strategy, and why it changed:
+An earlier version of this agent was a "scanner that bursts on contested
+ground" -- the classic Redcode-bomber idea of aggression. It lost
+consistently, for a structural reason specific to this engine, not a
+tuning mistake: score accumulates *every tick* an entrant owns a cell
+(``ScoringPolicy.score_territory``), Python agents never destroy each
+other (``WRITE`` claims a cell, it never kills), and ``Observation``
+exposes no ownership map -- so "scanning for enemies" is expensive (a
+``READ`` that could have been a ``WRITE``) for no benefit worth the cost,
+and "aggression" in the combat sense doesn't really exist here (see
+Claimer's docstring for the underlying reasoning). A second attempt --
+spreading sparse clusters across the arena with a large gap between them
+-- also lost: the gaps between clusters never got revisited at all, so
+most of the "spread out" range stayed permanently blank, which is worse
+than just sweeping densely from the start.
 
-An earlier version of this agent read every single cell it revisited
-after an initial blind phase, rather than only occasionally -- that traded
-away enough throughput that it lost consistently even against agents doing
-comparatively little else right, the same lesson Strider and Adaptive both
-ran into (see their docstrings). Sampling only a small fraction of the
-time keeps Hunter close to Claimer's raw coverage speed while still
-reacting to what it finds.
-
-Hunter starts its sweep a third of the way into the arena rather than at
-address 0, so its sweep covers different ground than Claimer's and
-Strider's early on, instead of retracing the exact same cells in the exact
-same order.
+What actually works: score is cumulative per tick, so being the first
+entrant present in a given region is worth something even before that
+region is fully claimed -- but only if "spread out" is followed by
+"fill in," not left sparse forever. Hunter now does exactly that in two
+phases: first, a short *sparse* pass using a stride chosen so that any
+prefix of the sequence -- not just a full lap -- is evenly spread across
+the whole arena (a golden-ratio step; see `sparse_stride` below), giving
+it a scattered early presence in regions no single-origin sweep (like
+Claimer's or Strider's, both starting at address 0) reaches for a long
+time. Then it switches to an ordinary *dense* sweep with a different stride,
+continuing from wherever the sparse phase's cursor happened to land
+(deliberately *not* reset to address 0) -- an early version reset it,
+which made the dense phase retrace Claimer's exact path and turned this
+agent into "Claimer plus a free bonus," strictly better than Claimer with
+no real tradeoff, in every single matchup. Continuing from the sparse
+phase's landing point means the dense sweep covers a genuinely different
+-- not superset -- portion of the arena within the match's time limit.
+Both phases are pure blind writing, every action -- no reading, for the
+same reason Claimer never reads (see its docstring). Watch a replay of
+this agent: scattered points light up across the whole arena in the first
+few ticks, then a solid region starts filling in from wherever that
+scatter left off -- a visibly different pattern from every other bundled
+agent's steady single-origin growth.
 
 Important state this agent tracks:
-- `signature`: this agent's own claim byte, used both to write and to
-  recognize "that's already mine, not worth a burst."
-- `cursor` / `stride`: the sweep position and step, like Claimer's.
-- `_scanned_addr`: which address a pending READ result belongs to (see
-  Strider's docstring for why this bookkeeping is necessary).
-- `_burst_remaining` / `_burst_addr`: how many more burst writes are left
-  and where the next one goes, once a target has been found.
+- `signature`: this agent's own claim byte.
+- `sparse_stride` / `dense_stride`: the two phases' step sizes.
+- `cursor`: current sweep position, continuous across both phases.
+- `actions_taken`: how many calls this agent has made -- the only clock
+  it needs to know when to switch phases.
 
 What you might reasonably change:
-- `SCAN_PROBABILITY`: how often a call samples instead of claiming
-  outright.
-- `BURST_LENGTH`: a longer burst denies more ground around a find but
-  spends more of the tick budget not scanning; a shorter one returns to
-  hunting faster.
-- The trigger condition (`value not in (0, self.signature)`) treats every
-  non-blank, non-own byte as worth attacking. A pickier version could
-  require the same foreign byte to show up more than once before
-  committing a burst, at the cost of reacting more slowly.
+- `SPARSE_ACTIONS`: a longer sparse phase spreads wider before settling
+  into dense coverage, at the cost of the dense phase starting later.
 """
 
 from battle_engine.agent_api import ActionKind, AgentAction, MatchContext, Observation
 
-SCAN_PROBABILITY = 0.1
-BURST_LENGTH = 4
+SPARSE_ACTIONS = 20
+
+# The golden ratio's fractional part has the property that every prefix of
+# the sequence (n * GOLDEN_RATIO) mod 1 is low-discrepancy -- spread
+# roughly evenly over [0, 1) no matter how short the prefix is. Scaled to
+# the arena and rounded to an odd integer, the same property holds for
+# addresses: even the first few dozen sparse-phase writes land in
+# well-separated parts of the arena, not clustered near the start the way
+# a small fixed stride would be early on.
+GOLDEN_RATIO_CONJUGATE = 0.6180339887498949
 
 
 class HunterAgent:
@@ -59,35 +71,29 @@ class HunterAgent:
         self.rng = context.rng
         self.arena_size = context.arena_size
         self.signature = 0xE3
-        self.stride = 173
-        self.cursor = context.arena_size // 3
-        self._scanned_addr: int | None = None
-        self._burst_remaining = 0
-        self._burst_addr = 0
+        self.sparse_stride = int(context.arena_size * GOLDEN_RATIO_CONJUGATE) | 1
+        # Deliberately not the same stride Claimer/Strider use (101): two
+        # entrants sweeping with an identical stride are really walking
+        # the same cyclic sequence of addresses, just entered at
+        # different points -- depending on the phase offset between them,
+        # one can end up systematically trailing the other through nearly
+        # every shared cell for the whole match (whoever arrives at a
+        # given address *later* in wall-clock time wins it), which has
+        # nothing to do with either strategy. A different stride makes
+        # this a genuinely different sweep, not the same one offset.
+        self.dense_stride = 173
+        self.cursor = 0
+        self.actions_taken = 0
 
     def act(self, observation: Observation) -> AgentAction:
-        if self._burst_remaining > 0:
-            address = self._burst_addr
-            self._burst_addr = (self._burst_addr + 1) % self.arena_size
-            self._burst_remaining -= 1
+        self.actions_taken += 1
+        if self.actions_taken <= SPARSE_ACTIONS:
+            address = self.cursor
+            self.cursor = (self.cursor + self.sparse_stride) % self.arena_size
             return AgentAction(ActionKind.WRITE, address, self.signature)
 
-        if self._scanned_addr is not None:
-            address = self._scanned_addr
-            self._scanned_addr = None
-            value = observation.last_read
-            if value != 0 and value != self.signature:
-                # Found contested ground: seize it now, then keep seizing
-                # the next couple of cells before returning to the sweep.
-                self._burst_remaining = BURST_LENGTH - 1
-                self._burst_addr = (address + 1) % self.arena_size
-                return AgentAction(ActionKind.WRITE, address, self.signature)
-
         address = self.cursor
-        self.cursor = (self.cursor + self.stride) % self.arena_size
-        if self.rng.random() < SCAN_PROBABILITY:
-            self._scanned_addr = address
-            return AgentAction(ActionKind.READ, address)
+        self.cursor = (self.cursor + self.dense_stride) % self.arena_size
         return AgentAction(ActionKind.WRITE, address, self.signature)
 
 

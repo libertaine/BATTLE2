@@ -1,89 +1,103 @@
-"""Strider -- Claimer's sweep, plus one idea: defend early gains late.
+"""Strider -- Claimer's sweep, plus one idea: defend on a rolling schedule.
 
-Strategy:
-For most of the match, Strider is Claimer with a different starting
-point: the identical fixed-stride blind write sweep (see
-claimer/agent.py), just starting on the opposite side of the arena (see
-`cursor`'s initializer below for why). For the final stretch, it stops
-advancing into new ground and instead replays the *first quarter* of that
-same stride sequence again, re-writing those specific cells. The idea:
-cells claimed early in
-the match have had the whole rest of the match for an opponent's own
-sweep to wander through and steal, so by the end they're the most likely
-to be stale. A blind re-write costs nothing extra to justify (see
-Claimer's docstring -- a write is never wasted in this scoring model,
-whether the cell turns out to already be Strider's or not), so this is
-pure upside if it reclaims anything and pure neutral if it doesn't.
+Strategy, and why it changed:
+Strider starts from the exact same address as Claimer, so both begin by
+covering the same busy region rather than immediately splitting off into
+separate territory -- but with a *different* stride, not the same one.
+Two agents sweeping with an identical stride are really walking the same
+cyclic sequence of addresses, just entered at the same or a different
+point; a first version of this agent used Claimer's exact stride, which
+meant every cell either agent had ever touched was, by construction, also
+touched by the other at the *same* moment -- so Strider's defend phase
+(below) wasn't defending genuinely contested ground, it was trivially
+re-winning cells that were never really at risk, since perfect lockstep
+guarantees perfect overlap. A different stride means the two sweeps
+genuinely diverge over time, and only some ground actually ends up
+fought over.
 
-This is the "improved" half of a two-agent progression with Claimer. Two
-earlier versions of this agent tried to earn that improvement by reading
-each cell before re-claiming it, on the theory that skipping already-owned
-ground would let the saved actions reach further. Both lost consistently
-in evaluation, including one version that ended up the single weakest
-agent in the whole bundle. The lesson, confirmed repeatedly across several
-agents in this bundle: reading costs a full action and a first-time write
-is *never* wasted, so in this scoring model reading only pays for itself
-once revisiting the same already-owned cell would otherwise be genuinely
-common -- and within the tick budgets `bytefray agents test`/`evaluate`
-actually use, blind coverage essentially never gets that far. Defending a
-specific, likely-contested region blind, on a schedule, captures a real
-tactical idea without paying that tax. See
+Every `CYCLE_ADVANCE` actions of forward expansion, Strider pauses
+advancing and spends `CYCLE_DEFEND` actions replaying the *immediately
+preceding* block of its own stride sequence -- the ground it claimed just
+before this cycle, and therefore the ground that has had the least time
+to be stolen relative to how likely it is to still matter. This repeats
+as a rolling cycle for the whole match, not just once at the end: Claimer
+never looks back at all, Strider periodically does.
+
+An even earlier version tried to earn an advantage a third way: reading
+each cell before re-claiming it (lost badly -- see Claimer's docstring
+for why a first-time write is never wasted, so reading pays for itself
+only once revisiting owned ground is common, which rarely happens within
+realistic tick budgets). See
 `bytefray agents evaluate strider --baseline claimer --opponents
 hunter,wanderer,adaptive --seeds 1,2,3,4,5` for a real comparison, and try
 a held-out seed range too before trusting a small sample.
 
 Important state this agent tracks:
-- `signature`: the byte it writes everywhere.
-- `cursor` / `stride`: the sweep position and step size (same stride as
-  Claimer's, different starting point).
-- `start_cursor`: where the sweep began -- the defend stretch replays
-  this exact same stride sequence from here, so it revisits cells this
-  agent actually claimed early rather than an unrelated fixed region.
-- `defend_size`: how many steps of that early sequence get reinforced
-  during the defend stretch -- fixed once at reset, from the arena size.
-- `defend_steps`: position within that reinforcement loop.
+- `signature` / `stride`: the byte it writes and the sweep step size (a
+  different stride from Claimer's -- see above).
+- `cursor`: the forward sweep position.
+- `phase` / `phase_step`: which part of the advance/defend cycle is in
+  progress, and how far into it.
+- `block_start_cursor`: where the *current* advance block began -- this
+  becomes the defend target once that block ends and the next one
+  starts, so each defend pass always reinforces the block just completed.
+- `defend_anchor` / `defend_step`: the recorded start of the block being
+  defended, and position within that replay.
 
 What you might reasonably change:
-- `DEFEND_AFTER_FRACTION`: how late the defend stretch starts (a smaller
-  fraction spends more of the match defending, less expanding).
-- `DEFEND_REGION_FRACTION`: how much of the earliest-claimed ground gets
-  reinforced.
+- `CYCLE_ADVANCE` / `CYCLE_DEFEND`: a longer advance stretch expands
+  further between defenses (and spreads each defend pass thinner, since
+  `DEFEND_SPACING` is derived from both); a longer defend stretch
+  reinforces more cells per cycle but expands less overall.
 """
 
 from battle_engine.agent_api import ActionKind, AgentAction, MatchContext, Observation
 
-DEFEND_AFTER_FRACTION = 0.85  # spend the final 15% of the match defending, not expanding
-DEFEND_REGION_FRACTION = 4  # defend the first 1/DEFEND_REGION_FRACTION of the arena claimed
+CYCLE_ADVANCE = 900
+CYCLE_DEFEND = 40
+# Spacing between defended cells within the preceding block, so the
+# CYCLE_DEFEND actions available spread evenly across the whole block
+# instead of concentrating on just its first few cells. An earlier
+# version set an independent DEFEND_WINDOW larger than CYCLE_DEFEND,
+# which meant only the first CYCLE_DEFEND cells of each block were ever
+# reinforced -- the rest of the block was never defended at all.
+DEFEND_SPACING = max(1, CYCLE_ADVANCE // CYCLE_DEFEND)
 
 
 class StriderAgent:
     def reset(self, context: MatchContext) -> None:
         self.rng = context.rng
         self.arena_size = context.arena_size
-        self.tick_limit = max(1, context.tick_limit)
         self.signature = 0xC2
-        self.stride = 101
-        # Start on the opposite side of the arena from Claimer's identical
-        # stride -- otherwise the two sweeps stay in perfect lockstep for
-        # most of the match (same stride, same cells, same order), and
-        # whichever of the two ends up in the second-mover slot for a
-        # given match wins every contested cell regardless of strategy.
-        # Starting from a different point means their claims are offset
-        # instead of identical, so the defend stretch actually matters.
-        self.start_cursor = context.arena_size // 2
-        self.cursor = self.start_cursor
-        self.defend_size = max(1, context.arena_size // DEFEND_REGION_FRACTION)
-        self.defend_steps = 0
+        self.stride = 131
+        self.cursor = 0
+        self.block_start_cursor = 0
+        self.phase = "advance"
+        self.phase_step = 0
+        self.defend_anchor = 0
+        self.defend_step = 0
 
     def act(self, observation: Observation) -> AgentAction:
-        if observation.tick / self.tick_limit >= DEFEND_AFTER_FRACTION:
-            step = self.defend_steps % self.defend_size
-            self.defend_steps += 1
-            address = (self.start_cursor + step * self.stride) % self.arena_size
+        if self.phase == "advance":
+            address = self.cursor
+            self.cursor = (self.cursor + self.stride) % self.arena_size
+            self.phase_step += 1
+            if self.phase_step >= CYCLE_ADVANCE:
+                self.phase = "defend"
+                self.phase_step = 0
+                self.defend_anchor = self.block_start_cursor
+                self.defend_step = 0
             return AgentAction(ActionKind.WRITE, address, self.signature)
 
-        address = self.cursor
-        self.cursor = (self.cursor + self.stride) % self.arena_size
+        # self.phase == "defend"
+        offset = self.defend_step * DEFEND_SPACING
+        address = (self.defend_anchor + offset * self.stride) % self.arena_size
+        self.defend_step += 1
+        self.phase_step += 1
+        if self.phase_step >= CYCLE_DEFEND:
+            self.phase = "advance"
+            self.phase_step = 0
+            self.block_start_cursor = self.cursor
         return AgentAction(ActionKind.WRITE, address, self.signature)
 
 

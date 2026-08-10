@@ -7,16 +7,39 @@ is the throughput-efficient default -- a first-time write is never
 wasted, so there's nothing to gain by reading first):
 
     CLAIM   (first half)    -- sweep from address 0 with one stride.
-    CONTEST (next 40%)      -- jump to a fresh region on the opposite side
-                                of the arena and sweep it with a different
-                                stride, so the second half of the match
-                                claims new ground instead of only
-                                re-touching CLAIM's territory.
+    CONTEST (next 40%)      -- jump to a fresh region on the opposite
+                                side of the arena and sweep it with a
+                                different stride, reaching ground CLAIM
+                                hasn't gotten to yet instead of continuing
+                                to fight over address 0.
+
+An earlier version had CONTEST restart at address 0 too, on the theory
+that recontesting the busy region other agents also start from would be
+more valuable than claiming empty ground elsewhere. It measured
+consistently worse: address 0 is where a candidate's opponent in
+`bytefray agents evaluate` is also usually sweeping from, and that
+opponent's writes land *after* this agent's within every tick (Python
+entrants execute in fixed slot order -- the evaluated subject first, the
+opponent second; see `AGENT_API_V1.md`'s scheduling notes), so it
+continuously wins any cell both of them touch. Moving to fresh ground
+avoids fighting a fight this agent structurally can't win and reliably
+grew its total territory instead.
     DEFEND  (final 10%)     -- stop advancing into new ground; spend every
-                                action cycling back over a large core
-                                region built up so far, so a late push
-                                can't cheaply erase most of the match's
-                                gains.
+                                action replaying CLAIM's and CONTEST's
+                                sequences alternately (the same stride
+                                arithmetic, restarted from each phase's
+                                own beginning), so a late push can't
+                                cheaply erase either phase's gains. An
+                                opponent that never stops expanding (see
+                                Claimer) will keep passing through --
+                                and, as this evaluation candidate's
+                                structurally later-scheduled opponent,
+                                keep winning -- cells this agent claimed
+                                early and then stopped actively
+                                defending; replaying both phases' actual
+                                sequences, not an unrelated fixed range,
+                                is what makes DEFEND worth the ground it
+                                gives up by no longer expanding.
 
 Two earlier versions of this agent spent CONTEST and DEFEND reading each
 cell before deciding whether to (re-)claim it, on the theory that this
@@ -46,10 +69,21 @@ the alternative pattern looks like end to end.
 Important state this agent tracks:
 - `signature`: this agent's own claim byte.
 - `claim_cursor` / `claim_stride`: CLAIM's sweep position and step.
-- `contest_cursor` / `contest_stride`: CONTEST's independent sweep
-  position (started on the opposite side of the arena) and step.
-- `core_size`: how much of the arena DEFEND cycles back over -- computed
-  from how far CLAIM and CONTEST actually got, not a fixed guess.
+- `contest_cursor` / `contest_stride`: CONTEST's independent sweep,
+  started on the opposite side of the arena from CLAIM with a different
+  stride.
+- `claim_actions` / `contest_actions`: how many writes each phase
+  actually made -- since both strides are coprime with the arena size,
+  these are exactly how many distinct cells each phase covered (no
+  repeats within one pass). DEFEND uses them as loop bounds when
+  replaying each sequence. An earlier version used the raw (wrapped)
+  cursor value instead, which is not actually a count of anything and
+  happened to produce only a plausible-*looking* number; an even earlier
+  version used a fixed, unrelated contiguous address range instead of
+  replaying either phase's real sequence at all.
+- `contest_start`: CONTEST's starting address, remembered separately from
+  `contest_cursor` (which moves) so DEFEND can restart that same sequence
+  from its actual beginning.
 - Its current phase lives in the engine's `pc`, not in a Python attribute
   -- read via `observation.pc`, changed via `AgentAction(ActionKind.JUMP,
   ...)`.
@@ -77,11 +111,13 @@ class AdaptiveAgent:
         self.arena_size = context.arena_size
         self.tick_limit = max(1, context.tick_limit)
         self.signature = 0x99
-        self.claim_stride = 131
+        self.claim_stride = 149
         self.claim_cursor = 0
+        self.claim_actions = 0
         self.contest_stride = 197
-        self.contest_cursor = context.arena_size // CONTEST_START_FRACTION
-        self.core_size = max(1, context.arena_size // 8)
+        self.contest_start = context.arena_size // CONTEST_START_FRACTION
+        self.contest_cursor = self.contest_start
+        self.contest_actions = 0
         self.defend_cursor = 0
 
     def _phase_for(self, tick: int) -> int:
@@ -95,26 +131,31 @@ class AdaptiveAgent:
     def act(self, observation: Observation) -> AgentAction:
         target_phase = self._phase_for(observation.tick)
         if observation.pc != target_phase:
-            if target_phase == PHASE_DEFEND and self.claim_cursor:
-                # DEFEND reinforces everything CLAIM actually swept, not a
-                # fixed guess -- claim_cursor is frozen at its final value
-                # once CLAIM's phase ends, so it marks exactly how far
-                # that sweep got.
-                self.core_size = self.claim_cursor
             return AgentAction(ActionKind.JUMP, target_phase)
 
         if target_phase == PHASE_CLAIM:
             address = self.claim_cursor
             self.claim_cursor = (self.claim_cursor + self.claim_stride) % self.arena_size
+            self.claim_actions += 1
             return AgentAction(ActionKind.WRITE, address, self.signature)
 
         if target_phase == PHASE_CONTEST:
             address = self.contest_cursor
             self.contest_cursor = (self.contest_cursor + self.contest_stride) % self.arena_size
+            self.contest_actions += 1
             return AgentAction(ActionKind.WRITE, address, self.signature)
 
-        # PHASE_DEFEND
-        address = self.defend_cursor % self.core_size
+        # PHASE_DEFEND: alternate replaying CLAIM's and CONTEST's actual
+        # sequences from their own starting points, rather than an
+        # unrelated fixed range.
+        claim_span = max(self.claim_actions, 1)
+        contest_span = max(self.contest_actions, 1)
+        if self.defend_cursor % 2 == 0:
+            step = (self.defend_cursor // 2) % claim_span
+            address = (step * self.claim_stride) % self.arena_size
+        else:
+            step = (self.defend_cursor // 2) % contest_span
+            address = (self.contest_start + step * self.contest_stride) % self.arena_size
         self.defend_cursor += 1
         return AgentAction(ActionKind.WRITE, address, self.signature)
 
