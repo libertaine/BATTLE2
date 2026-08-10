@@ -37,6 +37,36 @@ Development is incremental and repository-driven. Goals and architecture are est
 
 AI-generated code and review findings are treated as proposals, not authority. Claims are checked against executable behavior, tests, the current repository, and other reproducible evidence; findings that cannot be confirmed are rejected. Human judgment remains responsible for project direction, requirements, architecture, scope, tradeoffs, and deciding when a change is ready to enter the project.
 
+---
+
+## Roadmap
+
+Bytefray started as a minimal headless engine plus a Pygame runner and Qt
+designer, then grew a dedicated agent-authoring and evaluation toolchain one
+milestone at a time. This is a compact map of that evolution, not a
+substitute for the detailed [CHANGELOG](CHANGELOG.md).
+
+| Version | Milestone | Status / Summary |
+|---|---|---|
+| 0.1.0 | Initial Windows Release | Released — first public build: headless CLI, Pygame match runner, Qt-based Agent Designer, installer and portable archive. |
+| 0.2.0 | Unified CLI & Packaging | Released — unified `battle2` dispatcher, canonical replay schema, Python wheel packaging (3.10–3.13), writable platform data roots, headless Linux CI. |
+| 0.3.0 | Bytefray Rename & Native Core | Released — renamed BATTLE2 → Bytefray; added Agent API v1 Python agents, deterministic Python-vs-Python matches, the `battle2.result`/`battle2.replay` schemas, an interactive Pygame replay viewer with territory analysis, and a resumable headless tournament service. |
+| 0.4.0 | Agent Authoring & Development Feedback Loop | Released — `agents create → validate → test` from both the CLI and a new Designer "Agent Development" tab, plus a reusable, Pygame-free replay-analysis module. |
+| 0.5.0 | Agent Lab | Released — versioned agent traces, supervised worker-subprocess execution with OS-level timeout/process containment, `agents inspect`/`agents diverge`, and a Designer Trace Inspector. |
+| 0.5.1 | Cross-Platform / Packaging Hardening | Released — patch release. **Major fixes:** preserved the Linux virtualenv interpreter instead of resolving through its symlink to the base Python (which broke supervised workers), and stopped dynamic agent imports from leaving `__pycache__` contamination; also folded in late v0.5.0 frozen-build fixes (PyYAML missing from some frozen Windows executables, Designer subprocesses resolving the wrong data root in portable mode). |
+| 0.6.0 | Agent Evaluation | Released — deterministic candidate/baseline evaluation matrices (`agents evaluate`) built directly on the exact `agents test` execution boundary, plus duplicate-cell correctness fixes found during release validation. |
+| 0.6.1 | Default Agent Build-Out | Released — five bundled Python starter agents (Claimer, Strider, Hunter, Wanderer, Adaptive) demonstrating distinct, empirically balanced strategies, replacing the single fixed-behavior scaffold as every new user's first Python match. Surfaced an open scoring-model question — whether continual territory-claiming is structurally favored over observing or defending — carried forward into v0.9.0. |
+| 0.7.0 | Evaluation History | Released — `bytefray.evaluation` v2, persistent evaluation history (`evaluations list`/`show`/`compare`), execution provenance, and reproducibility-aware comparison against a stable baseline. **Major hardening:** frozen execution identity, local-source fingerprinting, resume/retry durability, malformed-artifact isolation, fail-closed execution-context validation, and replay/path containment. |
+| 0.8.0 | Agent Revision & Provenance | **In development** — formalizing durable identity/provenance for agent revisions, so historical evaluation results stay meaningful as an agent's source keeps evolving. Storage, revision-ID scheme, and related implementation decisions are still open. |
+| 0.9.0 | Ruleset Review / Simulation Design | Planned — revisit Bytefray's scoring model and mechanics once evaluation tooling can study them properly: whether the rules favor a simple dominant strategy over experimentation, how observation/defense trade off against expansion, and whether the strategy diversity seen so far is genuinely produced by the rules. Exploratory; no rule changes are promised yet. |
+| 1.0 | Stable Bytefray Platform | Tentative — a maturity milestone: a coherent, well-tuned simulation, mature agent-development tooling, trustworthy reproducible evaluations, durable provenance/history, and stable core interfaces with repeatable supported distribution. Exact feature boundary **TBD**. |
+
+**Future / unscheduled:** ideas with real merit but no assigned release,
+revisited as usage justifies them — VM/Redcode authoring and evaluation
+parity (Redcode is *not* cancelled; Python-side authoring, evaluation,
+provenance, and the ruleset itself are expected to mature first), richer
+statistical/evaluation analysis, ranking systems such as Elo/Glicko,
+parallel/distributed evaluation, and agent packaging/sharing.
 
 ---
 
