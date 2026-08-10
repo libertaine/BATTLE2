@@ -293,6 +293,41 @@ that gap:
    regression tests `test_toctou_same_file_factory_retarget_is_detected`/
    `test_toctou_local_helper_edit_after_precheck_is_detected` in
    `test_agent_evaluation_v2.py`.
+
+   **Lazy-import fix (second v0.7 closure pass).** The load-time
+   `local_source_fingerprint` above is captured once, in
+   `PythonEntrantController.__init__`/`SupervisedPythonEntrantController.
+   _initialize_entrant`, *before* `reset()`/`act()` ever run. An agent
+   that imports a local helper *lazily* — from inside `reset()`/`act()`,
+   rather than at module load time — can have that helper file changed
+   after the load-time fingerprint was captured but before the lazy
+   import actually executes; the load-time fingerprint alone cannot see
+   that, since the read that would notice the change has not happened
+   yet when it is taken. `PythonEntrantController.run`/
+   `SupervisedPythonEntrantController.run` now also compute a **second**,
+   independent `local_source_fingerprint_final`, once the whole match has
+   finished (every `act()` call for that match has already happened),
+   over the identical deterministic scope as the load-time one, and
+   `match_service._build_python_result` copies it into
+   `NativeAgentResult.metadata` as `local_source_fingerprint_final`. The
+   required invariant is now three-way, not two-way:
+
+   ```text
+   initial executor fingerprint == frozen planned fingerprint == final executor fingerprint
+   ```
+
+   Both the load-time and the post-match executor-recorded fingerprints
+   must independently equal the plan's single recorded value; either one
+   disagreeing is drift. See
+   `test_lazy_import_helper_edit_after_initial_fingerprint_is_detected` in
+   `test_agent_evaluation_v2.py`, which constructs a candidate whose
+   `act()` lazily imports `helper.py` fresh on every call (via
+   `importlib.util`, bypassing `sys.modules` caching) and makes its own
+   behavior depend on the imported value, so the test can prove from the
+   match's own observable outcome (`ticks_run == 1`, an immediate halt)
+   that the *changed* helper was actually read and acted on by a real
+   `act()` call — not merely present on disk — and that the evaluation
+   still records `drift_detected`, never a valid `completed` cell.
 4. **Initialization failures** get a *live re-resolve* against the frozen
    plan instead (no `NativeAgentResult.metadata` exists when an agent
    fails to initialize — `RuntimeDiagnostic` carries no identity fields).
@@ -315,34 +350,67 @@ that gap:
    evaluating the changed agent — the aborted artifact is never silently
    resumed or "fixed up" by rerunning inside the same output directory.
 
-**Documented residual TOCTOU window (not claimed to be closed).** Inside
-`python_runtime.PythonEntrantController.__init__` (and its supervised
-counterpart), an agent's module is loaded/executed first, and its
-`source_sha256`/`local_source_fingerprint` are each computed by a
-*separate*, subsequent read. An edit that lands and then reverts to the
-originally-planned bytes before those reads — or before this module's own
-inputs are otherwise captured — is not detectable from outside that call,
-and no check in this module can close it without changing `python_runtime`
-itself. In practice this means: any edit that lands and *stays* is caught
-(proven by TOCTOU tests using real file/manifest mutation, not just a
-monkeypatched drift detector) — including entry-point/manifest retargets
-and local-helper-only edits, as of the v0.7 closure pass ("B1"); a
-transient edit that fully reverts before anything reads it is not, and
-must not be, falsely reported as drift either.
+**Documented residual TOCTOU window (not claimed to be closed; narrowed,
+not widened, by the second closure pass).** Executor-recorded evidence is
+captured at exactly two points, each by a read separate from whatever
+`reset()`/`act()` call last touched the same bytes:
+
+* **load time**, inside `PythonEntrantController.__init__`/
+  `SupervisedPythonEntrantController._initialize_entrant`, where
+  `source_sha256`/`local_source_fingerprint` are computed once, right
+  after the agent module is imported and before `reset()` runs;
+* **post-match**, inside `PythonEntrantController.run`/
+  `SupervisedPythonEntrantController.run`, where
+  `local_source_fingerprint_final` is computed once, right after the tick
+  loop finishes and every `act()` call for that match has already
+  happened.
+
+An edit that lands and then fully reverts to the originally-planned bytes
+*before the nearer of these two reads captures it* is not detectable from
+outside that call, and no check in this module can close it without
+changing `python_runtime`/`supervised_runtime` themselves to fingerprint
+on every single file access, which was deliberately not done (that would
+turn a narrow identity check into a general instrumentation/provenance
+system, out of scope per §20). Concretely, this covers two symmetric
+cases: a durable edit-then-restore around load time (e.g. between
+preflight and `PythonEntrantController.__init__`, restored before that
+constructor's own read), and a durable edit-then-restore around the lazy-
+import case above (read once by a genuinely executing lazy import, then
+restored — by the agent itself, or by anything else with write access to
+that path — before the post-match final fingerprint is taken). Both are
+proven, not merely asserted: `test_toctou_edit_then_restore_is_not_falsely_
+flagged` (load-time case) and
+`test_lazy_import_helper_edit_and_restore_before_final_check_is_not_
+falsely_flagged` (post-match case, which additionally proves via
+`ticks_run == 1` that the transient value *was* read and acted upon before
+reverting) both assert the match still completes normally, never falsely
+flagged as drift. In practice this means: any edit that lands and *stays*
+through the nearer of the two read points is caught — including entry-
+point/manifest retargets, local-helper-only edits present at load time,
+and local helpers imported lazily during `reset()`/`act()`, as of the two
+v0.7 closure passes ("B1" and the lazy-import fix); only a transient edit
+that fully reverts before its nearer read point remains undetectable, and
+must not be, and is not, falsely reported as drift.
 
 **Local-source-fingerprint scope.** `agent_identity.
 local_source_fingerprint` hashes every `.py` file under an agent's own
-`agents/<id>/` directory (§H3) — it is checked both at planning time
+`agents/<id>/` directory (§H3) — it is checked at planning time
 (`evaluation_id`/pre-execution drift, comparing two live re-reads of the
 plan snapshot against the current directory) *and*, since the v0.7 closure
-pass, against `NativeAgentResult.metadata`'s own recorded fingerprint (the
-executor's own evidence of what it actually loaded from). It is explicitly
-scoped to files physically inside that one directory: it does not follow
-`sys.path` imports, does not hash installed packages or anything under
-`site-packages`, and cannot see a change to an *external* dependency an
-agent's own code happens to import (a change to `numpy`'s installed
-version, for instance, is invisible to this fingerprint and to drift
-detection generally — see "External imports/dependencies limitation"
+passes, against **two** independent executor-recorded readings in
+`NativeAgentResult.metadata` — `local_source_fingerprint` (captured at
+load time, before `reset()`/`act()` run) and `local_source_fingerprint_
+final` (captured after the whole match finishes, so any local helper
+imported lazily during `reset()`/`act()` has already been read) — never a
+second live re-read of the directory presented as executor proof. Both
+executor-recorded readings must independently match the frozen plan's
+single recorded value (see the three-way invariant above). The fingerprint
+itself is explicitly scoped to files physically inside that one directory:
+it does not follow `sys.path` imports, does not hash installed packages or
+anything under `site-packages`, and cannot see a change to an *external*
+dependency an agent's own code happens to import (a change to `numpy`'s
+installed version, for instance, is invisible to this fingerprint and to
+drift detection generally — see "External imports/dependencies limitation"
 below).
 
 **External imports/dependencies limitation.** Neither `source_sha256` nor
@@ -556,6 +624,10 @@ class HealthCode(Enum):
     MISSING_RULES_COMPATIBILITY_ID = "missing_rules_compatibility_id"
     MALFORMED_MATRIX_ELEMENT = "malformed_matrix_element"
     INVALID_EXECUTION_CONTEXT_ENTRY = "invalid_execution_context_entry"
+    # Second v0.7 closure pass: the `execution_contexts` *container* itself
+    # can be the wrong type entirely (e.g. JSON `null`), distinct from one
+    # malformed *entry* inside an otherwise well-typed list.
+    INVALID_EXECUTION_CONTEXTS_CONTAINER = "invalid_execution_contexts_container"
 
 @dataclass(frozen=True)
 class HealthReport:
@@ -597,6 +669,86 @@ previously an uncaught `AttributeError` that would have aborted discovery
 of every sibling in the same scan. It is now a typed `ArtifactReadError`
 (`HealthCode.INVALID_JSON_ROOT`), isolated exactly like any other
 malformed sibling.
+
+**Execution-context validation (second v0.7 closure pass).** Two
+concrete gaps remained in `v2_adapter.py`'s handling of a v2 artifact's
+`execution_contexts` field, found by an independent review after the
+first closure pass:
+
+* *Case A — wrong container type.* `execution_contexts: null` is valid
+  JSON but the wrong container type. `data.get("execution_contexts", ())`
+  does **not** protect against this: the default only applies when the
+  key is *absent*, and here it is present with value `None`, so the call
+  returns `None` itself — a bare `for item in data.get("execution_contexts",
+  ())` then raised an uncaught `TypeError: 'NoneType' object is not
+  iterable`, aborting discovery of every sibling in the same scan (the
+  same class of bug §H2's `INVALID_JSON_ROOT` fix closed one level up, at
+  the whole-artifact root, but this field-level instance of it survived
+  the first pass). Any non-list value (`null`, a string, a number, an
+  object) is now normalized to an empty list up front, before any
+  iteration touches it, with `HealthCode.INVALID_EXECUTION_CONTEXTS_
+  CONTAINER` appended as a diagnostic; `execution_contexts` genuinely
+  *absent* from the artifact remains legitimate (a v2 artifact predating
+  execution-context recording) and is not flagged at all.
+* *Case B — incomplete entries silently treated as healthy.* A context
+  reduced to essentially `{"context_id": "..."}`, with every
+  behaviorally-relevant runtime field absent, passed the first closure
+  pass's own `INVALID_EXECUTION_CONTEXT_ENTRY` check, which only verified
+  that `context_id` itself was a non-empty string — it never inspected the
+  other six fields at all. Such an artifact could be adapted and reported
+  `HEALTHY`.
+
+Both are closed by one centralized primitive,
+`evaluation_history.models.execution_context_is_valid`, rather than two
+separately-drifting implementations:
+
+```python
+EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES: dict[str, type] = {
+    "bytefray_version": str, "agent_api_version": int, "python_version": str,
+    "result_schema_version": int, "replay_schema_version": int,
+    "rules_compatibility_id": str,
+}
+
+def execution_context_is_valid(context: Any) -> bool:
+    # dict, non-empty string context_id, every required field present with
+    # the expected type, AND context_id recomputed (exactly as
+    # agent_evaluation.current_execution_context derives it) matches the
+    # recorded value.
+    ...
+```
+
+`v2_adapter.py` uses this to decide, per entry: `HealthCode.
+INVALID_EXECUTION_CONTEXT_ENTRY` for anything that fails it (missing
+field, wrong-typed field, or a `context_id` inconsistent with its own
+semantic contents — a context that is structurally "complete" but not
+trustworthy, since `context_id` is supposed to be a deterministic function
+of exactly those six fields). Only entries that pass
+`execution_context_is_valid` are exposed on
+`EvaluationSummary.execution_contexts` at all — a malformed entry is
+*never* surfaced as something `comparison.py` could find by id and treat
+as a legitimate compatibility record. (`known_context_ids`, which drives
+`DANGLING_EXECUTION_CONTEXT`, is intentionally unaffected by this
+stricter filter — dangling-reference detection stays scoped to "does any
+entry, valid or not, claim this id," a distinct question from "is this
+entry trustworthy enough to compare against.")
+
+`comparison.py`'s own `_context_by_id`/`_contexts_compatible` deliberately
+do **not** call `execution_context_is_valid` (which would also require an
+exact `context_id` recompute-match): a hand-built `EvaluationSummary` used
+directly by a test fixture (as opposed to one round-tripped through
+`adapt_v2_data`) has no obligation to carry a genuinely-recomputed
+`context_id`, only a stable, unique one, and requiring recompute-equality
+there breaks nothing for a real artifact (which `v2_adapter.py` already
+filtered upstream) but would break legitimate fixtures that use a
+readable label instead of an opaque hash. Comparison-time compatibility
+is instead protected by `_contexts_compatible`'s existing per-field
+presence/type check (§H3 below) — sufficient on its own for Case B, since
+it independently requires all six fields present and typed on *both*
+sides before treating two contexts as the same runtime — plus, for any
+artifact that actually went through `adapt_v2_data`, the upstream
+`execution_context_is_valid` filter, which means a malformed context
+(including a `context_id`-inconsistent one) is never even reachable by
+`_context_by_id` for a real comparison in the first place.
 
 `codes` is a tuple, not a single enum, because multiple states can coexist
 (e.g. `FINISHED_WITH_FAILED_CELLS` and `NON_PORTABLE_ABSOLUTE_PATH`
