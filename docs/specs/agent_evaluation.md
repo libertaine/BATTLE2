@@ -350,7 +350,13 @@ this produces exactly `2 * 4 * 5 = 40` cells — `EvaluationService`
 computes and prints this count before running anything (§13, §14).
 
 Each cell's `schedule_id` is `stable_id("evaluation-cell", {...})` over
-`(evaluation_id, role, subject_id, opponent_id, seed)`; its `artifact_dir`
+`(evaluation_id, role, subject_id, opponent_id, seed, ordinal)` — the shipped
+code includes `ordinal` specifically so a repeated `(role, subject_id,
+opponent_id, seed)` tuple, explicitly preserved as distinct cells, still
+gets a distinct `schedule_id` rather than colliding in the resume-state
+lookup (see the inline comment at `agent_evaluation.py`'s `build_matrix`;
+corrected here per `docs/specs/evaluation_history.md` §19 — the description
+below previously omitted `ordinal`). Its `artifact_dir`
 is `<output_dir>/matches/{ordinal:04d}-{role}-{safe(subject_id)}-vs-{safe(opponent_id)}-seed{seed}/`
 (`_safe_path_segment`, reused verbatim from `agent_test.py` — already
 exactly this sanitization).

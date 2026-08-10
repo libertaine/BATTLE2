@@ -22,8 +22,9 @@ import hashlib
 import json
 import re
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
 from itertools import zip_longest
 from pathlib import Path
 from typing import Any
@@ -59,13 +60,32 @@ from battle_engine.result_model import (
 from battle_engine.results import WINNER_TIE_SENTINEL
 
 SCHEMA_NAME = "bytefray.evaluation"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+IDENTITY_VERSION = 2
+
+# Narrowly scoped compatibility identifier for evaluation/match comparison
+# semantics (scoring, winner resolution, Python scheduling order, derived-seed
+# policy). Deliberately separate from ``ProjectInfo.version`` -- bump by hand
+# only when one of those specific behaviors changes; see
+# docs/specs/evaluation_history.md Sec 4.
+EVALUATION_RULES_COMPATIBILITY_ID = "evaluation-rules-1"
 
 CANDIDATE = "candidate"
 BASELINE = "baseline"
 
 _OUTCOME_RANK = {"loss": 0, "tie": 1, "win": 2}
 _REAL_OUTCOMES = frozenset(_OUTCOME_RANK)
+_TERMINAL_RESUME_STATUSES = ("completed", "failed", "corrupted", "drift_detected")
+
+
+def _utc_now_iso() -> str:
+    """Precise UTC timestamp: microsecond precision, ``Z`` suffix (Sec 5)."""
+
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
 
 
 class EvaluationConfigurationError(ValueError):
@@ -106,6 +126,80 @@ def agent_identity(spec: AgentSpec) -> dict[str, Any]:
         "entry_point": spec.entry_point,
         "source_sha256": source_digest(spec.source_path),
     }
+
+
+@dataclass(frozen=True)
+class EffectiveConditions:
+    """Readable effective execution conditions, constant across one evaluation.
+
+    ``agent_test.py`` gives no per-cell override surface for anything but
+    seed/ticks (docs/specs/agent_evaluation.md Sec 2 finding 4), so every
+    field below is the same for every cell in a matrix -- but it is recorded
+    explicitly rather than assumed, per docs/specs/evaluation_history.md
+    Sec 3 ("avoid duplicating mutable defaults without resolving them
+    first").
+    """
+
+    tick_limit: int
+    arena_size: int
+    action_budget: int
+    win_mode: str
+    weights: dict[str, float | int]
+    agent_api_version: int
+    subject_slot: str = TESTED_AGENT_SLOT
+    opponent_slot: str = OPPONENT_SLOT
+    entrant_order: tuple[str, str] = (TESTED_AGENT_SLOT, OPPONENT_SLOT)
+    runtime_kind: str = "python"
+    supervision: str = "unsupervised"
+    tracing: str = "untraced"
+
+
+def effective_conditions_for(ticks: int, agent_api_version: int) -> EffectiveConditions:
+    defaults = Config()
+    return EffectiveConditions(
+        tick_limit=ticks,
+        arena_size=defaults.arena_size,
+        action_budget=defaults.instr_per_tick,
+        win_mode=defaults.win_mode,
+        weights=asdict(defaults.weights),
+        agent_api_version=agent_api_version,
+    )
+
+
+@dataclass(frozen=True)
+class ExecutionContext:
+    """One observed runtime environment a v2 cell may be attributable to.
+
+    docs/specs/evaluation_history.md Sec 6: every newly executed cell must be
+    attributable to an entry in ``execution_contexts``; a resumed/trusted
+    cell keeps whatever context it was originally recorded under.
+    """
+
+    context_id: str
+    bytefray_version: str
+    agent_api_version: int
+    python_version: str
+    result_schema_version: int
+    replay_schema_version: int
+    rules_compatibility_id: str
+    first_used_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def current_execution_context(rules_compatibility_id: str) -> ExecutionContext:
+    project = get_project_info()
+    payload = {
+        "bytefray_version": project.version,
+        "agent_api_version": project.agent_api_version,
+        "python_version": project.python_version,
+        "result_schema_version": project.result_schema_version,
+        "replay_schema_version": project.replay_schema_version,
+        "rules_compatibility_id": rules_compatibility_id,
+    }
+    context_id = stable_id("evaluation-context", payload)
+    return ExecutionContext(context_id=context_id, **payload)
 
 
 def _resolve_python_agent(root: Path, agent_id: str) -> AgentSpec:
@@ -193,6 +287,16 @@ class EvaluationCell:
     territory_opponent: float | None = None
     error_code: str | None = None
     error_message: str | None = None
+    # Duplicate occurrence coordinates (docs/specs/evaluation_history.md
+    # Sec 8) -- distinct from schedule_id, survive candidate-source changes
+    # across evaluations, and are what cross-evaluation alignment uses.
+    opponent_index: int = -1
+    seed_index: int = -1
+    matrix_ordinal: int = 0
+    condition_occurrence_index: int = 0
+    # Execution provenance and comparison support (Sec 6, Sec 14).
+    execution_context_id: str | None = None
+    condition_fingerprint: str | None = None
 
     @property
     def is_scored(self) -> bool:
@@ -267,17 +371,33 @@ class EvaluationResult:
     def corrupted_cells(self) -> tuple[EvaluationCell, ...]:
         return tuple(cell for cell in self.cells if cell.status == "corrupted")
 
+    @property
+    def drift_cells(self) -> tuple[EvaluationCell, ...]:
+        return tuple(cell for cell in self.cells if cell.status == "drift_detected")
+
 
 def _safe_path_segment(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._") or "entrant"
 
 
-def build_matrix(request: EvaluationRequest, evaluation_id: str) -> tuple[EvaluationCell, ...]:
+def build_matrix(
+    request: EvaluationRequest,
+    evaluation_id: str,
+    specs: Mapping[str, AgentSpec] | None = None,
+    conditions_fingerprint: str | None = None,
+    rules_compatibility_id: str | None = None,
+) -> tuple[EvaluationCell, ...]:
     """Build the deterministic subject x opponent x seed matrix.
 
     Iteration order is candidate, then baseline (if present); opponents
     and seeds in exact request order, never re-sorted or deduplicated
     (docs/specs/agent_evaluation.md Sec 7).
+
+    ``specs``/``conditions_fingerprint``/``rules_compatibility_id`` are
+    optional so any pre-v2 caller (none remain in this module, but the
+    signature stays permissive for library callers) still gets a usable
+    matrix without a ``condition_fingerprint`` per cell
+    (docs/specs/evaluation_history.md Sec 8/Sec 14).
     """
 
     subjects: list[tuple[str, str]] = [(CANDIDATE, request.candidate_id)]
@@ -287,9 +407,12 @@ def build_matrix(request: EvaluationRequest, evaluation_id: str) -> tuple[Evalua
     cells: list[EvaluationCell] = []
     ordinal = 0
     for role, subject_id in subjects:
-        for opponent_id in request.opponent_ids:
-            for seed in request.seeds:
+        occurrence_counts: dict[tuple[str, int], int] = {}
+        for opponent_index, opponent_id in enumerate(request.opponent_ids):
+            for seed_index, seed in enumerate(request.seeds):
                 ordinal += 1
+                condition_occurrence_index = occurrence_counts.get((opponent_id, seed), 0)
+                occurrence_counts[(opponent_id, seed)] = condition_occurrence_index + 1
                 # `ordinal` is included so a repeated (role, subject_id,
                 # opponent_id, seed) tuple -- explicitly preserved as
                 # distinct cells above -- still gets a distinct schedule_id.
@@ -313,6 +436,18 @@ def build_matrix(request: EvaluationRequest, evaluation_id: str) -> tuple[Evalua
                     f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
                     f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}"
                 )
+                condition_fingerprint = None
+                if specs is not None and conditions_fingerprint is not None:
+                    condition_fingerprint = stable_id(
+                        "evaluation-condition",
+                        {
+                            "opponent": agent_identity(specs[opponent_id]),
+                            "seed": seed,
+                            "effective_conditions": conditions_fingerprint,
+                            "rules_compatibility_id": rules_compatibility_id,
+                            "condition_occurrence_index": condition_occurrence_index,
+                        },
+                    )
                 cells.append(
                     EvaluationCell(
                         schedule_id=schedule_id,
@@ -321,6 +456,11 @@ def build_matrix(request: EvaluationRequest, evaluation_id: str) -> tuple[Evalua
                         opponent_id=opponent_id,
                         seed=seed,
                         artifact_dir=request.output_dir / "matches" / label,
+                        opponent_index=opponent_index,
+                        seed_index=seed_index,
+                        matrix_ordinal=ordinal,
+                        condition_occurrence_index=condition_occurrence_index,
+                        condition_fingerprint=condition_fingerprint,
                     )
                 )
     return tuple(cells)
@@ -608,6 +748,9 @@ def _cell_from_state(cell: EvaluationCell, previous: Mapping[str, Any]) -> Evalu
         territory_opponent=previous.get("territory_opponent"),
         error_code=previous.get("error_code"),
         error_message=previous.get("error_message"),
+        # A resumed cell's own execution provenance is preserved verbatim --
+        # never rewritten to the resuming process's context (Sec 5/Sec 6).
+        execution_context_id=previous.get("execution_context_id"),
     )
 
 
@@ -691,18 +834,58 @@ class EvaluationService:
             data_root=data_root,
         )
         specs = self._validate(request)
-        evaluation_id = self._evaluation_id(request, specs)
+        conditions = self._effective_conditions(request)
+        evaluation_id = self._evaluation_id(request, specs, conditions)
         return specs, evaluation_id
 
     def run(self, request: EvaluationRequest) -> EvaluationResult:
         specs = self._validate(request)
-        evaluation_id = self._evaluation_id(request, specs)
+        # Frozen at validate time, deliberately never re-derived from a live
+        # AgentSpec.source_path later -- Sec 7's pre-check compares a fresh
+        # resolve against *this* snapshot, not against `specs` (whose
+        # source_path would just re-read whatever the file currently
+        # contains, silently defeating drift detection).
+        planned_identities = {agent_id: agent_identity(spec) for agent_id, spec in specs.items()}
+        conditions = self._effective_conditions(request)
+        conditions_fp = stable_id("evaluation-conditions", asdict(conditions))
+        evaluation_id = self._evaluation_id(request, specs, conditions)
         state_path = request.output_dir / "evaluation.json"
         prior = self._load_state(state_path, evaluation_id) if request.resume else {}
         prior_cells = {item["schedule_id"]: item for item in prior.get("cells", ())}
-        matrix = build_matrix(request, evaluation_id)
+        matrix = build_matrix(
+            request, evaluation_id, specs, conditions_fp, EVALUATION_RULES_COMPATIBILITY_ID
+        )
+
+        created_at = prior.get("created_at") or _utc_now_iso()
+        execution_contexts: list[dict[str, Any]] = list(prior.get("execution_contexts", ()))
+        known_context_ids = {item.get("context_id") for item in execution_contexts}
+
+        def record_context_usage() -> str:
+            context = current_execution_context(EVALUATION_RULES_COMPATIBILITY_ID)
+            if context.context_id not in known_context_ids:
+                execution_contexts.append(
+                    {**context.to_dict(), "first_used_at": _utc_now_iso()}
+                )
+                known_context_ids.add(context.context_id)
+            return context.context_id
+
+        # First checkpoint: written before any cell executes, so a crash
+        # during cell 1 still leaves discoverable lifecycle state (Sec 5).
+        self._write_state(
+            state_path,
+            evaluation_id,
+            request,
+            (),
+            matrix,
+            specs=specs,
+            conditions=conditions,
+            created_at=created_at,
+            lifecycle_state="running",
+            execution_contexts=execution_contexts,
+        )
 
         completed: list[EvaluationCell] = []
+        drift: dict[str, Any] | None = None
         for cell in matrix:
             previous = prior_cells.get(cell.schedule_id)
             resolved: EvaluationCell | None = None
@@ -710,19 +893,43 @@ class EvaluationService:
                 resolved = self._resolve_from_state(cell, previous, specs, request)
                 if (
                     resolved is not None
-                    and resolved.status in ("failed", "corrupted")
+                    and resolved.status in ("failed", "corrupted", "drift_detected")
                     and request.retry_failures
                 ):
                     resolved = None
             if resolved is None:
-                resolved = self._execute_cell(cell, request)
+                resolved = self._execute_cell(
+                    cell, request, specs, planned_identities, record_context_usage
+                )
             completed.append(resolved)
-            self._write_state(state_path, evaluation_id, request, completed, matrix)
+            self._write_state(
+                state_path,
+                evaluation_id,
+                request,
+                completed,
+                matrix,
+                specs=specs,
+                conditions=conditions,
+                created_at=created_at,
+                lifecycle_state="running",
+                execution_contexts=execution_contexts,
+            )
+            if resolved.status == "drift_detected":
+                drift = {
+                    "role": resolved.subject_role,
+                    "subject_id": resolved.subject_id,
+                    "opponent_id": resolved.opponent_id,
+                    "schedule_id": resolved.schedule_id,
+                    "code": resolved.error_code,
+                    "detail": resolved.error_message,
+                }
+                break
 
         aggregates = self._all_aggregates(request, completed)
         comparison = (
             compare_candidate_baseline(completed) if request.baseline_id is not None else ()
         )
+        finished_at = None if drift is not None else _utc_now_iso()
         self._write_state(
             state_path,
             evaluation_id,
@@ -731,6 +938,14 @@ class EvaluationService:
             matrix,
             aggregates=aggregates,
             comparison=comparison,
+            specs=specs,
+            conditions=conditions,
+            created_at=created_at,
+            lifecycle_state="aborted" if drift is not None else "finished",
+            finished_at=finished_at,
+            abort_reason="source_drift" if drift is not None else None,
+            abort_detail=drift,
+            execution_contexts=execution_contexts,
         )
         return EvaluationResult(
             evaluation_id=evaluation_id,
@@ -761,9 +976,17 @@ class EvaluationService:
         root = request.data_root or get_data_root()
         return {agent_id: _resolve_python_agent(root, agent_id) for agent_id in all_ids}
 
-    def _evaluation_id(self, request: EvaluationRequest, specs: dict[str, AgentSpec]) -> str:
-        project = get_project_info()
+    def _effective_conditions(self, request: EvaluationRequest) -> EffectiveConditions:
+        return effective_conditions_for(request.ticks, get_project_info().agent_api_version)
+
+    def _evaluation_id(
+        self,
+        request: EvaluationRequest,
+        specs: dict[str, AgentSpec],
+        conditions: EffectiveConditions,
+    ) -> str:
         payload = {
+            "identity_version": IDENTITY_VERSION,
             "candidate": agent_identity(specs[request.candidate_id]),
             "baseline": (
                 agent_identity(specs[request.baseline_id])
@@ -773,9 +996,10 @@ class EvaluationService:
             "opponents": [agent_identity(specs[opponent_id]) for opponent_id in request.opponent_ids],
             "seeds": list(request.seeds),
             "ticks": request.ticks,
-            "agent_api_version": project.agent_api_version,
+            "effective_conditions": asdict(conditions),
+            "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
         }
-        return stable_id("evaluation", payload)
+        return stable_id("evaluation-v2", payload)
 
     # -- resume -----------------------------------------------------------
 
@@ -787,7 +1011,7 @@ class EvaluationService:
         request: EvaluationRequest,
     ) -> EvaluationCell | None:
         status = previous.get("status")
-        if status not in ("completed", "failed", "corrupted"):
+        if status not in _TERMINAL_RESUME_STATUSES:
             return None
         if status != "completed":
             return _cell_from_state(cell, previous)
@@ -830,11 +1054,26 @@ class EvaluationService:
                 error_code="resumed_result_mismatch",
                 error_message=mismatch[:240],
             )
-        return _cell_from_envelope(cell, envelope)
+        return replace(
+            _cell_from_envelope(cell, envelope),
+            execution_context_id=previous.get("execution_context_id"),
+        )
 
     # -- execution --------------------------------------------------------
 
-    def _execute_cell(self, cell: EvaluationCell, request: EvaluationRequest) -> EvaluationCell:
+    def _execute_cell(
+        self,
+        cell: EvaluationCell,
+        request: EvaluationRequest,
+        specs: Mapping[str, AgentSpec],
+        planned_identities: Mapping[str, dict[str, Any]],
+        record_context_usage: "Callable[[], str]",
+    ) -> EvaluationCell:
+        root = request.data_root or get_data_root()
+        drift = self._detect_pre_execution_drift(cell, planned_identities, root)
+        if drift is not None:
+            return replace(cell, status="drift_detected", **drift)
+
         try:
             outcome = test_agent(
                 cell.subject_id,
@@ -853,6 +1092,7 @@ class EvaluationService:
                 outcome=None,
                 error_code=exc.diagnostic.code,
                 error_message=" ".join(str(exc).split())[:240],
+                execution_context_id=record_context_usage(),
             )
         if isinstance(outcome, InitializationFailureOutcome):
             failed_slot = outcome.diagnostic.agent_id
@@ -865,8 +1105,80 @@ class EvaluationService:
                 outcome=result_outcome,
                 error_code=outcome.diagnostic.code,
                 error_message=" ".join(outcome.diagnostic.message.split())[:240],
+                execution_context_id=record_context_usage(),
             )
-        return _cell_from_match_result(cell, outcome.match_result)
+        expected_match_id = _expected_cell_match_id(
+            specs[cell.subject_id],
+            cell.subject_id,
+            specs[cell.opponent_id],
+            cell.opponent_id,
+            cell.seed,
+            request.ticks,
+        )
+        actual_match_id = outcome.match_result.match_id
+        if actual_match_id != expected_match_id:
+            return replace(
+                cell,
+                status="drift_detected",
+                error_code="post_execution_identity_drift",
+                error_message=(
+                    f"actual match ID {actual_match_id!r} does not match the planned "
+                    f"cell's expected ID {expected_match_id!r}; agent source or "
+                    "configuration changed during execution."
+                )[:240],
+                execution_context_id=record_context_usage(),
+            )
+        return replace(
+            _cell_from_match_result(cell, outcome.match_result),
+            execution_context_id=record_context_usage(),
+        )
+
+    def _detect_pre_execution_drift(
+        self,
+        cell: EvaluationCell,
+        planned_identities: Mapping[str, dict[str, Any]],
+        root: Path,
+    ) -> dict[str, Any] | None:
+        """Sec 7 pre-check: re-resolve and compare against the *frozen* plan.
+
+        ``planned_identities`` must be a snapshot captured once at preflight
+        time (never re-derived from a live ``AgentSpec.source_path``) -- both
+        sides of this comparison reading the same evolving file would
+        silently defeat drift detection. Catches a source/identity change
+        between preflight and this specific cell's execution --
+        ``agent_test.test_agent`` re-resolves both agents itself, so nothing
+        else in this codepath would otherwise notice.
+        """
+
+        for role, agent_id in (
+            (cell.subject_role, cell.subject_id),
+            ("opponent", cell.opponent_id),
+        ):
+            planned_identity = planned_identities.get(agent_id)
+            if planned_identity is None:
+                continue
+            try:
+                current = _resolve_python_agent(root, agent_id)
+            except EvaluationConfigurationError as exc:
+                return {
+                    "error_code": "pre_execution_agent_unresolvable",
+                    "error_message": f"{role} {agent_id!r} no longer resolves: {exc}"[:240],
+                }
+            current_identity = agent_identity(current)
+            if planned_identity != current_identity:
+                changed = sorted(
+                    key
+                    for key in planned_identity
+                    if planned_identity[key] != current_identity[key]
+                )
+                return {
+                    "error_code": "pre_execution_source_drift",
+                    "error_message": (
+                        f"{role} {agent_id!r} identity changed since preflight "
+                        f"(fields: {', '.join(changed)})."
+                    )[:240],
+                }
+        return None
 
     # -- aggregation --------------------------------------------------------
 
@@ -907,15 +1219,34 @@ class EvaluationService:
         cells: Sequence[EvaluationCell],
         matrix: Sequence[EvaluationCell],
         *,
+        specs: Mapping[str, AgentSpec],
+        conditions: EffectiveConditions,
+        created_at: str,
+        lifecycle_state: str,
+        execution_contexts: Sequence[Mapping[str, Any]],
         aggregates: Sequence[SubjectAggregate] = (),
         comparison: Sequence[ComparisonEntry] = (),
+        finished_at: str | None = None,
+        abort_reason: str | None = None,
+        abort_detail: Mapping[str, Any] | None = None,
     ) -> None:
         project = get_project_info()
+        planned_identities = {
+            "candidate": agent_identity(specs[request.candidate_id]),
+            "baseline": (
+                agent_identity(specs[request.baseline_id])
+                if request.baseline_id is not None
+                else None
+            ),
+            "opponents": [agent_identity(specs[opponent_id]) for opponent_id in request.opponent_ids],
+        }
+        conditions_dict = asdict(conditions)
         write_json_atomic(
             path,
             {
                 "schema": SCHEMA_NAME,
                 "schema_version": SCHEMA_VERSION,
+                "identity_version": IDENTITY_VERSION,
                 "evaluation_id": evaluation_id,
                 "candidate_id": request.candidate_id,
                 "baseline_id": request.baseline_id,
@@ -923,6 +1254,19 @@ class EvaluationService:
                 "seeds": list(request.seeds),
                 "ticks": request.ticks,
                 "matrix_size": len(matrix),
+                "planned_identities": planned_identities,
+                "effective_conditions": conditions_dict,
+                "effective_conditions_fingerprint": stable_id(
+                    "evaluation-conditions", conditions_dict
+                ),
+                "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
+                "created_at": created_at,
+                "updated_at": _utc_now_iso(),
+                "finished_at": finished_at,
+                "lifecycle_state": lifecycle_state,
+                "abort_reason": abort_reason,
+                "abort_detail": dict(abort_detail) if abort_detail is not None else None,
+                "execution_contexts": [dict(item) for item in execution_contexts],
                 "project": asdict(project),
                 "cells": [_cell_to_dict(cell, path.parent) for cell in cells],
                 "aggregates": [asdict(row) for row in aggregates],
@@ -1098,6 +1442,17 @@ def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
                 f"  {cell.subject_role}={cell.subject_id} opponent={cell.opponent_id} "
                 f"seed={cell.seed} code={cell.error_code} error={cell.error_message}"
             )
+    drifted = result.drift_cells
+    if drifted:
+        print(
+            "SOURCE DRIFT DETECTED -- evaluation aborted; matrix execution stopped "
+            "before completion. Start a fresh evaluation to evaluate the changed agent:"
+        )
+        for cell in drifted:
+            print(
+                f"  {cell.subject_role}={cell.subject_id} opponent={cell.opponent_id} "
+                f"seed={cell.seed} code={cell.error_code} error={cell.error_message}"
+            )
     print(f"evaluation artifact: {result.state_path}")
 
 
@@ -1152,7 +1507,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.quiet:
         _print_result(result, request)
-    return 1 if (result.failed_cells or result.corrupted_cells) else 0
+    return 1 if (result.failed_cells or result.corrupted_cells or result.drift_cells) else 0
 
 
 if __name__ == "__main__":
@@ -1162,20 +1517,26 @@ if __name__ == "__main__":
 __all__ = [
     "BASELINE",
     "CANDIDATE",
+    "EVALUATION_RULES_COMPATIBILITY_ID",
+    "IDENTITY_VERSION",
     "SCHEMA_NAME",
     "SCHEMA_VERSION",
     "ComparisonEntry",
+    "EffectiveConditions",
     "EvaluationCell",
     "EvaluationConfigurationError",
     "EvaluationRequest",
     "EvaluationResult",
     "EvaluationService",
+    "ExecutionContext",
     "SubjectAggregate",
     "agent_identity",
     "aggregate_cells",
     "build_matrix",
     "classify",
     "compare_candidate_baseline",
+    "current_execution_context",
+    "effective_conditions_for",
     "main",
     "parse_opponents",
     "parse_seed_list",
