@@ -40,6 +40,16 @@ class ConfidenceValue:
     def recovered(value: Any) -> ConfidenceValue:
         return ConfidenceValue(value, FieldConfidence.RECOVERED)
 
+    @staticmethod
+    def conflicting(candidates: Any) -> ConfidenceValue:
+        """M6: usable historical evidence disagreed on this dimension's
+        value (e.g. two cells nominally for the same candidate recovered
+        different ``source_sha256`` values) -- ``candidates`` carries every
+        distinct value seen, not a single guessed winner.
+        """
+
+        return ConfidenceValue(candidates, FieldConfidence.CONFLICTING)
+
     def to_json(self) -> dict[str, Any]:
         return {"value": self.value, "confidence": self.confidence.value}
 

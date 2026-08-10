@@ -447,16 +447,144 @@ def test_v1_artifact_read_and_never_mutated(tmp_path: Path):
     assert summary.candidate_id == "candidate"
 
 
-def test_v1_identity_recovery_is_honestly_unknown(tmp_path: Path):
-    """result.json never persists api_version/agent_version/source_sha256 --
-    v1 identity recovery must report UNKNOWN, not fabricate RECOVERED data."""
+def test_v1_identity_recovery_reflects_persisted_entrant_metadata(tmp_path: Path):
+    """M6: v0.6.1 result.json *does* persist per-entrant source_sha256/
+    api_version/agent_version -- correcting a prior factual error, v1
+    identity recovery must report RECOVERED (not UNKNOWN) when that
+    metadata is actually present, while dimensions v1 genuinely never
+    persisted (entry point, rules compatibility id) stay UNKNOWN and there
+    is no baseline in this fixture to recover."""
 
     path = _v1_fixture(tmp_path)
     summary = adapt_v1(path)
-    assert summary.candidate_identity.confidence == FieldConfidence.UNKNOWN
+    assert summary.candidate_identity.confidence == FieldConfidence.RECOVERED
+    assert summary.candidate_identity.value["source_sha256"] is not None
+    assert "entry_point" not in summary.candidate_identity.value
     assert summary.baseline_identity.confidence == FieldConfidence.UNKNOWN
     assert summary.rules_compatibility_id.confidence == FieldConfidence.UNKNOWN
-    assert summary.cells[0].opponent_identity.confidence == FieldConfidence.UNKNOWN
+    assert summary.cells[0].opponent_identity.confidence == FieldConfidence.RECOVERED
+    assert summary.cells[0].opponent_identity.value["source_sha256"] is not None
+
+
+def _v1_fixture_two_cells(tmp_path: Path, *, tamper_second_cell_source_sha256: str | None = None) -> Path:
+    """A hand-built v1-shaped evaluation.json with two real completed cells
+    (different seeds) for the same candidate/opponent -- used to prove M6's
+    "inspect every usable cell, not just the first" requirement.
+    """
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+
+    from battle_engine.agent_test import TESTED_AGENT_SLOT, test_agent
+    from battle_engine.results import WINNER_TIE_SENTINEL
+
+    eval_dir = tmp_path / "eval-out"
+    raw_cells = []
+    for index, seed in enumerate((1, 2), start=1):
+        outcome = test_agent(
+            "candidate",
+            opponent="opponent",
+            seed=seed,
+            ticks=10,
+            timeout=None,
+            trace=False,
+            run_dir=eval_dir / "matches" / f"cell-{index}",
+            data_root=tmp_path,
+        )
+        match_result = outcome.match_result
+        if tamper_second_cell_source_sha256 is not None and index == 2:
+            result_path = eval_dir / "matches" / f"cell-{index}" / "result.json"
+            result_data = json.loads(result_path.read_text(encoding="utf-8"))
+            for entrant in result_data["entrants"]:
+                if entrant["agent_id"] == TESTED_AGENT_SLOT:
+                    entrant["metadata"]["source_sha256"] = tamper_second_cell_source_sha256
+            result_path.write_text(json.dumps(result_data), encoding="utf-8")
+        raw_cells.append(
+            {
+                "schedule_id": f"evaluation-cell_deadbeef{index}",
+                "subject_role": "candidate",
+                "subject_id": "candidate",
+                "opponent_id": "opponent",
+                "seed": seed,
+                "artifact_dir": f"matches/cell-{index}",
+                "status": "completed",
+                "outcome": (
+                    "tie"
+                    if match_result.winner == WINNER_TIE_SENTINEL
+                    else ("win" if match_result.winner == TESTED_AGENT_SLOT else "loss")
+                ),
+                "match_id": match_result.match_id,
+                "result_id": match_result.result_id,
+                "ticks_run": match_result.ticks_run,
+                "score_subject": float(match_result.score.get(TESTED_AGENT_SLOT, 0)),
+                "score_opponent": float(match_result.score.get("B", 0)),
+                "territory_subject": None,
+                "territory_opponent": None,
+                "error_code": None,
+                "error_message": None,
+            }
+        )
+
+    data = {
+        "schema": "bytefray.evaluation",
+        "schema_version": 1,
+        "evaluation_id": "evaluation_deadbeefcafefeed00000001",
+        "candidate_id": "candidate",
+        "baseline_id": None,
+        "opponent_ids": ["opponent"],
+        "seeds": [1, 2],
+        "ticks": 10,
+        "matrix_size": 2,
+        "project": {"version": "0.6.1"},
+        "cells": raw_cells,
+        "aggregates": [],
+        "comparison": [],
+        "complete": True,
+    }
+    path = eval_dir / "evaluation.json"
+    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def test_v1_identity_recovery_inspects_all_usable_cells_not_just_the_first(tmp_path: Path):
+    """M6: both cells share the same candidate source -- recovery must
+    reflect the agreement across *all* usable cells (trivially true if only
+    the first were inspected too, but this is the non-conflicting control
+    for the CONFLICTING case below)."""
+
+    path = _v1_fixture_two_cells(tmp_path)
+    summary = adapt_v1(path)
+    assert summary.candidate_identity.confidence == FieldConfidence.RECOVERED
+    assert summary.cells[0].opponent_identity.confidence == FieldConfidence.RECOVERED
+    assert summary.cells[1].opponent_identity.confidence == FieldConfidence.RECOVERED
+
+
+def test_v1_identity_recovery_reports_conflicting_when_cells_disagree(tmp_path: Path):
+    """M6: if only the first usable cell were inspected, a source change
+    partway through a v0.6.1 evaluation would go completely undetected.
+    Inspecting every usable cell surfaces the disagreement honestly as
+    CONFLICTING rather than confidently reporting whichever cell happened
+    to be read first."""
+
+    path = _v1_fixture_two_cells(tmp_path, tamper_second_cell_source_sha256="f" * 64)
+    summary = adapt_v1(path)
+    assert summary.candidate_identity.confidence == FieldConfidence.CONFLICTING
+    assert len(summary.candidate_identity.value) == 2
+
+
+def test_v1_conflicting_identity_never_permits_strict_comparison(tmp_path: Path):
+    """M6: partial/conflicting recovery must never accidentally unlock a
+    strict comparison that requires evidence v1 cannot actually provide
+    (entry point, rules compatibility) -- structurally guaranteed here by
+    rules_compatibility_id staying UNKNOWN for every v1 artifact regardless
+    of identity recovery confidence."""
+
+    from battle_engine.evaluation_history.comparison import align
+
+    path = _v1_fixture_two_cells(tmp_path, tamper_second_cell_source_sha256="f" * 64)
+    summary = adapt_v1(path)
+    result = align(summary, summary)
+    assert result.denominators.directly_comparable == 0
 
 
 def test_v1_effective_conditions_recovered_from_nested_result(tmp_path: Path):
