@@ -269,11 +269,30 @@ that gap:
    later). A mismatch on any field is drift.
 3. **Post-check** (`_post_execution_identity_drift`, after a real match
    runs). Compares the frozen snapshot against the *executor's own
-   recorded* per-entrant metadata (`NativeAgentResult.metadata`'s
-   `source_sha256`/`api_version`/`agent_version`, embedded in the match
-   result `test_agent` already returned) — not a second independent disk
-   read. This is what actually catches a source edit landing between the
-   pre-check and `test_agent`'s own internal resolution/execution.
+   recorded* per-entrant metadata (`NativeAgentResult.metadata`, embedded
+   in the match result `test_agent` already returned) — not a second
+   independent disk read. As of the v0.7 closure pass ("B1"), this
+   comparison covers `source_sha256`/`api_version`/`agent_version`
+   **and** `entry_point`/`local_source_fingerprint`: `python_runtime.
+   PythonEntrantController`/`supervised_runtime.
+   SupervisedPythonEntrantController` now additionally record, at load
+   time, the entry-point string they actually resolved and imported from
+   and a fingerprint of every local `.py` file under the agent directory
+   they actually loaded from (`match_service._build_python_result` copies
+   both into `NativeAgentResult.metadata`). This is what actually catches
+   a source edit landing between the pre-check and `test_agent`'s own
+   internal resolution/execution — including a same-file manifest
+   retarget (`agent.yaml`'s entry point changed from one factory to
+   another *within the same, byte-identical source file*, which
+   `source_sha256` alone cannot see) or a local-helper-only edit (which
+   neither `source_sha256` nor `entry_point` alone can see). Before this
+   pass, the post-check compared only `source_sha256`/`api_version`/
+   `agent_version`, so both of those specific edits — landing after the
+   pre-check but before/during execution — could complete as an ordinary
+   `completed` cell under the old frozen plan; see the adversarial
+   regression tests `test_toctou_same_file_factory_retarget_is_detected`/
+   `test_toctou_local_helper_edit_after_precheck_is_detected` in
+   `test_agent_evaluation_v2.py`.
 4. **Initialization failures** get a *live re-resolve* against the frozen
    plan instead (no `NativeAgentResult.metadata` exists when an agent
    fails to initialize — `RuntimeDiagnostic` carries no identity fields).
@@ -297,26 +316,43 @@ that gap:
    resumed or "fixed up" by rerunning inside the same output directory.
 
 **Documented residual TOCTOU window (not claimed to be closed).** Inside
-`python_runtime.PythonEntrantController.__init__`, an agent's module is
-loaded/executed first, and its `source_sha256` is computed by a *separate*,
-subsequent `read_bytes()` call. An edit that lands and then reverts to the
-originally-planned bytes before that digest read — or before this module's
-own inputs are otherwise captured — is not detectable from outside that
-call, and no check in this module can close it without changing
-`python_runtime` itself. In practice this means: any edit that lands and
-*stays* is caught (proven by TOCTOU tests using real file/manifest
-mutation, not just a monkeypatched drift detector); a transient edit that
-fully reverts before anything reads it is not, and must not be, falsely
-reported as drift either.
+`python_runtime.PythonEntrantController.__init__` (and its supervised
+counterpart), an agent's module is loaded/executed first, and its
+`source_sha256`/`local_source_fingerprint` are each computed by a
+*separate*, subsequent read. An edit that lands and then reverts to the
+originally-planned bytes before those reads — or before this module's own
+inputs are otherwise captured — is not detectable from outside that call,
+and no check in this module can close it without changing `python_runtime`
+itself. In practice this means: any edit that lands and *stays* is caught
+(proven by TOCTOU tests using real file/manifest mutation, not just a
+monkeypatched drift detector) — including entry-point/manifest retargets
+and local-helper-only edits, as of the v0.7 closure pass ("B1"); a
+transient edit that fully reverts before anything reads it is not, and
+must not be, falsely reported as drift either.
 
-Helper/imported-source changes (an agent's entry point importing a sibling
-module or nested local package) are a related but distinct concern from
-this section's *timing* race — see §H3 (`agent_identity.
-local_source_fingerprint`) for how those are covered; that mechanism is
-scoped to an agent's own `agents/<id>/` directory only, and is checked at
-planning time (evaluation_id/pre-execution drift), not against
-`NativeAgentResult.metadata` (which has no concept of "every local file
-loaded").
+**Local-source-fingerprint scope.** `agent_identity.
+local_source_fingerprint` hashes every `.py` file under an agent's own
+`agents/<id>/` directory (§H3) — it is checked both at planning time
+(`evaluation_id`/pre-execution drift, comparing two live re-reads of the
+plan snapshot against the current directory) *and*, since the v0.7 closure
+pass, against `NativeAgentResult.metadata`'s own recorded fingerprint (the
+executor's own evidence of what it actually loaded from). It is explicitly
+scoped to files physically inside that one directory: it does not follow
+`sys.path` imports, does not hash installed packages or anything under
+`site-packages`, and cannot see a change to an *external* dependency an
+agent's own code happens to import (a change to `numpy`'s installed
+version, for instance, is invisible to this fingerprint and to drift
+detection generally — see "External imports/dependencies limitation"
+below).
+
+**External imports/dependencies limitation.** Neither `source_sha256` nor
+`local_source_fingerprint` covers anything outside an agent's own
+directory. An agent that imports a third-party package, another agent's
+code, or any file outside `agents/<id>/` can have its actual behavior
+change when that external dependency changes, with no drift detected at
+all — this is out of scope by design (§H3's "this is not general
+provenance") and is not a residual bug to be closed later without a much
+larger, deliberately-avoided general-provenance mechanism.
 
 No source is embedded or snapshotted anywhere — drift detection is entirely
 comparison of small identity fingerprints already computed for other reasons
@@ -503,6 +539,23 @@ class HealthCode(Enum):
     UNKNOWN_LEGACY_CONDITION = "unknown_legacy_condition"
     NON_PORTABLE_ABSOLUTE_PATH = "non_portable_absolute_path"
     DUPLICATE_IDENTITY_LOCATION = "duplicate_identity_location"
+    ARTIFACT_PATH_ESCAPE = "artifact_path_escape"                  # M4
+    DUPLICATE_SCHEDULE_ID = "duplicate_schedule_id"
+    DANGLING_EXECUTION_CONTEXT = "dangling_execution_context"       # H2 (v0.7 correction pass)
+    FINISHED_MATRIX_SHORT = "finished_matrix_short"
+    PLANNED_IDENTITY_INCONSISTENT = "planned_identity_inconsistent" # B1
+    # H2 (v0.7 closure pass): further non-fatal structural diagnostics --
+    # each is appended to a HealthReport alongside whatever else was found,
+    # never raised (a single malformed *field*, unlike a missing
+    # *structural* field required just to construct a cell, must never
+    # abort the whole artifact or its siblings).
+    INVALID_JSON_ROOT = "invalid_json_root"
+    DUPLICATE_CONDITION_COORDINATE = "duplicate_condition_coordinate"
+    CONDITION_FINGERPRINT_INCONSISTENT = "condition_fingerprint_inconsistent"
+    MISSING_EFFECTIVE_CONDITIONS = "missing_effective_conditions"
+    MISSING_RULES_COMPATIBILITY_ID = "missing_rules_compatibility_id"
+    MALFORMED_MATRIX_ELEMENT = "malformed_matrix_element"
+    INVALID_EXECUTION_CONTEXT_ENTRY = "invalid_execution_context_entry"
 
 @dataclass(frozen=True)
 class HealthReport:
@@ -510,6 +563,40 @@ class HealthReport:
     detail: tuple[str, ...]           # human-readable, index-aligned with codes
     verified: bool                    # True only after --verify's deep pass ran
 ```
+
+**`HEALTHY` mutual exclusivity (v0.7 closure pass, "H2").** `adapt_v2_data`
+now decides `HEALTHY` only once, after *every* semantic/structural check
+has run and appended whatever codes it found — never mid-way through, as
+soon as the lifecycle-state branch alone looked clean. Previously,
+`HEALTHY` could be appended before later checks (e.g.
+`FINISHED_MATRIX_SHORT`, `DUPLICATE_SCHEDULE_ID`,
+`PLANNED_IDENTITY_INCONSISTENT`) ran, so an artifact could end up reported
+as both `HEALTHY` and structurally inconsistent at once. `codes` is empty
+only when nothing else was ever appended; `HEALTHY` is the sole code in
+that case, never alongside another one.
+
+**Identity-version compatibility (v0.7 closure pass, "M1").** The
+`PLANNED_IDENTITY_INCONSISTENT` self-consistency rehash (comparing the
+artifact's own `planned_identities`/`effective_conditions`/
+`rules_compatibility_id` against its recorded `evaluation_id`) uses the
+artifact's own recorded `identity_version` field, never the current
+module-level `agent_evaluation.IDENTITY_VERSION` constant. A valid older
+v2 artifact recorded under an earlier identity version (e.g.
+`identity_version: 2`, predating H3's `local_source_fingerprint` addition
+to `agent_identity()`) is rehashed with `identity_version: 2` and
+validates correctly; recomputing it with today's `IDENTITY_VERSION` would
+falsely flag it inconsistent purely because the identity scheme's version
+number changed, not because anything about the artifact is actually
+wrong.
+
+**JSON root safety (v0.7 closure pass, "H2").** `discovery.adapt_any`
+checks that a parsed artifact's JSON root is an object before inspecting
+its `schema`/`schema_version` fields — valid JSON whose root is a list,
+string, or number parses without error but has no `.get()` to call,
+previously an uncaught `AttributeError` that would have aborted discovery
+of every sibling in the same scan. It is now a typed `ArtifactReadError`
+(`HealthCode.INVALID_JSON_ROOT`), isolated exactly like any other
+malformed sibling.
 
 `codes` is a tuple, not a single enum, because multiple states can coexist
 (e.g. `FINISHED_WITH_FAILED_CELLS` and `NON_PORTABLE_ABSOLUTE_PATH`
@@ -605,9 +692,19 @@ def condition_key(cell: AdaptedCell, opponent_identity: dict, conditions_fp: str
     return (
         opponent_identity["agent_id"], opponent_identity["source_sha256"],
         opponent_identity["entry_point"], opponent_identity["api_version"],
+        opponent_identity["local_source_fingerprint"],
         cell.seed, conditions_fp, rules_id, cell.condition_occurrence_index.value,
     )
 ```
+
+`local_source_fingerprint` was added to the strict opponent key in the v0.7
+closure pass ("B4"): without it, an opponent revision separated only by a
+local-helper edit (the entry file's own bytes and `entry_point` both
+unchanged) would strict-key-match and compare directly, silently
+attributing any outcome delta to the candidate. With it, such a pair fails
+to strict-match and falls through to the `changed_condition`/
+`ambiguous_duplicate_group` classification below instead — never a direct
+verdict.
 
 Two cells align only when every element of `condition_key` matches exactly,
 **and** both sides' `condition_occurrence_index` confidence is not
@@ -634,21 +731,45 @@ def verdict(left_outcome: str, right_outcome: str) -> str:
     ...   # "improved" | "regressed" | "unchanged"
 ```
 
-`"inconclusive"` covers: either side not scored (init failure/failed/
-corrupted/missing), or a differing pair whose two cells ran under
-materially different or unknown execution contexts (added in the v0.7
-correction pass, "H2" — equivalence cannot be established across
-incompatible runtimes, so an otherwise-differing verdict is downgraded to
-inconclusive with a `reason` rather than reported as an ordinary
-improvement/regression; an `unchanged` verdict is left alone since it
-makes no cross-runtime equivalence claim). A **reproducibility anomaly**
-(§14.1) is a related but separate, narrower classification layered on top
-of an `improved`/`regressed` row (via `ComparisonRow.reproducibility_anomaly`,
-never by itself producing `"inconclusive"`): it requires `deep_verified`
-*and* both individual cells having actually verified (`AdaptedCell.verified
-is True`), not merely a matching candidate identity fingerprint — a
-fingerprint match alone was found to be an insufficient basis for this
-claim during the v0.7 correction pass ("B3") and no longer triggers it.
+`"inconclusive"` covers:
+
+* either side not scored (init failure/failed/corrupted/missing);
+* a pair whose two cells ran under materially different or unknown
+  execution contexts (added in the v0.7 correction pass, "H2"; made
+  conservative in the v0.7 closure pass, "H3" — equivalence cannot be
+  established across incompatible or unknown runtimes, so **every**
+  outcome verdict for that pair is downgraded to inconclusive with a
+  `reason`, including `unchanged`. Earlier in v0.7, an `unchanged` verdict
+  was left alone on the theory that "no observed difference" makes no
+  cross-runtime equivalence claim — that reasoning is not applied for this
+  pass; "no observed outcome difference under different/unknown runtimes"
+  may still be displayed descriptively via the row's own outcome fields,
+  but it is reported as `inconclusive`, never as a controlled `unchanged`
+  verdict);
+* when the comparison was run with `--verify` (`deep_verified=True`
+  passed to `align`): a pair whose two cells did not **both** individually
+  and actually verify (`AdaptedCell.verified is True` on both sides). This
+  is a v0.7 closure pass fix ("B3") — previously `deep_verified` only
+  gated reproducibility-anomaly detection (below); the ordinary verdict
+  for a pair was still computed from outcome comparison alone even when
+  one or both cells had failed or never completed deep verification. A
+  `--verify` comparison whose evidence failed to verify must never leave
+  an ordinary `improved`/`regressed`/`unchanged` verdict (or a non-zero
+  `directly_comparable` count) standing for the affected pair; the
+  top-level `deep_verified` field/label exposed to a caller (CLI text,
+  `--json` output) is likewise `True` only when `--verify` was requested
+  *and* verification actually succeeded on both sides — never merely
+  because `--verify` was passed, and never when either side's
+  `left_verify_error`/`right_verify_error` is non-`None`.
+
+A **reproducibility anomaly** (§14.1) is a related but separate, narrower
+classification layered on top of an `improved`/`regressed` row (via
+`ComparisonRow.reproducibility_anomaly`, never by itself producing
+`"inconclusive"`): it requires `deep_verified` *and* both individual cells
+having actually verified (`AdaptedCell.verified is True`), not merely a
+matching candidate identity fingerprint — a fingerprint match alone was
+found to be an insufficient basis for this claim during the v0.7
+correction pass ("B3") and no longer triggers it.
 
 ```python
 @dataclass(frozen=True)
@@ -788,6 +909,63 @@ significant; list order is always semantically significant and preserved).
 No CLI human-text parsing anywhere in this package — JSON is produced from
 the same typed objects the human renderer reads, never derived from the
 human string.
+
+#### 15.1 Deep verification (`verification.py`)
+
+`--verify` (on `show`/`compare`) runs `verify_summary`, which calls
+`verify_cell` on every `is_scored` cell (pending/failed/corrupted/
+drift-detected cells are `eligible=False` — skipped, never silently
+counted toward "verified"; a summary with zero eligible cells is never
+vacuously reported as verified). As of the v0.7 closure pass ("H1"), one
+cell's deep verification checks the complete relevant result envelope, not
+a partial subset:
+
+1. the cell's `artifact_dir`, and the replay filename `result.json`
+   references, both resolve *contained* beneath the evaluation directory
+   (§H5 below) — never merely joined;
+2. the nested `result.json` exists and parses;
+3. the replay's digest matches what `result.json` records;
+4. the replay's own header record agrees with the result envelope it was
+   published alongside (`match_id`, `result_id`) — a tampered header would
+   otherwise pass unnoticed as long as the replay's byte digest still
+   matched, since digest verification alone says nothing about the
+   header's own field values;
+5. the result's `result_id` (new in this pass) and `match_id` match the
+   evaluation cell's own recorded values;
+6. entrant order matches the expected `(TESTED_AGENT_SLOT, OPPONENT_SLOT)`;
+7. the result's recorded seed matches the cell's recorded seed;
+8. the result's winner is consistent with the cell's recorded outcome;
+9. when the **candidate's or baseline's** planned identity was actually
+   `RECORDED` (new in this pass — previously only the opponent's identity
+   was cross-checked here, so a tampered candidate `source_sha256`/
+   `entry_point`/etc., in either the plan or the result, went entirely
+   uncaught), it matches the result's own per-entrant metadata;
+10. when the **opponent's** planned identity was actually `RECORDED` (v2
+    only — v1 identity is always `UNKNOWN` and is never silently treated
+    as matching), it matches the result's own per-entrant metadata. Both
+    identity checks (9 and 10) now compare `entry_point`/
+    `local_source_fingerprint` in addition to `source_sha256`/
+    `api_version`/`agent_version` (§7's B1 fields).
+
+A cell fails deep verification (and is therefore `verified=False`,
+excluded from any ordinary comparison verdict per §14's B3 rule) if *any*
+of the above does not hold. `all_eligible_verified` is `True` only when at
+least one cell was eligible and every eligible cell verified.
+
+**§H5: replay filename containment.** A `result.json`'s `replay.filename`
+is untrusted content this package does not control — a tampered result
+could reference `../../../outside.jsonl`, an absolute path, an
+alternate-drive path, or a symlink that escapes the evaluation tree. As of
+the v0.7 closure pass, every replay reference (in `verify_cell` and in
+`agent_evaluation._resumed_cell_mismatch`'s own resume-time replay check)
+is resolved through the same containment discipline as any other nested
+artifact path (`battle_engine.paths.contained_path`, the M4 discipline
+already applied to `artifact_dir`) — a filename that resolves outside the
+cell's own artifact directory is refused with a diagnostic, never
+followed. A moved evaluation directory (with its contents moved alongside
+it) still verifies correctly, since containment is resolved against the
+directory path as passed in at call time, never a path baked into the
+artifact.
 
 ### 16. Performance
 
