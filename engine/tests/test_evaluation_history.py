@@ -161,6 +161,211 @@ def test_v2_health_reflects_source_drift_abort(tmp_path: Path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# H1: strengthened v2 schema validation -- malformed artifacts become typed
+# diagnostics, never uncaught exceptions that abort sibling discovery.
+# ---------------------------------------------------------------------------
+
+
+def _v2_base(**overrides) -> dict:
+    base = {
+        "schema": "bytefray.evaluation",
+        "schema_version": 2,
+        "identity_version": 2,
+        "evaluation_id": "evaluation-v2_x",
+        "candidate_id": "candidate",
+        "baseline_id": None,
+        "opponent_ids": ["opponent"],
+        "seeds": [1],
+        "ticks": 10,
+        "matrix_size": 1,
+        "planned_identities": {"candidate": {"agent_id": "candidate"}, "baseline": None, "opponents": []},
+        "effective_conditions": {"tick_limit": 10},
+        "rules_compatibility_id": "evaluation-rules-1",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "finished_at": "2026-01-01T00:00:01Z",
+        "lifecycle_state": "finished",
+        "abort_reason": None,
+        "abort_detail": None,
+        "execution_contexts": [],
+        "project": {},
+        "cells": [],
+        "aggregates": [],
+        "comparison": [],
+        "complete": True,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_v2_structurally_malformed_cell_becomes_typed_error_not_a_crash(tmp_path: Path):
+    """The exact H1 repro: an empty cell object must never escape as an
+    uncaught TypeError from dataclass construction -- it must become an
+    ArtifactReadError, so a single bad sibling can never abort discovery."""
+
+    path = tmp_path / "evaluation.json"
+    path.write_text(json.dumps(_v2_base(cells=[{}])), encoding="utf-8")
+    with pytest.raises(ArtifactReadError) as excinfo:
+        adapt_v2(path)
+    assert excinfo.value.code == HealthCode.INVALID_REQUIRED_FIELDS
+
+    # And the discovery layer, which is what actually matters end-to-end,
+    # must isolate this as one UNREADABLE sibling rather than raising.
+    good_dir = tmp_path.parent / "good_sibling_root" / "good"
+    from battle_engine.evaluation_history import discover
+
+    good_dir.mkdir(parents=True)
+    (good_dir / "evaluation.json").write_text(json.dumps(_v2_base(cells=[])), encoding="utf-8")
+    listing = discover(artifacts=[path, good_dir / "evaluation.json"])
+    healths = {entry.location.evaluation_json_path: entry for entry in listing.entries}
+    bad_entry = healths[path.resolve()]
+    assert bad_entry.summary is None
+    assert bad_entry.health.codes == (HealthCode.INVALID_REQUIRED_FIELDS,)
+    good_entry = healths[(good_dir / "evaluation.json").resolve()]
+    assert good_entry.summary is not None
+
+
+def test_v2_wrong_typed_top_level_fields_rejected(tmp_path: Path):
+    path = tmp_path / "evaluation.json"
+    path.write_text(json.dumps(_v2_base(ticks="ten", opponent_ids="opponent")), encoding="utf-8")
+    with pytest.raises(ArtifactReadError) as excinfo:
+        adapt_v2(path)
+    assert excinfo.value.code == HealthCode.INVALID_REQUIRED_FIELDS
+
+
+def test_v2_cell_wrong_typed_seed_rejected(tmp_path: Path):
+    path = tmp_path / "evaluation.json"
+    cell = {
+        "schedule_id": "s1", "subject_role": "candidate", "subject_id": "candidate",
+        "opponent_id": "opponent", "seed": "not-an-int", "status": "pending",
+    }
+    path.write_text(json.dumps(_v2_base(cells=[cell])), encoding="utf-8")
+    with pytest.raises(ArtifactReadError) as excinfo:
+        adapt_v2(path)
+    assert excinfo.value.code == HealthCode.INVALID_REQUIRED_FIELDS
+    assert "seed" in str(excinfo.value)
+
+
+def test_v2_missing_effective_conditions_is_unknown_not_recorded_null(tmp_path: Path):
+    path = tmp_path / "evaluation.json"
+    data = _v2_base(cells=[])
+    del data["effective_conditions"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert summary.effective_conditions.confidence == FieldConfidence.UNKNOWN
+    assert summary.effective_conditions.value is None
+
+
+def test_v2_missing_rules_compatibility_id_is_unknown(tmp_path: Path):
+    path = tmp_path / "evaluation.json"
+    data = _v2_base(cells=[])
+    del data["rules_compatibility_id"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert summary.rules_compatibility_id.confidence == FieldConfidence.UNKNOWN
+
+
+def test_v2_missing_cell_coordinates_are_unknown_not_recorded_null(tmp_path: Path):
+    path = tmp_path / "evaluation.json"
+    cell = {
+        "schedule_id": "s1", "subject_role": "candidate", "subject_id": "candidate",
+        "opponent_id": "opponent", "seed": 1, "status": "pending",
+    }
+    path.write_text(json.dumps(_v2_base(cells=[cell])), encoding="utf-8")
+    summary = adapt_v2(path)
+    adapted = summary.cells[0]
+    assert adapted.opponent_index.confidence == FieldConfidence.UNKNOWN
+    assert adapted.seed_index.confidence == FieldConfidence.UNKNOWN
+    assert adapted.condition_occurrence_index.confidence == FieldConfidence.UNKNOWN
+    assert adapted.condition_fingerprint.confidence == FieldConfidence.UNKNOWN
+
+
+def test_v2_duplicate_schedule_id_flagged(tmp_path: Path):
+    path = tmp_path / "evaluation.json"
+    cell = {
+        "schedule_id": "dup", "subject_role": "candidate", "subject_id": "candidate",
+        "opponent_id": "opponent", "seed": 1, "status": "pending",
+    }
+    other = dict(cell, seed=2)
+    path.write_text(json.dumps(_v2_base(cells=[cell, other])), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert HealthCode.DUPLICATE_SCHEDULE_ID in summary.health.codes
+
+
+def test_v2_dangling_execution_context_flagged(tmp_path: Path):
+    path = tmp_path / "evaluation.json"
+    cell = {
+        "schedule_id": "s1", "subject_role": "candidate", "subject_id": "candidate",
+        "opponent_id": "opponent", "seed": 1, "status": "completed", "outcome": "win",
+        "execution_context_id": "evaluation-context_doesnotexist",
+    }
+    path.write_text(json.dumps(_v2_base(cells=[cell], execution_contexts=[])), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert HealthCode.DANGLING_EXECUTION_CONTEXT in summary.health.codes
+
+
+def test_v2_finished_short_matrix_flagged(tmp_path: Path):
+    path = tmp_path / "evaluation.json"
+    path.write_text(json.dumps(_v2_base(cells=[], matrix_size=5)), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert HealthCode.FINISHED_MATRIX_SHORT in summary.health.codes
+
+
+def test_v2_planned_identity_inconsistent_with_evaluation_id_flagged(tmp_path: Path):
+    """A hand-corrupted (or pre-B1) artifact whose planned_identities do not
+    rehash to its own recorded evaluation_id must be flagged, not silently
+    trusted -- the same invariant B1 enforces at write time is checked here
+    at read time too."""
+
+    path = tmp_path / "evaluation.json"
+    data = _v2_base(
+        cells=[],
+        evaluation_id="evaluation-v2_doesnotmatch",
+        planned_identities={
+            "candidate": {"agent_id": "candidate", "source_sha256": "abc"},
+            "baseline": None,
+            "opponents": [],
+        },
+    )
+    path.write_text(json.dumps(data), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert HealthCode.PLANNED_IDENTITY_INCONSISTENT in summary.health.codes
+
+
+def test_v2_consistent_planned_identity_matches_evaluation_id_not_flagged(tmp_path: Path):
+    from battle_engine.agent_evaluation import IDENTITY_VERSION
+    from battle_engine.result_model import stable_id
+
+    candidate_identity = {"agent_id": "candidate", "source_sha256": "abc"}
+    conditions = {"tick_limit": 10}
+    rules_id = "evaluation-rules-1"
+    payload = {
+        "identity_version": IDENTITY_VERSION,
+        "candidate": candidate_identity,
+        "baseline": None,
+        "opponents": [],
+        "seeds": [1],
+        "ticks": 10,
+        "effective_conditions": conditions,
+        "rules_compatibility_id": rules_id,
+    }
+    evaluation_id = stable_id("evaluation-v2", payload)
+    path = tmp_path / "evaluation.json"
+    data = _v2_base(
+        cells=[],
+        evaluation_id=evaluation_id,
+        planned_identities={"candidate": candidate_identity, "baseline": None, "opponents": []},
+        effective_conditions=conditions,
+        rules_compatibility_id=rules_id,
+        seeds=[1],
+        ticks=10,
+    )
+    path.write_text(json.dumps(data), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert HealthCode.PLANNED_IDENTITY_INCONSISTENT not in summary.health.codes
+
+
+# ---------------------------------------------------------------------------
 # v1 adapter
 # ---------------------------------------------------------------------------
 

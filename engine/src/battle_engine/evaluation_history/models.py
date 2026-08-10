@@ -63,6 +63,10 @@ class HealthCode(str, Enum):
     NON_PORTABLE_ABSOLUTE_PATH = "non_portable_absolute_path"
     DUPLICATE_IDENTITY_LOCATION = "duplicate_identity_location"
     ARTIFACT_PATH_ESCAPE = "artifact_path_escape"
+    DUPLICATE_SCHEDULE_ID = "duplicate_schedule_id"
+    DANGLING_EXECUTION_CONTEXT = "dangling_execution_context"
+    FINISHED_MATRIX_SHORT = "finished_matrix_short"
+    PLANNED_IDENTITY_INCONSISTENT = "planned_identity_inconsistent"
 
 
 @dataclass(frozen=True)
