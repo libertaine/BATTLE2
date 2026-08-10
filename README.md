@@ -158,6 +158,10 @@ bytefray agents inspect <run-dir>   # see what the agent saw/decided at each cal
 bytefray agents diverge <a> <b>     # find the first behavioral difference between two runs
 bytefray agents evaluate my_agent --opponents opponent_a,opponent_b --seeds 1,2,3
                                      # deterministic candidate/baseline evaluation matrix
+bytefray agents evaluations list    # every past evaluation this data root has recorded
+bytefray agents evaluations show <evaluation-id-or-path>
+bytefray agents evaluations compare <left> <right>
+                                     # honest right-vs-left comparison across two evaluations
 ```
 
 `validate`/`test` run supervised by default (a `--timeout`-bounded worker

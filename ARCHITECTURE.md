@@ -1,21 +1,25 @@
 # Bytefray Architecture
 
-This document describes Bytefray's architecture as of the v0.6.1 release
-(NativeMatchService, Agent API v1 Python-vs-Python matches, canonical
-`battle2.replay` schema v3, the headless tournament service, the
+This document describes Bytefray's architecture as of the v0.7 evaluation
+history work (NativeMatchService, Agent API v1 Python-vs-Python matches,
+canonical `battle2.replay` schema v3, the headless tournament service, the
 `bytefray agents create/validate/test` authoring commands plus the
 Designer's Agent Development tab added in v0.4, the Agent Lab
 deterministic tracing/`agents inspect`/`agents diverge`/supervised
 timeout containment added in v0.5, the Agent Evaluation work
 (`bytefray agents evaluate`, the additive `bytefray.evaluation`
-artifact, and the Designer's Evaluate dialog) added in v0.6, and the
-default Python starter-agent roster added in v0.6.1). It supersedes the
-v0.2-era architecture document; that superseded text remains available in
-git history (see the `v0.2.0` tag) and in
+artifact, and the Designer's Evaluate dialog) added in v0.6, the
+default Python starter-agent roster added in v0.6.1, and the
+`bytefray.evaluation` v2 capture hardening plus the Qt-free
+`battle_engine.evaluation_history` discovery/comparison package and
+`bytefray agents evaluations list/show/compare` added in v0.7). It
+supersedes the v0.2-era architecture document; that superseded text
+remains available in git history (see the `v0.2.0` tag) and in
 [`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md) for migration context.
 This document describes what exists today (see "v0.4.0 delivery history",
-"Agent Lab (v0.5.0)", "Agent Evaluation (v0.6.0)", and "Default Agent
-Build-Out (v0.6.1)" at the end for how each milestone was delivered).
+"Agent Lab (v0.5.0)", "Agent Evaluation (v0.6.0)", "Default Agent
+Build-Out (v0.6.1)", and "Evaluation History (v0.7)" at the end for how
+each milestone was delivered).
 
 ## Runtime components
 
@@ -678,3 +682,124 @@ native VM starter happens to have, were generalized to compute the
 expected file set from each starter's actual source directory, since the
 Python starters are the first starters to ship more than one file
 (`agent.yaml` and `agent.py`).
+
+## Evaluation History (v0.7)
+
+Delivered in the v0.7 release; see `docs/specs/evaluation_history.md` for
+the full design. Where v0.6 answered "did this candidate beat this
+baseline, right now," v0.7 makes a single evaluation's capture honest
+enough to trust in isolation, and adds the ability to compare *across*
+separately-run evaluations after the fact, without rerunning anything.
+
+**Capture hardening.** `battle_engine.agent_evaluation`'s writer now
+produces `bytefray.evaluation` **v2** (`SCHEMA_VERSION = 2`) by default.
+Beyond v1's fields, v2 persists: a readable planned identity
+(`agent_identity()`-shaped) for the candidate, the baseline (if any), and
+every opponent occurrence in request order; `EffectiveConditions` — every
+behavior-relevant `Config` field (arena size, action budget, win mode,
+weights, tick limit), not just seed — plus an `effective_conditions_fingerprint`;
+a narrow, hand-maintained `EVALUATION_RULES_COMPATIBILITY_ID`, separate
+from `ProjectInfo.version`, bumped only when scoring/winner-resolution/
+Python-scheduling-order/derived-seed semantics actually change;
+`created_at`/`updated_at`/`finished_at` UTC lifecycle timestamps (the
+first checkpoint, with `created_at` set, is written before any cell
+executes, so a crash during cell 1 still leaves discoverable state); an
+`execution_contexts` list recording which `ProjectInfo`/rules-compatibility
+environment each freshly executed cell actually ran under (a no-op resume
+never appends to or rewrites this list); and four duplicate-occurrence
+coordinates per cell (`opponent_index`, `seed_index`, `matrix_ordinal`,
+`condition_occurrence_index`) that survive candidate-source changes across
+evaluations and are what cross-evaluation alignment uses -- never
+`schedule_id`, which keeps its v1 role as an evaluation-local resume/
+Designer-drill-down key only.
+
+`evaluation_id` remains a deterministic plan identity (never a run
+occurrence, output path, timestamp, or outcome), computed with the
+`stable_id("evaluation-v2", ...)` prefix so a v2 id can never be mistaken
+for a v1 id computed from otherwise-identical inputs. Because the v2
+identity payload is strictly richer than v1's, a v0.6.1 evaluation
+directory is never implicitly resumed by an equivalent v0.7 invocation —
+a new v2 artifact is produced at a new, v2-identity-derived path, and the
+old v1 artifact is left untouched.
+
+**Source drift protection.** `EvaluationService._execute_cell` re-resolves
+the subject and opponent immediately before every freshly executed cell
+and compares each identity against a snapshot frozen at the start of the
+run (never re-derived from a live `AgentSpec.source_path`, which would
+silently defeat the check by reading whatever the file currently contains
+on both sides of the comparison); it also recomputes the expected
+`match_id` from the planned identity and compares it to the actual
+`NativeMatchResult.match_id` after execution. The first detected drift
+(either check) stops the matrix immediately: no further cells are
+scheduled, every already-completed cell is preserved, the drifted cell
+itself is retained with `status: "drift_detected"` for diagnosis, and the
+final checkpoint sets `lifecycle_state: "aborted"`,
+`abort_reason: "source_drift"` with no `finished_at`. A fresh evaluation
+(implied automatically, since the changed source now hashes to a
+different `evaluation_id`) is required to continue.
+
+**`battle_engine.evaluation_history`** is a new, Qt-free package
+(`models.py`, `v1_adapter.py`, `v2_adapter.py`, `discovery.py`,
+`comparison.py`, `cli.py`) that depends only on
+`battle_engine.{agent_evaluation,agents,config,paths,project_info,
+result_model,replay}` and never imports Qt/pygame/Designer code. Its
+common domain model (`EvaluationSummary`, `AdaptedCell`, `HealthReport`,
+...) wraps every field that might be absent from a legacy artifact in a
+`ConfidenceValue` (`recorded`/`recovered`/`unknown`/`conflicting`/
+`verified`) rather than silently defaulting it. The v1 adapter never
+mutates a v1 artifact and never treats current agent discovery as
+historical evidence; it also establishes, by direct inspection of what
+`match_service`/`result_model` actually persist, that v1's canonical
+`result.json` never wrote `api_version`/`agent_version`/`source_sha256`
+anywhere retrievable (those fields are hashed transiently into `match_id`
+and discarded) — so v1 candidate/baseline/opponent executable-identity
+recovery is honestly reported `UNKNOWN`, not fabricated. Both adapters
+always recompute aggregates from cells via the existing
+`agent_evaluation.aggregate_cells`/`compare_candidate_baseline` rather than
+trusting a stored `aggregates`/`comparison` block, so a tampered or
+missing stored summary can never override canonical cell state.
+
+Discovery (`discover()`) performs shallow, non-recursive, one-level scans
+of `<data-root>/runs/evaluations/*/evaluation.json` by default (or
+explicit roots/paths); one malformed/unsupported sibling is reported as
+its own entry with a typed `HealthCode` rather than aborting the scan.
+Moved evaluation directories remain usable (every artifact reference is
+relative); copied directories sharing an `evaluation_id` are flagged as
+duplicate *locations*, never presented as separate execution occurrences.
+
+Comparison (`align(left, right)`) is always oriented "right relative to
+left." It deliberately excludes candidate identity from the shared
+condition key (opponent identity, seed, effective conditions, rules
+compatibility, duplicate occurrence index) since the candidate is the
+experimental variable being compared, not a condition to hold fixed; an
+unknown required dimension on either side never compares equal to
+anything, including another unknown. Verdicts reuse `win > tie > loss`
+only (`improved`/`regressed`/`unchanged`/`inconclusive`) and every
+denominator (matched, unmatched, changed-condition, ambiguous-duplicate,
+corrupt/missing) is always populated, even at zero. An identical,
+`--verify`-checked candidate fingerprint with differing deterministic
+outcomes is flagged as a `reproducibility_anomaly` rather than silently
+labeled improved/regressed.
+
+`bytefray agents evaluations list|show|compare` (`evaluation_history.cli`)
+is wired into `command.py`'s existing `_agents` dispatch (reached
+identically through the `battle2` alias) alongside `evaluate`/`test`/
+`validate`/`inspect`/`diverge`. `show --verify`/`compare --verify` perform
+canonical `verify_result_replay` digest checks only for the selected
+artifact(s), never during default `list`, keeping on-demand scanning fast
+regardless of how many evaluations exist — no index was introduced or
+found necessary.
+
+Two narrowly scoped, evaluation-specific Designer defects (not the history
+UI itself, which is deferred — see `docs/specs/evaluation_history.md`
+Sec 17/20) were fixed: `app.services.agent_catalog.AgentRow` now carries
+an `agent_id` field (the discovery id, `spec.name`) distinct from `name`
+(the display name, `spec.display`); `AgentDevelopmentPanel.python_agent_names()`
+and `EvaluationDialog` thread that id through so `bytefray agents evaluate`
+always receives discovery ids, never display text, even when they differ.
+`AgentDesigner._on_evaluate` no longer defaults every plan's output to one
+fixed `runs/evaluations/designer-evaluation` path; it calls
+`EvaluationService.preflight` in-process (Qt-free, no agent code executes)
+to compute this specific plan's own content-addressed default, matching
+what a bare CLI invocation would use, only when the user hasn't typed a
+different path themselves.

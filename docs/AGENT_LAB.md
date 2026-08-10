@@ -387,3 +387,51 @@ configuration options as the CLI, then shows results in a table with the
 same aggregate/comparison data described above. Selecting a cell enables
 **Test Candidate in Agent Lab** (reruns that exact cell through `agents
 test` and opens the Trace Inspector on it) and **Open Replay**.
+
+### Evaluation history (v0.7)
+
+Every `bytefray agents evaluate` run since v0.7 writes `bytefray.evaluation`
+**v2**: the same artifact shape described above, plus a readable planned
+identity for the candidate/baseline/every opponent occurrence, the full
+effective match configuration (arena size, action budget, win mode,
+weights, tick limit), a narrow `rules_compatibility_id` (bumped only when
+scoring/winner-resolution/scheduling semantics that affect comparability
+actually change), `created_at`/`updated_at`/`finished_at` lifecycle
+timestamps, and explicit duplicate-occurrence coordinates. `evaluation_id`
+remains a deterministic plan identity, never a run-occurrence ID or a
+location/time/outcome — but the v2 payload is richer than v1's, so a v2 id
+is never mistaken for a v1 id (`evaluation-v2_...` vs. `evaluation_...`).
+v1 artifacts from before v0.7 remain fully readable and are never rewritten.
+
+If the candidate's, baseline's, or an opponent's source changes mid-run
+(rare, but possible if you edit an agent while a large matrix is still
+executing), the evaluation stops at the first detected drift rather than
+silently mixing revisions: the artifact is marked
+`lifecycle_state: "aborted"`, `abort_reason: "source_drift"`, every cell
+completed before the drift is preserved, and a fresh evaluation is required
+to continue (which happens automatically, since the changed source now
+produces a different `evaluation_id`/output path anyway).
+
+New history commands read any past evaluation without rerunning it:
+
+```bash
+bytefray agents evaluations list                          # every discovered evaluation
+bytefray agents evaluations show <evaluation-id-or-path>   # one evaluation in detail
+bytefray agents evaluations show <selector> --verify       # + deep replay/result verification
+bytefray agents evaluations compare <left> <right>         # right relative to left
+```
+
+`compare` never uses the stored candidate-vs-baseline verdicts as its
+primary signal; it independently aligns the two evaluations' candidate
+cells by shared condition (opponent identity, seed, configuration, rules
+compatibility, duplicate occurrence — deliberately excluding candidate
+identity, since that's the thing being compared) and reports
+`improved`/`regressed`/`unchanged`/`inconclusive` with honest denominators,
+same as a single evaluation's own comparison table. A candidate whose
+*logical id* changed between the two evaluations is reported as "different
+candidates," not silently treated as a revision of the same one. See
+`docs/specs/evaluation_history.md` for the full identity, lifecycle,
+drift, and comparison semantics, including v1's honest limitations (v1
+never persisted enough to recover genuine executable identity for
+historical opponents/candidates, so `evaluations compare` against a v1
+artifact reports those dimensions as unknown rather than guessing).

@@ -728,13 +728,28 @@ human string.
 ### 16. Performance
 
 Discovery/adaptation stays on-demand scanning (Part III's pinned decision;
-no index). Benchmark methodology: synthetic v2 artifacts sized like the
-existing 40-cell reference (`docs/specs/agent_evaluation.md` §15's fixture
-shape), measured warm (three untimed warm-up scans discarded) over 10/100/
-1000-artifact populated roots, wall-clock, on this development machine;
-recorded in the final report alongside the v0.6.1 baseline numbers already
-on record (10: ~3.7ms, 100: ~36ms, 1000: ~358ms) so a regression from typed
-adaptation/health extraction is visible rather than assumed absent.
+no index). Measured methodology: synthetic v2 artifacts matching the
+40-cell reference shape (1 candidate, 4 opponents, 5 seeds), written
+directly (not executed) to avoid multi-minute real-match generation time,
+over 10/100/1000-artifact populated roots, three untimed warm-up scans
+discarded, five timed repetitions averaged, wall-clock, on this development
+machine (Windows, this checkout's `.venv`):
+
+| n artifacts | avg scan+adapt time | sample artifact size |
+|---|---|---|
+| 10 | ~18 ms | 20,763 B |
+| 100 | ~182 ms | 20,763 B |
+| 1000 | ~1,862 ms | 20,763 B |
+
+This is roughly 5x slower per artifact than the v0.6.1 raw-JSON-scan
+baseline already on record (10: ~3.7ms, 100: ~36ms, 1000: ~358ms) — expected,
+since `list`'s default path now performs full typed adaptation (aggregate
+recomputation via `aggregate_cells`, per-field `ConfidenceValue` wrapping,
+health-code derivation) rather than a raw parse. Absolute time remains
+well under two seconds even at 1000 artifacts, a population size well
+beyond what a typical data root accumulates; this does not, on its own,
+meet the "measurements demonstrate a real requirement" bar Part III sets
+for introducing an index, so none was added.
 
 ### 17. Designer fixes (no history UI in this slice)
 

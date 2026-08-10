@@ -5,6 +5,36 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+### Added
+
+- `bytefray.evaluation` **v2**: `bytefray agents evaluate` now writes
+  planned resolved identities (candidate/baseline/every opponent
+  occurrence), readable effective execution conditions (full `Config`, not
+  just seed), a narrow evaluation rules-compatibility identifier,
+  `created_at`/`updated_at`/`finished_at` lifecycle timestamps with an
+  atomic first-checkpoint-before-first-cell guarantee, per-cell execution
+  provenance that survives no-op resume, and explicit duplicate-occurrence
+  coordinates. `evaluation_id` remains a deterministic plan identity in a
+  distinct space from v1's (`evaluation-v2_...` vs. `evaluation_...`); v1
+  artifacts remain fully readable and are never rewritten. A source/
+  identity change detected before or during a cell now stops the matrix
+  (`lifecycle_state: "aborted"`, `abort_reason: "source_drift"`) instead of
+  silently mixing agent revisions within one evaluation.
+- `bytefray agents evaluations list|show|compare` — a new, Qt-free
+  `battle_engine.evaluation_history` package discovers, adapts (v1 and
+  v2), and compares past evaluation artifacts without rerunning anything.
+  `compare` aligns two evaluations' candidate cells by shared condition
+  (excluding candidate identity, which is the variable being compared),
+  preserving duplicate multiplicity and reporting honest denominators;
+  `show --verify`/`compare --verify` add deep replay/result integrity
+  checks for the selected artifact(s) only. See
+  `docs/specs/evaluation_history.md` and `docs/AGENT_LAB.md`'s new
+  "Evaluation history (v0.7)" section.
+- Designer: the Evaluate dialog now passes agent discovery ids (not
+  display names) to `bytefray agents evaluate`, and each plan's output
+  directory now defaults to that plan's own content-addressed path instead
+  of one fixed `designer-evaluation` directory every plan collided on.
+
 ## [0.6.1] - 2026-08-09
 
 v0.6.1's theme is **Default Agent Build-Out**: v0.6.1 doesn't change
