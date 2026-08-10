@@ -353,6 +353,7 @@ def test_v2_consistent_planned_identity_matches_evaluation_id_not_flagged(tmp_pa
     path = tmp_path / "evaluation.json"
     data = _v2_base(
         cells=[],
+        identity_version=IDENTITY_VERSION,
         evaluation_id=evaluation_id,
         planned_identities={"candidate": candidate_identity, "baseline": None, "opponents": []},
         effective_conditions=conditions,
@@ -363,6 +364,246 @@ def test_v2_consistent_planned_identity_matches_evaluation_id_not_flagged(tmp_pa
     path.write_text(json.dumps(data), encoding="utf-8")
     summary = adapt_v2(path)
     assert HealthCode.PLANNED_IDENTITY_INCONSISTENT not in summary.health.codes
+
+
+def test_v2_identity_version_2_artifact_not_falsely_flagged_inconsistent(tmp_path: Path):
+    """M1: an old, valid v2 artifact recorded under identity_version 2 (the
+    version before H3 added ``local_source_fingerprint`` to agent identity)
+    must be validated against *its own* recorded identity_version, never
+    today's current ``IDENTITY_VERSION`` -- recomputing with the wrong
+    version would falsely flag a perfectly valid old artifact as
+    inconsistent."""
+
+    from battle_engine.result_model import stable_id
+
+    candidate_identity = {
+        "agent_id": "candidate",
+        "kind": "python",
+        "api_version": 1,
+        "agent_version": "1.0",
+        "entry_point": "agent.py:create_agent",
+        "source_sha256": "abc",
+        # Deliberately no "local_source_fingerprint" key -- identity_version
+        # 2 predates it.
+    }
+    conditions = {"tick_limit": 10}
+    rules_id = "evaluation-rules-1"
+    payload = {
+        "identity_version": 2,
+        "candidate": candidate_identity,
+        "baseline": None,
+        "opponents": [],
+        "seeds": [1],
+        "ticks": 10,
+        "effective_conditions": conditions,
+        "rules_compatibility_id": rules_id,
+    }
+    evaluation_id = stable_id("evaluation-v2", payload)
+    path = tmp_path / "evaluation.json"
+    data = _v2_base(
+        cells=[],
+        identity_version=2,
+        evaluation_id=evaluation_id,
+        planned_identities={"candidate": candidate_identity, "baseline": None, "opponents": []},
+        effective_conditions=conditions,
+        rules_compatibility_id=rules_id,
+        seeds=[1],
+        ticks=10,
+    )
+    path.write_text(json.dumps(data), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert HealthCode.PLANNED_IDENTITY_INCONSISTENT not in summary.health.codes
+
+
+def test_v2_identity_version_mismatch_still_flagged_inconsistent(tmp_path: Path):
+    """The MEDIUM 1 fix must not become a blanket exemption: an artifact
+    whose evaluation_id genuinely does not match its own recorded
+    identity_version/planned_identities is still flagged."""
+
+    candidate_identity = {"agent_id": "candidate", "source_sha256": "abc"}
+    path = tmp_path / "evaluation.json"
+    data = _v2_base(
+        cells=[],
+        identity_version=2,
+        evaluation_id="evaluation-v2_doesnotmatch",
+        planned_identities={"candidate": candidate_identity, "baseline": None, "opponents": []},
+    )
+    path.write_text(json.dumps(data), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert HealthCode.PLANNED_IDENTITY_INCONSISTENT in summary.health.codes
+
+
+# ---------------------------------------------------------------------------
+# H2 (v0.7 closure pass): further v2 malformed-artifact isolation -- each
+# case has a valid sibling beside it, and one bad artifact never aborts
+# discovery of that sibling.
+# ---------------------------------------------------------------------------
+
+
+def test_v2_json_root_not_object_isolated_with_valid_sibling(tmp_path: Path):
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
+
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(json.dumps(_v2_base(cells=[])), encoding="utf-8")
+
+    with pytest.raises(ArtifactReadError) as excinfo:
+        adapt_any(bad_path)
+    assert excinfo.value.code == HealthCode.INVALID_JSON_ROOT
+
+    listing = discover(artifacts=[bad_path, good_path])
+    by_path = {entry.location.evaluation_json_path: entry for entry in listing.entries}
+    bad_entry = by_path[bad_path.resolve()]
+    assert bad_entry.summary is None
+    assert bad_entry.health.codes == (HealthCode.INVALID_JSON_ROOT,)
+    good_entry = by_path[good_path.resolve()]
+    assert good_entry.summary is not None
+
+
+def test_v2_duplicate_condition_coordinate_flagged_with_valid_sibling(tmp_path: Path):
+    cell = {
+        "schedule_id": "s1", "subject_role": "candidate", "subject_id": "candidate",
+        "opponent_id": "opponent", "seed": 1, "status": "pending",
+        "condition_occurrence_index": 0,
+    }
+    other = dict(cell, schedule_id="s2")  # same coordinate, distinct schedule_id
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(json.dumps(_v2_base(cells=[cell, other], matrix_size=2)), encoding="utf-8")
+
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_cell = dict(cell)
+    good_path.write_text(json.dumps(_v2_base(cells=[good_cell], matrix_size=1)), encoding="utf-8")
+
+    bad_summary = adapt_v2(bad_path)
+    assert HealthCode.DUPLICATE_CONDITION_COORDINATE in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.DUPLICATE_CONDITION_COORDINATE not in good_summary.health.codes
+
+
+def test_v2_condition_fingerprint_inconsistent_flagged_with_valid_sibling(tmp_path: Path):
+    from battle_engine.result_model import stable_id
+
+    opponent_identity = {"agent_id": "opponent", "source_sha256": "abc"}
+    conditions_fp = "evaluation-conditions_deadbeefdeadbeefdeadbeef"
+    rules_id = "evaluation-rules-1"
+    correct_fp = stable_id(
+        "evaluation-condition",
+        {
+            "opponent": opponent_identity,
+            "seed": 1,
+            "effective_conditions": conditions_fp,
+            "rules_compatibility_id": rules_id,
+            "condition_occurrence_index": 0,
+        },
+    )
+
+    def _cell(fingerprint: str) -> dict:
+        return {
+            "schedule_id": "s1", "subject_role": "candidate", "subject_id": "candidate",
+            "opponent_id": "opponent", "seed": 1, "status": "pending",
+            "condition_occurrence_index": 0, "condition_fingerprint": fingerprint,
+        }
+
+    common = {
+        "opponent_ids": ["opponent"],
+        "planned_identities": {"candidate": {"agent_id": "candidate"}, "baseline": None, "opponents": [opponent_identity]},
+        "effective_conditions_fingerprint": conditions_fp,
+        "rules_compatibility_id": rules_id,
+    }
+
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(
+        json.dumps(_v2_base(cells=[_cell("evaluation-condition_wrongwrongwrongwrong")], **common)),
+        encoding="utf-8",
+    )
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(json.dumps(_v2_base(cells=[_cell(correct_fp)], **common)), encoding="utf-8")
+
+    bad_summary = adapt_v2(bad_path)
+    assert HealthCode.CONDITION_FINGERPRINT_INCONSISTENT in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.CONDITION_FINGERPRINT_INCONSISTENT not in good_summary.health.codes
+
+
+def test_v2_malformed_opponent_seed_elements_flagged_with_valid_sibling(tmp_path: Path):
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(
+        json.dumps(_v2_base(cells=[], opponent_ids=["opponent", ""], seeds=[1, True])),
+        encoding="utf-8",
+    )
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(json.dumps(_v2_base(cells=[], opponent_ids=["opponent"], seeds=[1])), encoding="utf-8")
+
+    bad_summary = adapt_v2(bad_path)
+    assert HealthCode.MALFORMED_MATRIX_ELEMENT in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.MALFORMED_MATRIX_ELEMENT not in good_summary.health.codes
+
+
+def test_v2_invalid_execution_context_entry_flagged_with_valid_sibling(tmp_path: Path):
+    bad_path = tmp_path / "bad" / "evaluation.json"
+    bad_path.parent.mkdir(parents=True)
+    bad_path.write_text(
+        json.dumps(_v2_base(cells=[], execution_contexts=[{"no_context_id": True}, "not-even-a-dict"])),
+        encoding="utf-8",
+    )
+    good_path = tmp_path / "good" / "evaluation.json"
+    good_path.parent.mkdir(parents=True)
+    good_path.write_text(
+        json.dumps(_v2_base(cells=[], execution_contexts=[{"context_id": "evaluation-context_ok"}])),
+        encoding="utf-8",
+    )
+
+    bad_summary = adapt_v2(bad_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY in bad_summary.health.codes
+    assert HealthCode.HEALTHY not in bad_summary.health.codes
+
+    good_summary = adapt_v2(good_path)
+    assert HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY not in good_summary.health.codes
+
+
+def test_v2_missing_effective_conditions_and_rules_id_are_diagnostics_not_silently_healthy(tmp_path: Path):
+    """H2: a *required* field missing from a v2 artifact (unlike a genuinely
+    optional/legacy one) must surface as a health diagnostic, not just an
+    UNKNOWN-confidence field with an otherwise-clean health report."""
+
+    path = tmp_path / "evaluation.json"
+    data = _v2_base(cells=[])
+    del data["effective_conditions"]
+    del data["rules_compatibility_id"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    summary = adapt_v2(path)
+    assert HealthCode.MISSING_EFFECTIVE_CONDITIONS in summary.health.codes
+    assert HealthCode.MISSING_RULES_COMPATIBILITY_ID in summary.health.codes
+    assert HealthCode.HEALTHY not in summary.health.codes
+
+
+def test_v2_healthy_never_coexists_with_a_structural_issue(tmp_path: Path):
+    """H2: `HEALTHY` must never be reported alongside another structural-
+    inconsistency code -- previously `HEALTHY` was decided from the
+    lifecycle-state branch alone, before later structural checks (like
+    `FINISHED_MATRIX_SHORT`) had even run."""
+
+    path = tmp_path / "evaluation.json"
+    path.write_text(json.dumps(_v2_base(cells=[], matrix_size=5)), encoding="utf-8")
+    summary = adapt_v2(path)
+    assert HealthCode.FINISHED_MATRIX_SHORT in summary.health.codes
+    assert HealthCode.HEALTHY not in summary.health.codes
 
 
 # ---------------------------------------------------------------------------

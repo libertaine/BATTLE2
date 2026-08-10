@@ -151,6 +151,76 @@ def test_verify_detects_wrong_entrant_identity(tmp_path: Path):
     assert "identity" in verification.failed[0].error
 
 
+def test_verify_detects_candidate_source_sha256_tamper(tmp_path: Path):
+    """H1: previously only the opponent's identity was cross-checked here --
+    a tampered *candidate* entrant identity went entirely uncaught."""
+
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    result_path = summary.location.directory / summary.cells[0].artifact_dir / "result.json"
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    for entrant in data["entrants"]:
+        if entrant["agent_id"] == "A":  # TESTED_AGENT_SLOT -- the candidate
+            entrant["metadata"]["source_sha256"] = "0" * 64
+    result_path.write_text(json.dumps(data), encoding="utf-8")
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count == 0
+    assert "candidate identity" in verification.failed[0].error
+    assert "source_sha256" in verification.failed[0].error
+
+
+def test_verify_detects_result_id_tamper(tmp_path: Path):
+    """H1: a substituted result_id that leaves match_id/outcome untouched
+    must still be caught -- previously result_id was never checked at all."""
+
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    result_path = summary.location.directory / summary.cells[0].artifact_dir / "result.json"
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    data["result_id"] = "result_deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    result_path.write_text(json.dumps(data), encoding="utf-8")
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count == 0
+    assert "result_id" in verification.failed[0].error
+
+
+def test_verify_detects_result_replay_header_disagreement(tmp_path: Path):
+    """H1: the replay's own header must agree with the result envelope it
+    was published alongside -- digest verification alone says nothing
+    about the header record's own field values, so a header tampered to
+    disagree with an otherwise-correct (and correctly-digested) replay
+    must still be caught."""
+
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    cell_dir = summary.location.directory / summary.cells[0].artifact_dir
+    result_path = cell_dir / "result.json"
+    replay_path = cell_dir / "replay.jsonl"
+
+    lines = replay_path.read_text(encoding="utf-8").splitlines()
+    header = json.loads(lines[0])
+    header["match_id"] = "evaluation-match_deadbeefdeadbeefdeadbeef"
+    lines[0] = json.dumps(header)
+    new_replay_text = "\n".join(lines) + "\n"
+    replay_path.write_text(new_replay_text, encoding="utf-8")
+
+    # Keep the result's own recorded replay digest matching the (now
+    # header-tampered) bytes, so this test isolates header/envelope
+    # disagreement from a plain digest mismatch (already covered by
+    # test_verify_detects_replay_digest_tamper).
+    import hashlib
+
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    data["replay"]["sha256"] = hashlib.sha256(replay_path.read_bytes()).hexdigest()
+    result_path.write_text(json.dumps(data), encoding="utf-8")
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count == 0
+    assert "header" in verification.failed[0].error
+
+
 def test_verify_ineligible_cells_are_skipped_not_counted(tmp_path: Path):
     state_path = _run_v2(tmp_path)
     data = json.loads(state_path.read_text(encoding="utf-8"))
@@ -217,3 +287,95 @@ def test_verify_cell_reports_path_escape_as_failure(tmp_path: Path):
     assert outcome.eligible is True
     assert outcome.verified is False
     assert "escapes" in (outcome.error or "")
+
+
+# ---------------------------------------------------------------------------
+# H5: a result.json's own replay reference must be containment-checked too,
+# not just the cell's artifact_dir -- a tampered result.json could otherwise
+# point its replay filename outside the cell's own artifact directory.
+# ---------------------------------------------------------------------------
+
+
+def _tamper_replay_filename(result_path: Path, filename: str) -> None:
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    data["replay"]["filename"] = filename
+    result_path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_verify_cell_rejects_dotdot_replay_filename(tmp_path: Path):
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    result_path = summary.location.directory / summary.cells[0].artifact_dir / "result.json"
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("not the real replay", encoding="utf-8")
+
+    _tamper_replay_filename(result_path, "../../../outside.jsonl")
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count == 0
+    assert "escapes" in verification.failed[0].error
+
+
+def test_verify_cell_rejects_absolute_windows_replay_filename(tmp_path: Path):
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    result_path = summary.location.directory / summary.cells[0].artifact_dir / "result.json"
+
+    _tamper_replay_filename(result_path, "C:\\Windows\\System32\\evil.jsonl")
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count == 0
+    assert "escapes" in verification.failed[0].error
+
+
+def test_verify_cell_rejects_alternate_drive_replay_filename(tmp_path: Path):
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    result_path = summary.location.directory / summary.cells[0].artifact_dir / "result.json"
+
+    _tamper_replay_filename(result_path, "Z:\\nonexistent\\evil.jsonl")
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count == 0
+    assert "escapes" in verification.failed[0].error
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink creation requires elevated privileges on Windows")
+def test_verify_cell_rejects_symlink_escape_replay_filename(tmp_path: Path):
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    cell_dir = summary.location.directory / summary.cells[0].artifact_dir
+    result_path = cell_dir / "result.json"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.jsonl").write_text("nope", encoding="utf-8")
+    link = cell_dir / "escape"
+    link.symlink_to(outside, target_is_directory=True)
+
+    _tamper_replay_filename(result_path, "escape/secret.jsonl")
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count == 0
+    assert "escapes" in verification.failed[0].error
+
+
+def test_verify_cell_still_works_after_the_whole_evaluation_directory_is_moved(tmp_path: Path):
+    """A moved valid evaluation with legitimate relative paths must still
+    verify -- containment is resolved against the directory as passed in
+    at call time, never a path baked into the artifact."""
+
+    import shutil
+
+    original_root = tmp_path / "original"
+    original_root.mkdir()
+    state_path = _run_v2(original_root)
+    moved_root = tmp_path / "moved" / "elsewhere"
+    moved_root.parent.mkdir(parents=True)
+    shutil.move(str(state_path.parent), str(moved_root))
+    moved_state_path = moved_root / state_path.name
+
+    summary = adapt_any(moved_state_path)
+    _, verification = verify_summary(summary)
+    assert verification.eligible_count == 1
+    assert verification.verified_count == 1
+    assert verification.all_eligible_verified is True

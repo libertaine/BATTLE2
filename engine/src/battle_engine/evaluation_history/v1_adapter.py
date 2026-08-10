@@ -249,6 +249,7 @@ def adapt_v1_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 status=raw.get("status", "pending"),
                 outcome=raw.get("outcome"),
                 match_id=raw.get("match_id"),
+                result_id=raw.get("result_id"),
                 artifact_dir=str(raw.get("artifact_dir", "")),
                 score_subject=raw.get("score_subject"),
                 score_opponent=raw.get("score_opponent"),

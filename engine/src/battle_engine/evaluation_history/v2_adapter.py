@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from battle_engine.agent_evaluation import (
-    IDENTITY_VERSION,
     SCHEMA_NAME,
     aggregate_cells,
     compare_candidate_baseline,
@@ -212,6 +211,7 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 status=raw["status"],
                 outcome=raw.get("outcome"),
                 match_id=raw.get("match_id"),
+                result_id=raw.get("result_id"),
                 artifact_dir=str(raw.get("artifact_dir", "")),
                 score_subject=raw.get("score_subject"),
                 score_opponent=raw.get("score_opponent"),
@@ -232,6 +232,14 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             )
         )
 
+    # H2 (v0.7 closure pass): every semantic/structural check below appends
+    # to this one running `codes`/`detail` pair -- `HEALTHY` is appended
+    # only once, at the very end, and only if nothing else was ever
+    # appended (see the bottom of this function). Previously `HEALTHY` was
+    # appended as soon as the lifecycle-state branch alone looked clean,
+    # *before* the structural checks further down ran, so an artifact could
+    # end up flagged both `HEALTHY` and (say) `FINISHED_MATRIX_SHORT` at
+    # once -- a `HealthReport` must never claim both.
     lifecycle_state_raw = data.get("lifecycle_state")
     codes: list[HealthCode] = []
     detail: list[str] = []
@@ -253,8 +261,6 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         if init_failed:
             codes.append(HealthCode.FINISHED_WITH_INIT_FAILURES)
             detail.append(f"{init_failed} initialization-failure cell(s)")
-        if not codes:
-            codes.append(HealthCode.HEALTHY)
 
     if lifecycle_state_raw not in _VALID_LIFECYCLE_STATES:
         detail.append(f"lifecycle_state {lifecycle_state_raw!r} is not one of {_VALID_LIFECYCLE_STATES}")
@@ -294,23 +300,63 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         codes.append(HealthCode.NON_PORTABLE_ABSOLUTE_PATH)
         detail.append("one or more cell artifact_dir entries are absolute paths")
 
+    # H2: a cell's (subject_role, subject_id, opponent_id, seed,
+    # condition_occurrence_index) coordinate is supposed to be unique --
+    # `condition_occurrence_index` exists specifically to disambiguate
+    # otherwise-identical duplicates. More than one cell sharing the exact
+    # same coordinate means that uniqueness invariant is already broken;
+    # comparison.py's strict alignment independently refuses to pair such
+    # cells positionally (H4), but this is flagged here too as a structural
+    # diagnostic on the artifact itself.
+    coordinate_counts: dict[tuple[Any, ...], list[str]] = {}
+    for raw in raw_cells:
+        occurrence = raw.get("condition_occurrence_index")
+        if not isinstance(occurrence, int) or isinstance(occurrence, bool):
+            continue
+        coordinate = (raw["subject_role"], raw["subject_id"], raw["opponent_id"], raw.get("seed"), occurrence)
+        coordinate_counts.setdefault(coordinate, []).append(raw["schedule_id"])
+    duplicate_coordinates = {
+        coordinate: ids for coordinate, ids in coordinate_counts.items() if len(ids) > 1
+    }
+    if duplicate_coordinates:
+        codes.append(HealthCode.DUPLICATE_CONDITION_COORDINATE)
+        sample_ids = sorted({sid for ids in duplicate_coordinates.values() for sid in ids})
+        detail.append(
+            f"{len(duplicate_coordinates)} coordinate(s) shared by more than one cell: "
+            f"{', '.join(sample_ids[:5])}" + ("..." if len(sample_ids) > 5 else "")
+        )
+
     # Self-consistency: the persisted planned_identities payload must
     # rehash to the artifact's own evaluation_id (B1's invariant) --
     # detectable here too, for an artifact written by a version of this
-    # module that predates the B1 fix, or corrupted after the fact.
+    # module that predates the B1 fix, or corrupted after the fact. M1:
+    # uses the artifact's own recorded `identity_version`, never the
+    # current module-level `IDENTITY_VERSION` -- a valid older v2 artifact
+    # (identity_version 2, predating H3's local_source_fingerprint) must
+    # not be recomputed with today's identity_version and be falsely
+    # flagged inconsistent.
     rules_id = data.get("rules_compatibility_id")
     effective_conditions = data.get("effective_conditions")
     seeds = data.get("seeds")
     ticks = data.get("ticks")
+    identity_version = data.get("identity_version")
+    if not isinstance(rules_id, str):
+        codes.append(HealthCode.MISSING_RULES_COMPATIBILITY_ID)
+        detail.append("rules_compatibility_id is missing or not a string")
+    if not isinstance(effective_conditions, dict):
+        codes.append(HealthCode.MISSING_EFFECTIVE_CONDITIONS)
+        detail.append("effective_conditions is missing or not an object")
     if (
         planned.get("candidate")
         and isinstance(rules_id, str)
         and isinstance(effective_conditions, dict)
         and isinstance(seeds, list)
         and isinstance(ticks, int)
+        and isinstance(identity_version, int)
+        and not isinstance(identity_version, bool)
     ):
         recomputed_payload = {
-            "identity_version": IDENTITY_VERSION,
+            "identity_version": identity_version,
             "candidate": planned.get("candidate"),
             "baseline": planned.get("baseline"),
             "opponents": opponent_identities,
@@ -326,6 +372,88 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 "planned_identities/effective_conditions/rules_compatibility_id do not "
                 "rehash to the recorded evaluation_id"
             )
+
+    # H2: a cell's recorded condition_fingerprint must itself rehash from
+    # the same inputs build_matrix() used to compute it, using the
+    # artifact's own recorded effective_conditions_fingerprint (already
+    # persisted verbatim by _write_state) rather than re-deriving one --
+    # this validates internal cross-consistency of the artifact, not a
+    # second independent recomputation of effective_conditions itself.
+    conditions_fp = data.get("effective_conditions_fingerprint")
+    if isinstance(conditions_fp, str) and isinstance(rules_id, str):
+        inconsistent_fingerprints: list[str] = []
+        for raw in raw_cells:
+            recorded_fp = raw.get("condition_fingerprint")
+            if not isinstance(recorded_fp, str):
+                continue
+            occurrence = raw.get("condition_occurrence_index")
+            if not isinstance(occurrence, int) or isinstance(occurrence, bool):
+                continue
+            try:
+                idx = opponent_ids_list.index(raw.get("opponent_id"))
+            except ValueError:
+                continue
+            if idx >= len(opponent_identities):
+                continue
+            expected_fp = stable_id(
+                "evaluation-condition",
+                {
+                    "opponent": opponent_identities[idx],
+                    "seed": raw.get("seed"),
+                    "effective_conditions": conditions_fp,
+                    "rules_compatibility_id": rules_id,
+                    "condition_occurrence_index": occurrence,
+                },
+            )
+            if expected_fp != recorded_fp:
+                inconsistent_fingerprints.append(raw["schedule_id"])
+        if inconsistent_fingerprints:
+            codes.append(HealthCode.CONDITION_FINGERPRINT_INCONSISTENT)
+            detail.append(
+                f"{len(inconsistent_fingerprints)} cell(s) have a condition_fingerprint "
+                f"inconsistent with their own recorded inputs: {', '.join(inconsistent_fingerprints[:5])}"
+                + ("..." if len(inconsistent_fingerprints) > 5 else "")
+            )
+
+    # H2: opponent_ids/seeds element types -- a list of the right container
+    # type but with malformed elements (a non-string opponent id, a bool or
+    # non-int seed) is still a soft/diagnosable issue, not a reason to
+    # abort the whole artifact.
+    malformed_elements: list[str] = []
+    for index, value in enumerate(opponent_ids_list):
+        if not isinstance(value, str) or not value:
+            malformed_elements.append(f"opponent_ids[{index}]")
+    seeds_list_raw = data.get("seeds")
+    if isinstance(seeds_list_raw, list):
+        for index, value in enumerate(seeds_list_raw):
+            if not isinstance(value, int) or isinstance(value, bool):
+                malformed_elements.append(f"seeds[{index}]")
+    if malformed_elements:
+        codes.append(HealthCode.MALFORMED_MATRIX_ELEMENT)
+        detail.append(
+            f"malformed opponent_ids/seeds element(s): {', '.join(malformed_elements[:5])}"
+            + ("..." if len(malformed_elements) > 5 else "")
+        )
+
+    # H2: an execution_contexts entry that is not an object, or lacks a
+    # non-empty string context_id, cannot be meaningfully referenced by any
+    # cell -- flagged explicitly rather than silently dropped (it is
+    # already silently excluded from `known_context_ids`/`_context_by_id`
+    # elsewhere, which is correct defensive behavior, but that alone gives
+    # no visible diagnostic that the artifact itself is malformed here).
+    invalid_context_entries = 0
+    for item in data.get("execution_contexts", ()):
+        if not isinstance(item, dict) or not isinstance(item.get("context_id"), str) or not item.get("context_id"):
+            invalid_context_entries += 1
+    if invalid_context_entries:
+        codes.append(HealthCode.INVALID_EXECUTION_CONTEXT_ENTRY)
+        detail.append(f"{invalid_context_entries} execution_contexts entrie(s) are malformed")
+
+    # H2: `HEALTHY` is added only now, after every semantic/structural
+    # check above has run -- never both `HEALTHY` and a structural-
+    # inconsistency code at once.
+    if not codes:
+        codes.append(HealthCode.HEALTHY)
 
     real_cells = evaluation_cells_from_raw(raw_cells, path.parent)
     candidate_id = data["candidate_id"]

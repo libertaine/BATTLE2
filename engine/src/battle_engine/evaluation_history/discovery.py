@@ -75,6 +75,16 @@ def adapt_any(path: Path) -> EvaluationSummary:
     except ValueError as exc:
         raise ArtifactReadError(f"{path}: malformed JSON: {exc}", code=HealthCode.MALFORMED_JSON) from exc
 
+    # H2: valid JSON whose root is not an object (a list, string, number,
+    # etc.) parses without error but has no `.get()` to inspect a schema
+    # field on -- must become a typed, isolated diagnostic here, never an
+    # uncaught AttributeError that would abort sibling discovery.
+    if not isinstance(raw, dict):
+        raise ArtifactReadError(
+            f"{path}: JSON root is a {type(raw).__name__}, not an object",
+            code=HealthCode.INVALID_JSON_ROOT,
+        )
+
     if raw.get("schema") not in (V1_SCHEMA_NAME, V2_SCHEMA_NAME):
         raise ArtifactReadError(
             f"{path}: schema {raw.get('schema')!r} is not a bytefray.evaluation artifact",

@@ -77,6 +77,18 @@ class HealthCode(str, Enum):
     DANGLING_EXECUTION_CONTEXT = "dangling_execution_context"
     FINISHED_MATRIX_SHORT = "finished_matrix_short"
     PLANNED_IDENTITY_INCONSISTENT = "planned_identity_inconsistent"
+    # H2 (v0.7 closure pass): additional non-fatal structural diagnostics --
+    # each one is appended to a `HealthReport` alongside whatever else was
+    # found, never raised (a single malformed *field*, as opposed to a
+    # missing *structural* field required just to construct a cell, must
+    # never abort the whole artifact or its siblings).
+    INVALID_JSON_ROOT = "invalid_json_root"
+    DUPLICATE_CONDITION_COORDINATE = "duplicate_condition_coordinate"
+    CONDITION_FINGERPRINT_INCONSISTENT = "condition_fingerprint_inconsistent"
+    MISSING_EFFECTIVE_CONDITIONS = "missing_effective_conditions"
+    MISSING_RULES_COMPATIBILITY_ID = "missing_rules_compatibility_id"
+    MALFORMED_MATRIX_ELEMENT = "malformed_matrix_element"
+    INVALID_EXECUTION_CONTEXT_ENTRY = "invalid_execution_context_entry"
 
 
 @dataclass(frozen=True)
@@ -195,6 +207,14 @@ class AdaptedCell:
     # ``EvaluationSummary.execution_contexts`` -- ``UNKNOWN`` for v1 (which
     # never recorded this) or a v2 cell that predates/lacks the reference.
     execution_context_id: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # H1: the canonical result's own ``result_id``, as recorded on this
+    # cell -- lets deep verification cross-check the nested result.json's
+    # own ``result_id`` against what the evaluation artifact itself
+    # recorded, catching a tampered/mismatched ``result_id`` that a
+    # match_id-only check would miss. ``None`` when never recorded (a v1
+    # artifact predates this field on some builds, or the cell never
+    # completed).
+    result_id: str | None = None
 
     @property
     def is_scored(self) -> bool:
@@ -210,6 +230,7 @@ class AdaptedCell:
             "status": self.status,
             "outcome": self.outcome,
             "match_id": self.match_id,
+            "result_id": self.result_id,
             "artifact_dir": self.artifact_dir,
             "score_subject": self.score_subject,
             "score_opponent": self.score_opponent,
