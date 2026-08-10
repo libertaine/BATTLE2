@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 
 def normalize_root(value: str | os.PathLike[str]) -> Path:
@@ -133,8 +133,12 @@ def contained_path(base_dir: Path, relative: str | os.PathLike[str]) -> Path | N
     at call time, never a path baked into any artifact.
     """
 
+    raw = os.fspath(relative)
+    if Path(raw).is_absolute() or PureWindowsPath(raw).drive:
+        return None
+
     base_resolved = Path(base_dir).resolve()
-    candidate = Path(base_dir) / Path(relative)
+    candidate = Path(base_dir) / Path(raw)
     resolved = candidate.resolve()
     try:
         resolved.relative_to(base_resolved)

@@ -263,6 +263,16 @@ def test_resolve_contained_path_rejects_windows_absolute_path(tmp_path: Path):
         resolve_contained_path(base, "C:\\Windows\\System32")
 
 
+@pytest.mark.parametrize("value", ["C:evil.jsonl", "\\\\server\\share\\evil.jsonl"])
+def test_resolve_contained_path_rejects_other_windows_drive_syntax(
+    tmp_path: Path, value: str
+):
+    base = tmp_path / "eval"
+    base.mkdir()
+    with pytest.raises(ArtifactPathEscapeError):
+        resolve_contained_path(base, value)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="symlink creation requires elevated privileges on Windows")
 def test_resolve_contained_path_rejects_symlink_escape(tmp_path: Path):
     base = tmp_path / "eval"
@@ -334,6 +344,21 @@ def test_verify_cell_rejects_alternate_drive_replay_filename(tmp_path: Path):
     result_path = summary.location.directory / summary.cells[0].artifact_dir / "result.json"
 
     _tamper_replay_filename(result_path, "Z:\\nonexistent\\evil.jsonl")
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count == 0
+    assert "escapes" in verification.failed[0].error
+
+
+@pytest.mark.parametrize("filename", ["C:evil.jsonl", "\\\\server\\share\\evil.jsonl"])
+def test_verify_cell_rejects_other_windows_drive_replay_filenames(
+    tmp_path: Path, filename: str
+):
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    result_path = summary.location.directory / summary.cells[0].artifact_dir / "result.json"
+
+    _tamper_replay_filename(result_path, filename)
 
     _, verification = verify_summary(summary)
     assert verification.verified_count == 0

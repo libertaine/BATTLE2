@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from battle_engine.agent_evaluation import ComparisonEntry, EvaluationCell, SubjectAggregate
@@ -139,8 +139,14 @@ def resolve_contained_path(base_dir: Path, relative: str | Path) -> Path:
     via string prefix comparison.
     """
 
+    raw = str(relative)
+    if Path(raw).is_absolute() or PureWindowsPath(raw).drive:
+        raise ArtifactPathEscapeError(
+            f"{relative!r} escapes the evaluation directory {Path(base_dir).resolve()}"
+        )
+
     base_resolved = Path(base_dir).resolve()
-    candidate = Path(base_dir) / Path(relative)
+    candidate = Path(base_dir) / Path(raw)
     resolved = candidate.resolve()
     try:
         resolved.relative_to(base_resolved)
