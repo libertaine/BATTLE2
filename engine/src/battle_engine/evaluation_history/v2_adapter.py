@@ -116,6 +116,18 @@ def adapt_v2(path: Path) -> EvaluationSummary:
         data: dict[str, Any] = json.loads(raw_text)
     except ValueError as exc:
         raise ArtifactReadError(f"{path}: malformed JSON: {exc}", code=HealthCode.MALFORMED_JSON) from exc
+    return adapt_v2_data(data, path)
+
+
+def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
+    """Same as :func:`adapt_v2`, but for an already-parsed JSON object.
+
+    ``path`` must already be resolved (as ``adapt_v2`` itself resolves it)
+    -- used by ``discovery.adapt_any``, which has already read and parsed
+    the file once to peek its schema/version, so the whole artifact is
+    never read and JSON-parsed from disk a second time just to dispatch to
+    the right adapter.
+    """
 
     if data.get("schema") != SCHEMA_NAME:
         raise ArtifactReadError(
@@ -350,4 +362,4 @@ def adapt_v2(path: Path) -> EvaluationSummary:
     )
 
 
-__all__ = ["adapt_v2"]
+__all__ = ["adapt_v2", "adapt_v2_data"]

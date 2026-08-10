@@ -242,45 +242,81 @@ performed under a different environment — and `show`/`list` must report
 
 ## 7. Source drift protection
 
-Minimum-safe strategy, applied by `EvaluationService._execute_cell` (v2
-path) immediately before and after every freshly-executed cell:
+**Revised after an independent adversarial review (v0.7 correction pass,
+"B1") found that the original design below was not actually TOCTOU-safe as
+written.** The original post-check recomputed its "expected" `match_id` by
+calling `canonical_match_id`, which reads `spec.source_path` from disk
+*at call time* — so a post-check running *after* a cell had already
+executed would simply re-read whatever the file currently contained,
+which could be the same (already-drifted) content the executor itself had
+just read. Comparing two fresh reads of the same live file to each other
+is vacuous; it does not detect that the file changed since the plan was
+frozen. The strategy actually implemented by `EvaluationService` closes
+that gap:
 
-1. **Pre-check.** Re-resolve the cell's subject and opponent
-   (`resolve_agent`) and compute `agent_identity(spec)`. Compare against the
-   identity recorded in the plan at evaluation start (§2's per-role
-   identities, computed once during `_validate`/`_evaluation_id` and stored
-   for the whole run). A mismatch on any field (`kind`, `api_version`,
-   `agent_version`, `entry_point`, `source_sha256`) is drift.
-2. **Post-check.** After a real match runs, recompute the expected
-   `match_id` from the planned identity + `EffectiveConditions` (reusing
-   `_expected_cell_match_id`'s existing recipe, extended with the full
-   `Config`) and compare it to `NativeMatchResult.match_id`. A mismatch is
-   drift (this catches a source change that happened *during* execution,
-   between the pre-check and the match actually running — a narrow but real
-   window).
-3. On first detected drift (either check, either role): **stop scheduling
+1. **Freeze once.** `EvaluationService.run` builds `planned_identities`
+   (one `agent_identity()` call per candidate/baseline/opponent) exactly
+   once, immediately after `_validate`, before any cell executes.
+   `evaluation_id` is derived from that *same* dict (never a second,
+   independent `agent_identity()` call) so the persisted
+   `planned_identities` payload is structurally guaranteed to reproduce the
+   recorded `evaluation_id` — the frozen snapshot and the id it produced
+   can never independently drift apart.
+2. **Pre-check** (`_detect_pre_execution_drift`, immediately before each
+   cell's `test_agent` call). Re-resolve the cell's subject and opponent
+   and compute `agent_identity(spec)`; compare against the *frozen*
+   snapshot from step 1 (never re-derived from a live `AgentSpec.source_path`
+   later). A mismatch on any field is drift.
+3. **Post-check** (`_post_execution_identity_drift`, after a real match
+   runs). Compares the frozen snapshot against the *executor's own
+   recorded* per-entrant metadata (`NativeAgentResult.metadata`'s
+   `source_sha256`/`api_version`/`agent_version`, embedded in the match
+   result `test_agent` already returned) — not a second independent disk
+   read. This is what actually catches a source edit landing between the
+   pre-check and `test_agent`'s own internal resolution/execution.
+4. **Initialization failures** get a *live re-resolve* against the frozen
+   plan instead (no `NativeAgentResult.metadata` exists when an agent
+   fails to initialize — `RuntimeDiagnostic` carries no identity fields).
+   This still has its own read-after-the-fact race, but it is strictly
+   narrower than not checking at all, and prevents a source edit that
+   causes an init failure from being silently attributed to the original,
+   frozen agent.
+5. On first detected drift (any check, either role): **stop scheduling
    further cells immediately.** The drifted cell itself is recorded with
-   `status="drift_detected"` and a typed diagnostic (`error_code`,
-   `error_message` describing exactly which identity field changed and
-   old/new values where safe to record). Every cell that already completed
-   validly before the drifted one is preserved unchanged. The final
-   checkpoint sets `lifecycle_state="aborted"`,
+   `status="drift_detected"` and a typed diagnostic. Every cell that
+   already completed validly before the drifted one is preserved
+   unchanged. The final checkpoint sets `lifecycle_state="aborted"`,
    `abort_reason="source_drift"`, `abort_detail={role, agent_id, cell
    schedule_id, mismatched fields}`. No `finished_at` is written.
-4. A fresh evaluation (new plan/output, since the changed source now
-   produces a different `evaluation_id` anyway per §2) is required to
-   continue evaluating the changed agent — the aborted artifact is never
-   silently resumed or "fixed up" by rerunning inside the same output
-   directory. Re-running `bytefray agents evaluate` with the same CLI
-   arguments after a source edit naturally produces a new
-   `evaluation_id`/output path, so this requires no special-cased CLI
-   behavior.
+   `--retry-failed` never retries a `drift_detected` cell, even after the
+   source is restored to its original content — the only correct recovery
+   is a fresh evaluation.
+6. A fresh evaluation (new plan/output, since the changed source now
+   produces a different `evaluation_id` anyway) is required to continue
+   evaluating the changed agent — the aborted artifact is never silently
+   resumed or "fixed up" by rerunning inside the same output directory.
 
-For an initialization failure (no `result.json` exists — §9 of
-`agent_evaluation.md`), the pre-check identity comparison is the strongest
-available check (there is no post-match identity to verify against); this
-limitation is recorded in `docs/AGENT_LAB.md`'s v2 documentation update,
-not silently assumed away.
+**Documented residual TOCTOU window (not claimed to be closed).** Inside
+`python_runtime.PythonEntrantController.__init__`, an agent's module is
+loaded/executed first, and its `source_sha256` is computed by a *separate*,
+subsequent `read_bytes()` call. An edit that lands and then reverts to the
+originally-planned bytes before that digest read — or before this module's
+own inputs are otherwise captured — is not detectable from outside that
+call, and no check in this module can close it without changing
+`python_runtime` itself. In practice this means: any edit that lands and
+*stays* is caught (proven by TOCTOU tests using real file/manifest
+mutation, not just a monkeypatched drift detector); a transient edit that
+fully reverts before anything reads it is not, and must not be, falsely
+reported as drift either.
+
+Helper/imported-source changes (an agent's entry point importing a sibling
+module or nested local package) are a related but distinct concern from
+this section's *timing* race — see §H3 (`agent_identity.
+local_source_fingerprint`) for how those are covered; that mechanism is
+scoped to an agent's own `agents/<id>/` directory only, and is checked at
+planning time (evaluation_id/pre-execution drift), not against
+`NativeAgentResult.metadata` (which has no concept of "every local file
+loaded").
 
 No source is embedded or snapshotted anywhere — drift detection is entirely
 comparison of small identity fingerprints already computed for other reasons
@@ -541,8 +577,19 @@ exist (§16 performance).
 ### 14. Comparison (`comparison.py`)
 
 ```python
-def align(left: EvaluationSummary, right: EvaluationSummary) -> AlignedComparison: ...
+def align(
+    left: EvaluationSummary, right: EvaluationSummary, *, deep_verified: bool = False
+) -> AlignedComparison: ...
 ```
+
+**`deep_verified`** (added in the v0.7 correction pass, "B3") must be
+`True` only when the caller has already run
+`evaluation_history.verification.verify_summary` on *both* `left` and
+`right` (i.e. `bytefray agents evaluations compare --verify`). It gates
+reproducibility-anomaly and baseline-control-anomaly detection below —
+see the corrected §14.1. An ordinary (non-`--verify`) comparison leaves
+this `False`, and CLI/JSON output for that comparison must say plainly
+that its evidence was not deep-verified rather than implying it was.
 
 Orientation is always `right` (new) relative to `left` (old) — this is
 explicit in every returned/printed structure, never implicit positional
@@ -588,9 +635,20 @@ def verdict(left_outcome: str, right_outcome: str) -> str:
 ```
 
 `"inconclusive"` covers: either side not scored (init failure/failed/
-corrupted/missing), or a verified-identical-candidate-fingerprint pair whose
-deterministic outcomes differ (§14.1 reproducibility anomaly — reported
-*additionally*, not instead of, the raw outcome pair).
+corrupted/missing), or a differing pair whose two cells ran under
+materially different or unknown execution contexts (added in the v0.7
+correction pass, "H2" — equivalence cannot be established across
+incompatible runtimes, so an otherwise-differing verdict is downgraded to
+inconclusive with a `reason` rather than reported as an ordinary
+improvement/regression; an `unchanged` verdict is left alone since it
+makes no cross-runtime equivalence claim). A **reproducibility anomaly**
+(§14.1) is a related but separate, narrower classification layered on top
+of an `improved`/`regressed` row (via `ComparisonRow.reproducibility_anomaly`,
+never by itself producing `"inconclusive"`): it requires `deep_verified`
+*and* both individual cells having actually verified (`AdaptedCell.verified
+is True`), not merely a matching candidate identity fingerprint — a
+fingerprint match alone was found to be an insufficient basis for this
+claim during the v0.7 correction pass ("B3") and no longer triggers it.
 
 ```python
 @dataclass(frozen=True)
@@ -639,10 +697,14 @@ only for the logical-ID case, and the CLI/JSON explicitly labels that case
 "different candidates" rather than presenting it as a revision (Part IV).
 
 If `candidate_diff is None` (fingerprints identical) and strict conditions
-match and both sides verify (`--verify`), but `outcomes differ` on an
-aligned row, that row is added to both `rows` (with its plain verdict) and
-`reproducibility_anomalies` (flagged) — never silently relabeled as
-`improved`/`regressed` without the anomaly flag.
+match and the comparison ran with `deep_verified=True` *and* both cells on
+that row actually verified individually (not merely "the `--verify` flag
+was passed" — a specific cell can still fail to verify even under
+`--verify`), but `outcomes differ` on an aligned row, that row is added to
+both `rows` (with its plain verdict) and `reproducibility_anomalies`
+(flagged) — never silently relabeled as `improved`/`regressed` without the
+anomaly flag, and never flagged at all from evidence that was only read
+and recomputed from each artifact's own recorded fields.
 
 #### 14.2 Opponent semantics
 
@@ -664,8 +726,10 @@ class BaselineContext:
     left_baseline_id: str | None
     right_baseline_id: str | None
     identity_status: str   # "absent_both" | "absent_one" | "same" | "changed" | "unknown_legacy"
-    control_rows: tuple["ComparisonRow", ...]   # only when identity_status == "same" and verified
-    control_anomaly: bool
+    control_rows: tuple["ComparisonRow", ...]   # only when identity_status == "same"
+    control_anomaly: bool   # requires deep_verified=True and both cells verified on the
+                             # anomalous row (same gate as reproducibility_anomalies, §14.1) --
+                             # never derived from a bare verdict != "unchanged" check
 ```
 
 Baseline identity differences never block candidate-cell comparison rows

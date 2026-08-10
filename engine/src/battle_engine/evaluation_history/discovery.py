@@ -18,8 +18,8 @@ from .models import (
     HealthReport,
     file_modified_at,
 )
-from .v1_adapter import V1_SCHEMA_NAME, adapt_v1
-from .v2_adapter import adapt_v2
+from .v1_adapter import V1_SCHEMA_NAME, adapt_v1_data
+from .v2_adapter import adapt_v2_data
 
 
 class AmbiguousSelectorError(ValueError):
@@ -60,9 +60,14 @@ def adapt_any(path: Path) -> EvaluationSummary:
     ``ArtifactReadError`` for anything that doesn't parse or validate --
     callers (here, ``discover``) are responsible for turning that into a
     safely reported entry rather than letting it propagate.
+
+    Reads and JSON-parses the artifact exactly once -- the parsed object is
+    dispatched straight to ``adapt_v1_data``/``adapt_v2_data`` rather than
+    handing the version-specific adapter a bare path it would have to read
+    and parse a second time.
     """
 
-    path = Path(path)
+    path = Path(path).resolve()
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -77,9 +82,9 @@ def adapt_any(path: Path) -> EvaluationSummary:
         )
     version = raw.get("schema_version")
     if version == 2:
-        return adapt_v2(path)
+        return adapt_v2_data(raw, path)
     if version == 1:
-        return adapt_v1(path)
+        return adapt_v1_data(raw, path)
     raise ArtifactReadError(
         f"{path}: unsupported schema_version {version!r}", code=HealthCode.UNSUPPORTED_VERSION
     )
