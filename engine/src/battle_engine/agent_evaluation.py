@@ -1063,6 +1063,7 @@ class EvaluationService:
 
         completed: list[EvaluationCell] = []
         drift: dict[str, Any] | None = None
+        any_newly_executed = False
         for cell in matrix:
             previous = prior_cells.get(cell.schedule_id)
             resolved: EvaluationCell | None = None
@@ -1071,7 +1072,16 @@ class EvaluationService:
                 resolved = self._resolve_from_state(cell, previous, specs, request)
                 if (
                     resolved is not None
-                    and resolved.status in ("failed", "corrupted", "drift_detected")
+                    # M2: `drift_detected` is deliberately excluded here --
+                    # it signals the *frozen plan itself* no longer
+                    # matches the agent(s) as they exist on disk. Retrying
+                    # inside this same artifact would silently execute a
+                    # new revision under the old plan's evaluation_id; the
+                    # only correct recovery is a fresh evaluation (a new
+                    # plan/output directory), never `--retry-failed` on
+                    # this one -- regardless of whether the source has
+                    # since been restored to its original content.
+                    and resolved.status in ("failed", "corrupted")
                     and request.retry_failures
                 ):
                     resolved = None
@@ -1080,6 +1090,7 @@ class EvaluationService:
                     cell, request, planned_identities, record_context_usage
                 )
                 newly_executed = True
+                any_newly_executed = True
             completed.append(resolved)
             # Checkpoint only for genuinely new work (a cell just executed
             # or re-executed in *this* run). A cell merely reconstructed
@@ -1118,7 +1129,22 @@ class EvaluationService:
         comparison = (
             compare_candidate_baseline(completed) if request.baseline_id is not None else ()
         )
-        finished_at = None if drift is not None else _utc_now_iso()
+        # M1: a true no-op resume -- everything reconstructed from prior
+        # state, nothing newly executed, and that prior state was already a
+        # genuinely finished evaluation -- must preserve the original
+        # completion chronology rather than minting a new `finished_at` on
+        # every idle resume. A resume that did real new work (or completes
+        # for the first time) still gets its own fresh timestamp.
+        if drift is not None:
+            finished_at = None
+        elif (
+            not any_newly_executed
+            and prior.get("lifecycle_state") == "finished"
+            and isinstance(prior.get("finished_at"), str)
+        ):
+            finished_at = prior["finished_at"]
+        else:
+            finished_at = _utc_now_iso()
         self._write_state(
             state_path,
             evaluation_id,
@@ -1485,6 +1511,13 @@ class EvaluationService:
                 "abort_reason": abort_reason,
                 "abort_detail": dict(abort_detail) if abort_detail is not None else None,
                 "execution_contexts": [dict(item) for item in execution_contexts],
+                # Writer/resumer bookkeeping only (which Bytefray build most
+                # recently touched this artifact) -- refreshed on every
+                # write, including a no-op resume under a different
+                # runtime. It is *not* cell execution provenance; that is
+                # `execution_contexts`/each cell's own `execution_context_id`
+                # (Sec 6/H2), which are never rewritten by a resuming
+                # process (M1).
                 "project": asdict(project),
                 "cells": [_cell_to_dict(cell, path.parent) for cell in cells],
                 "aggregates": [asdict(row) for row in aggregates],

@@ -198,6 +198,54 @@ def test_v2_no_op_resume_does_not_rewrite_provenance(two_agents: Path):
     assert second_data["updated_at"] >= first_data["updated_at"]
 
 
+def test_v2_no_op_resume_under_a_mocked_different_runtime_preserves_completion_chronology(
+    two_agents: Path, monkeypatch
+):
+    """M1: a true no-op resume must preserve original execution completion
+    chronology even when the resuming process itself is a different
+    Bytefray/Python build -- finished_at, created_at, per-cell execution
+    provenance, and the execution_contexts list must all stay exactly as
+    they were. Only `updated_at` and the writer/resumer-only `project`
+    block (explicitly not cell execution provenance) may legitimately
+    differ.
+    """
+
+    import battle_engine.agent_evaluation as mod
+
+    request = _request(two_agents)
+    service = EvaluationService()
+    first = service.run(request)
+    first_data = json.loads(first.state_path.read_text(encoding="utf-8"))
+    assert first_data["lifecycle_state"] == "finished"
+    assert first_data["finished_at"] is not None
+
+    monkeypatch.setattr(
+        mod,
+        "current_execution_context",
+        lambda rules_id: mod.ExecutionContext(
+            context_id="evaluation-context_mockedmockedmockedmocked",
+            bytefray_version="9.9.9-mocked",
+            agent_api_version=1,
+            python_version="9.9.9",
+            result_schema_version=1,
+            replay_schema_version=3,
+            rules_compatibility_id=rules_id,
+        ),
+    )
+    second = service.run(request)
+    second_data = json.loads(second.state_path.read_text(encoding="utf-8"))
+
+    assert second_data["lifecycle_state"] == "finished"
+    assert second_data["finished_at"] == first_data["finished_at"]
+    assert second_data["created_at"] == first_data["created_at"]
+    assert second_data["execution_contexts"] == first_data["execution_contexts"]
+    for before, after in zip(first_data["cells"], second_data["cells"]):
+        assert before["execution_context_id"] == after["execution_context_id"]
+        assert before["match_id"] == after["match_id"]
+        assert before["status"] == after["status"] == "completed"
+    assert second_data["updated_at"] >= first_data["updated_at"]
+
+
 def test_v2_retry_under_new_context_appends_a_second_execution_context(two_agents: Path, monkeypatch):
     import battle_engine.agent_evaluation as mod
 
@@ -285,6 +333,87 @@ def test_v2_source_drift_between_cells_stops_the_matrix(tmp_path: Path, monkeypa
     resumed = service.run(request)
     resumed_data = json.loads(resumed.state_path.read_text(encoding="utf-8"))
     assert resumed_data["lifecycle_state"] == "aborted"
+
+
+# ---------------------------------------------------------------------------
+# M2: a drift-aborted cell must never be retried by --retry-failed
+# ---------------------------------------------------------------------------
+
+
+def test_drift_artifact_retry_failed_does_not_retry_while_source_remains_changed(
+    tmp_path: Path, monkeypatch
+):
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opp_a")
+    _write_python_agent(tmp_path, "opp_b")
+    request = _request(tmp_path, opponent_ids=("opp_a", "opp_b"), seeds=(1,))
+    service = EvaluationService()
+
+    import battle_engine.agent_evaluation as mod
+
+    def _detect_with_injected_drift(self, cell, planned_identities, root):
+        if cell.opponent_id == "opp_b":
+            return {"error_code": "pre_execution_source_drift", "error_message": "boom"}
+        return None
+
+    monkeypatch.setattr(
+        mod.EvaluationService, "_detect_pre_execution_drift", _detect_with_injected_drift
+    )
+    first = service.run(request)
+    assert first.cells[-1].status == "drift_detected"
+
+    # The (simulated) drift condition is still present -- --retry-failed
+    # must still refuse to retry the drifted cell, exactly like an ordinary
+    # resume.
+    from dataclasses import replace as _replace
+
+    retried = service.run(_replace(request, retry_failures=True))
+    retried_data = json.loads(retried.state_path.read_text(encoding="utf-8"))
+    assert retried_data["lifecycle_state"] == "aborted"
+    assert retried_data["cells"][-1]["status"] == "drift_detected"
+    assert retried_data["cells"][-1]["opponent_id"] == "opp_b"
+
+
+def test_drift_artifact_retry_failed_does_not_retry_even_after_source_restored(
+    tmp_path: Path, monkeypatch
+):
+    """Once an evaluation has aborted on drift, that specific artifact is
+    terminal for the affected cell -- even reverting the (simulated) drift
+    condition does not make --retry-failed re-execute it inside the same
+    plan. The only correct recovery is a fresh evaluation (Sec 7/M2)."""
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opp_a")
+    _write_python_agent(tmp_path, "opp_b")
+    request = _request(tmp_path, opponent_ids=("opp_a", "opp_b"), seeds=(1,))
+    service = EvaluationService()
+
+    import battle_engine.agent_evaluation as mod
+
+    original_detect = mod.EvaluationService._detect_pre_execution_drift
+
+    def _detect_with_injected_drift(self, cell, planned_identities, root):
+        if cell.opponent_id == "opp_b":
+            return {"error_code": "pre_execution_source_drift", "error_message": "boom"}
+        return original_detect(self, cell, planned_identities, root)
+
+    monkeypatch.setattr(
+        mod.EvaluationService, "_detect_pre_execution_drift", _detect_with_injected_drift
+    )
+    first = service.run(request)
+    assert first.cells[-1].status == "drift_detected"
+
+    # "Source restored": the injected drift condition is removed entirely,
+    # as if the underlying edit had been reverted.
+    monkeypatch.setattr(mod.EvaluationService, "_detect_pre_execution_drift", original_detect)
+
+    from dataclasses import replace as _replace
+
+    retried = service.run(_replace(request, retry_failures=True))
+    retried_data = json.loads(retried.state_path.read_text(encoding="utf-8"))
+    assert retried_data["lifecycle_state"] == "aborted"
+    assert retried_data["cells"][-1]["status"] == "drift_detected"
+    assert retried_data["cells"][-1]["opponent_id"] == "opp_b"
 
 
 # ---------------------------------------------------------------------------
