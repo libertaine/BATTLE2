@@ -117,3 +117,27 @@ def get_data_root(environ: Mapping[str, str] | None = None) -> Path:
 # the writable agent/run root.
 def get_battle_root() -> Path:
     return get_data_root()
+
+
+def contained_path(base_dir: Path, relative: str | os.PathLike[str]) -> Path | None:
+    """Resolve ``relative`` beneath ``base_dir``, or ``None`` if it escapes.
+
+    Refuses ``../`` traversal, absolute paths (Windows drive-qualified or
+    POSIX-rooted), and symlink escapes -- anything whose fully resolved
+    location does not fall under ``base_dir``'s own fully resolved location
+    returns ``None`` rather than being silently treated as contained.
+    ``Path.resolve()`` also normalizes case/drive on Windows, so containment
+    is checked post-resolution, not via string prefix comparison. A moved
+    ``base_dir`` (with its contents moved alongside it) still resolves
+    correctly, since containment is computed against ``base_dir`` as passed
+    at call time, never a path baked into any artifact.
+    """
+
+    base_resolved = Path(base_dir).resolve()
+    candidate = Path(base_dir) / Path(relative)
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError:
+        return None
+    return resolved

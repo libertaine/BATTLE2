@@ -200,6 +200,65 @@ def _import_source(source_path: Path) -> ModuleType:
     return module
 
 
+LOCAL_SOURCE_FINGERPRINT_VERSION = 1
+
+
+def local_source_fingerprint(agent_dir: Path | None) -> str | None:
+    """A versioned, deterministic fingerprint of every ``.py`` file local to
+    one agent's own directory.
+
+    A single entry-point file's digest alone only covers that one file; an
+    imported local helper or nested local package living elsewhere in the
+    same agent directory can change an agent's actual behavior while the
+    entry point's own digest stays identical. This closes that gap by
+    hashing every ``*.py`` file under ``agent_dir``, deterministically
+    ordered by POSIX-style relative path so the result is stable across
+    platforms and directory-listing order.
+
+    Explicitly scoped and nothing more:
+
+    * never walks outside ``agent_dir`` (a symlinked file/directory that
+      resolves outside it is skipped, not followed);
+    * never descends into ``__pycache__``;
+    * never touches installed packages, system Python, or anything outside
+      this one directory -- this is not general provenance.
+
+    Returns ``None`` if ``agent_dir`` is absent, not a directory, or
+    contains no local ``.py`` files to hash (e.g. a non-Python agent).
+    """
+
+    if agent_dir is None or not agent_dir.is_dir():
+        return None
+    base = agent_dir.resolve()
+    entries: list[tuple[str, bytes]] = []
+    for candidate in base.rglob("*.py"):
+        if "__pycache__" in candidate.parts:
+            continue
+        try:
+            resolved = candidate.resolve()
+            resolved.relative_to(base)
+        except (OSError, ValueError):
+            continue  # a symlink escaping agent_dir -- never followed
+        if not resolved.is_file():
+            continue
+        try:
+            content = resolved.read_bytes()
+        except OSError:
+            continue
+        entries.append((candidate.relative_to(base).as_posix(), content))
+    if not entries:
+        return None
+    entries.sort(key=lambda item: item[0])
+    hasher = hashlib.sha256()
+    hasher.update(str(LOCAL_SOURCE_FINGERPRINT_VERSION).encode("ascii"))
+    for relative_path, content in entries:
+        hasher.update(b"\0")
+        hasher.update(relative_path.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(hashlib.sha256(content).digest())
+    return hasher.hexdigest()
+
+
 def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
     """Import, construct, and structurally validate one fresh Python agent."""
 
@@ -264,6 +323,7 @@ def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
 
 __all__ = [
     "AGENT_API_VERSION",
+    "LOCAL_SOURCE_FINGERPRINT_VERSION",
     "ActionKind",
     "AgentAction",
     "AgentContractError",
@@ -279,5 +339,6 @@ __all__ = [
     "Observation",
     "UnsupportedAgentAPIVersionError",
     "load_python_agent",
+    "local_source_fingerprint",
     "parse_entry_point",
 ]

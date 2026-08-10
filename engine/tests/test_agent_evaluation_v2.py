@@ -599,6 +599,135 @@ def create_agent(): return Agent()
     assert cell["error_code"] == "post_execution_identity_drift"
 
 
+# ---------------------------------------------------------------------------
+# B1 (v0.7 closure pass): frozen execution-time identity must catch a
+# same-file factory retarget and a local-helper-only edit, neither of which
+# changes the entry file's own `source_sha256` -- these require the
+# executor's own recorded `entry_point`/`local_source_fingerprint` (not a
+# second live disk read) to be part of the post-execution comparison.
+# ---------------------------------------------------------------------------
+
+
+def test_toctou_same_file_factory_retarget_is_detected(tmp_path: Path, monkeypatch):
+    """``agent.yaml`` retargeted from ``create_agent`` to ``create_alt`` --
+    both factories live in the *same unchanged* ``agent.py`` file, so
+    `source_sha256` never changes and cannot be what catches this. Only the
+    executor's own recorded `entry_point` (the string it actually resolved
+    and imported from) can."""
+
+    candidate_dir = _write_python_agent(tmp_path, "candidate")
+    (candidate_dir / "agent.py").write_text(
+        """
+from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): return AgentAction(ActionKind.NOP)
+def create_agent(): return Agent()
+def create_alt(): return Agent()
+""",
+        encoding="utf-8",
+    )
+    _write_python_agent(tmp_path, "opponent")
+    manifest_path = candidate_dir / "agent.yaml"
+    original_source_sha256 = hashlib.sha256((candidate_dir / "agent.py").read_bytes()).hexdigest()
+    request = _request(tmp_path)
+    service = EvaluationService()
+
+    import battle_engine.agent_evaluation as mod
+
+    real_test_agent = mod.test_agent
+
+    def _retarget_factory_then_run(*args, **kwargs):
+        manifest_path.write_text(
+            json.dumps(
+                {"kind": "python", "api_version": 1, "entrypoint": "agent.py:create_alt", "version": "1.0"}
+            ),
+            encoding="utf-8",
+        )
+        return real_test_agent(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "test_agent", _retarget_factory_then_run)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    cell = data["cells"][0]
+    assert cell["status"] == "drift_detected"
+    assert cell["error_code"] == "post_execution_identity_drift"
+    assert "entry_point" in cell["error_message"]
+    # The entry file's own bytes never changed -- source_sha256 alone would
+    # have missed this; the failure must be attributed to entry_point.
+    assert (candidate_dir / "agent.py").read_bytes()
+    assert hashlib.sha256((candidate_dir / "agent.py").read_bytes()).hexdigest() == original_source_sha256
+
+    # Persisted planned identity must still reflect the ORIGINAL frozen
+    # entry point, never the retargeted one.
+    planned_candidate = data["planned_identities"]["candidate"]
+    assert planned_candidate["entry_point"] == "agent.py:create_agent"
+
+    # The evaluation ID must still reproduce deterministically from the
+    # exact persisted plan (identity_version/candidate/baseline/opponents/
+    # seeds/ticks/effective_conditions/rules_compatibility_id) -- the drift
+    # abort must never have mutated the frozen plan that defines it.
+    from battle_engine.agent_evaluation import IDENTITY_VERSION as CURRENT_IDENTITY_VERSION
+    from battle_engine.result_model import stable_id
+
+    recomputed = stable_id(
+        "evaluation-v2",
+        {
+            "identity_version": data["identity_version"],
+            "candidate": data["planned_identities"]["candidate"],
+            "baseline": data["planned_identities"]["baseline"],
+            "opponents": data["planned_identities"]["opponents"],
+            "seeds": data["seeds"],
+            "ticks": data["ticks"],
+            "effective_conditions": data["effective_conditions"],
+            "rules_compatibility_id": data["rules_compatibility_id"],
+        },
+    )
+    assert data["identity_version"] == CURRENT_IDENTITY_VERSION
+    assert recomputed == data["evaluation_id"]
+
+
+def test_toctou_local_helper_edit_after_precheck_is_detected(tmp_path: Path, monkeypatch):
+    """A local helper file (not the entry-point file itself) edited after
+    the pre-execution check and left in place must still be caught, via
+    the executor's own recorded `local_source_fingerprint` of the whole
+    agent directory it actually loaded from -- `source_sha256` (entry file
+    only) cannot see this class of edit at all."""
+
+    candidate_dir = _write_python_agent(tmp_path, "candidate")
+    helper_path = candidate_dir / "helper.py"
+    helper_path.write_text("VALUE = 1\n", encoding="utf-8")
+    _write_python_agent(tmp_path, "opponent")
+    request = _request(tmp_path)
+    service = EvaluationService()
+
+    import battle_engine.agent_evaluation as mod
+
+    real_test_agent = mod.test_agent
+
+    def _edit_helper_then_run(*args, **kwargs):
+        helper_path.write_text("VALUE = 2  # edited after precheck, left in place\n", encoding="utf-8")
+        return real_test_agent(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "test_agent", _edit_helper_then_run)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    cell = data["cells"][0]
+    assert cell["status"] == "drift_detected"
+    assert cell["error_code"] == "post_execution_identity_drift"
+    assert "local_source_fingerprint" in cell["error_message"]
+    # The persisted plan must still reflect the identity frozen BEFORE the
+    # helper edit (the original two-file fingerprint), never re-derived
+    # from the now-edited directory.
+    from battle_engine.agent_api import local_source_fingerprint
+
+    assert data["planned_identities"]["candidate"]["local_source_fingerprint"] != local_source_fingerprint(
+        candidate_dir
+    )
+
+
 def test_toctou_initialization_failure_after_intervening_source_change_is_flagged_as_drift(
     tmp_path: Path, monkeypatch
 ):
@@ -801,6 +930,66 @@ def test_resume_failure_during_retry_preparation_preserves_untouched_cells(
     # as tampered/persisted before this crashed retry attempt -- no
     # temporary erasure of cells the retry never even reached.
     assert state_path.read_bytes() == original_bytes
+
+
+def test_retry_checkpoint_never_erases_a_later_already_durable_cell(
+    two_agents: Path, monkeypatch
+):
+    """B2 repro, exactly as specified: seed 1 failed, seed 2 completed;
+    resume with retry_failures=True; retry seed 1; crash immediately after
+    its checkpoint. Before the fix, that checkpoint serialized only the
+    matrix prefix reconstructed so far in this run's own loop (just the
+    retried seed-1 cell), silently dropping the already-durable seed-2 cell
+    from disk. The checkpoint written right before the crash must be at
+    least as complete as what was already durable.
+    """
+
+    request = _request(two_agents, opponent_ids=("opponent",), seeds=(1, 2))
+    service = EvaluationService()
+    first = service.run(request)
+    state_path = first.state_path
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+    assert data["cells"][0]["seed"] == 1
+    assert data["cells"][1]["seed"] == 2
+    assert data["cells"][1]["status"] == "completed"
+    # Seed 1 tampered into a failed cell (simulating a real infra failure)
+    # so --retry-failed has something to retry; seed 2 stays genuinely
+    # durable, untouched.
+    data["cells"][0]["status"] = "failed"
+    data["cells"][0]["outcome"] = None
+    data["cells"][0]["error_code"] = "engine_failed"
+    state_path.write_text(json.dumps(data), encoding="utf-8")
+
+    import battle_engine.agent_evaluation as mod
+
+    real_write_state = mod.EvaluationService._write_state
+    call_count = {"n": 0}
+
+    def _write_then_crash_once(self, *args, **kwargs):
+        real_write_state(self, *args, **kwargs)
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # The retried seed-1 cell's own checkpoint has just been
+            # durably written to disk -- crash immediately after it, before
+            # this run's loop ever reaches seed 2.
+            raise RuntimeError("simulated crash immediately after the retried cell's checkpoint")
+
+    monkeypatch.setattr(mod.EvaluationService, "_write_state", _write_then_crash_once)
+    from dataclasses import replace as _replace
+
+    with pytest.raises(RuntimeError):
+        EvaluationService().run(_replace(request, retry_failures=True))
+
+    assert call_count["n"] == 1
+    post_crash = json.loads(state_path.read_text(encoding="utf-8"))
+    cells_by_seed = {cell["seed"]: cell for cell in post_crash["cells"]}
+    # The already-durable seed-2 cell must still be present and untouched.
+    assert 2 in cells_by_seed
+    assert cells_by_seed[2]["status"] == "completed"
+    assert cells_by_seed[2]["match_id"] == data["cells"][1]["match_id"]
+    # The retried seed-1 cell itself was freshly re-executed and succeeded.
+    assert 1 in cells_by_seed
+    assert cells_by_seed[1]["status"] == "completed"
 
 
 def test_fresh_evaluation_still_gets_the_first_checkpoint_before_any_cell(

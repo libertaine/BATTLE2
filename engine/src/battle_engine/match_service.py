@@ -307,6 +307,19 @@ def _build_python_result(
                         "source_sha256": state.source_digest,
                         "api_version": state.loaded.metadata.api_version,
                         "agent_version": state.loaded.metadata.version,
+                        # B1 (v0.7 closure pass): additive executor-recorded
+                        # identity evidence -- the entry point string the
+                        # executor actually resolved and imported from, and
+                        # a fingerprint of every local .py file under the
+                        # agent directory it actually loaded from. Both are
+                        # computed once by the executor at load time (see
+                        # python_runtime.PythonEntrantController/
+                        # supervised_runtime), never re-derived here. Purely
+                        # additive to this free-form metadata dict; readers
+                        # that only know the older three keys are
+                        # unaffected.
+                        "entry_point": state.loaded.entry_point,
+                        "local_source_fingerprint": state.local_source_fingerprint,
                     }
                 ),
             )

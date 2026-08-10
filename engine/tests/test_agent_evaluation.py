@@ -642,6 +642,28 @@ def test_resume_demotes_tampered_result_to_corrupted(tmp_path):
     assert second.cells[0].error_code == "resumed_result_mismatch"
 
 
+def test_resume_rejects_replay_filename_escaping_the_cell_directory(tmp_path):
+    """H5: a tampered result.json whose replay filename tries to escape the
+    cell's own artifact directory (via `../`) must be refused during resume
+    verification, never followed outside the evaluation tree."""
+
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    service = EvaluationService()
+    request = _request(tmp_path, candidate_id="cand", opponent_ids=("opp",), seeds=(1,))
+    first = service.run(request)
+    cell = first.cells[0]
+    result_path = cell.artifact_dir / "result.json"
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    data["replay"]["filename"] = "../../../outside.jsonl"
+    result_path.write_text(json.dumps(data), encoding="utf-8")
+
+    second = service.run(request)
+    assert second.cells[0].status == "corrupted"
+    assert second.cells[0].error_code == "resumed_result_mismatch"
+    assert "escapes" in second.cells[0].error_message
+
+
 def test_retry_failed_reexecutes_only_failed_cells(tmp_path):
     scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
     _write_python_agent(tmp_path, "opp", NOP_ACTION)

@@ -39,6 +39,7 @@ from battle_engine.agent_api import (
     LoadedPythonAgent,
     MatchContext,
     Observation,
+    local_source_fingerprint,
 )
 from battle_engine.agent_trace import (
     DecisionRecord,
@@ -240,6 +241,9 @@ class SupervisedPythonEntrantController:
             slot=slot,
             derived_seed=seed,
             source_digest=source_digest,
+            local_source_fingerprint=local_source_fingerprint(
+                getattr(entrant.python_spec, "dir", None)
+            ),
             pc=entrant.start & 0xFFFFFFFF,
             region=(entrant.start % self.config.arena_size,) * 2,
         )

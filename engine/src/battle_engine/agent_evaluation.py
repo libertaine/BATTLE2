@@ -29,7 +29,11 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Any
 
-from battle_engine.agent_api import AgentValidationError
+from battle_engine.agent_api import (
+    LOCAL_SOURCE_FINGERPRINT_VERSION,
+    AgentValidationError,
+    local_source_fingerprint,
+)
 from battle_engine.agent_test import (
     DEFAULT_TICKS,
     OPPONENT_SLOT,
@@ -46,7 +50,7 @@ from battle_engine.match_service import (
     NativeMatchResult,
     canonical_match_id,
 )
-from battle_engine.paths import get_data_root
+from battle_engine.paths import contained_path, get_data_root
 from battle_engine.project_info import get_project_info
 from battle_engine.replay import ReplayHeader, iter_replay
 from battle_engine.result_model import (
@@ -120,68 +124,6 @@ def source_digest(source_path: Path | None) -> str | None:
     return hashlib.sha256(source_path.read_bytes()).hexdigest()
 
 
-LOCAL_SOURCE_FINGERPRINT_VERSION = 1
-
-
-def local_source_fingerprint(agent_dir: Path | None) -> str | None:
-    """A versioned, deterministic fingerprint of every ``.py`` file local to
-    one agent's own directory (H3, see Completion Report "source-fingerprint
-    scope").
-
-    ``source_digest`` alone only covers the entry-point file; an imported
-    local helper or nested local package living elsewhere in the same
-    ``agents/<id>/`` directory can change an agent's actual behavior while
-    ``source_digest``/``match_id`` stay identical, letting a resumed
-    evaluation silently combine old and new behavior in one plan. This
-    closes that gap by hashing every ``*.py`` file under ``agent_dir``,
-    deterministically ordered by POSIX-style relative path so the result is
-    stable across platforms and directory-listing order.
-
-    Explicitly scoped and nothing more:
-
-    * never walks outside ``agent_dir`` (a symlinked file/directory that
-      resolves outside it is skipped, not followed -- the same containment
-      discipline as ``evaluation_history.resolve_contained_path``, M4);
-    * never descends into ``__pycache__``;
-    * never touches installed packages, system Python, or anything outside
-      this one directory -- this is not general provenance.
-
-    Returns ``None`` if ``agent_dir`` is absent, not a directory, or
-    contains no local ``.py`` files to hash (e.g. a non-Python agent).
-    """
-
-    if agent_dir is None or not agent_dir.is_dir():
-        return None
-    base = agent_dir.resolve()
-    entries: list[tuple[str, bytes]] = []
-    for candidate in base.rglob("*.py"):
-        if "__pycache__" in candidate.parts:
-            continue
-        try:
-            resolved = candidate.resolve()
-            resolved.relative_to(base)
-        except (OSError, ValueError):
-            continue  # a symlink escaping agent_dir -- never followed
-        if not resolved.is_file():
-            continue
-        try:
-            content = resolved.read_bytes()
-        except OSError:
-            continue
-        entries.append((candidate.relative_to(base).as_posix(), content))
-    if not entries:
-        return None
-    entries.sort(key=lambda item: item[0])
-    hasher = hashlib.sha256()
-    hasher.update(str(LOCAL_SOURCE_FINGERPRINT_VERSION).encode("ascii"))
-    for relative_path, content in entries:
-        hasher.update(b"\0")
-        hasher.update(relative_path.encode("utf-8"))
-        hasher.update(b"\0")
-        hasher.update(hashlib.sha256(content).digest())
-    return hasher.hexdigest()
-
-
 def agent_identity(spec: AgentSpec) -> dict[str, Any]:
     """A stable, hashable identity fingerprint for one resolved Python agent."""
 
@@ -192,15 +134,15 @@ def agent_identity(spec: AgentSpec) -> dict[str, Any]:
         "agent_version": spec.version,
         "entry_point": spec.entry_point,
         "source_sha256": source_digest(spec.source_path),
-        # H3: catches an imported local helper/nested local package edit
-        # that source_sha256 alone (entry-point file only) would miss. Only
-        # affects evaluation planning (evaluation_id/planned_identities/
-        # pre-execution drift detection) -- it is not, and cannot be,
-        # cross-checked against a completed match's own recorded metadata
-        # (NativeAgentResult.metadata has no concept of "every local file
-        # loaded"), so the B1 post-execution check remains scoped to
-        # source_sha256/api_version/agent_version alone. See the
-        # Completion Report for this known asymmetry.
+        # H3/B1(v0.7 closure pass): catches an imported local helper/nested
+        # local package edit that source_sha256 alone (entry-point file
+        # only) would miss. Cross-checked post-execution against the
+        # executor's own recorded ``NativeAgentResult.metadata`` -- which
+        # now carries a matching ``local_source_fingerprint`` computed by
+        # the executor itself at load time (``python_runtime``/
+        # ``supervised_runtime``), not a second independent disk read by
+        # this module -- see ``_ACTUAL_IDENTITY_FIELDS``/
+        # ``_post_execution_identity_drift``.
         "local_source_fingerprint": local_source_fingerprint(spec.dir),
     }
 
@@ -350,7 +292,23 @@ def _expected_cell_match_id(
 # in a real match's per-entrant ``NativeAgentResult.metadata`` (Python kind)
 # -- the intersection usable to cross-check "what the executor actually
 # loaded" against "what was planned" without re-reading disk a second time.
-_ACTUAL_IDENTITY_FIELDS = ("source_sha256", "api_version", "agent_version")
+# ``entry_point``/``local_source_fingerprint`` (v0.7 closure pass, B1): the
+# executor (``python_runtime``/``supervised_runtime``) now records both --
+# the entry point string it actually resolved and imported from, and a
+# fingerprint of every local ``.py`` file under the agent directory it
+# actually loaded from, computed once at load time and never re-derived --
+# so a same-file factory retarget (``agent.yaml`` entry point changed but
+# the source file's own bytes untouched, which ``source_sha256`` alone
+# cannot see) or a helper-file edit landing after this cell's pre-execution
+# drift check but before/during the executor's own load is still caught
+# here, against genuine executor evidence rather than a second live re-read.
+_ACTUAL_IDENTITY_FIELDS = (
+    "source_sha256",
+    "api_version",
+    "agent_version",
+    "entry_point",
+    "local_source_fingerprint",
+)
 
 
 def _post_execution_identity_drift(
@@ -374,15 +332,16 @@ def _post_execution_identity_drift(
     check runs.
 
     A residual TOCTOU remains and is documented rather than hidden: inside
-    ``python_runtime.PythonEntrantController.__init__``, the agent module is
-    loaded/executed first and its ``source_sha256`` is computed by a
-    *separate* subsequent ``read_bytes()`` call (see
-    ``PythonEntrantState.source_digest``). An edit landing in that narrow
-    window, or an edit that lands and is then reverted before this
-    function's inputs are captured, is not detectable from outside that
-    call. This module neither introduces nor can close that inner window;
-    it only guarantees that whatever the executor itself recorded as having
-    run is cross-checked against the frozen plan.
+    ``python_runtime.PythonEntrantController.__init__`` (and its supervised
+    counterpart), the agent module is loaded/executed first and its
+    ``source_sha256``/``local_source_fingerprint`` are each computed by a
+    *separate* subsequent read (see ``PythonEntrantState.source_digest``/
+    ``PythonEntrantState.local_source_fingerprint``). An edit landing in
+    that narrow window, or an edit that lands and is then reverted before
+    this function's inputs are captured, is not detectable from outside
+    that call. This module neither introduces nor can close that inner
+    window; it only guarantees that whatever the executor itself recorded
+    as having run is cross-checked against the frozen plan.
     """
 
     for role, agent_id, slot in (
@@ -917,6 +876,42 @@ def _cell_from_state(cell: EvaluationCell, previous: Mapping[str, Any]) -> Evalu
     )
 
 
+def _checkpoint_cells(
+    completed: Sequence[EvaluationCell],
+    matrix: Sequence[EvaluationCell],
+    prior_cells: Mapping[str, Any],
+) -> list[EvaluationCell]:
+    """B2: a checkpoint must never be less complete than the durable state
+    already on disk.
+
+    ``completed`` covers only the matrix prefix *this run's own loop* has
+    reached so far -- during a retry, that is strictly less than every cell
+    a *prior* run already durably persisted (e.g. seed 2 completed in an
+    earlier run, then seed 1 is retried in this one; ``completed`` after
+    seed 1's retry contains only seed 1). Writing ``completed`` verbatim as
+    a mid-loop checkpoint would silently drop every already-durable cell
+    this run's loop has not reached *yet*.
+
+    This backfills exactly those cells: any matrix cell not already covered
+    by ``completed`` that has a prior persisted entry keeps that entry
+    verbatim (reconstructed via ``_cell_from_state``), in matrix order. A
+    cell with no prior durable state at all (genuinely never before
+    recorded) is left out entirely -- never fabricated as a placeholder --
+    so an ordinary first-ever run's intermediate checkpoints are byte-for-
+    byte unaffected (this is a no-op whenever ``prior_cells`` is empty).
+    """
+
+    processed_ids = {cell.schedule_id for cell in completed}
+    merged = list(completed)
+    for cell in matrix:
+        if cell.schedule_id in processed_ids:
+            continue
+        previous = prior_cells.get(cell.schedule_id)
+        if previous is not None:
+            merged.append(_cell_from_state(cell, previous))
+    return merged
+
+
 def _resumed_cell_mismatch(
     envelope: ResultEnvelope, cell: EvaluationCell, expected_match_id: str
 ) -> str | None:
@@ -936,7 +931,17 @@ def _resumed_cell_mismatch(
         )
     if envelope.replay is None:
         return "result has no replay reference, but a native Python match result always has one"
-    replay_path = cell.artifact_dir / envelope.replay.filename
+    # H5: the replay filename comes from a persisted result.json this
+    # module does not control -- resolve it through the same containment
+    # discipline as any other nested artifact path (M4) rather than a bare
+    # join, which a `../`, absolute, or symlink-escaping filename could
+    # otherwise walk outside the cell's own artifact directory.
+    replay_path = contained_path(cell.artifact_dir, envelope.replay.filename)
+    if replay_path is None:
+        return (
+            f"result replay filename {envelope.replay.filename!r} escapes the "
+            "cell's artifact directory"
+        )
     try:
         verify_replay_digest(envelope, replay_path)
         header = next(
@@ -1106,7 +1111,7 @@ class EvaluationService:
                     state_path,
                     evaluation_id,
                     request,
-                    completed,
+                    _checkpoint_cells(completed, matrix, prior_cells),
                     matrix,
                     planned_identities=planned_identities,
                     conditions=conditions,
@@ -1149,7 +1154,7 @@ class EvaluationService:
             state_path,
             evaluation_id,
             request,
-            completed,
+            _checkpoint_cells(completed, matrix, prior_cells),
             matrix,
             aggregates=aggregates,
             comparison=comparison,

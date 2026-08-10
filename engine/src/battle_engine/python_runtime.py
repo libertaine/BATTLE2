@@ -19,6 +19,7 @@ from battle_engine.agent_api import (
     MatchContext,
     Observation,
     load_python_agent,
+    local_source_fingerprint,
 )
 from battle_engine.agent_trace import (
     DecisionRecord,
@@ -291,6 +292,7 @@ class PythonEntrantState:
     slot: int = 0
     derived_seed: int = 0
     source_digest: str = ""
+    local_source_fingerprint: str | None = None
     pc: int = 0
     register_a: int = 0
     register_p: int = 0
@@ -483,6 +485,9 @@ class PythonEntrantController:
                 slot=slot,
                 derived_seed=seed,
                 source_digest=hashlib.sha256(loaded.source_path.read_bytes()).hexdigest(),
+                local_source_fingerprint=local_source_fingerprint(
+                    getattr(entrant.python_spec, "dir", None)
+                ),
                 pc=entrant.start & 0xFFFFFFFF,
                 region=(entrant.start % config.arena_size,) * 2,
             )
