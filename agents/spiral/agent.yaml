@@ -1,0 +1,10 @@
+{
+  "name": "spiral",
+  "display": "Spiral (Starter)",
+  "description": "Alternative expanding-stride strategy for broad core coverage.",
+  "defaults": {
+    "step": 7,
+    "delta": 3,
+    "byte": 165
+  }
+}

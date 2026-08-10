@@ -1,0 +1,6 @@
+{
+  "name": "runner",
+  "display": "Runner (Starter)",
+  "description": "Evasive baseline that continuously advances through core.",
+  "defaults": {}
+}

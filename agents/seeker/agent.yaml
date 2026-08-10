@@ -1,0 +1,10 @@
+{
+  "name": "seeker",
+  "display": "Seeker (Starter)",
+  "description": "Aggressive scanner that searches for a target byte and attacks matches.",
+  "defaults": {
+    "stride": 17,
+    "target": 0,
+    "byte": 255
+  }
+}
