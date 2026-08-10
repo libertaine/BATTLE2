@@ -116,12 +116,38 @@ def test_python_agent_names_reflects_catalog():
     panel = AgentDevelopmentPanel()
     try:
         rows = [
-            AgentRow(name="a", path="agents/a", blob_path=None, meta={"kind": "python"}),
-            AgentRow(name="b", path="agents/b", blob_path=None, meta={"kind": "python"}),
-            AgentRow(name="vm", path="agents/vm", blob_path=None, meta={"kind": "builtin"}),
+            AgentRow(name="A", path="agents/a", blob_path=None, meta={"kind": "python"}, agent_id="a"),
+            AgentRow(name="B", path="agents/b", blob_path=None, meta={"kind": "python"}, agent_id="b"),
+            AgentRow(name="vm", path="agents/vm", blob_path=None, meta={"kind": "builtin"}, agent_id="vm"),
         ]
         panel.setAgents(rows)
-        assert panel.python_agent_names() == ["a", "b"]
+        assert panel.python_agent_names() == [("A", "a"), ("B", "b")]
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
+def test_python_agent_names_returns_discovery_id_when_display_name_differs():
+    """Regression for docs/specs/evaluation_history.md Sec 17: a manifest's
+    display name (``AgentRow.name``) must never be mistaken for its discovery
+    id (``AgentRow.agent_id``, == directory name)."""
+    _make_app()
+    from app.services.agent_catalog import AgentRow
+    from app.views.development import AgentDevelopmentPanel
+
+    panel = AgentDevelopmentPanel()
+    try:
+        rows = [
+            AgentRow(
+                name="My Fancy Candidate",
+                path="agents/candidate_dir",
+                blob_path=None,
+                meta={"kind": "python"},
+                agent_id="candidate_dir",
+            ),
+        ]
+        panel.setAgents(rows)
+        assert panel.python_agent_names() == [("My Fancy Candidate", "candidate_dir")]
     finally:
         panel.deleteLater()
 
@@ -137,7 +163,7 @@ def test_evaluation_dialog_collects_fields(tmp_path):
     from app.views.evaluation import EvaluationDialog
 
     dialog = EvaluationDialog(
-        ["candidate", "opponent_a", "opponent_b"],
+        [("Candidate", "candidate"), ("Opponent A", "opponent_a"), ("Opponent B", "opponent_b")],
         default_candidate="candidate",
         default_output=tmp_path / "out",
     )
@@ -149,7 +175,7 @@ def test_evaluation_dialog_collects_fields(tmp_path):
 
         for index in range(dialog.opponentsList.count()):
             item = dialog.opponentsList.item(index)
-            if item.text() in ("opponent_a", "opponent_b"):
+            if item.text() in ("Opponent A", "Opponent B"):
                 item.setSelected(True)
         assert set(dialog.opponent_ids()) == {"opponent_a", "opponent_b"}
 
@@ -163,12 +189,36 @@ def test_evaluation_dialog_collects_fields(tmp_path):
 
 
 @pytest.mark.gui
+def test_evaluation_dialog_returns_discovery_id_when_display_name_differs(tmp_path):
+    """Regression: selecting an agent whose display text differs from its
+    discovery id must still return the discovery id (Sec 17)."""
+    _make_app()
+    from app.views.evaluation import EvaluationDialog
+
+    dialog = EvaluationDialog(
+        [("My Fancy Candidate", "candidate_dir"), ("Some Opponent", "opponent_dir")],
+        default_candidate="candidate_dir",
+        default_output=tmp_path / "out",
+    )
+    try:
+        assert dialog.candidate_id() == "candidate_dir"
+        item = dialog.opponentsList.item(1)
+        assert item.text() == "Some Opponent"
+        item.setSelected(True)
+        assert dialog.opponent_ids() == ("opponent_dir",)
+        dialog.baselineCombo.setCurrentIndex(dialog.baselineCombo.findData("opponent_dir"))
+        assert dialog.baseline_id() == "opponent_dir"
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
 def test_evaluation_dialog_defaults_to_no_preselected_candidate_when_absent(tmp_path):
     _make_app()
     from app.views.evaluation import EvaluationDialog
 
     dialog = EvaluationDialog(
-        ["only_agent"], default_candidate=None, default_output=tmp_path / "out"
+        [("Only Agent", "only_agent")], default_candidate=None, default_output=tmp_path / "out"
     )
     try:
         assert dialog.candidate_id() == "only_agent"
@@ -539,6 +589,104 @@ def test_designer_evaluation_test_in_agent_lab_launches_agents_test(monkeypatch,
         assert "opponent" in captured["command"]
         assert "7" in captured["command"]
         assert "40" in captured["command"]
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_evaluate_uses_discovery_id_not_display_name_when_they_differ(monkeypatch, tmp_path):
+    """End-to-end regression for docs/specs/evaluation_history.md Sec 17:
+    a real on-disk agent whose manifest ``display`` differs from its
+    directory (discovery id) must reach ``bytefray agents evaluate`` by
+    discovery id, via the real (not mocked) ``EvaluationDialog``."""
+    _make_app()
+    from app.agent_designer import AgentDesigner
+
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+
+    def _write_agent(directory_name: str, display_name: str) -> None:
+        directory = data_root / "agents" / directory_name
+        directory.mkdir(parents=True)
+        (directory / "agent.yaml").write_text(
+            json.dumps(
+                {
+                    "display": display_name,
+                    "kind": "python",
+                    "api_version": 1,
+                    "entrypoint": "agent.py:create_agent",
+                    "version": "1.0",
+                }
+            ),
+            encoding="utf-8",
+        )
+        (directory / "agent.py").write_text(
+            "from battle_engine.agent_api import ActionKind, AgentAction\n"
+            "class Agent:\n"
+            "    def reset(self, context): pass\n"
+            "    def act(self, observation): return AgentAction(ActionKind.NOP)\n"
+            "def create_agent(): return Agent()\n",
+            encoding="utf-8",
+        )
+
+    _write_agent("candidate_dir", "My Fancy Candidate")
+    _write_agent("opponent_dir", "Some Opponent")
+
+    designer = AgentDesigner()
+    try:
+        designer.refresh_agents()
+        designer.development.selectAgent("My Fancy Candidate")
+
+        class _RealDialogSpy:
+            """Wraps the real EvaluationDialog, auto-selecting the opponent."""
+
+            def __init__(self, agents, **kwargs):
+                from app.views.evaluation import EvaluationDialog
+
+                self._dialog = EvaluationDialog(agents, **kwargs)
+                for index in range(self._dialog.opponentsList.count()):
+                    item = self._dialog.opponentsList.item(index)
+                    if item.text() == "Some Opponent":
+                        item.setSelected(True)
+                self._dialog.seedsEdit.setText("1")
+
+            def exec(self):
+                return True
+
+            def __getattr__(self, item):
+                return getattr(self._dialog, item)
+
+        monkeypatch.setattr("app.agent_designer.EvaluationDialog", _RealDialogSpy)
+
+        started = []
+
+        class _FakeProc:
+            def start(self):
+                started.append(True)
+
+        captured = {}
+
+        def _fake_start_process(command, env, working_directory, *, label):
+            captured["command"] = command
+            designer._proc = _FakeProc()
+            return designer._proc
+
+        monkeypatch.setattr(designer, "_start_process", _fake_start_process)
+
+        designer._on_evaluate()
+
+        assert started == [True]
+        command = captured["command"]
+        joined = " ".join(command)
+        assert "candidate_dir" in command  # the candidate id is its own positional argument
+        assert "opponent_dir" in joined  # joined into the comma-separated --opponents value
+        assert "My Fancy Candidate" not in joined
+        assert "Some Opponent" not in joined
+        # The fixed-output collision fix: this plan's own content-addressed
+        # default, not a single fixed "designer-evaluation" path shared by
+        # every plan.
+        assert designer._evaluation_output.name != "designer-evaluation"
+        assert designer._evaluation_output.parent.name == "evaluations"
     finally:
         designer.deleteLater()
 

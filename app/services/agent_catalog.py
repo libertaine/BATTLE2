@@ -14,6 +14,13 @@ class AgentRow:
     path: str
     blob_path: Optional[str]
     meta: Dict[str, Any]
+    # Discovery id (``resolve_agent``'s key, == directory name) -- distinct
+    # from ``name`` (the display name). Every control that ultimately feeds
+    # an id to a CLI invocation (evaluation, test, validate) must use this
+    # field, never ``name``. Defaults to "" only for legacy positional
+    # construction that predates this field; ``AgentCatalog.list_agents``
+    # always sets it from ``spec.name``.
+    agent_id: str = ""
 
 
 class AgentCatalog:
@@ -56,6 +63,7 @@ class AgentCatalog:
                     path=str(spec.dir),
                     blob_path=blob_path,
                     meta=meta,
+                    agent_id=spec.name,
                 )
             )
         return rows

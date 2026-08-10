@@ -355,9 +355,15 @@ class AgentDevelopmentPanel(QWidget):
         self.timeoutSpin.setEnabled(not busy)
         self._update_enablement()
 
-    def python_agent_names(self) -> list[str]:
-        """Every discovered Python agent's display name, for the Evaluate dialog."""
-        return [row.name for row in self._rows]
+    def python_agent_names(self) -> list[tuple[str, str]]:
+        """Every discovered Python agent as ``(display name, discovery id)``.
+
+        The Evaluate dialog must display ``row.name`` (display) but always
+        hand ``row.agent_id`` (discovery id) back to the CLI --
+        ``resolve_agent`` looks agents up by discovery id, not display name,
+        and the two can differ (docs/specs/evaluation_history.md Sec 17).
+        """
+        return [(row.name, row.agent_id) for row in self._rows]
 
     def showValidating(self, agent_id: str) -> None:
         self.statusLabel.setStyleSheet(_NEUTRAL_STYLE)

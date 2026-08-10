@@ -1,0 +1,264 @@
+"""Common, Qt-free domain model for evaluation history (docs/specs/evaluation_history.md Sec 11/12).
+
+Shared by the v1 and v2 adapters, discovery, and comparison layers. Deliberately
+distinguishes recorded/recovered/unknown/conflicting/verified evidence rather
+than silently defaulting an absent legacy field to a current-schema value.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+from battle_engine.agent_evaluation import ComparisonEntry, EvaluationCell, SubjectAggregate
+
+
+class FieldConfidence(str, Enum):
+    RECORDED = "recorded"
+    RECOVERED = "recovered"
+    UNKNOWN = "unknown"
+    CONFLICTING = "conflicting"
+    VERIFIED = "verified"
+
+
+@dataclass(frozen=True)
+class ConfidenceValue:
+    value: Any
+    confidence: FieldConfidence
+
+    @staticmethod
+    def recorded(value: Any) -> "ConfidenceValue":
+        return ConfidenceValue(value, FieldConfidence.RECORDED)
+
+    @staticmethod
+    def unknown() -> "ConfidenceValue":
+        return ConfidenceValue(None, FieldConfidence.UNKNOWN)
+
+    @staticmethod
+    def recovered(value: Any) -> "ConfidenceValue":
+        return ConfidenceValue(value, FieldConfidence.RECOVERED)
+
+    def to_json(self) -> dict[str, Any]:
+        return {"value": self.value, "confidence": self.confidence.value}
+
+
+class HealthCode(str, Enum):
+    HEALTHY = "healthy"
+    FINISHED_WITH_INIT_FAILURES = "finished_with_init_failures"
+    FINISHED_WITH_FAILED_CELLS = "finished_with_failed_cells"
+    FINISHED_WITH_CORRUPTED_CELLS = "finished_with_corrupted_cells"
+    UNFINISHED = "unfinished"
+    SOURCE_DRIFT_ABORTED = "source_drift_aborted"
+    MALFORMED_JSON = "malformed_json"
+    WRONG_SCHEMA = "wrong_schema"
+    UNSUPPORTED_VERSION = "unsupported_version"
+    INVALID_REQUIRED_FIELDS = "invalid_required_fields"
+    MISSING_NESTED_RESULT = "missing_nested_result"
+    MISSING_REPLAY = "missing_replay"
+    REPLAY_DIGEST_MISMATCH = "replay_digest_mismatch"
+    RESULT_MATRIX_MISMATCH = "result_matrix_mismatch"
+    UNKNOWN_LEGACY_CONDITION = "unknown_legacy_condition"
+    NON_PORTABLE_ABSOLUTE_PATH = "non_portable_absolute_path"
+    DUPLICATE_IDENTITY_LOCATION = "duplicate_identity_location"
+
+
+@dataclass(frozen=True)
+class HealthReport:
+    codes: tuple[HealthCode, ...] = ()
+    detail: tuple[str, ...] = ()
+    verified: bool = False
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "codes": [code.value for code in self.codes],
+            "detail": list(self.detail),
+            "verified": self.verified,
+        }
+
+
+class ArtifactReadError(Exception):
+    """A hard discovery/read failure -- caught by discovery, never let escape it."""
+
+    def __init__(self, message: str, *, code: HealthCode):
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class ArtifactLocation:
+    evaluation_json_path: Path
+    directory: Path
+    file_modified_at: str  # ISO UTC; explicitly labeled fallback, never "created_at"
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "evaluation_json_path": str(self.evaluation_json_path),
+            "directory": str(self.directory),
+            "file_modified_at": self.file_modified_at,
+        }
+
+
+@dataclass(frozen=True)
+class SchemaSupport:
+    schema: str
+    schema_version: int
+    supported: bool
+    reason: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "schema_version": self.schema_version,
+            "supported": self.supported,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class AdaptedCell:
+    schedule_id: str
+    subject_role: str
+    subject_id: str
+    opponent_id: str
+    seed: int
+    status: str
+    outcome: str | None
+    match_id: str | None
+    artifact_dir: str  # relative to the evaluation directory, as recorded
+    score_subject: float | None
+    score_opponent: float | None
+    territory_subject: float | None
+    territory_opponent: float | None
+    opponent_index: ConfidenceValue
+    seed_index: ConfidenceValue
+    condition_occurrence_index: ConfidenceValue
+    condition_fingerprint: ConfidenceValue
+    opponent_identity: ConfidenceValue  # dict | None
+
+    @property
+    def is_scored(self) -> bool:
+        return self.status == "completed" and self.outcome in ("win", "loss", "tie")
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "schedule_id": self.schedule_id,
+            "subject_role": self.subject_role,
+            "subject_id": self.subject_id,
+            "opponent_id": self.opponent_id,
+            "seed": self.seed,
+            "status": self.status,
+            "outcome": self.outcome,
+            "match_id": self.match_id,
+            "artifact_dir": self.artifact_dir,
+            "score_subject": self.score_subject,
+            "score_opponent": self.score_opponent,
+            "territory_subject": self.territory_subject,
+            "territory_opponent": self.territory_opponent,
+            "opponent_index": self.opponent_index.to_json(),
+            "seed_index": self.seed_index.to_json(),
+            "condition_occurrence_index": self.condition_occurrence_index.to_json(),
+            "condition_fingerprint": self.condition_fingerprint.to_json(),
+            "opponent_identity": self.opponent_identity.to_json(),
+        }
+
+
+@dataclass(frozen=True)
+class EvaluationSummary:
+    location: ArtifactLocation
+    schema: SchemaSupport
+    evaluation_id: str
+    candidate_id: str
+    baseline_id: str | None
+    opponent_ids: tuple[str, ...]
+    seeds: tuple[int, ...]
+    ticks: int
+    matrix_size: int
+    lifecycle_state: ConfidenceValue
+    created_at: ConfidenceValue
+    finished_at: ConfidenceValue
+    rules_compatibility_id: ConfidenceValue
+    candidate_identity: ConfidenceValue
+    baseline_identity: ConfidenceValue
+    effective_conditions: ConfidenceValue
+    cells: tuple[AdaptedCell, ...]
+    health: HealthReport
+    aggregates_recomputed: tuple[SubjectAggregate, ...]
+    comparison_recomputed: tuple[ComparisonEntry, ...]
+
+    def to_json(self) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        return {
+            "location": self.location.to_json(),
+            "schema": self.schema.to_json(),
+            "evaluation_id": self.evaluation_id,
+            "candidate_id": self.candidate_id,
+            "baseline_id": self.baseline_id,
+            "opponent_ids": list(self.opponent_ids),
+            "seeds": list(self.seeds),
+            "ticks": self.ticks,
+            "matrix_size": self.matrix_size,
+            "lifecycle_state": self.lifecycle_state.to_json(),
+            "created_at": self.created_at.to_json(),
+            "finished_at": self.finished_at.to_json(),
+            "rules_compatibility_id": self.rules_compatibility_id.to_json(),
+            "candidate_identity": self.candidate_identity.to_json(),
+            "baseline_identity": self.baseline_identity.to_json(),
+            "effective_conditions": self.effective_conditions.to_json(),
+            "cells": [cell.to_json() for cell in self.cells],
+            "health": self.health.to_json(),
+            "aggregates_recomputed": [asdict(row) for row in self.aggregates_recomputed],
+            "comparison_recomputed": [asdict(row) for row in self.comparison_recomputed],
+        }
+
+
+def file_modified_at(path: Path) -> str:
+    """Filesystem mtime, UTC-normalized -- explicitly a fallback, never ``created_at``."""
+
+    from datetime import datetime, timezone
+
+    return (
+        datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def evaluation_cells_from_raw(
+    raw_cells: list[dict[str, Any]], base_dir: Path
+) -> tuple[EvaluationCell, ...]:
+    """Rebuild real ``EvaluationCell`` objects from parsed JSON.
+
+    Lets the adapters reuse ``agent_evaluation.aggregate_cells``/
+    ``compare_candidate_baseline`` unchanged instead of a second, drifting
+    aggregation implementation (docs/specs/evaluation_history.md Sec 11's
+    "derived fields must never override contradictory canonical cell
+    state" -- satisfied by always recomputing through the one existing
+    function rather than trusting a stored ``aggregates``/``comparison``
+    block).
+    """
+
+    known_fields = {f for f in EvaluationCell.__dataclass_fields__}
+    cells = []
+    for raw in raw_cells:
+        kwargs = {key: value for key, value in raw.items() if key in known_fields}
+        kwargs["artifact_dir"] = base_dir / str(raw.get("artifact_dir", "."))
+        cells.append(EvaluationCell(**kwargs))
+    return tuple(cells)
+
+
+__all__ = [
+    "evaluation_cells_from_raw",
+    "file_modified_at",
+    "AdaptedCell",
+    "ArtifactLocation",
+    "ArtifactReadError",
+    "ConfidenceValue",
+    "EvaluationSummary",
+    "FieldConfidence",
+    "HealthCode",
+    "HealthReport",
+    "SchemaSupport",
+]

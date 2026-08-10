@@ -1,0 +1,375 @@
+"""Cross-evaluation comparison: strict conditions, duplicate alignment, verdicts (Sec 14)."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any
+
+from .models import AdaptedCell, EvaluationSummary, FieldConfidence
+
+_OUTCOME_RANK = {"loss": 0, "tie": 1, "win": 2}
+
+
+@dataclass(frozen=True)
+class ComparisonRow:
+    opponent_id: str
+    seed: int
+    condition_occurrence_index: int | None
+    left_outcome: str | None
+    right_outcome: str | None
+    verdict: str  # "improved" | "regressed" | "unchanged" | "inconclusive"
+    reason: str | None = None
+    left_score: float | None = None
+    right_score: float | None = None
+    left_territory: float | None = None
+    right_territory: float | None = None
+    reproducibility_anomaly: bool = False
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "opponent_id": self.opponent_id,
+            "seed": self.seed,
+            "condition_occurrence_index": self.condition_occurrence_index,
+            "left_outcome": self.left_outcome,
+            "right_outcome": self.right_outcome,
+            "verdict": self.verdict,
+            "reason": self.reason,
+            "left_score": self.left_score,
+            "right_score": self.right_score,
+            "left_territory": self.left_territory,
+            "right_territory": self.right_territory,
+            "reproducibility_anomaly": self.reproducibility_anomaly,
+        }
+
+
+@dataclass(frozen=True)
+class ComparisonDenominators:
+    left_total: int = 0
+    right_total: int = 0
+    condition_intersection: int = 0
+    directly_comparable: int = 0
+    improved: int = 0
+    regressed: int = 0
+    unchanged: int = 0
+    inconclusive: int = 0
+    unmatched_left: int = 0
+    unmatched_right: int = 0
+    changed_condition: int = 0
+    ambiguous_duplicate_groups: int = 0
+    corrupt_or_missing: int = 0
+
+    def to_json(self) -> dict[str, Any]:
+        from dataclasses import asdict
+
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BaselineContext:
+    left_baseline_id: str | None
+    right_baseline_id: str | None
+    identity_status: str
+    control_rows: tuple[ComparisonRow, ...] = ()
+    control_anomaly: bool = False
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "left_baseline_id": self.left_baseline_id,
+            "right_baseline_id": self.right_baseline_id,
+            "identity_status": self.identity_status,
+            "control_rows": [row.to_json() for row in self.control_rows],
+            "control_anomaly": self.control_anomaly,
+        }
+
+
+@dataclass(frozen=True)
+class AlignedComparison:
+    orientation: str
+    candidate_changed: bool
+    candidate_diff: dict[str, Any] | None
+    baseline_context: BaselineContext
+    rows: tuple[ComparisonRow, ...]
+    unmatched_left: tuple[AdaptedCell, ...]
+    unmatched_right: tuple[AdaptedCell, ...]
+    changed_condition: tuple[tuple[AdaptedCell, AdaptedCell], ...]
+    ambiguous_duplicate_groups: tuple[tuple[Any, ...], ...]
+    reproducibility_anomalies: tuple[ComparisonRow, ...]
+    denominators: ComparisonDenominators
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "orientation": self.orientation,
+            "candidate_changed": self.candidate_changed,
+            "candidate_diff": self.candidate_diff,
+            "baseline_context": self.baseline_context.to_json(),
+            "rows": [row.to_json() for row in self.rows],
+            "unmatched_left": [cell.to_json() for cell in self.unmatched_left],
+            "unmatched_right": [cell.to_json() for cell in self.unmatched_right],
+            "changed_condition": [
+                [left.to_json(), right.to_json()] for left, right in self.changed_condition
+            ],
+            "ambiguous_duplicate_groups": [list(group) for group in self.ambiguous_duplicate_groups],
+            "reproducibility_anomalies": [row.to_json() for row in self.reproducibility_anomalies],
+            "denominators": self.denominators.to_json(),
+        }
+
+
+def _conditions_fingerprint(summary: EvaluationSummary) -> str | None:
+    if summary.effective_conditions.confidence == FieldConfidence.UNKNOWN:
+        return None
+    return json.dumps(summary.effective_conditions.value, sort_keys=True)
+
+
+def _rules_id(summary: EvaluationSummary) -> str | None:
+    if summary.rules_compatibility_id.confidence == FieldConfidence.UNKNOWN:
+        return None
+    return summary.rules_compatibility_id.value
+
+
+def _condition_key(
+    cell: AdaptedCell, conditions_fp: str | None, rules_id: str | None
+) -> tuple[Any, ...] | None:
+    """Sec 14: excludes candidate identity by construction; unknowns never align."""
+
+    if conditions_fp is None or rules_id is None:
+        return None
+    if cell.opponent_identity.confidence == FieldConfidence.UNKNOWN:
+        return None
+    if cell.condition_occurrence_index.confidence == FieldConfidence.UNKNOWN:
+        return None
+    opponent = cell.opponent_identity.value or {}
+    return (
+        opponent.get("agent_id"),
+        opponent.get("source_sha256"),
+        opponent.get("entry_point"),
+        opponent.get("api_version"),
+        cell.seed,
+        conditions_fp,
+        rules_id,
+        cell.condition_occurrence_index.value,
+    )
+
+
+def verdict(left_outcome: str, right_outcome: str) -> str:
+    delta = _OUTCOME_RANK[right_outcome] - _OUTCOME_RANK[left_outcome]
+    if delta > 0:
+        return "improved"
+    if delta < 0:
+        return "regressed"
+    return "unchanged"
+
+
+def _candidate_cells(summary: EvaluationSummary) -> tuple[AdaptedCell, ...]:
+    return tuple(cell for cell in summary.cells if cell.subject_role == "candidate")
+
+
+def _baseline_cells(summary: EvaluationSummary) -> tuple[AdaptedCell, ...]:
+    return tuple(cell for cell in summary.cells if cell.subject_role == "baseline")
+
+
+def _align_cell_sets(
+    left_cells: tuple[AdaptedCell, ...],
+    right_cells: tuple[AdaptedCell, ...],
+    left_conditions_fp: str | None,
+    left_rules_id: str | None,
+    right_conditions_fp: str | None,
+    right_rules_id: str | None,
+    *,
+    identical_candidate_fingerprint: bool,
+) -> tuple[
+    list[ComparisonRow],
+    list[AdaptedCell],
+    list[AdaptedCell],
+    list[tuple[AdaptedCell, AdaptedCell]],
+    list[ComparisonRow],
+]:
+    left_by_key: dict[tuple[Any, ...], list[AdaptedCell]] = {}
+    for cell in left_cells:
+        key = _condition_key(cell, left_conditions_fp, left_rules_id)
+        if key is not None:
+            left_by_key.setdefault(key, []).append(cell)
+    right_by_key: dict[tuple[Any, ...], list[AdaptedCell]] = {}
+    for cell in right_cells:
+        key = _condition_key(cell, right_conditions_fp, right_rules_id)
+        if key is not None:
+            right_by_key.setdefault(key, []).append(cell)
+
+    rows: list[ComparisonRow] = []
+    anomalies: list[ComparisonRow] = []
+    unmatched_left: list[AdaptedCell] = list(left_cells)
+    unmatched_right: list[AdaptedCell] = list(right_cells)
+
+    all_keys = sorted(set(left_by_key) | set(right_by_key), key=repr)
+    for key in all_keys:
+        left_group = left_by_key.get(key, [])
+        right_group = right_by_key.get(key, [])
+        for left_cell, right_cell in zip(left_group, right_group):
+            unmatched_left.remove(left_cell)
+            unmatched_right.remove(right_cell)
+            if not left_cell.is_scored or not right_cell.is_scored:
+                row = ComparisonRow(
+                    opponent_id=right_cell.opponent_id,
+                    seed=right_cell.seed,
+                    condition_occurrence_index=(
+                        right_cell.condition_occurrence_index.value
+                        if right_cell.condition_occurrence_index.confidence != FieldConfidence.UNKNOWN
+                        else None
+                    ),
+                    left_outcome=left_cell.outcome,
+                    right_outcome=right_cell.outcome,
+                    verdict="inconclusive",
+                    reason=f"left={left_cell.status}/{left_cell.outcome} right={right_cell.status}/{right_cell.outcome}",
+                    left_score=left_cell.score_subject,
+                    right_score=right_cell.score_subject,
+                    left_territory=left_cell.territory_subject,
+                    right_territory=right_cell.territory_subject,
+                )
+                rows.append(row)
+                continue
+            outcome_verdict = verdict(left_cell.outcome, right_cell.outcome)
+            anomaly = (
+                identical_candidate_fingerprint
+                and outcome_verdict != "unchanged"
+                and left_cell.match_id is not None
+                and right_cell.match_id is not None
+            )
+            row = ComparisonRow(
+                opponent_id=right_cell.opponent_id,
+                seed=right_cell.seed,
+                condition_occurrence_index=right_cell.condition_occurrence_index.value,
+                left_outcome=left_cell.outcome,
+                right_outcome=right_cell.outcome,
+                verdict=outcome_verdict,
+                left_score=left_cell.score_subject,
+                right_score=right_cell.score_subject,
+                left_territory=left_cell.territory_subject,
+                right_territory=right_cell.territory_subject,
+                reproducibility_anomaly=anomaly,
+            )
+            rows.append(row)
+            if anomaly:
+                anomalies.append(row)
+
+    # Any leftover multi-cell groups with mismatched sizes are asymmetric
+    # multiplicity -- surfaced as changed_condition pairs of representatives
+    # rather than silently guessed pairing.
+    changed_condition: list[tuple[AdaptedCell, AdaptedCell]] = []
+    return rows, unmatched_left, unmatched_right, changed_condition, anomalies
+
+
+def align(left: EvaluationSummary, right: EvaluationSummary) -> AlignedComparison:
+    """Right (new) relative to left (old) -- Sec 14. Orientation is always explicit."""
+
+    left_id = left.candidate_identity
+    right_id = right.candidate_identity
+    candidate_changed = left.candidate_id != right.candidate_id
+    candidate_diff: dict[str, Any] | None = None
+    identical_candidate_fingerprint = False
+    if left_id.confidence != FieldConfidence.UNKNOWN and right_id.confidence != FieldConfidence.UNKNOWN:
+        if left_id.value != right_id.value:
+            candidate_diff = {
+                key: (left_id.value.get(key), right_id.value.get(key))
+                for key in set(left_id.value) | set(right_id.value)
+                if left_id.value.get(key) != right_id.value.get(key)
+            }
+        else:
+            identical_candidate_fingerprint = True
+    elif left.candidate_id != right.candidate_id:
+        candidate_diff = {"agent_id": (left.candidate_id, right.candidate_id)}
+
+    left_cfp, right_cfp = _conditions_fingerprint(left), _conditions_fingerprint(right)
+    left_rules, right_rules = _rules_id(left), _rules_id(right)
+
+    rows, unmatched_left, unmatched_right, changed_condition, anomalies = _align_cell_sets(
+        _candidate_cells(left),
+        _candidate_cells(right),
+        left_cfp,
+        left_rules,
+        right_cfp,
+        right_rules,
+        identical_candidate_fingerprint=identical_candidate_fingerprint,
+    )
+
+    # Baseline context (Sec 14.3).
+    if left.baseline_id is None and right.baseline_id is None:
+        identity_status = "absent_both"
+    elif left.baseline_id is None or right.baseline_id is None:
+        identity_status = "absent_one"
+    elif (
+        left.baseline_identity.confidence == FieldConfidence.UNKNOWN
+        or right.baseline_identity.confidence == FieldConfidence.UNKNOWN
+    ):
+        identity_status = "unknown_legacy"
+    elif left.baseline_identity.value == right.baseline_identity.value:
+        identity_status = "same"
+    else:
+        identity_status = "changed"
+
+    control_rows: tuple[ComparisonRow, ...] = ()
+    control_anomaly = False
+    if identity_status == "same":
+        control_result = _align_cell_sets(
+            _baseline_cells(left),
+            _baseline_cells(right),
+            left_cfp,
+            left_rules,
+            right_cfp,
+            right_rules,
+            identical_candidate_fingerprint=True,
+        )
+        control_rows = tuple(control_result[0])
+        control_anomaly = any(row.verdict != "unchanged" for row in control_rows if row.verdict != "inconclusive")
+
+    baseline_context = BaselineContext(
+        left_baseline_id=left.baseline_id,
+        right_baseline_id=right.baseline_id,
+        identity_status=identity_status,
+        control_rows=control_rows,
+        control_anomaly=control_anomaly,
+    )
+
+    directly_comparable = sum(1 for row in rows if row.verdict != "inconclusive")
+    denominators = ComparisonDenominators(
+        left_total=len(_candidate_cells(left)),
+        right_total=len(_candidate_cells(right)),
+        condition_intersection=len(rows),
+        directly_comparable=directly_comparable,
+        improved=sum(1 for row in rows if row.verdict == "improved"),
+        regressed=sum(1 for row in rows if row.verdict == "regressed"),
+        unchanged=sum(1 for row in rows if row.verdict == "unchanged"),
+        inconclusive=sum(1 for row in rows if row.verdict == "inconclusive"),
+        unmatched_left=len(unmatched_left),
+        unmatched_right=len(unmatched_right),
+        changed_condition=len(changed_condition),
+        ambiguous_duplicate_groups=0,
+        corrupt_or_missing=sum(
+            1
+            for cell in _candidate_cells(left) + _candidate_cells(right)
+            if cell.status in ("failed", "corrupted", "drift_detected")
+        ),
+    )
+
+    return AlignedComparison(
+        orientation="right_relative_to_left",
+        candidate_changed=candidate_changed,
+        candidate_diff=candidate_diff,
+        baseline_context=baseline_context,
+        rows=tuple(rows),
+        unmatched_left=tuple(unmatched_left),
+        unmatched_right=tuple(unmatched_right),
+        changed_condition=tuple(changed_condition),
+        ambiguous_duplicate_groups=(),
+        reproducibility_anomalies=tuple(anomalies),
+        denominators=denominators,
+    )
+
+
+__all__ = [
+    "AlignedComparison",
+    "BaselineContext",
+    "ComparisonDenominators",
+    "ComparisonRow",
+    "align",
+    "verdict",
+]

@@ -60,31 +60,42 @@ class EvaluationDialog(QDialog):
 
     def __init__(
         self,
-        python_agent_names: list[str],
+        python_agents: list[tuple[str, str]],
         *,
         default_candidate: str | None,
         default_output: Path,
         parent: QWidget | None = None,
     ) -> None:
+        """``python_agents`` is ``(display name, discovery id)`` pairs.
+
+        Every combo/list widget below shows the display name but carries
+        the discovery id as its associated data -- ``candidate_id()``/
+        ``baseline_id()``/``opponent_ids()`` return only discovery ids, the
+        identifiers ``resolve_agent``/``bytefray agents evaluate`` actually
+        understand (docs/specs/evaluation_history.md Sec 17).
+        ``default_candidate`` is a discovery id, matching the value
+        ``candidate_id()`` itself returns.
+        """
         super().__init__(parent)
         self.setWindowTitle("Evaluate")
-        self._names = list(python_agent_names)
+        self._agents = list(python_agents)
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
         self.candidateCombo = QComboBox()
-        self.candidateCombo.addItems(self._names)
+        for display, agent_id in self._agents:
+            self.candidateCombo.addItem(display, agent_id)
         if default_candidate is not None:
-            index = self.candidateCombo.findText(default_candidate)
+            index = self.candidateCombo.findData(default_candidate)
             if index >= 0:
                 self.candidateCombo.setCurrentIndex(index)
         form.addRow("Candidate", self.candidateCombo)
 
         self.baselineCombo = QComboBox()
         self.baselineCombo.addItem("(none)", None)
-        for name in self._names:
-            self.baselineCombo.addItem(name, name)
+        for display, agent_id in self._agents:
+            self.baselineCombo.addItem(display, agent_id)
         form.addRow("Baseline", self.baselineCombo)
 
         layout.addLayout(form)
@@ -92,8 +103,9 @@ class EvaluationDialog(QDialog):
         layout.addWidget(QLabel("Opponents (select one or more)"))
         self.opponentsList = QListWidget()
         self.opponentsList.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        for name in self._names:
-            item = QListWidgetItem(name)
+        for display, agent_id in self._agents:
+            item = QListWidgetItem(display)
+            item.setData(Qt.UserRole, agent_id)
             self.opponentsList.addItem(item)
         layout.addWidget(self.opponentsList)
 
@@ -131,13 +143,13 @@ class EvaluationDialog(QDialog):
         self.resize(560, 520)
 
     def candidate_id(self) -> str:
-        return self.candidateCombo.currentText()
+        return self.candidateCombo.currentData()
 
     def baseline_id(self) -> str | None:
         return self.baselineCombo.currentData()
 
     def opponent_ids(self) -> tuple[str, ...]:
-        return tuple(item.text() for item in self.opponentsList.selectedItems())
+        return tuple(item.data(Qt.UserRole) for item in self.opponentsList.selectedItems())
 
     def seeds_text(self) -> str:
         return self.seedsEdit.text()

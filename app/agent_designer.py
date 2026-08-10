@@ -609,6 +609,44 @@ class AgentDesigner(QMainWindow):
                 f"T={row.get('ties')} score={row.get('score_total')}\n"
             )
 
+    def _plan_default_evaluation_output(self, dialog: EvaluationDialog) -> Path:
+        """This plan's own content-addressed default output directory.
+
+        Computed via the same ``EvaluationService.preflight`` the CLI's
+        ``--output``-omitted default already uses -- an in-process,
+        Qt-free call that only resolves agent manifests (no agent code
+        executes), the identical safety boundary the CLI's own preflight
+        already relies on (docs/specs/evaluation_history.md Sec 17).
+        """
+        from battle_engine.agent_evaluation import (
+            EvaluationConfigurationError,
+            EvaluationService,
+            parse_seed_list,
+            parse_seed_range,
+        )
+        from battle_engine.config import Config
+
+        seeds_text = dialog.seeds_text().strip()
+        seed_range_text = dialog.seed_range_text().strip()
+        try:
+            if seeds_text:
+                seeds = parse_seed_list(seeds_text)
+            elif seed_range_text:
+                seeds = parse_seed_range(seed_range_text)
+            else:
+                seeds = (Config().seed,)
+            _specs, evaluation_id = EvaluationService().preflight(
+                candidate_id=dialog.candidate_id(),
+                opponent_ids=dialog.opponent_ids(),
+                seeds=seeds,
+                baseline_id=dialog.baseline_id(),
+                ticks=dialog.ticks(),
+                data_root=self.battle_root,
+            )
+        except EvaluationConfigurationError as exc:
+            raise DesignerValidationError(str(exc)) from exc
+        return self.battle_root / "runs" / "evaluations" / evaluation_id
+
     def _on_evaluate(self) -> None:
         """Open the Evaluate dialog and launch ``bytefray agents evaluate`` (v0.6).
 
@@ -622,20 +660,36 @@ class AgentDesigner(QMainWindow):
             return
         if self._proc is not None and self._proc.state() != QProcess.NotRunning:
             return
-        names = self.development.python_agent_names()
-        if not names:
+        agents = self.development.python_agent_names()
+        if not agents:
             QMessageBox.information(
                 self, "Evaluate", "No Python agents are available yet. Create one first."
             )
             return
         row = self.development.selectedAgentRow()
-        default_candidate = row.name if row is not None else None
-        default_output = self.battle_root / "runs" / "evaluations" / "designer-evaluation"
+        default_candidate = row.agent_id if row is not None else None
+        # A directory-only placeholder shown before the user has picked
+        # opponents/seeds; every plan's *actual* content-addressed default
+        # (matching what a bare `bytefray agents evaluate` would use) is
+        # computed below, once the full request is known, unless the user
+        # has typed something else into the field themselves
+        # (docs/specs/evaluation_history.md Sec 17 -- avoids forcing every
+        # evaluation into one fixed, colliding "designer-evaluation" path).
+        placeholder_output = self.battle_root / "runs" / "evaluations"
         dialog = EvaluationDialog(
-            names, default_candidate=default_candidate, default_output=default_output, parent=self
+            agents, default_candidate=default_candidate, default_output=placeholder_output, parent=self
         )
         if not dialog.exec():
             return
+
+        output_dir = dialog.output_path()
+        if output_dir == placeholder_output:
+            try:
+                output_dir = self._plan_default_evaluation_output(dialog)
+            except DesignerValidationError as exc:
+                QMessageBox.warning(self, "Invalid Evaluation", str(exc))
+                return
+
         try:
             command = build_designer_evaluate_command(
                 candidate_id=dialog.candidate_id(),
@@ -644,13 +698,13 @@ class AgentDesigner(QMainWindow):
                 seeds_text=dialog.seeds_text(),
                 seed_range_text=dialog.seed_range_text(),
                 ticks=dialog.ticks(),
-                output_dir=dialog.output_path(),
+                output_dir=output_dir,
             )
         except (DesignerValidationError, OSError) as exc:
             QMessageBox.warning(self, "Invalid Evaluation", str(exc))
             return
 
-        self._evaluation_output = dialog.output_path().expanduser().resolve()
+        self._evaluation_output = output_dir.expanduser().resolve()
         self._evaluation_ticks = dialog.ticks()
         self._active_workflow = "evaluate"
         self._log_target = self.advanced if hasattr(self, "advanced") else self.simple
