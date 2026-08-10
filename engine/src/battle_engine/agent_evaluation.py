@@ -61,7 +61,12 @@ from battle_engine.results import WINNER_TIE_SENTINEL
 
 SCHEMA_NAME = "bytefray.evaluation"
 SCHEMA_VERSION = 2
-IDENTITY_VERSION = 2
+# Bumped 2 -> 3: agent_identity() gained "local_source_fingerprint" (H3),
+# which changes the identity dict's shape/hash for every existing
+# candidate/baseline/opponent -- an identity-affecting change, versioned
+# explicitly per AGENTS.md rather than silently changing evaluation_id's
+# wire meaning in place.
+IDENTITY_VERSION = 3
 
 # Narrowly scoped compatibility identifier for evaluation/match comparison
 # semantics (scoring, winner resolution, Python scheduling order, derived-seed
@@ -115,6 +120,68 @@ def source_digest(source_path: Path | None) -> str | None:
     return hashlib.sha256(source_path.read_bytes()).hexdigest()
 
 
+LOCAL_SOURCE_FINGERPRINT_VERSION = 1
+
+
+def local_source_fingerprint(agent_dir: Path | None) -> str | None:
+    """A versioned, deterministic fingerprint of every ``.py`` file local to
+    one agent's own directory (H3, see Completion Report "source-fingerprint
+    scope").
+
+    ``source_digest`` alone only covers the entry-point file; an imported
+    local helper or nested local package living elsewhere in the same
+    ``agents/<id>/`` directory can change an agent's actual behavior while
+    ``source_digest``/``match_id`` stay identical, letting a resumed
+    evaluation silently combine old and new behavior in one plan. This
+    closes that gap by hashing every ``*.py`` file under ``agent_dir``,
+    deterministically ordered by POSIX-style relative path so the result is
+    stable across platforms and directory-listing order.
+
+    Explicitly scoped and nothing more:
+
+    * never walks outside ``agent_dir`` (a symlinked file/directory that
+      resolves outside it is skipped, not followed -- the same containment
+      discipline as ``evaluation_history.resolve_contained_path``, M4);
+    * never descends into ``__pycache__``;
+    * never touches installed packages, system Python, or anything outside
+      this one directory -- this is not general provenance.
+
+    Returns ``None`` if ``agent_dir`` is absent, not a directory, or
+    contains no local ``.py`` files to hash (e.g. a non-Python agent).
+    """
+
+    if agent_dir is None or not agent_dir.is_dir():
+        return None
+    base = agent_dir.resolve()
+    entries: list[tuple[str, bytes]] = []
+    for candidate in base.rglob("*.py"):
+        if "__pycache__" in candidate.parts:
+            continue
+        try:
+            resolved = candidate.resolve()
+            resolved.relative_to(base)
+        except (OSError, ValueError):
+            continue  # a symlink escaping agent_dir -- never followed
+        if not resolved.is_file():
+            continue
+        try:
+            content = resolved.read_bytes()
+        except OSError:
+            continue
+        entries.append((candidate.relative_to(base).as_posix(), content))
+    if not entries:
+        return None
+    entries.sort(key=lambda item: item[0])
+    hasher = hashlib.sha256()
+    hasher.update(str(LOCAL_SOURCE_FINGERPRINT_VERSION).encode("ascii"))
+    for relative_path, content in entries:
+        hasher.update(b"\0")
+        hasher.update(relative_path.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(hashlib.sha256(content).digest())
+    return hasher.hexdigest()
+
+
 def agent_identity(spec: AgentSpec) -> dict[str, Any]:
     """A stable, hashable identity fingerprint for one resolved Python agent."""
 
@@ -125,6 +192,16 @@ def agent_identity(spec: AgentSpec) -> dict[str, Any]:
         "agent_version": spec.version,
         "entry_point": spec.entry_point,
         "source_sha256": source_digest(spec.source_path),
+        # H3: catches an imported local helper/nested local package edit
+        # that source_sha256 alone (entry-point file only) would miss. Only
+        # affects evaluation planning (evaluation_id/planned_identities/
+        # pre-execution drift detection) -- it is not, and cannot be,
+        # cross-checked against a completed match's own recorded metadata
+        # (NativeAgentResult.metadata has no concept of "every local file
+        # loaded"), so the B1 post-execution check remains scoped to
+        # source_sha256/api_version/agent_version alone. See the
+        # Completion Report for this known asymmetry.
+        "local_source_fingerprint": local_source_fingerprint(spec.dir),
     }
 
 
@@ -1660,6 +1737,7 @@ __all__ = [
     "CANDIDATE",
     "EVALUATION_RULES_COMPATIBILITY_ID",
     "IDENTITY_VERSION",
+    "LOCAL_SOURCE_FINGERPRINT_VERSION",
     "SCHEMA_NAME",
     "SCHEMA_VERSION",
     "ComparisonEntry",
@@ -1678,6 +1756,7 @@ __all__ = [
     "compare_candidate_baseline",
     "current_execution_context",
     "effective_conditions_for",
+    "local_source_fingerprint",
     "main",
     "parse_opponents",
     "parse_seed_list",

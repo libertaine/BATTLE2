@@ -760,3 +760,185 @@ def test_v2_condition_fingerprint_excludes_candidate_identity(two_agents: Path):
     specs_b["candidate_b"] = resolve_agent(two_agents, "candidate_b")
     matrix_b = build_matrix(request_b, "eval_b", specs_b, conditions_fp, "evaluation-rules-1")
     assert matrix_a[0].condition_fingerprint == matrix_b[0].condition_fingerprint
+
+
+# ---------------------------------------------------------------------------
+# H3: local source fingerprint (imported helper / nested local package)
+# ---------------------------------------------------------------------------
+
+
+def _write_helper_agent(root: Path, name: str) -> Path:
+    """A local package-shaped agent: agent.py imports a sibling helper.py
+    via its own directory on sys.path -- a realistic pattern the framework
+    itself does not set up automatically (no import machinery adds an
+    agent's directory to sys.path), but does not prevent either."""
+
+    agent_dir = root / "agents" / name
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "agent.yaml").write_text(
+        json.dumps(
+            {"kind": "python", "api_version": 1, "entrypoint": "agent.py:create_agent", "version": "1.0"}
+        ),
+        encoding="utf-8",
+    )
+    (agent_dir / "agent.py").write_text(
+        """
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+import helper
+from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, context): pass
+    def act(self, observation): return helper.pick_action()
+def create_agent(): return Agent()
+""",
+        encoding="utf-8",
+    )
+    (agent_dir / "helper.py").write_text(
+        "from battle_engine.agent_api import ActionKind, AgentAction\n"
+        "def pick_action(): return AgentAction(ActionKind.NOP)\n",
+        encoding="utf-8",
+    )
+    return agent_dir
+
+
+def test_local_source_fingerprint_changes_when_entry_point_edited(tmp_path: Path):
+    from battle_engine.agent_evaluation import local_source_fingerprint
+
+    agent_dir = _write_helper_agent(tmp_path, "candidate")
+    before = local_source_fingerprint(agent_dir)
+    (agent_dir / "agent.py").write_text(
+        (agent_dir / "agent.py").read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8"
+    )
+    assert local_source_fingerprint(agent_dir) != before
+
+
+def test_local_source_fingerprint_changes_when_imported_helper_edited(tmp_path: Path):
+    """The exact gap H3 closes: source_digest (entry-point file only) is
+    blind to a helper-only edit, but local_source_fingerprint is not."""
+
+    from battle_engine.agent_evaluation import local_source_fingerprint, source_digest
+
+    agent_dir = _write_helper_agent(tmp_path, "candidate")
+    entry_point_digest_before = source_digest(agent_dir / "agent.py")
+    fingerprint_before = local_source_fingerprint(agent_dir)
+
+    (agent_dir / "helper.py").write_text(
+        "from battle_engine.agent_api import ActionKind, AgentAction\n"
+        "def pick_action(): return AgentAction(ActionKind.NOP)  # edited helper\n",
+        encoding="utf-8",
+    )
+
+    assert source_digest(agent_dir / "agent.py") == entry_point_digest_before
+    assert local_source_fingerprint(agent_dir) != fingerprint_before
+
+
+def test_local_source_fingerprint_changes_when_nested_local_package_edited(tmp_path: Path):
+    from battle_engine.agent_evaluation import local_source_fingerprint
+
+    agent_dir = _write_helper_agent(tmp_path, "candidate")
+    package_dir = agent_dir / "strategy"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
+    before = local_source_fingerprint(agent_dir)
+
+    (package_dir / "__init__.py").write_text("VALUE = 2\n", encoding="utf-8")
+    assert local_source_fingerprint(agent_dir) != before
+
+
+def test_local_source_fingerprint_ignores_pycache(tmp_path: Path):
+    from battle_engine.agent_evaluation import local_source_fingerprint
+
+    agent_dir = _write_helper_agent(tmp_path, "candidate")
+    before = local_source_fingerprint(agent_dir)
+
+    cache_dir = agent_dir / "__pycache__"
+    cache_dir.mkdir()
+    (cache_dir / "agent.cpython-313.py").write_text("# not real bytecode, just proving exclusion\n", encoding="utf-8")
+
+    assert local_source_fingerprint(agent_dir) == before
+
+
+def test_local_source_fingerprint_none_for_missing_directory(tmp_path: Path):
+    from battle_engine.agent_evaluation import local_source_fingerprint
+
+    assert local_source_fingerprint(tmp_path / "does-not-exist") is None
+
+
+def test_local_source_fingerprint_documents_the_external_dependency_limitation(tmp_path: Path):
+    """Explicit boundary: a file outside the agent's own directory that the
+    agent nonetheless manages to import (e.g. via an absolute sys.path
+    trick, or an installed package) is never hashed -- this is a deliberate
+    scope limit (H3), not an oversight."""
+
+    from battle_engine.agent_evaluation import local_source_fingerprint
+
+    agent_dir = _write_helper_agent(tmp_path, "candidate")
+    outside_dir = tmp_path / "outside_shared_code"
+    outside_dir.mkdir()
+    external_helper = outside_dir / "external_helper.py"
+    external_helper.write_text("VALUE = 1\n", encoding="utf-8")
+
+    before = local_source_fingerprint(agent_dir)
+    external_helper.write_text("VALUE = 2\n", encoding="utf-8")
+    assert local_source_fingerprint(agent_dir) == before
+
+
+def test_evaluation_id_changes_after_helper_only_edit(tmp_path: Path):
+    _write_helper_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    service = EvaluationService()
+    _specs_before, evaluation_id_before = service.preflight(
+        candidate_id="candidate", opponent_ids=("opponent",), seeds=(1,), ticks=10, data_root=tmp_path
+    )
+
+    helper_path = tmp_path / "agents" / "candidate" / "helper.py"
+    helper_path.write_text(
+        "from battle_engine.agent_api import ActionKind, AgentAction\n"
+        "def pick_action(): return AgentAction(ActionKind.NOP)  # edited\n",
+        encoding="utf-8",
+    )
+    _specs_after, evaluation_id_after = service.preflight(
+        candidate_id="candidate", opponent_ids=("opponent",), seeds=(1,), ticks=10, data_root=tmp_path
+    )
+    assert evaluation_id_before != evaluation_id_after
+
+
+def test_resume_after_helper_edit_requires_a_new_plan_not_a_silent_new_revision(tmp_path: Path):
+    """A changed local helper must force a new evaluation plan (a different
+    evaluation_id/output directory), never silently execute the edited
+    revision inside the old plan's artifact."""
+
+    _write_helper_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    service = EvaluationService()
+    request = EvaluationRequest(
+        candidate_id="candidate",
+        opponent_ids=("opponent",),
+        seeds=(1,),
+        output_dir=tmp_path / "eval-out",
+        ticks=10,
+        data_root=tmp_path,
+    )
+    first = service.run(request)
+
+    helper_path = tmp_path / "agents" / "candidate" / "helper.py"
+    helper_path.write_text(
+        "from battle_engine.agent_api import ActionKind, AgentAction\n"
+        "def pick_action(): return AgentAction(ActionKind.NOP)  # edited\n",
+        encoding="utf-8",
+    )
+
+    from battle_engine.agent_evaluation import EvaluationConfigurationError
+
+    # Resuming the *same* output directory under the edited helper must be
+    # rejected outright -- its frozen plan no longer matches this request.
+    with pytest.raises(EvaluationConfigurationError):
+        service.run(request)
+
+    # The correct path is a fresh plan under its own (different) evaluation
+    # id/output directory, which succeeds normally.
+    _specs, evaluation_id_after = service.preflight(
+        candidate_id="candidate", opponent_ids=("opponent",), seeds=(1,), ticks=10, data_root=tmp_path
+    )
+    assert evaluation_id_after != first.evaluation_id
