@@ -320,6 +320,17 @@ def _build_python_result(
                         # unaffected.
                         "entry_point": state.loaded.entry_point,
                         "local_source_fingerprint": state.local_source_fingerprint,
+                        # Lazy-import closure pass: a *second* fingerprint,
+                        # over the identical scope, computed once the whole
+                        # match has finished (every act() call already
+                        # happened) -- catches a local helper imported lazily
+                        # from inside reset()/act() (rather than at module
+                        # load time) that changed after the fingerprint
+                        # above was captured but before that lazy import
+                        # actually executed. See python_runtime.
+                        # PythonEntrantController.run/supervised_runtime.
+                        # SupervisedPythonEntrantController.run.
+                        "local_source_fingerprint_final": state.local_source_fingerprint_final,
                     }
                 ),
             )

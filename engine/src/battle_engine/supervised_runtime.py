@@ -244,6 +244,7 @@ class SupervisedPythonEntrantController:
             local_source_fingerprint=local_source_fingerprint(
                 getattr(entrant.python_spec, "dir", None)
             ),
+            agent_dir=getattr(entrant.python_spec, "dir", None),
             pc=entrant.start & 0xFFFFFFFF,
             region=(entrant.start % self.config.arena_size,) * 2,
         )
@@ -384,6 +385,16 @@ class SupervisedPythonEntrantController:
         finally:
             replay.close()
             self._close_all_handles()
+
+        # See python_runtime.PythonEntrantController.run's identical
+        # comment: a lazy import from inside reset()/act() (executed in the
+        # worker subprocess, but sharing this process's filesystem view)
+        # can change the agent directory's contents after the load-time
+        # fingerprint was captured but before that lazy import actually
+        # executes -- recomputed here, over the identical scope, now that
+        # every act() call for this match has already happened.
+        for state in self.states:
+            state.local_source_fingerprint_final = local_source_fingerprint(state.agent_dir)
 
         alive_count = sum(state.alive for state in self.states)
         if alive_count == 0:

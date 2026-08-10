@@ -7,6 +7,7 @@ import random
 import time
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -293,6 +294,22 @@ class PythonEntrantState:
     derived_seed: int = 0
     source_digest: str = ""
     local_source_fingerprint: str | None = None
+    # The agent directory `local_source_fingerprint` was computed from at
+    # load time -- retained so a *second*, final fingerprint can be
+    # recomputed over the identical deterministic scope once the match
+    # finishes (see `local_source_fingerprint_final`), without threading an
+    # extra parameter through the whole tick loop.
+    agent_dir: Path | None = None
+    # A lazy import performed from inside `reset()`/`act()` (a local helper
+    # imported only when first needed, rather than at module load time) can
+    # change the agent directory's contents *after* the load-time
+    # fingerprint above was captured but *before* that lazy import actually
+    # executes -- the initial fingerprint alone cannot see this. Computed
+    # once, after the match loop has finished (every `act()` call has
+    # already happened), over the identical scope as the initial
+    # fingerprint. `None` until `PythonEntrantController.run`/
+    # `SupervisedPythonEntrantController.run` populates it.
+    local_source_fingerprint_final: str | None = None
     pc: int = 0
     register_a: int = 0
     register_p: int = 0
@@ -488,6 +505,7 @@ class PythonEntrantController:
                 local_source_fingerprint=local_source_fingerprint(
                     getattr(entrant.python_spec, "dir", None)
                 ),
+                agent_dir=getattr(entrant.python_spec, "dir", None),
                 pc=entrant.start & 0xFFFFFFFF,
                 region=(entrant.start % config.arena_size,) * 2,
             )
@@ -670,6 +688,15 @@ class PythonEntrantController:
                     break
         finally:
             replay.close()
+
+        # A lazy import performed from inside reset()/act() can change the
+        # agent directory's contents after the load-time fingerprint was
+        # captured but before that lazy import actually executes -- so a
+        # second, final fingerprint is computed here, now that every
+        # act() call for this match has already happened, over the
+        # identical deterministic scope as the initial one.
+        for state in self.states:
+            state.local_source_fingerprint_final = local_source_fingerprint(state.agent_dir)
 
         alive_count = sum(state.alive for state in self.states)
         if alive_count == 0:

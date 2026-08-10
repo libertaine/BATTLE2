@@ -310,6 +310,20 @@ _ACTUAL_IDENTITY_FIELDS = (
     "local_source_fingerprint",
 )
 
+# Lazy-import closure pass: the executor also records a *second*,
+# independently computed ``local_source_fingerprint_final`` -- over the
+# identical deterministic scope as ``local_source_fingerprint`` above, but
+# taken only after the whole match has finished (every ``reset()``/
+# ``act()`` call already happened). A local helper imported lazily from
+# inside ``reset()``/``act()`` (rather than at module load time) can change
+# the agent directory's contents after the load-time fingerprint was
+# captured but before that lazy import actually executes; the load-time
+# fingerprint alone cannot see this. Compared against the same *planned*
+# ``local_source_fingerprint`` value as the load-time field -- there is
+# only one planned value; both executor-recorded readings must agree with
+# it (see ``_post_execution_identity_drift``'s three-way invariant).
+_FINAL_ONLY_IDENTITY_FIELDS = (("local_source_fingerprint", "local_source_fingerprint_final"),)
+
 
 def _post_execution_identity_drift(
     cell: EvaluationCell,
@@ -331,17 +345,35 @@ def _post_execution_identity_drift(
     defeated by a source edit that is already in place by the time this
     check runs.
 
+    The required invariant (v0.7 closure pass, lazy-import fix) is now
+    three-way, not two-way::
+
+        initial executor fingerprint == frozen planned fingerprint == final executor fingerprint
+
+    i.e. both ``local_source_fingerprint`` (captured at load time, before
+    ``reset()``/``act()`` ever run) *and* ``local_source_fingerprint_final``
+    (captured after the match finishes, so every lazy import a running
+    agent performed has already happened) must each independently equal
+    the frozen plan's single recorded value. A local helper imported
+    lazily from inside ``reset()``/``act()`` -- rather than at module load
+    time -- can change between those two executor-recorded readings; the
+    load-time fingerprint alone cannot see that, since the lazy import
+    that actually reads the changed file has not happened yet when it is
+    captured.
+
     A residual TOCTOU remains and is documented rather than hidden: inside
     ``python_runtime.PythonEntrantController.__init__`` (and its supervised
     counterpart), the agent module is loaded/executed first and its
     ``source_sha256``/``local_source_fingerprint`` are each computed by a
     *separate* subsequent read (see ``PythonEntrantState.source_digest``/
-    ``PythonEntrantState.local_source_fingerprint``). An edit landing in
-    that narrow window, or an edit that lands and is then reverted before
-    this function's inputs are captured, is not detectable from outside
-    that call. This module neither introduces nor can close that inner
-    window; it only guarantees that whatever the executor itself recorded
-    as having run is cross-checked against the frozen plan.
+    ``PythonEntrantState.local_source_fingerprint``); symmetrically, the
+    final fingerprint is computed once, in a separate step, after the tick
+    loop's last actual local-file read. An edit that lands and is then
+    reverted before the nearest such read captures it -- at either end --
+    is not detectable from outside that call. This module neither
+    introduces nor can close that inner window; it only guarantees that
+    whatever the executor itself recorded as having run, at both points,
+    is cross-checked against the frozen plan.
     """
 
     for role, agent_id, slot in (
@@ -360,6 +392,12 @@ def _post_execution_identity_drift(
             for field in _ACTUAL_IDENTITY_FIELDS
             if planned.get(field) != actual_metadata.get(field)
         )
+        mismatched.extend(
+            actual_field
+            for planned_field, actual_field in _FINAL_ONLY_IDENTITY_FIELDS
+            if planned.get(planned_field) != actual_metadata.get(actual_field)
+        )
+        mismatched.sort()
         if mismatched:
             return {
                 "error_code": "post_execution_identity_drift",

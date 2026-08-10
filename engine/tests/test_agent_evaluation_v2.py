@@ -728,6 +728,216 @@ def test_toctou_local_helper_edit_after_precheck_is_detected(tmp_path: Path, mon
     )
 
 
+# ---------------------------------------------------------------------------
+# Second closure pass: a local helper imported *lazily* from inside
+# reset()/act() -- rather than at module load time -- can change between
+# the executor's load-time ("initial") fingerprint and the moment that
+# lazy import actually executes. The load-time fingerprint alone cannot
+# see this; only a second, "final" fingerprint taken after the match
+# finishes (python_runtime.PythonEntrantController.run) can.
+# ---------------------------------------------------------------------------
+
+
+def _write_lazy_helper_candidate(root: Path) -> tuple[Path, Path]:
+    """A candidate whose act() lazily imports helper.py fresh on every
+    call (via importlib.util directly, bypassing sys.modules caching --
+    ordinary `import helper` would only ever read the file once per
+    process), rather than importing it at module load time. Its own
+    behavior is made to depend on the imported value (HALT immediately if
+    helper.VALUE == 2, otherwise run an ordinary NOP loop) so a test can
+    prove from the match's own observable outcome (ticks_run) that a given
+    helper.py revision was actually read and acted on by a real act() call,
+    not merely present on disk.
+    """
+
+    directory = root / "agents" / "candidate"
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {"kind": "python", "api_version": 1, "entrypoint": "agent.py:create_agent", "version": "1.0"}
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        """
+from battle_engine.agent_api import ActionKind, AgentAction
+import importlib.util
+from pathlib import Path
+
+class Agent:
+    def reset(self, context):
+        pass
+
+    def act(self, observation):
+        helper_path = Path(__file__).parent / "helper.py"
+        spec = importlib.util.spec_from_file_location("lazy_helper_probe", helper_path)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        if helper.VALUE == 2:
+            return AgentAction(ActionKind.HALT)
+        return AgentAction(ActionKind.NOP)
+
+def create_agent(): return Agent()
+""",
+        encoding="utf-8",
+    )
+    helper_path = directory / "helper.py"
+    helper_path.write_text("VALUE = 1\n", encoding="utf-8")
+    return directory, helper_path
+
+
+def test_lazy_import_helper_edit_after_initial_fingerprint_is_detected(
+    tmp_path: Path, monkeypatch
+):
+    """Required regression test: an initial fingerprint is captured at
+    controller construction; the helper is then changed; a lazy import
+    inside act() demonstrably observes and acts on the changed helper
+    (proven via the real match's own ticks_run); the evaluation records
+    drift, not a valid completed cell."""
+
+    _, helper_path = _write_lazy_helper_candidate(tmp_path)
+    _write_python_agent(tmp_path, "opponent")
+    request = _request(tmp_path, ticks=20)
+    service = EvaluationService()
+
+    import battle_engine.python_runtime as runtime_mod
+
+    real_run = runtime_mod.PythonEntrantController.run
+
+    def _edit_helper_then_run(self, sink, *, verbose):
+        # PythonEntrantController.__init__ has already captured the
+        # *initial* load-time fingerprint (over "VALUE = 1") by the time
+        # `.run()` is called. Edit the helper now -- strictly between that
+        # capture and the tick loop's act() calls -- so the lazy import
+        # inside act() observes this edit.
+        helper_path.write_text("VALUE = 2  # edited after initial fingerprint\n", encoding="utf-8")
+        return real_run(self, sink, verbose=verbose)
+
+    monkeypatch.setattr(runtime_mod.PythonEntrantController, "run", _edit_helper_then_run)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    cell = data["cells"][0]
+    assert cell["status"] == "drift_detected"
+    assert cell["error_code"] == "post_execution_identity_drift"
+
+    fields_text = cell["error_message"].split("(fields: ", 1)[1].split(")", 1)[0]
+    mismatched_fields = [field.strip() for field in fields_text.split(",")]
+    # Only the *final* fingerprint mismatches -- the load-time one
+    # genuinely matched the frozen plan (the edit landed after it was
+    # captured), so it must not itself be reported as mismatched too.
+    assert mismatched_fields == ["local_source_fingerprint_final"]
+
+    # Prove the changed helper actually executed: the real match ran to
+    # completion and halted at tick 1, which only happens if act() saw
+    # helper.VALUE == 2.
+    cell_dir = result.state_path.parent / cell["artifact_dir"]
+    match_result_data = json.loads((cell_dir / "result.json").read_text(encoding="utf-8"))
+    assert match_result_data["ticks"] == 1
+
+
+def test_lazy_import_unchanged_helper_execution_remains_valid(tmp_path: Path):
+    """Confirmation: ordinary unchanged-source execution (the lazy-import
+    candidate's helper never edited) still completes normally."""
+
+    _write_lazy_helper_candidate(tmp_path)
+    _write_python_agent(tmp_path, "opponent")
+    request = _request(tmp_path, ticks=20)
+    service = EvaluationService()
+
+    result = service.run(request)
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    cell = data["cells"][0]
+    assert cell["status"] == "completed"
+    assert data["lifecycle_state"] == "finished"
+
+    # act() ran the ordinary NOP loop the whole time (helper.VALUE stayed
+    # 1), so the match used the full tick budget rather than halting early.
+    cell_dir = result.state_path.parent / cell["artifact_dir"]
+    match_result_data = json.loads((cell_dir / "result.json").read_text(encoding="utf-8"))
+    assert match_result_data["ticks"] == 20
+
+
+def test_lazy_import_helper_edit_and_restore_before_final_check_is_not_falsely_flagged(
+    tmp_path: Path, monkeypatch
+):
+    """Confirmation: the final-fingerprint check shares the same narrow
+    residual race as the existing load/digest edit-and-restore limitation,
+    not a new or broader one. Here the agent's own act() call reads a
+    transiently edited helper (proven by halting at tick 1) and then
+    restores the original bytes itself before the match finishes -- by the
+    time the executor's final fingerprint is computed (after the whole
+    match loop), the directory already matches the frozen plan again, so
+    this must not be falsely reported as drift despite the transient edit
+    having been demonstrably read and acted on."""
+
+    directory = tmp_path / "agents" / "candidate"
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {"kind": "python", "api_version": 1, "entrypoint": "agent.py:create_agent", "version": "1.0"}
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        """
+from battle_engine.agent_api import ActionKind, AgentAction
+import importlib.util
+from pathlib import Path
+
+class Agent:
+    def reset(self, context):
+        pass
+
+    def act(self, observation):
+        helper_path = Path(__file__).parent / "helper.py"
+        spec = importlib.util.spec_from_file_location("lazy_helper_probe_restore", helper_path)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        observed = helper.VALUE
+        helper_path.write_text("VALUE = 1")
+        if observed == 2:
+            return AgentAction(ActionKind.HALT)
+        return AgentAction(ActionKind.NOP)
+
+def create_agent(): return Agent()
+""",
+        encoding="utf-8",
+    )
+    helper_path = directory / "helper.py"
+    # No trailing newline, deliberately -- the agent's own restore write
+    # below must reproduce these exact bytes for this to be a genuine
+    # edit-and-restore (byte-identical), not merely a same-VALUE rewrite.
+    helper_path.write_text("VALUE = 1", encoding="utf-8")
+    _write_python_agent(tmp_path, "opponent")
+    request = _request(tmp_path, ticks=20)
+    service = EvaluationService()
+
+    import battle_engine.python_runtime as runtime_mod
+
+    real_run = runtime_mod.PythonEntrantController.run
+
+    def _edit_then_run(self, sink, *, verbose):
+        helper_path.write_text("VALUE = 2", encoding="utf-8")
+        return real_run(self, sink, verbose=verbose)
+
+    monkeypatch.setattr(runtime_mod.PythonEntrantController, "run", _edit_then_run)
+    result = service.run(request)
+
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    cell = data["cells"][0]
+    assert cell["status"] == "completed"
+    assert data["lifecycle_state"] == "finished"
+
+    cell_dir = result.state_path.parent / cell["artifact_dir"]
+    match_result_data = json.loads((cell_dir / "result.json").read_text(encoding="utf-8"))
+    # Halted at tick 1 -- proves the transient edit WAS read and acted on;
+    # it is simply not detectable after having fully reverted by the time
+    # the final fingerprint is computed.
+    assert match_result_data["ticks"] == 1
+    assert helper_path.read_text(encoding="utf-8") == "VALUE = 1"
+
+
 def test_toctou_initialization_failure_after_intervening_source_change_is_flagged_as_drift(
     tmp_path: Path, monkeypatch
 ):
