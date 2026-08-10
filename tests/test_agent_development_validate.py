@@ -406,6 +406,55 @@ def test_validate_agent_failure_via_real_qprocess_is_not_a_tool_failure(monkeypa
 
 
 @pytest.mark.gui
+def test_validate_uses_discovery_id_not_display_name_when_they_differ(monkeypatch, tmp_path):
+    """M5: Validate must always hand the CLI the discovery id (directory
+    name), never the display name shown in the combo -- even when an
+    agent's manifest declares a display name that differs from its
+    discovery id.
+    """
+
+    _make_app()
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    from battle_engine.agent_scaffold import create_agent
+
+    import app.agent_designer as agent_designer_module
+    from app.agent_designer import AgentDesigner
+
+    designer = AgentDesigner()
+    try:
+        create_agent("validate_disc_id", data_root=data_root)
+        manifest_path = data_root / "agents" / "validate_disc_id" / "agent.yaml"
+        with manifest_path.open("a", encoding="utf-8") as handle:
+            handle.write('\ndisplay: "Validate Friendly Display Name"\n')
+
+        designer.refresh_agents(select="Validate Friendly Display Name")
+        row = designer.development.selectedAgentRow()
+        assert row is not None
+        assert row.name == "Validate Friendly Display Name"
+        assert row.agent_id == "validate_disc_id"
+
+        captured_args: list[list[str]] = []
+
+        def _capture(subcommand, arguments):
+            captured_args.append(list(arguments))
+            return _stub_command(
+                tmp_path,
+                stdout="agent: validate_disc_id\nstatus: valid\napi_version: 1\n",
+            )
+
+        monkeypatch.setattr(agent_designer_module, "build_agents_command", _capture)
+
+        designer._on_validate_agent()
+        _wait_for_finished(designer)
+
+        assert captured_args == [["validate_disc_id"]]
+        assert "Validate Friendly Display Name" not in captured_args[0]
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
 def test_malformed_output_from_real_qprocess_is_a_tool_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"

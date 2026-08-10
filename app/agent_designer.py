@@ -841,7 +841,7 @@ class AgentDesigner(QMainWindow):
         row = self.development.selectedAgentRow()
         if row is None:
             return
-        agent_id = row.name
+        agent_id = row.agent_id
 
         try:
             command = build_agents_command("validate", [agent_id])
@@ -899,7 +899,7 @@ class AgentDesigner(QMainWindow):
         row = self.development.selectedAgentRow()
         if row is None:
             return
-        agent_id = row.name
+        agent_id = row.agent_id
         opponent_id = self.development.selected_opponent_id()
         seed = self.development.selected_seed()
         ticks = self.development.selected_ticks()
