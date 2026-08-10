@@ -216,6 +216,74 @@ def _baseline_cells(summary: EvaluationSummary) -> tuple[AdaptedCell, ...]:
     return tuple(cell for cell in summary.cells if cell.subject_role == "baseline")
 
 
+AmbiguousGroup = tuple[str, int, tuple[str, ...], tuple[str, ...]]
+
+
+def _classify_unmatched(
+    unmatched_left: list[AdaptedCell], unmatched_right: list[AdaptedCell]
+) -> tuple[
+    list[tuple[AdaptedCell, AdaptedCell]],
+    list[AmbiguousGroup],
+    list[AdaptedCell],
+    list[AdaptedCell],
+]:
+    """M3: classify cells left unmatched by strict condition-key alignment.
+
+    Grouped only by ``(opponent_id, seed)`` -- never by outcome (Sec 14's
+    "never pair duplicates based on outcomes"). A group with exactly one
+    unmatched cell on each side is an unambiguous ``changed_condition``
+    pair: the same nominal (opponent, seed) slot, but some other condition
+    dimension (rules id, effective conditions, or the opponent's own
+    identity) differs, which is exactly why strict alignment above didn't
+    match them. A group with more than one unmatched cell on either side is
+    genuinely ambiguous -- pairing them would have to guess which duplicate
+    corresponds to which, so it is reported as an ``ambiguous_duplicate_group``
+    instead of silently zipped under a coordinate that isn't actually
+    unique here (this includes legacy v1 duplicates whose
+    ``condition_occurrence_index`` came back ``UNKNOWN`` and so never
+    matched anything above at all). A group present on only one side is
+    left as ordinary unmatched -- there is nothing "changed" to relate it
+    to.
+    """
+
+    left_by_key: dict[tuple[str, int], list[AdaptedCell]] = {}
+    for cell in unmatched_left:
+        left_by_key.setdefault((cell.opponent_id, cell.seed), []).append(cell)
+    right_by_key: dict[tuple[str, int], list[AdaptedCell]] = {}
+    for cell in unmatched_right:
+        right_by_key.setdefault((cell.opponent_id, cell.seed), []).append(cell)
+
+    changed_condition: list[tuple[AdaptedCell, AdaptedCell]] = []
+    ambiguous_groups: list[AmbiguousGroup] = []
+    consumed_left: set[int] = set()
+    consumed_right: set[int] = set()
+
+    for key in sorted(set(left_by_key) | set(right_by_key)):
+        left_group = left_by_key.get(key, [])
+        right_group = right_by_key.get(key, [])
+        if not left_group or not right_group:
+            continue
+        if len(left_group) == 1 and len(right_group) == 1:
+            changed_condition.append((left_group[0], right_group[0]))
+            consumed_left.add(id(left_group[0]))
+            consumed_right.add(id(right_group[0]))
+        else:
+            ambiguous_groups.append(
+                (
+                    key[0],
+                    key[1],
+                    tuple(cell.schedule_id for cell in left_group),
+                    tuple(cell.schedule_id for cell in right_group),
+                )
+            )
+            consumed_left.update(id(cell) for cell in left_group)
+            consumed_right.update(id(cell) for cell in right_group)
+
+    remaining_left = [cell for cell in unmatched_left if id(cell) not in consumed_left]
+    remaining_right = [cell for cell in unmatched_right if id(cell) not in consumed_right]
+    return changed_condition, ambiguous_groups, remaining_left, remaining_right
+
+
 def _align_cell_sets(
     left_cells: tuple[AdaptedCell, ...],
     right_cells: tuple[AdaptedCell, ...],
@@ -234,6 +302,7 @@ def _align_cell_sets(
     list[AdaptedCell],
     list[tuple[AdaptedCell, AdaptedCell]],
     list[ComparisonRow],
+    list[AmbiguousGroup],
 ]:
     left_by_key: dict[tuple[Any, ...], list[AdaptedCell]] = {}
     for cell in left_cells:
@@ -330,11 +399,10 @@ def _align_cell_sets(
             if anomaly:
                 anomalies.append(row)
 
-    # Any leftover multi-cell groups with mismatched sizes are asymmetric
-    # multiplicity -- surfaced as changed_condition pairs of representatives
-    # rather than silently guessed pairing.
-    changed_condition: list[tuple[AdaptedCell, AdaptedCell]] = []
-    return rows, unmatched_left, unmatched_right, changed_condition, anomalies
+    changed_condition, ambiguous_groups, unmatched_left, unmatched_right = _classify_unmatched(
+        unmatched_left, unmatched_right
+    )
+    return rows, unmatched_left, unmatched_right, changed_condition, anomalies, ambiguous_groups
 
 
 def align(
@@ -373,17 +441,19 @@ def align(
     left_rules, right_rules = _rules_id(left), _rules_id(right)
     left_contexts, right_contexts = _context_by_id(left), _context_by_id(right)
 
-    rows, unmatched_left, unmatched_right, changed_condition, anomalies = _align_cell_sets(
-        _candidate_cells(left),
-        _candidate_cells(right),
-        left_cfp,
-        left_rules,
-        right_cfp,
-        right_rules,
-        identical_candidate_fingerprint=identical_candidate_fingerprint,
-        deep_verified=deep_verified,
-        left_context_by_id=left_contexts,
-        right_context_by_id=right_contexts,
+    rows, unmatched_left, unmatched_right, changed_condition, anomalies, ambiguous_groups = (
+        _align_cell_sets(
+            _candidate_cells(left),
+            _candidate_cells(right),
+            left_cfp,
+            left_rules,
+            right_cfp,
+            right_rules,
+            identical_candidate_fingerprint=identical_candidate_fingerprint,
+            deep_verified=deep_verified,
+            left_context_by_id=left_contexts,
+            right_context_by_id=right_contexts,
+        )
     )
 
     # Baseline context (Sec 14.3).
@@ -445,7 +515,7 @@ def align(
         unmatched_left=len(unmatched_left),
         unmatched_right=len(unmatched_right),
         changed_condition=len(changed_condition),
-        ambiguous_duplicate_groups=0,
+        ambiguous_duplicate_groups=len(ambiguous_groups),
         corrupt_or_missing=sum(
             1
             for cell in _candidate_cells(left) + _candidate_cells(right)
@@ -462,7 +532,7 @@ def align(
         unmatched_left=tuple(unmatched_left),
         unmatched_right=tuple(unmatched_right),
         changed_condition=tuple(changed_condition),
-        ambiguous_duplicate_groups=(),
+        ambiguous_duplicate_groups=tuple(ambiguous_groups),
         reproducibility_anomalies=tuple(anomalies),
         denominators=denominators,
         deep_verified=deep_verified,

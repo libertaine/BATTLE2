@@ -311,12 +311,20 @@ def test_identical_candidate_fingerprint_deep_verified_but_one_cell_unverified_i
 
 
 def test_opponent_source_change_prevents_direct_comparison():
+    """M3: strict alignment correctly refuses to treat this as directly
+    comparable -- but since both sides still share (opponent_id, seed) and
+    the mismatch is unambiguous (exactly one unmatched cell per side), it
+    is reported honestly as changed_condition, not folded into a bare
+    unmatched count that would look identical to "no related cell at all"."""
+
     left = _summary(cells=(_cell(outcome="win", opponent_sha="sha-1"),))
     right = _summary(cells=(_cell(outcome="win", opponent_sha="sha-2"),))
     result = align(left, right)
     assert result.denominators.directly_comparable == 0
-    assert result.denominators.unmatched_left == 1
-    assert result.denominators.unmatched_right == 1
+    assert result.denominators.unmatched_left == 0
+    assert result.denominators.unmatched_right == 0
+    assert result.denominators.changed_condition == 1
+    assert len(result.changed_condition) == 1
 
 
 def test_rules_compatibility_mismatch_prevents_direct_comparison():
@@ -362,6 +370,127 @@ def test_asymmetric_multiplicity_leaves_extra_occurrence_unmatched():
     assert result.denominators.directly_comparable == 1
     assert result.denominators.unmatched_right == 1
     assert len(result.unmatched_right) == 1
+
+
+# ---------------------------------------------------------------------------
+# M3: honest changed_condition / ambiguous_duplicate_groups classification
+# ---------------------------------------------------------------------------
+
+
+def test_asymmetric_duplicates_both_sides_nonempty_is_ambiguous_not_changed_condition():
+    """Left has one unmatched duplicate for (opponent, seed); right has two.
+    Both sides are non-empty, so this is not "nothing to relate it to" --
+    but pairing 1 against 2 would have to guess, so it must be reported as
+    an ambiguous_duplicate_group, never silently paired as changed_condition
+    (which is reserved for an unambiguous 1:1 relation)."""
+
+    left = _summary(cells=(_cell(outcome="win", unknown_occurrence=True),))
+    right = _summary(
+        cells=(
+            _cell(outcome="win", unknown_occurrence=True),
+            _cell(outcome="loss", unknown_occurrence=True),
+        )
+    )
+    result = align(left, right)
+    assert result.denominators.changed_condition == 0
+    assert result.denominators.ambiguous_duplicate_groups == 1
+    assert len(result.ambiguous_duplicate_groups) == 1
+    group = result.ambiguous_duplicate_groups[0]
+    assert group[0] == "opponent" and group[1] == 1
+    assert len(group[2]) == 1 and len(group[3]) == 2
+
+
+def test_symmetric_duplicates_two_and_two_are_ambiguous_not_positionally_zipped():
+    """Two unmatched duplicates on each side for the same (opponent, seed)
+    must never be silently zipped by list order -- reordering which
+    duplicate appears first must not change the classification, since no
+    pairing is ever attempted for a genuinely ambiguous group."""
+
+    left = _summary(
+        cells=(
+            _cell(outcome="win", unknown_occurrence=True),
+            _cell(outcome="loss", unknown_occurrence=True),
+        )
+    )
+    right_in_order = _summary(
+        cells=(
+            _cell(outcome="loss", unknown_occurrence=True),
+            _cell(outcome="win", unknown_occurrence=True),
+        )
+    )
+    right_reordered = _summary(
+        cells=(
+            _cell(outcome="win", unknown_occurrence=True),
+            _cell(outcome="loss", unknown_occurrence=True),
+        )
+    )
+    result_a = align(left, right_in_order)
+    result_b = align(left, right_reordered)
+    for result in (result_a, result_b):
+        assert result.denominators.changed_condition == 0
+        assert result.denominators.ambiguous_duplicate_groups == 1
+        # No row is ever synthesized from an ambiguous group -- it is
+        # reported, not guessed at.
+        assert result.rows == ()
+
+
+def test_malformed_duplicate_occurrence_indices_never_crash_or_mispair():
+    """Two cells on the same side both claiming condition_occurrence_index=0
+    for the same (opponent, seed) is a corrupted/malformed state -- this
+    must not crash comparison and must never silently mispair the
+    malformed duplicate against an unrelated cell."""
+
+    left = _summary(
+        cells=(
+            _cell(outcome="win", occurrence=0),
+            _cell(outcome="loss", occurrence=0),  # malformed: duplicate index
+        )
+    )
+    right = _summary(cells=(_cell(outcome="win", occurrence=0),))
+    result = align(left, right)  # must not raise
+    # Exactly one strict-condition-key match is possible; the malformed
+    # extra is left over, never silently paired with anything.
+    assert result.denominators.directly_comparable == 1
+    assert len(result.unmatched_left) == 1
+
+
+def test_heterogeneous_v1_duplicate_outcomes_are_ambiguous_not_paired_by_outcome():
+    """Legacy v1 duplicates (condition_occurrence_index UNKNOWN, per
+    v1_adapter's honest handling of ambiguous duplicate evidence) with
+    different outcomes on each side must never be paired based on which
+    outcomes happen to match -- they are reported as ambiguous, full stop."""
+
+    left = _summary(
+        cells=(
+            _cell(outcome="win", unknown_occurrence=True),
+            _cell(outcome="win", unknown_occurrence=True),
+        )
+    )
+    right = _summary(
+        cells=(
+            _cell(outcome="loss", unknown_occurrence=True),
+            _cell(outcome="tie", unknown_occurrence=True),
+        )
+    )
+    result = align(left, right)
+    assert result.denominators.ambiguous_duplicate_groups == 1
+    assert result.rows == ()
+    assert result.reproducibility_anomalies == ()
+
+
+def test_related_condition_family_differing_only_in_rules_id_is_changed_condition():
+    """Same (opponent, seed) nominal slot, but the whole artifact's rules
+    compatibility id differs -- a related-but-incompatible condition
+    family, reported honestly as changed_condition rather than a bare
+    unmatched count."""
+
+    left = _summary(cells=(_cell(outcome="win"),), rules_id="evaluation-rules-1")
+    right = _summary(cells=(_cell(outcome="loss"),), rules_id="evaluation-rules-2")
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 0
+    assert result.denominators.changed_condition == 1
+    assert result.denominators.unmatched_left == 0
+    assert result.denominators.unmatched_right == 0
 
 
 def test_init_failure_cell_is_inconclusive_not_a_loss():
