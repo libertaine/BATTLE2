@@ -446,9 +446,8 @@ independent, later read of a possibly-different tree.
 
 ### 4.2 What actually happens: archival inside the freeze step itself
 
-**Not yet implemented (Phase 3, §9) — this subsection describes the
-intended design; the exact call shape below is settled at Phase 3 review,
-not before.** `EvaluationService.run()` already has exactly one moment
+**Implemented in Phase 3 (§9, done) — this subsection describes the design
+as implemented.** `EvaluationService.run()` already has exactly one moment
 where every subject's identity is frozen, once, before anything else
 happens (`agent_evaluation.py`, current line ~1059):
 

@@ -5,6 +5,8 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-11
+
 v0.8.0's theme is **Agent Revision & Provenance**: an agent's exact source
 at the moment an evaluation freezes its plan now gets a durable, content-
 addressed copy, closing v0.7's own recorded "Known Limitations" gap (source
