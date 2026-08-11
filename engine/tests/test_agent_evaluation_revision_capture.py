@@ -147,9 +147,11 @@ def test_evaluation_captures_symlink_cycle_as_revision_omissions(two_agents: Pat
     store_root = agent_revisions_root(two_agents)
     manifest = read_manifest(store_root, revision_id)
     assert manifest["complete"] is False
+    reason = manifest["omitted"][0]["reason"]
+    assert reason in {"resolve_error", "not_a_file"}
     assert manifest["omitted"] == [
-        {"relative_path": "loop_a.dat", "reason": "resolve_error", "target": "loop_b.dat"},
-        {"relative_path": "loop_b.dat", "reason": "resolve_error", "target": "loop_a.dat"},
+        {"relative_path": "loop_a.dat", "reason": reason, "target": "loop_b.dat"},
+        {"relative_path": "loop_b.dat", "reason": reason, "target": "loop_a.dat"},
     ]
     assert verify_revision(store_root, revision_id) is True
 

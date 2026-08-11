@@ -186,7 +186,31 @@ def test_non_python_files_are_included(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_symlink_cycle_is_reported_as_deterministic_resolution_errors(tmp_path: Path) -> None:
+def test_runtime_error_from_path_resolve_is_reported_as_resolution_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = tmp_path.resolve()
+    child = base / "loop.dat"
+    _write(child)
+    real_resolve = Path.resolve
+
+    def raising_resolve(self: Path, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if self == child:
+            raise RuntimeError("simulated symlink loop")
+        return real_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", raising_resolve)
+
+    import battle_engine.agent_revisions as revisions_module
+
+    assert revisions_module._classify_and_resolve(child, base) == (
+        None,
+        False,
+        REASON_RESOLVE_ERROR,
+    )
+
+
+def test_symlink_cycle_is_reported_as_deterministic_omissions(tmp_path: Path) -> None:
     agent_dir = _make_agent(tmp_path / "agent")
     loop_a = agent_dir / "loop_a.dat"
     loop_b = agent_dir / "loop_b.dat"
@@ -202,9 +226,15 @@ def test_symlink_cycle_is_reported_as_deterministic_resolution_errors(tmp_path: 
     assert first == second
     assert first.complete is False
     assert {entry.relative_path for entry in first.entries} == {"agent.py", "agent.yaml"}
+    reason = first.omitted[0].reason
+    # Path.resolve() raises RuntimeError for a cycle on CPython 3.10-3.12,
+    # but in 3.13 non-strict resolution returns the unresolved path. Both
+    # become existing, fail-safe omission types; the direct boundary test
+    # above independently requires RuntimeError to map to resolve_error.
+    assert reason in {REASON_RESOLVE_ERROR, REASON_NOT_A_FILE}
     assert first.omitted == (
-        OmittedAgentPath("loop_a.dat", REASON_RESOLVE_ERROR, "loop_b.dat"),
-        OmittedAgentPath("loop_b.dat", REASON_RESOLVE_ERROR, "loop_a.dat"),
+        OmittedAgentPath("loop_a.dat", reason, "loop_b.dat"),
+        OmittedAgentPath("loop_b.dat", reason, "loop_a.dat"),
     )
 
 
