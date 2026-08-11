@@ -202,7 +202,7 @@ def _classify_and_resolve(child: Path, base: Path) -> tuple[Path | None, bool, s
 
     try:
         resolved = child.resolve()
-    except OSError:
+    except (OSError, RuntimeError):
         return None, False, REASON_RESOLVE_ERROR
     try:
         resolved.relative_to(base)

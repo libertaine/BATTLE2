@@ -10,6 +10,7 @@ these tests build on.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from battle_engine.agent_revisions import (
     agent_revision_id,
     agent_revisions_root,
     local_python_subset_fingerprint,
+    read_manifest,
     verify_revision,
     walk_agent_files,
 )
@@ -121,6 +123,35 @@ def test_opponent_revision_also_captured(two_agents: Path) -> None:
     assert opponent_entries[0]["agent_revision_id"] is not None
     store_root = agent_revisions_root(two_agents)
     assert verify_revision(store_root, opponent_entries[0]["agent_revision_id"]) is True
+
+
+def test_evaluation_captures_symlink_cycle_as_revision_omissions(two_agents: Path) -> None:
+    candidate_dir = two_agents / "agents" / "candidate"
+    loop_a = candidate_dir / "loop_a.dat"
+    loop_b = candidate_dir / "loop_b.dat"
+    try:
+        os.symlink("loop_b.dat", loop_a)
+        os.symlink("loop_a.dat", loop_b)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is not permitted in this environment.")
+
+    result = EvaluationService().run(_request(two_agents))
+    data = _load(result.state_path)
+
+    assert data["lifecycle_state"] == "finished"
+    candidate_revision = data["agent_revisions"]["candidate"]
+    assert candidate_revision["agent_revision_error"] is None
+    revision_id = candidate_revision["agent_revision_id"]
+    assert revision_id is not None
+
+    store_root = agent_revisions_root(two_agents)
+    manifest = read_manifest(store_root, revision_id)
+    assert manifest["complete"] is False
+    assert manifest["omitted"] == [
+        {"relative_path": "loop_a.dat", "reason": "resolve_error", "target": "loop_b.dat"},
+        {"relative_path": "loop_b.dat", "reason": "resolve_error", "target": "loop_a.dat"},
+    ]
+    assert verify_revision(store_root, revision_id) is True
 
 
 def test_duplicate_opponent_occurrences_share_one_revision_id(two_agents: Path) -> None:

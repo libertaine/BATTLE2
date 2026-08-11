@@ -14,9 +14,11 @@ from battle_engine.agent_revisions import (
     REASON_EXTERNAL_TARGET,
     REASON_INTERNAL_SYMLINKED_DIRECTORY,
     REASON_NOT_A_FILE,
+    REASON_RESOLVE_ERROR,
     REASON_UNREADABLE,
     AgentFileEntry,
     AgentFileWalkResult,
+    OmittedAgentPath,
     RevisionNotFoundError,
     RevisionRestoreError,
     agent_revision_fingerprint,
@@ -182,6 +184,28 @@ def test_non_python_files_are_included(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Symlink handling -- the core of this phase's explicit requirement
 # ---------------------------------------------------------------------------
+
+
+def test_symlink_cycle_is_reported_as_deterministic_resolution_errors(tmp_path: Path) -> None:
+    agent_dir = _make_agent(tmp_path / "agent")
+    loop_a = agent_dir / "loop_a.dat"
+    loop_b = agent_dir / "loop_b.dat"
+    try:
+        os.symlink("loop_b.dat", loop_a)
+        os.symlink("loop_a.dat", loop_b)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is not permitted in this environment.")
+
+    first = walk_agent_files(agent_dir)
+    second = walk_agent_files(agent_dir)
+
+    assert first == second
+    assert first.complete is False
+    assert {entry.relative_path for entry in first.entries} == {"agent.py", "agent.yaml"}
+    assert first.omitted == (
+        OmittedAgentPath("loop_a.dat", REASON_RESOLVE_ERROR, "loop_b.dat"),
+        OmittedAgentPath("loop_b.dat", REASON_RESOLVE_ERROR, "loop_a.dat"),
+    )
 
 
 def test_external_file_symlink_is_reported_not_silently_dropped(tmp_path: Path) -> None:
