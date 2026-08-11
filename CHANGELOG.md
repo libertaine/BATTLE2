@@ -5,6 +5,19 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-11
+
+Patch release correcting Linux/POSIX symlink-cycle handling in the v0.8
+agent revision system.
+
+### Fixed
+
+- Agent revision walking now treats filesystem symlink-resolution cycles as
+  `REASON_RESOLVE_ERROR` omissions instead of allowing `Path.resolve()` to
+  raise an uncaught `RuntimeError` during evaluation.
+- Added regression coverage for cyclic symlinks through both revision
+  walking and evaluation execution.
+
 ## [0.8.0] - 2026-08-11
 
 v0.8.0's theme is **Agent Revision & Provenance**: an agent's exact source
