@@ -95,6 +95,10 @@ def _agents(argv: list[str]) -> int:
         from battle_engine.evaluation_history.cli import main as evaluations_main
 
         return evaluations_main(argv[1:])
+    if argv and argv[0] == "revisions":
+        from battle_engine.agent_revisions_cli import main as revisions_main
+
+        return revisions_main(argv[1:])
     if argv and argv[0] == "inspect":
         from battle_engine.agent_inspect import inspect_main
 
@@ -121,8 +125,11 @@ def _agents(argv: list[str]) -> int:
             "'agents test <agent-id>' to run a short development match, "
             "'agents inspect <run-dir>' to inspect a development trace, "
             "'agents diverge <run-a> <run-b>' to find the first tick two "
-            "traces disagree, or 'agents evaluate <candidate-id>' to run a "
-            "deterministic candidate/baseline evaluation matrix.",
+            "traces disagree, 'agents evaluate <candidate-id>' to run a "
+            "deterministic candidate/baseline evaluation matrix, "
+            "'agents evaluations list|show|compare' to inspect past evaluation "
+            "runs, or 'agents revisions list|show|restore' to inspect/restore "
+            "durably preserved agent source revisions.",
         )
     if argv:
         parser = argparse.ArgumentParser(prog="bytefray agents", add_help=False)

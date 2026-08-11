@@ -25,6 +25,21 @@ class FieldConfidence(str, Enum):
     VERIFIED = "verified"
 
 
+class RevisionVerificationStatus(str, Enum):
+    """Local agent-revision-store evidence for one role's recorded revision
+    (docs/specs/agent_revision.md Sec 7.2). Deliberately four distinct
+    states, never conflated (v0.8 audit requirement): a revision id that
+    was never recorded is a different fact from one that was recorded but
+    whose snapshot isn't on this machine, which is itself a different fact
+    from a snapshot that is present but fails to reconstruct/verify.
+    """
+
+    NOT_CHECKED = "not_checked"  # no recorded revision id, or --verify not requested
+    NOT_AVAILABLE = "not_available"  # revision id recorded; no local snapshot directory found
+    INVALID = "invalid"  # local snapshot directory found but fails to verify (corrupt/tampered/malformed)
+    VERIFIED = "verified"  # local snapshot found and its fingerprint matches its own directory name
+
+
 @dataclass(frozen=True)
 class ConfidenceValue:
     value: Any
@@ -298,6 +313,20 @@ class AdaptedCell:
     # artifact predates this field on some builds, or the cell never
     # completed).
     result_id: str | None = None
+    # docs/specs/agent_revision.md Sec 5.4: this cell's opponent's durable
+    # revision id/archival error, read from the schema-v3 "agent_revisions"
+    # sibling field by the same opponent-occurrence position
+    # ``opponent_identity`` already uses. ``UNKNOWN`` for v1/v2 artifacts
+    # (which never had this concept) and for a v3 artifact whose
+    # "agent_revisions" entry is absent or malformed for this position --
+    # never a guessed or substituted value.
+    opponent_agent_revision_id: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    opponent_agent_revision_error: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # Deep-verification outcome for this cell's opponent revision (Sec 7.2),
+    # populated only by ``verify_summary`` -- ``NOT_CHECKED`` for ordinary
+    # (non-``--verify``) adaptation and for any cell with no recorded
+    # revision id to check.
+    opponent_revision_verification: RevisionVerificationStatus = RevisionVerificationStatus.NOT_CHECKED
 
     @property
     def is_scored(self) -> bool:
@@ -327,6 +356,9 @@ class AdaptedCell:
             "opponent_identity": self.opponent_identity.to_json(),
             "verified": self.verified,
             "verify_error": self.verify_error,
+            "opponent_agent_revision_id": self.opponent_agent_revision_id.to_json(),
+            "opponent_agent_revision_error": self.opponent_agent_revision_error.to_json(),
+            "opponent_revision_verification": self.opponent_revision_verification.value,
         }
 
 
@@ -357,6 +389,23 @@ class EvaluationSummary:
     # for v1, which never had this concept). Each cell's own
     # ``execution_context_id`` references one entry here by ``context_id``.
     execution_contexts: tuple[dict[str, Any], ...] = ()
+    # docs/specs/agent_revision.md Sec 5.4: candidate/baseline durable
+    # revision id/archival error, read once per role from the schema-v3
+    # "agent_revisions" sibling field -- mirrors how candidate_identity/
+    # baseline_identity above are computed once per role rather than per
+    # cell. ``UNKNOWN`` for v1/v2 artifacts (which never had this concept)
+    # and for a v3 artifact whose "agent_revisions" entry for this role is
+    # absent or malformed.
+    candidate_agent_revision_id: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    candidate_agent_revision_error: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    baseline_agent_revision_id: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    baseline_agent_revision_error: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # Deep-verification outcome for the candidate/baseline revision (Sec
+    # 7.2), populated only by ``verify_summary`` -- ``NOT_CHECKED`` for
+    # ordinary (non-``--verify``) adaptation and whenever no revision id was
+    # recorded for that role.
+    candidate_revision_verification: RevisionVerificationStatus = RevisionVerificationStatus.NOT_CHECKED
+    baseline_revision_verification: RevisionVerificationStatus = RevisionVerificationStatus.NOT_CHECKED
 
     def to_json(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -383,6 +432,12 @@ class EvaluationSummary:
             "aggregates_recomputed": [asdict(row) for row in self.aggregates_recomputed],
             "comparison_recomputed": [asdict(row) for row in self.comparison_recomputed],
             "execution_contexts": [dict(item) for item in self.execution_contexts],
+            "candidate_agent_revision_id": self.candidate_agent_revision_id.to_json(),
+            "candidate_agent_revision_error": self.candidate_agent_revision_error.to_json(),
+            "baseline_agent_revision_id": self.baseline_agent_revision_id.to_json(),
+            "baseline_agent_revision_error": self.baseline_agent_revision_error.to_json(),
+            "candidate_revision_verification": self.candidate_revision_verification.value,
+            "baseline_revision_verification": self.baseline_revision_verification.value,
         }
 
 
@@ -432,6 +487,7 @@ __all__ = [
     "FieldConfidence",
     "HealthCode",
     "HealthReport",
+    "RevisionVerificationStatus",
     "SchemaSupport",
     "evaluation_cells_from_raw",
     "execution_context_is_valid",

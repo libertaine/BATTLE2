@@ -435,3 +435,41 @@ drift, and comparison semantics, including v1's honest limitations (v1
 never persisted enough to recover genuine executable identity for
 historical opponents/candidates, so `evaluations compare` against a v1
 artifact reports those dimensions as unknown rather than guessing).
+
+### Agent revisions (v0.8)
+
+Since v0.8, every `bytefray agents evaluate` run durably archives the exact
+source of the candidate, baseline (if any), and every opponent — not just
+their identity, an actual byte-for-byte copy — at the moment the plan
+freezes, before any cell executes. This closes a real gap `evaluations
+show`'s planned identity alone couldn't: identity tells you *whether* a
+historical evaluation's source matches something, but not what that source
+*was* once you've since edited or deleted the live agent.
+
+```bash
+bytefray agents revisions list <agent-id>              # every preserved revision relevant to this agent
+bytefray agents revisions show <revision-id>            # provenance, omissions, local verification
+bytefray agents revisions restore <revision-id> --to <dir>   # write the preserved files to <dir>
+```
+
+`evaluations show <selector>` prints each role's revision id next to its
+identity; `--verify` also checks that the local store's copy of each
+referenced revision still verifies, distinguishing "not available on this
+machine" (never treated as corruption — a copied evaluation directory
+without its original revision store, or a store that's since been cleaned
+up, is expected to read this way) from "invalid" (a snapshot is present but
+its bytes don't reconstruct the fingerprint it's filed under — this *is*
+a verification failure).
+
+Restoring composes with the rest of the toolchain rather than adding a new
+one: `restore` just writes plain files to a directory (never implicitly
+into `agents/<id>/`, and never overwriting a non-empty target without
+`--force`), and the existing `agents validate`/`agents test`/`agents
+evaluate` commands work on that directory exactly like any other agent
+folder. A revision is `complete` only when nothing under the agent's
+directory had to be omitted (an external symlink target, an unreadable
+file); an incomplete revision still has a real, useful identity for
+deduplication and comparison, but `restore` reproduces only what was
+actually captured, and says so. See `docs/specs/agent_revision.md` for the
+full identity/storage/verification design, including exactly what a
+revision does and does not preserve.

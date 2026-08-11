@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from battle_engine.agent_evaluation import EvaluationRequest, EvaluationService
+from battle_engine.agent_evaluation import SCHEMA_VERSION, EvaluationRequest, EvaluationService
 from battle_engine.evaluation_history import (
     AmbiguousSelectorError,
     ArtifactReadError,
@@ -81,7 +81,12 @@ def test_headless_import_never_pulls_in_qt_or_pygame():
 def test_v2_round_trip_via_adapt_any(tmp_path: Path):
     state_path = _run_v2(tmp_path)
     summary = adapt_any(state_path)
-    assert summary.schema.schema_version == 2
+    # _run_v2 always writes whatever EvaluationService currently produces
+    # (SCHEMA_VERSION) -- v3 (docs/specs/agent_revision.md Sec 5.3) is still
+    # v2-adapter-compatible (SUPPORTED_V2_VERSIONS), so this comparison is
+    # against the live constant, not a second hardcoded literal to keep in
+    # sync by hand on the next legitimate bump.
+    assert summary.schema.schema_version == SCHEMA_VERSION
     assert summary.candidate_id == "candidate"
     assert summary.lifecycle_state.value == "finished"
     assert summary.lifecycle_state.confidence == FieldConfidence.RECORDED

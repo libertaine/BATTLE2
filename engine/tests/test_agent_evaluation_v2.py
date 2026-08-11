@@ -109,7 +109,11 @@ def test_v2_artifact_records_effective_conditions_and_rules_id(two_agents: Path)
     service = EvaluationService()
     result = service.run(_request(two_agents))
     data = json.loads(result.state_path.read_text(encoding="utf-8"))
-    assert data["schema_version"] == 2 == SCHEMA_VERSION
+    # Sec 5.3 of docs/specs/agent_revision.md: SCHEMA_VERSION bumped 2 -> 3
+    # for the additive "agent_revisions" field; comparing only against the
+    # imported constant (not a second hardcoded literal) so this assertion
+    # doesn't itself go stale on the next legitimate, reviewed bump.
+    assert data["schema_version"] == SCHEMA_VERSION
     assert data["identity_version"] == IDENTITY_VERSION
     assert data["rules_compatibility_id"] == EVALUATION_RULES_COMPATIBILITY_ID
     conditions = data["effective_conditions"]

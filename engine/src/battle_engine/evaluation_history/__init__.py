@@ -34,6 +34,7 @@ from .models import (
     FieldConfidence,
     HealthCode,
     HealthReport,
+    RevisionVerificationStatus,
     SchemaSupport,
     resolve_contained_path,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "FieldConfidence",
     "HealthCode",
     "HealthReport",
+    "RevisionVerificationStatus",
     "SchemaSupport",
     "SummaryVerification",
     "adapt_any",

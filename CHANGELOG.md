@@ -5,6 +5,77 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+v0.8.0's theme is **Agent Revision & Provenance**: an agent's exact source
+at the moment an evaluation freezes its plan now gets a durable, content-
+addressed copy, closing v0.7's own recorded "Known Limitations" gap (source
+fingerprints identified a revision but kept no historical copy of it).
+
+### Added
+
+- `battle_engine.agent_revisions` — a new, self-contained, Qt-free
+  content-addressed revision store: a canonical tree-walk that includes
+  every regular file under an agent directory (not just `.py`), dereferences
+  internal file symlinks, never traverses a directory symlink/junction, and
+  explicitly records every omission (external target, broken link,
+  unreadable file) instead of silently dropping it; a versioned,
+  full-digest content fingerprint over that walk covering both included
+  bytes and omission evidence; and an atomic, dedup-by-construction store
+  under `<data_root>/agent_revisions/` whose written bytes are verified
+  against the intended fingerprint *before* a snapshot is ever promoted to
+  its canonical path.
+- `bytefray agents evaluate` now archives every distinct candidate/
+  baseline/opponent's revision at freeze time (before `evaluation_id`/any
+  checkpoint/any cell execution), with a same-freeze-step cross-check that
+  aborts the whole run (no artifact written) if the source changed between
+  the plan's own identity read and the archival read. `bytefray.evaluation`
+  bumps to **schema v3**, adding an `agent_revisions` field wholly separate
+  from `planned_identities` — `evaluation_id`/`IDENTITY_VERSION` are
+  unaffected, and v1/v2 artifacts remain fully readable and unmutated. A
+  revision-store write failure is recorded on the artifact and never takes
+  down the evaluation itself.
+- `bytefray agents evaluations show`/`show --verify`/`compare --verify` now
+  surface each role's revision id, archive error, and (with `--verify`)
+  local-store verification status — distinguishing "not available" (no
+  local snapshot; never treated as corruption) from "invalid" (a present
+  snapshot that fails to verify) from "verified," and never consulting live
+  agent source.
+- `bytefray agents revisions list <agent-id>|show <revision-id>|restore
+  <revision-id> [--to <dir>] [--force]` — the minimal CLI for discovering,
+  inspecting, and restoring preserved revisions. `restore` composes with
+  existing `agents test`/`agents evaluate`/`agents validate` rather than
+  adding a second execution path; it refuses to overwrite a non-empty
+  target without `--force`, refuses any path escape (`..`, absolute,
+  Windows drive-relative, UNC, or through a pre-existing destination
+  symlink/junction), and refuses to write anything at all if the canonical
+  snapshot itself fails to verify.
+
+### Fixed
+
+- `restore_revision` now verifies a canonical snapshot's fingerprint
+  *before* writing any file to a restore target, not only after — a
+  corrupted, tampered, or hand-edited snapshot now fails restoration
+  closed instead of silently reproducing untrustworthy bytes into a
+  target the caller is about to treat as trusted.
+
+### Deferred
+
+Explicitly out of scope for v0.8.0: revision `diff`, a revision-aware
+`test --revision` (use `restore` + existing `agents test`), Designer
+revision-management UI, revision-store garbage collection/lifecycle
+management, and VM/Redcode revision parity.
+
+### Known Limitations
+
+- A revision only covers an agent's own directory; external imports/
+  dependencies outside it remain out of scope, exactly as for source-drift
+  detection.
+- No storage-cost bound: a large local data file (e.g. `model.blob`) that
+  changes on every edit produces one full extra copy per distinct
+  revision. No cleanup/garbage-collection command exists yet.
+- A revision-preserved/source-reproducible claim requires `complete: true`
+  (no omissions); an incomplete revision still has a real, dedup-safe
+  identity, but restoring it reproduces less than the original tree.
+
 ## [0.7.0] - 2026-08-10
 
 v0.7.0's theme is **Evaluation History**: past `bytefray agents evaluate`

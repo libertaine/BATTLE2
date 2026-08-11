@@ -95,6 +95,30 @@ def test_cli_show_human(tmp_path: Path, capsys):
     assert "verified: True" in out
 
 
+def test_cli_show_reports_opponent_with_no_recorded_revision_as_unknown(tmp_path: Path, capsys):
+    """Regression test: an opponent whose ``agent_revision_id`` is absent
+    (a legacy artifact, or a real archive-error case where archival never
+    produced an id) must still get an explicit ``opponent:<id>: unknown``
+    line -- ``_print_agent_revisions``'s own docstring promises "unknown ...
+    is shown explicitly, never silently omitted," matching how candidate/
+    baseline are already handled. Previously the opponent-collection loop
+    only recorded an opponent at all when its revision id was truthy, so an
+    opponent lacking one was dropped from the printed block entirely rather
+    than shown as unknown."""
+
+    output_dir = tmp_path / "eval-out"
+    _run(tmp_path, output_dir)
+    state_path = output_dir / "evaluation.json"
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+    data["agent_revisions"]["opponents"][0]["agent_revision_id"] = None
+    state_path.write_text(json.dumps(data), encoding="utf-8")
+
+    code = evaluations_main(["show", str(output_dir)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "opponent:opponent: unknown" in out
+
+
 def test_cli_show_json(tmp_path: Path, capsys):
     output_dir = tmp_path / "eval-out"
     _run(tmp_path, output_dir)

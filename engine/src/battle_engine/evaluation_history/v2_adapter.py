@@ -27,7 +27,17 @@ from .models import (
     file_modified_at,
 )
 
-SUPPORTED_V2_VERSIONS = (2,)
+# v3 (docs/specs/agent_revision.md Sec 5.3) added one additive top-level
+# "agent_revisions" sibling field to "planned_identities" and otherwise
+# changed nothing about the v2 wire shape this adapter reads -- accepting
+# it here is a narrow compatibility fix (nothing below reads or exposes
+# "agent_revisions" yet; that is deferred, along with any other revision-
+# aware evaluation_history/CLI work, to a later phase), not a scope
+# expansion: without this, every fresh v3 evaluation would be reported
+# HealthCode.UNSUPPORTED_VERSION by `list`/`show`/`compare`, a regression
+# in the already-shipped v0.7 evaluation_history feature that a "Phase 3
+# has no history changes" reading of the plan did not anticipate.
+SUPPORTED_V2_VERSIONS = (2, 3)
 
 # A cell that lacks any of these, or has the wrong type, cannot even be
 # safely represented as an `EvaluationCell`/`AdaptedCell` -- H1: this must
@@ -61,6 +71,21 @@ def _recorded_or_unknown(
     if expected_type is not None and not isinstance(value, expected_type):
         return ConfidenceValue.unknown()
     return ConfidenceValue.recorded(value)
+
+
+def _agent_revision_field(raw_entry: Any, key: str, *, allow_none: bool = False) -> ConfidenceValue:
+    """One field of one role's ``agent_revisions`` entry (docs/specs/agent_revision.md
+    Sec 5.1), treated as untrusted persisted input: anything other than a
+    present, correctly-typed value is honestly ``UNKNOWN`` -- never a
+    guessed or substituted value, and never an exception that would
+    destroy the rest of an otherwise-readable artifact (a malformed
+    ``agent_revisions`` entry for one role/opponent must not affect any
+    other role/opponent's fields).
+    """
+
+    if not isinstance(raw_entry, dict):
+        return ConfidenceValue.unknown()
+    return _recorded_or_unknown(raw_entry, key, expected_type=str, allow_none=allow_none)
 
 
 def _validate_v2_cells(raw_cells: Any, path: Path) -> list[dict[str, Any]]:
@@ -185,6 +210,27 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         opponent_identities_raw if isinstance(opponent_identities_raw, list) else []
     )
 
+    # docs/specs/agent_revision.md Sec 5.1/5.3: "agent_revisions" is a
+    # wholly separate, additive top-level sibling of "planned_identities"
+    # (schema v3) -- absent entirely on v1/v2 artifacts and on any v3
+    # artifact whose evaluation had nothing to record. Read the same
+    # defensive way as "planned_identities" above: never assumed to be the
+    # right shape, never allowed to raise out of this function.
+    agent_revisions_raw = data.get("agent_revisions")
+    agent_revisions: dict[str, Any] = agent_revisions_raw if isinstance(agent_revisions_raw, dict) else {}
+    candidate_revision_entry = agent_revisions.get("candidate")
+    candidate_agent_revision_id = _agent_revision_field(candidate_revision_entry, "agent_revision_id")
+    candidate_agent_revision_error = _agent_revision_field(
+        candidate_revision_entry, "agent_revision_error", allow_none=True
+    )
+    baseline_revision_entry = agent_revisions.get("baseline")
+    baseline_agent_revision_id = _agent_revision_field(baseline_revision_entry, "agent_revision_id")
+    baseline_agent_revision_error = _agent_revision_field(
+        baseline_revision_entry, "agent_revision_error", allow_none=True
+    )
+    opponent_revisions_raw = agent_revisions.get("opponents")
+    opponent_revisions: list[Any] = opponent_revisions_raw if isinstance(opponent_revisions_raw, list) else []
+
     opponent_ids_list_raw = data.get("opponent_ids", [])
     opponent_ids_list: list[Any] = opponent_ids_list_raw if isinstance(opponent_ids_list_raw, list) else []
     cells = []
@@ -192,10 +238,27 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
     execution_context_refs: list[tuple[str, str]] = []  # (schedule_id, context_id)
     for raw in raw_cells:
         opponent_identity = ConfidenceValue.unknown()
+        opponent_agent_revision_id = ConfidenceValue.unknown()
+        opponent_agent_revision_error = ConfidenceValue.unknown()
         try:
+            # Same ordered-list, first-occurrence-position correlation
+            # "opponent_identity" already uses -- safe for duplicate/self-
+            # play opponent occurrences because every position for the same
+            # opponent_id was populated from the identical, once-per-agent-
+            # id dict (agent_evaluation._resolve_revision_results resolves
+            # one _RevisionPlanEntry per distinct agent_id, exactly as
+            # agent_identity() does for planned_identities).
             idx = opponent_ids_list.index(raw.get("opponent_id"))
             if idx < len(opponent_identities):
                 opponent_identity = ConfidenceValue.recorded(opponent_identities[idx])
+            if idx < len(opponent_revisions):
+                opponent_revision_entry = opponent_revisions[idx]
+                opponent_agent_revision_id = _agent_revision_field(
+                    opponent_revision_entry, "agent_revision_id"
+                )
+                opponent_agent_revision_error = _agent_revision_field(
+                    opponent_revision_entry, "agent_revision_error", allow_none=True
+                )
         except ValueError:
             pass
         schedule_ids.append(raw["schedule_id"])
@@ -230,6 +293,8 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 execution_context_id=_recorded_or_unknown(
                     raw, "execution_context_id", expected_type=str, allow_none=True
                 ),
+                opponent_agent_revision_id=opponent_agent_revision_id,
+                opponent_agent_revision_error=opponent_agent_revision_error,
             )
         )
 
@@ -518,6 +583,10 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         # `comparison.py` to find by id and treat as a legitimate
         # compatibility record (second closure pass).
         execution_contexts=tuple(valid_execution_contexts),
+        candidate_agent_revision_id=candidate_agent_revision_id,
+        candidate_agent_revision_error=candidate_agent_revision_error,
+        baseline_agent_revision_id=baseline_agent_revision_id,
+        baseline_agent_revision_error=baseline_agent_revision_error,
     )
 
 

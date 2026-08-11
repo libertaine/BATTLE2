@@ -13,8 +13,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from battle_engine.agent_revisions import agent_revisions_root, verify_revision
 from battle_engine.agent_test import OPPONENT_SLOT, TESTED_AGENT_SLOT
-from battle_engine.paths import contained_path
+from battle_engine.paths import contained_path, get_data_root
 from battle_engine.replay import ReplayHeader, iter_replay
 from battle_engine.result_model import ReplayIntegrityError, read_result, verify_replay_digest
 from battle_engine.results import WINNER_TIE_SENTINEL
@@ -25,6 +26,7 @@ from .models import (
     ConfidenceValue,
     EvaluationSummary,
     FieldConfidence,
+    RevisionVerificationStatus,
     resolve_contained_path,
 )
 
@@ -254,28 +256,95 @@ def verify_cell(
     return CellVerificationOutcome(cell.schedule_id, True, True)
 
 
+def _revision_status(revision_id: ConfidenceValue, store_root: Path) -> RevisionVerificationStatus:
+    """Local-store evidence for one recorded ``agent_revision_id`` (Sec 7.2).
+
+    Never consults live agent source -- only the revision store itself.
+    Three cases are deliberately distinguished, never conflated:
+
+    * no recorded id at all (v1/v2 artifact, or a v3 artifact whose
+      archival never produced one) -> ``NOT_CHECKED``, degrading silently
+      rather than failing (Sec 7.2: "missing/never-archived degrades to
+      skipped, not a hard failure");
+    * a recorded id with no matching local snapshot directory ->
+      ``NOT_AVAILABLE`` -- a copied/relocated artifact, or a store that was
+      cleaned up, is never reported as *corruption* of the historical
+      evaluation, only as "not present here";
+    * a matching directory whose manifest/content fails to reconstruct the
+      claimed fingerprint (missing manifest, malformed JSON, tampered or
+      dropped file, ``complete`` inconsistent with ``omitted``) ->
+      ``INVALID`` -- this is the one case that must fail verification, per
+      the v0.8 audit requirement that a snapshot at the expected id whose
+      bytes do not verify must not be silently trusted.
+    """
+
+    if revision_id.confidence != FieldConfidence.RECORDED or not isinstance(revision_id.value, str):
+        return RevisionVerificationStatus.NOT_CHECKED
+    if not (store_root / revision_id.value).is_dir():
+        return RevisionVerificationStatus.NOT_AVAILABLE
+    return (
+        RevisionVerificationStatus.VERIFIED
+        if verify_revision(store_root, revision_id.value)
+        else RevisionVerificationStatus.INVALID
+    )
+
+
 @dataclass(frozen=True)
 class SummaryVerification:
     outcomes: tuple[CellVerificationOutcome, ...]
     eligible_count: int
     verified_count: int
     failed: tuple[CellVerificationOutcome, ...]
+    # Sec 7.2: human-readable descriptions of every role/opponent whose
+    # recorded revision id resolved to a local snapshot that failed to
+    # verify (``RevisionVerificationStatus.INVALID`` only -- never
+    # ``NOT_AVAILABLE``/``NOT_CHECKED``, which are not failures).
+    revision_issues: tuple[str, ...] = ()
 
     @property
     def all_eligible_verified(self) -> bool:
-        """True only when at least one cell was eligible and every eligible
-        cell verified -- never vacuously true for zero eligible cells."""
+        """True only when at least one cell was eligible, every eligible
+        cell verified, and no checked revision evidence was invalid --
+        never vacuously true for zero eligible cells."""
 
-        return self.eligible_count > 0 and not self.failed
+        return self.eligible_count > 0 and not self.failed and not self.revision_issues
 
 
-def verify_summary(summary: EvaluationSummary) -> tuple[EvaluationSummary, SummaryVerification]:
+def verify_summary(
+    summary: EvaluationSummary, *, data_root: Path | None = None
+) -> tuple[EvaluationSummary, SummaryVerification]:
     """Deep-verify every eligible cell in ``summary`` and return an updated copy.
 
     The returned :class:`EvaluationSummary` has each cell's
     ``verified``/``verify_error`` populated -- the input ``summary`` itself
     is never mutated (frozen dataclasses throughout).
+
+    Also checks local agent-revision-store evidence (Sec 7.2) for the
+    candidate/baseline/each distinct opponent revision id this artifact
+    recorded, against ``data_root``'s revision store (``get_data_root()``
+    by default -- always *live*, current store state, per Sec 6, never
+    something read from the artifact itself). This never falls back to
+    live agent source under any circumstance -- only the revision store.
     """
+
+    store_root = agent_revisions_root(data_root if data_root is not None else get_data_root())
+
+    candidate_revision_status = _revision_status(summary.candidate_agent_revision_id, store_root)
+    baseline_revision_status = _revision_status(summary.baseline_agent_revision_id, store_root)
+
+    # Cached by revision id, not recomputed per cell -- a matrix with many
+    # seeds against the same opponent would otherwise re-walk/re-hash that
+    # opponent's snapshot once per cell instead of once per distinct id.
+    opponent_status_cache: dict[str, RevisionVerificationStatus] = {}
+
+    def _opponent_status(revision_id: ConfidenceValue) -> RevisionVerificationStatus:
+        if revision_id.confidence != FieldConfidence.RECORDED or not isinstance(revision_id.value, str):
+            return RevisionVerificationStatus.NOT_CHECKED
+        cached = opponent_status_cache.get(revision_id.value)
+        if cached is None:
+            cached = _revision_status(revision_id, store_root)
+            opponent_status_cache[revision_id.value] = cached
+        return cached
 
     outcomes: list[CellVerificationOutcome] = []
     new_cells: list[AdaptedCell] = []
@@ -285,20 +354,51 @@ def verify_summary(summary: EvaluationSummary) -> tuple[EvaluationSummary, Summa
         )
         outcome = verify_cell(cell, summary.location.directory, subject_identity)
         outcomes.append(outcome)
+        opponent_revision_status = _opponent_status(cell.opponent_agent_revision_id)
         if outcome.eligible:
-            new_cells.append(replace(cell, verified=outcome.verified, verify_error=outcome.error))
+            new_cells.append(
+                replace(
+                    cell,
+                    verified=outcome.verified,
+                    verify_error=outcome.error,
+                    opponent_revision_verification=opponent_revision_status,
+                )
+            )
         else:
-            new_cells.append(cell)
+            new_cells.append(replace(cell, opponent_revision_verification=opponent_revision_status))
 
     eligible = [outcome for outcome in outcomes if outcome.eligible]
     failed = tuple(outcome for outcome in eligible if not outcome.verified)
+
+    revision_issues: list[str] = []
+    if candidate_revision_status == RevisionVerificationStatus.INVALID:
+        revision_issues.append(
+            f"candidate revision {summary.candidate_agent_revision_id.value!r} failed local verification"
+        )
+    if baseline_revision_status == RevisionVerificationStatus.INVALID:
+        revision_issues.append(
+            f"baseline revision {summary.baseline_agent_revision_id.value!r} failed local verification"
+        )
+    for revision_id, status in opponent_status_cache.items():
+        if status == RevisionVerificationStatus.INVALID:
+            revision_issues.append(f"opponent revision {revision_id!r} failed local verification")
+
     verification = SummaryVerification(
         outcomes=tuple(outcomes),
         eligible_count=len(eligible),
         verified_count=sum(1 for outcome in eligible if outcome.verified),
         failed=failed,
+        revision_issues=tuple(revision_issues),
     )
-    return replace(summary, cells=tuple(new_cells)), verification
+    return (
+        replace(
+            summary,
+            cells=tuple(new_cells),
+            candidate_revision_verification=candidate_revision_status,
+            baseline_revision_verification=baseline_revision_status,
+        ),
+        verification,
+    )
 
 
 __all__ = [

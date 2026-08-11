@@ -815,3 +815,85 @@ fixed `runs/evaluations/designer-evaluation` path; it calls
 to compute this specific plan's own content-addressed default, matching
 what a bare CLI invocation would use, only when the user hasn't typed a
 different path themselves.
+
+## Agent Revision & Provenance (v0.8)
+
+Delivered in v0.8; see `docs/specs/agent_revision.md` for the full design.
+v0.7 gave an evaluation honest *identity* (§7 above); v0.8 gives an agent's
+exact source at that identity's freeze point a durable *copy*, so history
+stays meaningful after the live source keeps changing — closing v0.7's own
+recorded "Known Limitations" gap (no historical copy is kept, only
+identification).
+
+**`battle_engine.agent_revisions`** is a new, self-contained, Qt-free
+module — deliberately *not* built on top of `agent_api.local_source_
+fingerprint` (a real pre-3.13 symlink-traversal inconsistency in that
+function's own `rglob` walk would otherwise have been silently inherited;
+see the spec §2.1 for the full argument). It provides: a canonical
+tree-walk (`walk_agent_files`) that includes every regular file under an
+agent directory except `__pycache__`/`.git`, dereferences an internal file
+symlink, and never traverses a directory symlink/junction in either
+direction, explicitly recording every omission (external target, broken
+link, unreadable file, resolve error) rather than silently dropping it; a
+versioned, full-64-hex-digest content fingerprint over that walk's
+included bytes *and* its omission evidence (`agent_revision_fingerprint`/
+`agent_revision_id`) that is a strictly wider, separate value from
+`local_source_fingerprint` and is never folded into `evaluation_id` or
+`agent_identity()` — revision identity, evaluation-plan identity, and
+drift-detection scope stay three independent axes; and a content-addressed
+store under `<data_root>/agent_revisions/` with atomic temp-then-`os.replace`
+publication that is verified (fingerprint reconstructed from the written
+bytes) *before* being promoted to its canonical path, so a case-insensitive
+store collision or an interrupted write can never result in a canonical
+directory whose contents don't match its own name.
+
+**Freeze-time integration.** `EvaluationService.run()` archives every
+distinct candidate/baseline/opponent agent's revision immediately after
+`planned_identities` is computed and before `evaluation_id`/`matrix`/any
+checkpoint — never lazily on first cell execution, which would let the
+live tree drift between the plan's own read and the archive's. A
+freeze-time cross-check (the archival walk's own `.py`-subset fingerprint
+against the plan's already-recorded `local_source_fingerprint`) must
+agree; a mismatch aborts the whole run with no `evaluation.json` written
+at all, before any cell executes. A revision-store *write* failure (disk
+full, permissions) is non-fatal and recorded as `agent_revision_error` on
+the evaluation artifact — new, additive infrastructure must not take down
+evaluation itself. `bytefray.evaluation` bumped to **schema v3**
+(`IDENTITY_VERSION` unchanged — nothing about what `evaluation_id` hashes
+changed) with one wholly separate, additive top-level `agent_revisions`
+sibling field to `planned_identities`, deliberately never merged into it
+(an earlier implementation attempt that did merge them broke the existing
+"recomputing `evaluation_id` from the persisted `planned_identities`
+reproduces the stored value" invariant). v1 and v2 artifacts remain fully
+readable, are never mutated, and are honestly reported as having `UNKNOWN`
+revision provenance rather than a guessed value.
+
+**`evaluation_history` integration.** `AdaptedCell`/`EvaluationSummary`
+gained revision-id/archive-error/verification fields following the same
+per-role-once-per-cell-for-opponents pattern already used for identity
+fields, each wrapped in the existing `ConfidenceValue` machinery — a
+malformed `agent_revisions` entry for one role degrades only that field to
+`UNKNOWN`, never destroys a sibling role's data or aborts the artifact.
+`verify_summary` (used by `show --verify`/`compare --verify`) gained local
+revision-store evidence, distinguishing four states that must never be
+conflated: not checked, not available (no local snapshot — never reported
+as corruption), invalid (a present snapshot that fails to verify — the one
+state that fails overall verification), and verified. This check consults
+only the revision store, never live agent source.
+
+**CLI.** `bytefray agents revisions list <agent-id>|show <revision-id>|
+restore <revision-id> [--to <dir>] [--force]` (`agent_revisions_cli.py`),
+wired into `command.py`'s `_agents` dispatch alongside `evaluate`/
+`evaluations`/`test`/`validate`. `list`'s relevance filter is source_agent_id
+match *or* a live fingerprint match against the agent's current on-disk
+content (content-addressed dedup means the recorded, purely informational
+`source_agent_id` can legitimately name a different agent than one whose
+current content matches). `restore` never touches `agents/<id>/` implicitly,
+refuses a non-empty target without `--force`, and — found and fixed during
+this integration — now fails closed (nothing written) if the canonical
+snapshot itself doesn't verify, rather than only checking containment on
+the manifest-declared paths. Rerunning a historical revision is
+compositional: `restore` writes plain files to an explicit target, and the
+existing `agents test`/`agents evaluate`/`agents validate` commands operate
+on that directory like any other agent folder — no second, revision-aware
+execution path.

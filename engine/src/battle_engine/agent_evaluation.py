@@ -34,6 +34,13 @@ from battle_engine.agent_api import (
     AgentValidationError,
     local_source_fingerprint,
 )
+from battle_engine.agent_revisions import (
+    RevisionArchivalResult,
+    agent_revisions_root,
+    archive_agent_revision_from_walk,
+    local_python_subset_fingerprint,
+    walk_agent_files,
+)
 from battle_engine.agent_test import (
     DEFAULT_TICKS,
     OPPONENT_SLOT,
@@ -64,12 +71,26 @@ from battle_engine.result_model import (
 from battle_engine.results import WINNER_TIE_SENTINEL
 
 SCHEMA_NAME = "bytefray.evaluation"
-SCHEMA_VERSION = 2
-# Bumped 2 -> 3: agent_identity() gained "local_source_fingerprint" (H3),
-# which changes the identity dict's shape/hash for every existing
-# candidate/baseline/opponent -- an identity-affecting change, versioned
-# explicitly per AGENTS.md rather than silently changing evaluation_id's
-# wire meaning in place.
+SCHEMA_VERSION = 3
+# Bumped 2 -> 3: each planned_identities entry (candidate/baseline/each
+# opponent) gains "agent_revision_id"/"agent_revision_error"
+# (docs/specs/agent_revision.md Sec 5) -- an additive wire-shape change,
+# versioned explicitly per AGENTS.md rather than silently changing what a
+# reader can expect to find, even though it does NOT change evaluation_id's
+# hash payload (see IDENTITY_VERSION below, deliberately left unchanged).
+# A v2 evaluation.json is not resumable under this schema_version (Sec 5.3
+# of the spec -- the same "old artifact needs a fresh evaluation" pattern
+# v1 -> v2 already established); it remains fully readable via
+# evaluation_history's own adapters, never mutated.
+#
+# Bumped 2 -> 3 (identity): agent_identity() gained "local_source_
+# fingerprint" (H3), which changes the identity dict's shape/hash for every
+# existing candidate/baseline/opponent -- an identity-affecting change,
+# versioned explicitly per AGENTS.md rather than silently changing
+# evaluation_id's wire meaning in place. agent_revision_id (above) is
+# deliberately NOT folded into this hash -- see
+# docs/specs/agent_revision.md Sec 1.4 -- so IDENTITY_VERSION does not bump
+# again here.
 IDENTITY_VERSION = 3
 
 # Narrowly scoped compatibility identifier for evaluation/match comparison
@@ -999,6 +1020,95 @@ def _resumed_cell_mismatch(
     return None
 
 
+# ---------------------------------------------------------------------------
+# Revision capture (docs/specs/agent_revision.md Sec 4/5 -- Phase 3)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _RevisionPlanEntry:
+    """The two revision fields rendered into one ``planned_identities`` entry.
+
+    Deliberately narrower than ``agent_revisions.RevisionArchivalResult``:
+    ``complete``/``omitted`` are not persisted here at all (Sec 5.1 of the
+    spec -- they already live durably in the revision store's own
+    ``manifest.json``, keyed by ``agent_revision_id``; duplicating them
+    into every evaluation artifact that references a revision would be a
+    second, driftable copy of the same fact).
+    """
+
+    agent_revision_id: str | None
+    agent_revision_error: str | None
+
+
+def _revision_entry_from_raw(raw: Any) -> _RevisionPlanEntry | None:
+    if not isinstance(raw, Mapping):
+        return None
+    revision_id = raw.get("agent_revision_id")
+    if not isinstance(revision_id, str):
+        return None
+    error = raw.get("agent_revision_error")
+    return _RevisionPlanEntry(revision_id, error if isinstance(error, str) else None)
+
+
+def _prior_revision_by_agent_id(prior: Mapping[str, Any]) -> dict[str, _RevisionPlanEntry]:
+    """Recover any already-recorded ``agent_revision_id``s from a prior checkpoint.
+
+    Resume/retry must retain the originally planned revision ID (Sec 4 of
+    docs/specs/agent_revision.md) -- this is what lets ``_resolve_revision_
+    results`` skip re-archiving (and re-reading the source tree) for any
+    agent that already has a durable, recorded revision from an earlier
+    invocation of this same evaluation, rather than silently recomputing
+    one every time ``run()`` is called. An agent with no usable prior
+    ``agent_revision_id`` (a pre-Phase-3 v2 artifact -- no ``agent_revisions``
+    key at all -- or a prior invocation whose archival never produced an id)
+    is simply absent from the returned mapping -- ``_resolve_revision_
+    results`` then archives it fresh, exactly as it would for a first
+    invocation.
+
+    ``agent_revisions`` (Sec 5.1/5.2 of the spec, as actually implemented)
+    is a role-keyed sibling of ``planned_identities`` -- ``candidate``/
+    ``baseline``/``opponents`` -- deliberately carrying no ``agent_id``
+    field of its own (unlike ``planned_identities``' entries), so it never
+    risks being mistaken for something that could be merged back into
+    ``planned_identities`` and rehashed. Recovering an agent_id-keyed
+    lookup therefore means correlating positionally against the prior
+    artifact's own ``candidate_id``/``baseline_id``/``opponent_ids`` --
+    the same ordered-list convention ``_evaluation_id``'s own
+    ``"opponents": [identities[opponent_id] for opponent_id in
+    request.opponent_ids]`` already uses.
+    """
+
+    agent_revisions = prior.get("agent_revisions")
+    if not isinstance(agent_revisions, Mapping):
+        return {}
+
+    result: dict[str, _RevisionPlanEntry] = {}
+
+    candidate_id = prior.get("candidate_id")
+    if isinstance(candidate_id, str):
+        entry = _revision_entry_from_raw(agent_revisions.get("candidate"))
+        if entry is not None:
+            result[candidate_id] = entry
+
+    baseline_id = prior.get("baseline_id")
+    if isinstance(baseline_id, str):
+        entry = _revision_entry_from_raw(agent_revisions.get("baseline"))
+        if entry is not None and baseline_id not in result:
+            result[baseline_id] = entry
+
+    opponent_ids = prior.get("opponent_ids")
+    opponent_revisions = agent_revisions.get("opponents")
+    if isinstance(opponent_ids, list) and isinstance(opponent_revisions, list):
+        for agent_id, raw in zip(opponent_ids, opponent_revisions):
+            if not isinstance(agent_id, str) or agent_id in result:
+                continue
+            entry = _revision_entry_from_raw(raw)
+            if entry is not None:
+                result[agent_id] = entry
+    return result
+
+
 class EvaluationService:
     """Headless orchestrator: schedules and executes an evaluation matrix.
 
@@ -1063,6 +1173,14 @@ class EvaluationService:
         state_path = request.output_dir / "evaluation.json"
         prior = self._load_state(state_path, evaluation_id) if request.resume else {}
         prior_cells = {item["schedule_id"]: item for item in prior.get("cells", ())}
+        # Revision capture (docs/specs/agent_revision.md Sec 4): resolved
+        # here, after `prior` is loaded (so an already-planned agent's
+        # revision ID can be retained rather than recomputed) and strictly
+        # before `matrix`/any checkpoint/any cell execution. A detected
+        # freeze-time mismatch raises out of this call, aborting `run()`
+        # before any of that happens -- no evaluation.json is written or
+        # modified for this invocation.
+        revision_plan = self._resolve_revision_results(request, specs, planned_identities, prior)
         matrix = build_matrix(
             request, evaluation_id, specs, conditions_fp, EVALUATION_RULES_COMPATIBILITY_ID
         )
@@ -1098,6 +1216,7 @@ class EvaluationService:
                 (),
                 matrix,
                 planned_identities=planned_identities,
+                revision_plan=revision_plan,
                 conditions=conditions,
                 created_at=created_at,
                 lifecycle_state="running",
@@ -1152,6 +1271,7 @@ class EvaluationService:
                     _checkpoint_cells(completed, matrix, prior_cells),
                     matrix,
                     planned_identities=planned_identities,
+                    revision_plan=revision_plan,
                     conditions=conditions,
                     created_at=created_at,
                     lifecycle_state="running",
@@ -1197,6 +1317,7 @@ class EvaluationService:
             aggregates=aggregates,
             comparison=comparison,
             planned_identities=planned_identities,
+            revision_plan=revision_plan,
             conditions=conditions,
             created_at=created_at,
             lifecycle_state="aborted" if drift is not None else "finished",
@@ -1268,6 +1389,67 @@ class EvaluationService:
             "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
         }
         return stable_id("evaluation-v2", payload)
+
+    def _resolve_revision_results(
+        self,
+        request: EvaluationRequest,
+        specs: Mapping[str, AgentSpec],
+        planned_identities: Mapping[str, dict[str, Any]],
+        prior: Mapping[str, Any],
+    ) -> dict[str, _RevisionPlanEntry]:
+        """One ``_RevisionPlanEntry`` per distinct agent_id in ``specs``.
+
+        Reused verbatim from ``prior`` when already recorded there (resume/
+        retry must retain the originally planned revision ID -- never
+        silently recompute one for an agent this evaluation has already
+        durably planned, docs/specs/agent_revision.md Sec 4). Freshly
+        archived otherwise, from the *same* ``walk_agent_files`` read used
+        for the freeze-time consistency check immediately below -- one
+        read, never a second independent one racing against
+        ``agent_identity()``'s own (Sec 4.2).
+
+        Must be called after ``planned_identities`` is built and after
+        ``prior`` is loaded, but before ``evaluation_id``/anything derived
+        from it is trusted for scheduling, and strictly before any cell
+        executes or any checkpoint is written -- a detected mismatch (see
+        below) raises out of this method, aborting ``run()`` before any of
+        that happens.
+        """
+
+        prior_revisions = _prior_revision_by_agent_id(prior)
+        root = request.data_root or get_data_root()
+        store_root = agent_revisions_root(root)
+
+        resolved: dict[str, _RevisionPlanEntry] = {}
+        for agent_id, spec in specs.items():
+            if agent_id in prior_revisions:
+                resolved[agent_id] = prior_revisions[agent_id]
+                continue
+
+            # Not yet planned by any prior invocation of this evaluation --
+            # archive fresh. `walk` is read exactly once and used for both
+            # the cross-check below and the archive write itself
+            # (`archive_agent_revision_from_walk`), so revision capture and
+            # `planned_identities[agent_id]` describe the same source read
+            # as closely as this process can prove (Sec 4.2): the frozen
+            # `local_source_fingerprint` was computed moments earlier, in
+            # this same freeze step, by `agent_identity()`'s own
+            # independent read.
+            walk = walk_agent_files(spec.dir)
+            cross_check = local_python_subset_fingerprint(walk)
+            if cross_check != planned_identities[agent_id].get("local_source_fingerprint"):
+                raise EvaluationConfigurationError(
+                    f"Revision archival observed source for agent {agent_id!r} that "
+                    "does not match the frozen evaluation plan; aborting before any "
+                    "cell executes. Source changed during evaluation planning -- "
+                    "start a fresh evaluation."
+                )
+
+            result: RevisionArchivalResult = archive_agent_revision_from_walk(
+                walk, store_root=store_root, source_agent_id=agent_id
+            )
+            resolved[agent_id] = _RevisionPlanEntry(result.agent_revision_id, result.error)
+        return resolved
 
     # -- resume -----------------------------------------------------------
 
@@ -1493,6 +1675,7 @@ class EvaluationService:
         matrix: Sequence[EvaluationCell],
         *,
         planned_identities: Mapping[str, dict[str, Any]],
+        revision_plan: Mapping[str, _RevisionPlanEntry],
         conditions: EffectiveConditions,
         created_at: str,
         lifecycle_state: str,
@@ -1513,9 +1696,34 @@ class EvaluationService:
         written ``planned_identities`` payload is structurally guaranteed to
         reproduce ``evaluation_id`` (both come from the same frozen dict; see
         ``_evaluation_id``).
+
+        ``revision_plan`` (docs/specs/agent_revision.md Sec 5.2, revised)
+        is rendered into its own **sibling top-level field**,
+        ``agent_revisions`` -- never merged into ``planned_identities``
+        itself. An earlier version of this method merged the two fields
+        directly into each ``planned_identities.candidate``/``.baseline``/
+        ``.opponents[]`` entry; that broke the existing, tested "B1"
+        invariant (``test_persisted_planned_identity_rehashes_to_the_
+        recorded_evaluation_id`` and siblings) that recomputing
+        ``evaluation_id`` from ``planned_identities`` *as persisted in the
+        artifact* must reproduce the stored value exactly -- a reader
+        rehashing the persisted dict verbatim would have picked up the two
+        extra keys and produced a different hash than the one actually
+        stored. Keeping ``agent_revisions`` a wholly separate JSON key
+        keeps ``planned_identities`` byte-for-byte identical to what
+        ``_evaluation_id`` hashed, with no copying or filtering required to
+        prove it -- the same object is written both times.
         """
 
         project = get_project_info()
+
+        def _revision_payload(agent_id: str) -> dict[str, str | None]:
+            entry = revision_plan.get(agent_id)
+            return {
+                "agent_revision_id": entry.agent_revision_id if entry is not None else None,
+                "agent_revision_error": entry.agent_revision_error if entry is not None else None,
+            }
+
         planned_identities_payload = {
             "candidate": planned_identities[request.candidate_id],
             "baseline": (
@@ -1526,6 +1734,13 @@ class EvaluationService:
             "opponents": [
                 planned_identities[opponent_id] for opponent_id in request.opponent_ids
             ],
+        }
+        agent_revisions_payload = {
+            "candidate": _revision_payload(request.candidate_id),
+            "baseline": (
+                _revision_payload(request.baseline_id) if request.baseline_id is not None else None
+            ),
+            "opponents": [_revision_payload(opponent_id) for opponent_id in request.opponent_ids],
         }
         conditions_dict = asdict(conditions)
         write_json_atomic(
@@ -1542,6 +1757,7 @@ class EvaluationService:
                 "ticks": request.ticks,
                 "matrix_size": len(matrix),
                 "planned_identities": planned_identities_payload,
+                "agent_revisions": agent_revisions_payload,
                 "effective_conditions": conditions_dict,
                 "effective_conditions_fingerprint": stable_id(
                     "evaluation-conditions", conditions_dict

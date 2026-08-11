@@ -55,6 +55,16 @@ jobs:
         # version on Linux) specifically to get real Windows containment
         # coverage from a runner that's already provisioned for this job.
         run: python -m pytest engine/tests/test_process_containment.py engine/tests/test_agent_worker.py engine/tests/test_supervised_runtime.py -q
+      - name: Run Windows-native agent-revision (NTFS junction) tests
+        # Same rationale as above, for a second Windows-only surface: real
+        # NTFS directory junctions (mklink /J, which needs no elevation,
+        # unlike a symbolic link) only actually exist on this runner --
+        # test-linux-core never exercises battle_engine.agent_revisions'
+        # junction/reparse-point containment at all. This is exactly the
+        # gap an Ultra adversarial review found: a Windows-only detection
+        # bug in that module had no CI coverage on any Windows runner,
+        # only on Linux where the relevant code path never executes.
+        run: python -m pytest engine/tests/test_agent_revisions.py engine/tests/test_agent_evaluation_revision_capture.py -q
       - name: Build EXEs
         shell: pwsh
         run: pwsh tools/build_win.ps1

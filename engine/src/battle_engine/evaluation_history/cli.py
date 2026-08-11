@@ -83,6 +83,8 @@ def _cmd_show(args: argparse.Namespace) -> int:
         if verification.failed:
             first = verification.failed[0]
             verify_error = f"{first.schedule_id}: {first.error}"
+        elif verification.revision_issues:
+            verify_error = verification.revision_issues[0]
         elif verification.eligible_count == 0:
             verify_error = "no eligible (completed/scored) cells to verify"
 
@@ -127,8 +129,56 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None) -> 
     for aggregate in summary.aggregates_recomputed:
         print(f"[{aggregate.subject_role}] {aggregate.subject_id}  win_rate={aggregate.win_rate_display}")
     _print_execution_contexts(summary)
+    _print_agent_revisions(summary)
     if verified is not None:
         print(f"verified: {verified}" + (f"  ({verify_error})" if verify_error else ""))
+
+
+def _print_agent_revisions(summary) -> None:
+    """Sec 5.4/7.2: durable revision provenance next to each role, when
+    present -- ``unknown`` (v1/v2 artifacts, or a v3 artifact that never
+    recorded one for this role) is shown explicitly, never silently
+    omitted. Verification status (``[invalid]``/``[not_available]``/
+    ``[verified]``) is only shown once ``--verify`` has actually populated
+    it; plain ``show`` never claims local-store evidence it didn't check.
+    """
+
+    def _line(label: str, revision_id_cv, error_cv, status) -> None:
+        if not revision_id_cv.value:
+            print(f"  {label}: unknown")
+            return
+        line = f"  {label}: {revision_id_cv.value}"
+        if error_cv.value:
+            line += f"  ARCHIVE ERROR: {error_cv.value}"
+        if status.value != "not_checked":
+            line += f"  [{status.value}]"
+        print(line)
+
+    print("agent revisions:")
+    _line(
+        "candidate",
+        summary.candidate_agent_revision_id,
+        summary.candidate_agent_revision_error,
+        summary.candidate_revision_verification,
+    )
+    if summary.baseline_id is not None:
+        _line(
+            "baseline",
+            summary.baseline_agent_revision_id,
+            summary.baseline_agent_revision_error,
+            summary.baseline_revision_verification,
+        )
+    seen_opponents = {}
+    for cell in summary.cells:
+        if cell.opponent_id not in seen_opponents:
+            seen_opponents[cell.opponent_id] = cell
+    for opponent_id, cell in seen_opponents.items():
+        _line(
+            f"opponent:{opponent_id}",
+            cell.opponent_agent_revision_id,
+            cell.opponent_agent_revision_error,
+            cell.opponent_revision_verification,
+        )
 
 
 def _print_execution_contexts(summary) -> None:
@@ -167,6 +217,8 @@ def _verify_side(summary):
     if verification.failed:
         first = verification.failed[0]
         return summary, f"{first.schedule_id}: {first.error}"
+    if verification.revision_issues:
+        return summary, verification.revision_issues[0]
     if verification.eligible_count == 0:
         return summary, "no eligible (completed/scored) cells to verify"
     return summary, None

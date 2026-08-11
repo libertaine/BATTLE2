@@ -19,7 +19,7 @@ from .models import (
     file_modified_at,
 )
 from .v1_adapter import V1_SCHEMA_NAME, adapt_v1_data
-from .v2_adapter import adapt_v2_data
+from .v2_adapter import SUPPORTED_V2_VERSIONS, adapt_v2_data
 
 
 class AmbiguousSelectorError(ValueError):
@@ -91,7 +91,7 @@ def adapt_any(path: Path) -> EvaluationSummary:
             code=HealthCode.WRONG_SCHEMA,
         )
     version = raw.get("schema_version")
-    if version == 2:
+    if version in SUPPORTED_V2_VERSIONS:
         return adapt_v2_data(raw, path)
     if version == 1:
         return adapt_v1_data(raw, path)
