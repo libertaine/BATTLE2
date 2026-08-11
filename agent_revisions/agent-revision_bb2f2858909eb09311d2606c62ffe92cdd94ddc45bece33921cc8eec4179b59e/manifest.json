@@ -1,0 +1,14 @@
+{
+  "agent_revision_id": "agent-revision_bb2f2858909eb09311d2606c62ffe92cdd94ddc45bece33921cc8eec4179b59e",
+  "archived_at": "2026-08-11T18:24:07.732399Z",
+  "complete": true,
+  "files": [
+    "agent.py",
+    "agent.yaml"
+  ],
+  "fingerprint_version": 1,
+  "omitted": [],
+  "schema": "bytefray.agent_revision",
+  "schema_version": 1,
+  "source_agent_id": "adaptive"
+}
