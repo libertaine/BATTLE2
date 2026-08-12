@@ -114,9 +114,18 @@ regardless of how mature adjacent functionality is:
   native engine** — pMARS interoperability continues, but does not use
   Bytefray Ruleset v1, Agent API v1, or the canonical replay schema; see
   [RULES.md](RULES.md)'s "Redcode/pMARS — not Ruleset v1".
-- **Arena translation/placement robustness in evaluation** — arena
-  alignment is currently fixed and disclosed as untested by
-  `agents evaluate`; see `docs/ROADMAP.md`.
+- **Arena translation/placement robustness in evaluation** — decided in
+  v0.10 Phase 3: the standard 1.0 `agents evaluate` methodology uses a
+  single, fixed arena alignment for every cell (`arena_alignment_mode:
+  "fixed"`) and explicitly discloses that translation robustness is not
+  evaluated. This is a deliberate, evidence-informed deferral, not an
+  oversight — Python arena translation cannot be implemented without
+  either an incompatible Agent API v1 change (out of bounds) or
+  substantial new shared Python-runtime engineering that is its own,
+  separately scoped future effort; VM/native placement is directly usable
+  today via `MatchEntrant.start` but `agents evaluate` is Python-only and
+  has no VM path to attach it to. See `docs/ROADMAP.md` and
+  `docs/RULES.md`.
 - **Future rulesets** (advanced offensive mechanics, arena-size research,
   multipronged agents, replication) — anything in that category would
   require a Ruleset identity beyond `bytefray-rules-1`, tracked in

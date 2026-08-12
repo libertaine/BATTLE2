@@ -5,6 +5,25 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+### Documentation
+
+- Closed v0.10's evaluation-methodology question (Phase 3): the standard
+  Bytefray 1.0 `agents evaluate` contract is orientation-aware with a
+  single, fixed arena alignment, and explicitly does not claim translation/
+  placement robustness. This is a deliberate, evidence-informed deferral,
+  not an oversight — re-verified against the now-frozen Ruleset v1/Agent
+  API v1 contracts that Python arena translation cannot be implemented
+  without either an incompatible Agent API v1 change (out of bounds) or
+  substantial new shared Python-runtime engineering that remains its own,
+  separately scoped future effort. A fresh, independent VM-entrant study
+  (using the existing production `MatchEntrant.start` placement mechanism,
+  not a research hack) corroborated v0.9's finding that relative placement
+  can materially change match outcomes (3 of 4 tested matchups flipped
+  winner across placements), reinforcing that the deferral is a scope
+  limitation, not a claim that placement doesn't matter. No engine,
+  Ruleset, Agent API, or evaluation schema code changed as a result.
+  `docs/ROADMAP.md` and `docs/COMPATIBILITY.md` updated accordingly.
+
 ### Added
 
 - `battle_engine.rules.BYTEFRAY_RULESET_ID = "bytefray-rules-1"` — a new,

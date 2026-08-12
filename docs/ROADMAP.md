@@ -67,34 +67,40 @@ compatibility identity of its own, so a future gameplay change (see
 introduced honestly, without silently reinterpreting what an older
 evaluation or replay actually measured.
 
-### 2. Close remaining evaluation-methodology gaps
+### 2. Close remaining evaluation-methodology gaps — closed
 
-Review the evaluation system for any remaining structural dimensions that
-could materially affect competitive results. One area is already scoped
-from v0.9's own development work: **translation / placement robustness**
-— whether fixed absolute arena alignment creates a structural bias
-analogous to the entrant-orientation bias v0.9 closed. This was already
-investigated during v0.9 development: a dedicated study found the
-evidence for gameplay-rule impact mixed (no rule change was justified),
-but confirmed that fixed-alignment claims about relative strategy strength
-can be artifacts of translation phase, and that arena translation should
-be treated as an evaluation variable going forward — the same shape of
-conclusion that motivated entrant orientation. That study also found that
-translation is directly usable for VM/native entrants today (arena
-placement is already a first-class, identity-tracked field for them), but
-is **not currently implementable for Python entrants** without new shared
-runtime work: either a new Agent API surface exposing a per-match origin
-(rejected as a primary mechanism, since it would only help agents written
-to consult it, not the existing shipped roster), or a transparent,
-engine-level per-match address remapping applied at the arena boundary
-(bijective and content-preserving, but a real change to the runtime layer
-every Python match shares, not an additive change local to the evaluation
-feature). v0.10 does not need to repeat that investigation; it needs to
-decide, informed by it, whether to build that runtime layer and wire
-placement into `agents evaluate` the way orientation was wired in v0.9, or
-to continue explicitly disclosing arena alignment as fixed and untested.
-The goal is methodological honesty, not adding matrix dimensions merely
-for completeness.
+**Decided in v0.10 Phase 3** (see `docs/COMPATIBILITY.md` and
+`docs/RULES.md`): the standard Bytefray 1.0 evaluation contract is
+orientation-aware and fixed-arena-alignment, and does **not** claim
+translation/placement robustness. This was v0.9's one open
+evaluation-methodology question — **translation / placement robustness**,
+whether fixed absolute arena alignment creates a structural bias analogous
+to the entrant-orientation bias v0.9 closed. v0.9's own dedicated study
+found the evidence for gameplay-rule impact mixed (no rule change was
+justified), confirmed that fixed-alignment claims about relative strategy
+strength can be artifacts of translation phase, and found translation
+directly usable for VM/native entrants today but **not implementable for
+Python entrants** without new shared runtime work: either a new Agent API
+surface exposing a per-match origin, or a transparent, engine-level
+per-match address remapping applied at the arena boundary. Phase 3
+independently re-verified both findings against the current (now Ruleset
+v1/Agent API v1-frozen) source and ran a fresh, independent VM-entrant
+study using the production placement mechanism (`MatchEntrant.start`),
+which corroborated that relative placement is a real, sometimes large
+effect (3 of 4 tested VM matchups flipped winner across placements) while
+confirming no path to Python translation exists that avoids either an
+incompatible Agent API v1 change (now explicitly off the table, Phase 2)
+or the same substantial, separately-scoped runtime engineering v0.9 named
+and declined to undertake inline. **Disposition: fixed alignment is the
+standard 1.0 methodology; translation remains a documented, deliberately
+deferred future capability** — `arena_alignment_mode` already exists as
+its extension point, and no evaluation, Ruleset, or Agent API code changed
+to reach this decision. See
+`runs/research_v0.10/PHASE3_EVALUATION_METHODOLOGY.md` for the full
+evidence trail (ignored research, not committed) and
+`docs/COMPATIBILITY.md`'s "Experimental/unsupported boundaries" for the
+durable, committed statement of what this means for
+1.0.
 
 ### 3. Define stable versus unstable interfaces
 
