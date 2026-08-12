@@ -502,7 +502,23 @@ def _identity_safe_diagnostic(diagnostic: Any) -> dict[str, Any] | None:
 
 
 def canonical_match_id(request: MatchRequest) -> str:
-    """Derive canonical match identity entirely from request inputs."""
+    """Derive canonical match identity entirely from request inputs.
+
+    Includes ``BYTEFRAY_RULESET_ID`` as a first-class identity axis, sibling
+    to ``reproducibility``/``entrants`` (v0.10 Phase 4) -- never folded into
+    ``reproducibility``, which is specifically about per-match
+    *configuration*, not gameplay identity (see docs/RULES.md's
+    "Configuration values are not Ruleset identity"). Two otherwise-identical
+    execution inputs must never collide under one ``match_id`` if they ran
+    under different declared gameplay semantics.
+
+    This is a deliberate, one-time native-ID transition: because exactly one
+    Ruleset has ever existed, adding it to this payload changes the
+    `match_id`/`result_id`/`replay_id` a v0.10+ build computes for the same
+    logical inputs relative to a pre-v0.10 build -- see
+    docs/RESULT_SCHEMA.md's "Identity recipe" and docs/COMPATIBILITY.md for
+    the full rationale and the resume-compatibility consequence.
+    """
 
     entrant_identities = []
     for slot, entrant in enumerate(request.entrants):
@@ -544,7 +560,12 @@ def canonical_match_id(request: MatchRequest) -> str:
     }
     return stable_id(
         "match",
-        {"mode": "b2", "reproducibility": reproducibility, "entrants": entrant_identities},
+        {
+            "mode": "b2",
+            "ruleset_id": BYTEFRAY_RULESET_ID,
+            "reproducibility": reproducibility,
+            "entrants": entrant_identities,
+        },
     )
 
 

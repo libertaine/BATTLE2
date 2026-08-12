@@ -44,10 +44,27 @@ This changelog records notable user- and developer-visible changes to Bytefray
   execution, READ/WRITE addressing, mortality, forfeit handling, scoring
   and winner-resolution integration — were byte-for-byte unchanged for the
   Python runtime's entire existence (v0.3.0 onward, the same range already
-  proven for the VM). A resumed tournament match or evaluation cell whose
-  result and replay disagree on `ruleset_id` is now demoted to
-  `corrupted`, the same treatment an existing `match_id`/`result_id`
-  disagreement already receives. `bytefray.evaluation`'s historical
+  proven for the VM). `ruleset_id` is also now a first-class input to
+  `match_id`'s identity hash (`match_service.canonical_match_id`), so two
+  otherwise-identical matches can never collide under one `match_id` if
+  they ran under different declared gameplay semantics; `result_id`/
+  `replay_id` inherit this transitively. **This is a deliberate, one-time
+  native-ID transition**: a v0.10 Phase 4+ build computes a different
+  `match_id`/`result_id`/`replay_id` than a pre-Phase-4 build would for
+  byte-identical inputs, since exactly one Ruleset's literal value is now
+  hashed in where previously nothing was. Historical stored IDs are never
+  rewritten; a `tournament.json`/`evaluation.json` left mid-run by an older
+  build will show its prior completed matches/cells as
+  `resumed_result_mismatch`/`corrupted` on the first Phase-4+ resume — the
+  same safe, fail-closed behavior any other `match_id` mismatch already
+  produces (`--retry-failed` or a fresh run recovers it), mirroring the
+  precedent already set when `bytefray.evaluation` moved v1 → v2's
+  strictly richer identity payload. See `docs/RESULT_SCHEMA.md`'s
+  "Identity recipe" for the full rationale and pinned tests. A resumed
+  tournament match or evaluation cell whose result and replay disagree on
+  `ruleset_id` is now demoted to `corrupted`, the same treatment an
+  existing `match_id`/`result_id` disagreement already receives.
+  `bytefray.evaluation`'s historical
   `"evaluation-rules-1"` value is now explicitly normalized (a small,
   finite alias table, `battle_engine.rules.normalize_ruleset_id`) to align
   with a fresh `"bytefray-rules-1"` evaluation for cross-evaluation

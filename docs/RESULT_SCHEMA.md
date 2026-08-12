@@ -16,13 +16,32 @@ gameplay Ruleset identity (`battle_engine.rules.BYTEFRAY_RULESET_ID`, see
 current native writers** — every VM or Python match produced by
 `NativeMatchService`/`match_service._finalize_native_artifacts` sets it to
 `"bytefray-rules-1"` — but it is **not required for all historical
-artifacts**: any `battle2.result` v1 result written before this field
-existed simply omits the key entirely, and remains a fully valid,
-fully readable v1 result. A `redcode94`/pMARS result never sets this field
-— Bytefray Ruleset v1 is not applicable to Redcode/pMARS execution (see
-[RULES.md](RULES.md)'s "Redcode/pMARS — not Ruleset v1") — so `ruleset_id`
-being absent on a pMARS result is not a compatibility gap to close, it is
-the honest, permanent answer.
+artifacts**.
+
+**Present-as-`null` versus genuinely absent — these are two different
+facts and this schema distinguishes them precisely:**
+
+- `ResultEnvelope.as_dict()` (the one writer both native and pMARS paths
+  use) always emits the `ruleset_id` key for *any* result written by the
+  current codebase — `"bytefray-rules-1"` for a native match,
+  literally **`"ruleset_id": null`** (key present, JSON `null`) for a
+  `redcode94`/pMARS result, since Bytefray Ruleset v1 is not applicable to
+  Redcode/pMARS execution (see [RULES.md](RULES.md)'s "Redcode/pMARS — not
+  Ruleset v1") and `cli.py`'s pMARS path never passes a value for it. This
+  is not a compatibility gap to close — it is the honest, permanent answer
+  for that mode, chosen for one consistent writer behavior (the key is
+  always present in current output) rather than a per-mode conditional
+  key.
+- A `battle2.result` v1 result written **before this field existed at
+  all** (any pre-Phase-4 artifact, native or pMARS alike) has the key
+  genuinely, structurally **absent** — there was no `ruleset_id` concept
+  yet, not even a `null` placeholder.
+- `read_result`'s `data.get("ruleset_id")` maps both cases to the
+  identical Python value, `ResultEnvelope.ruleset_id is None` — the
+  envelope itself does not, and need not, distinguish "explicitly declared
+  not applicable" from "predates this concept." `resolve_result_ruleset`
+  (below) recovers that distinction from `mode`, which is the field that
+  actually carries it, not from whether the JSON key was present.
 
 No `battle2.result` schema bump was required to add this field: every
 released `read_result` implementation constructs its `ResultEnvelope` by
@@ -31,14 +50,15 @@ unrecognized key (verified directly, not merely inferred, against the
 `v0.9.0`-tagged `result_model.py` in an isolated worktree — see
 `docs/COMPATIBILITY.md`). `battle_engine.result_model.
 resolve_result_ruleset(envelope)` gives the honest, confidence-qualified
-answer for a result that predates the field: `"recorded"` when present,
-`"recovered"` `bytefray-rules-1` for a native (`mode: "b2"`) result missing
-it (the schema itself never existed before v0.3.0, and VM/Python gameplay
+answer regardless of which of the two `None` cases above produced it:
+`"recorded"` when `ruleset_id` is a non-null string, `"recovered"`
+`bytefray-rules-1` for a native (`mode: "b2"`) result with a `None` value
+(the schema itself never existed before v0.3.0, and VM/Python gameplay
 semantics are proven byte-for-byte unchanged across the entire
 `battle2.result` v1 lifetime — see [RULES.md](RULES.md)), `"not_applicable"`
-for a `redcode94` result, or `"unknown"` for anything else. `ruleset_id`
-does not participate in `result_id`'s identity hash — see "Identity
-recipe" below for why.
+for any `redcode94` result with a `None` value (whether that `None` came
+from an explicit current-writer `null` or a genuinely absent historical
+key), or `"unknown"` for anything else.
 
 Native entrant records include identity, final state, score, statistics,
 termination reason, optional structured diagnostic, and execution metadata.
@@ -59,6 +79,7 @@ the caller-supplied, positionally-ordered entrant tuple).
 ```text
 {
   "mode": "b2",
+  "ruleset_id": "bytefray-rules-1",
   "reproducibility": {
     "seed", "arena_size", "tick_limit", "action_budget", "win_mode",
     "weights", "entrant_order"
@@ -78,23 +99,56 @@ get the same `match_id`, regardless of the absolute path either checkout used
 pins this directly: `test_match_id_is_stable_across_different_absolute_checkout_paths`
 runs the identical logical match from two different directory trees and
 asserts equal `match_id`s; `test_match_id_changes_with_meaningful_config_or_code_changes`
-asserts a changed seed or changed agent bytecode changes it.
+asserts a changed seed or changed agent bytecode changes it;
+`test_canonical_match_id_changes_if_ruleset_identity_changes` (added with
+this section) proves `ruleset_id` is a live input to the hash, not
+decorative, by monkeypatching the canonical constant `canonical_match_id`
+reads and confirming the computed id changes.
 
-**`ruleset_id` deliberately does not participate in `match_id`/`result_id`'s
-hash payload.** Two otherwise-identical results genuinely could not
-legitimately share one identity if they ran under different gameplay
-Rulesets -- but as of v0.10 Phase 4 exactly one Ruleset
-(`BYTEFRAY_RULESET_ID = "bytefray-rules-1"`) has ever existed, so adding a
-constant value to every hash payload today would only churn every
-`match_id`/`result_id` this build computes relative to a build without the
-field, for zero present disambiguating benefit -- see
-`docs/COMPATIBILITY.md`. This is deliberately deferred, not overlooked:
-when a future Ruleset v2 is actually introduced, incorporating Ruleset
-identity into the hash payload becomes a genuine, scoped identity decision
-to make explicitly alongside that work, not a speculative change made in
-advance of any second Ruleset ever existing. Historical `match_id`/
-`result_id` values are unaffected either way -- this document's identity
-recipe is completely unchanged by v0.10 Phase 4.
+**`ruleset_id` is a first-class input to `match_id`'s hash payload,
+sibling to `reproducibility`/`entrants` (v0.10 Phase 4) — never folded
+into `reproducibility`, which is specifically about per-match
+*configuration*, not gameplay identity (see
+[RULES.md](RULES.md)'s "Configuration values are not Ruleset identity").**
+Two otherwise-identical results could not legitimately share one identity
+if they ran under different gameplay Rulesets, so this closes that latent
+risk directly rather than deferring it. `result_id`/`replay_id` are not
+separately updated to hash `ruleset_id` again — both already derive from
+(embed) `match_id`, so they inherit this dependency transitively.
+
+**This is a deliberate, one-time native-ID transition, not a silent
+break.** Because exactly one Ruleset (`BYTEFRAY_RULESET_ID =
+"bytefray-rules-1"`) has ever existed, this literal string is now hashed
+into every current match's identity where it previously was not —
+meaning a v0.10 Phase 4+ build computes a **different** `match_id`/
+`result_id`/`replay_id` than a pre-Phase-4 build would for byte-identical
+execution inputs. Concretely:
+
+- **Historical, already-persisted `match_id`/`result_id`/`replay_id`
+  values are never rewritten** — reading an old artifact is completely
+  unaffected; this only changes what a *fresh* run computes.
+- **Re-running "the same match" under v0.10 Phase 4+ produces a new,
+  different id** than an equivalent pre-Phase-4 run would have, even with
+  identical seed/config/entrants. This is intentional: identity now
+  encodes gameplay semantics, closing the risk that a future Ruleset v2
+  match could otherwise collide under the same `match_id` as a Ruleset v1
+  match with coincidentally identical configuration/entrants.
+- **Resume consequence**: `tournament_service`/`agent_evaluation` resume
+  verification recomputes the *expected* `match_id` fresh from current
+  code and compares it against what a prior run's `result.json` actually
+  recorded (`tournament_service._resumed_result_mismatch`/
+  `agent_evaluation._resumed_cell_mismatch`). A `tournament.json`/
+  `evaluation.json` left mid-run by a pre-Phase-4 build will therefore show
+  every not-yet-verified completed match/cell as `resumed_result_mismatch`
+  and get demoted to `corrupted` on the first v0.10 Phase 4+ resume —
+  exactly the existing, safe, fail-closed behavior an unrelated
+  `match_id` mismatch already produces, never a crash or silent
+  acceptance. The operator's remedy is the same as for any other
+  `corrupted` state: `--retry-failed`, or start fresh. This mirrors the
+  precedent already established when `bytefray.evaluation` moved v1 → v2
+  (a v0.6.1 evaluation directory was never implicitly resumed by an
+  equivalent v0.7 invocation, because v2's identity payload was strictly
+  richer) — see `ARCHITECTURE.md`'s "Evaluation History (v0.7)".
 
 `result_id` additionally covers the outcome (`winner`, `termination_reason`,
 `ticks`, `score`, and full per-entrant `entrants` records including

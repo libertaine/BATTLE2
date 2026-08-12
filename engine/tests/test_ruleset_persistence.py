@@ -83,11 +83,44 @@ def test_resolve_result_ruleset_never_stamps_redcode_even_if_field_were_present(
     """Defensive: even a hypothetically corrupted/foreign redcode94 result
     that somehow carries a ``ruleset_id`` is reported as exactly what it
     recorded (``recorded``), never silently promoted or demoted -- but a
-    genuine pMARS writer (cli.py) never sets this field in the first place.
+    genuine pMARS writer (cli.py) never passes a real value for this field,
+    only ever the default ``None`` (see the "absent vs null" tests below).
     """
 
     envelope = _envelope(mode="redcode94", ruleset_id=BYTEFRAY_RULESET_ID)
     assert resolve_result_ruleset(envelope) == RulesetProvenance(BYTEFRAY_RULESET_ID, "recorded")
+
+
+def test_redcode_result_as_dict_carries_ruleset_id_key_with_null_value():
+    """v0.10 Phase 4: ``ResultEnvelope.as_dict()`` is the one writer both the
+    native and pMARS paths use (cli.py's redcode94 path never passes a
+    ``ruleset_id`` value, so it defaults to ``None``) -- it always emits the
+    ``ruleset_id`` *key*, so a current pMARS result.json has the JSON
+    literal ``"ruleset_id": null``, never a wholly missing key. Only a
+    result written before this field existed at all lacks the key
+    structurally -- see ``test_result_missing_ruleset_id_key_entirely_still_reads``.
+    """
+
+    payload = _envelope(mode="redcode94", ruleset_id=None).as_dict()
+    assert "ruleset_id" in payload
+    assert payload["ruleset_id"] is None
+    assert json.dumps(payload)  # confirms it serializes as JSON null, not an error
+
+
+def test_redcode_result_missing_ruleset_id_key_entirely_still_resolves_not_applicable(tmp_path):
+    """The genuinely-historical-absence case for a pMARS result (pre-Phase-4,
+    key never existed) must resolve identically to the current writer's
+    explicit ``null`` -- both are ``ResultEnvelope.ruleset_id is None``, and
+    ``mode``, not key presence, is what actually carries "not applicable".
+    """
+
+    payload = _envelope(mode="redcode94", ruleset_id=None).as_dict()
+    del payload["ruleset_id"]
+    path = tmp_path / "result.json"
+    write_json_atomic(path, payload)
+    envelope = read_result(path)
+    assert envelope.ruleset_id is None
+    assert resolve_result_ruleset(envelope) == RulesetProvenance(None, "not_applicable")
 
 
 def test_resolve_result_ruleset_unknown_for_unrecognized_mode():
@@ -135,6 +168,19 @@ def test_resolve_replay_ruleset_recovered_for_v3_missing_field():
 
 def test_resolve_replay_ruleset_unknown_for_schema_version_2():
     header = ReplayHeader(MatchConfiguration(64), schema_version=2)
+    assert resolve_replay_ruleset(header) == RulesetProvenance(None, "unknown")
+
+
+def test_resolve_replay_ruleset_unknown_for_hypothetical_future_schema_version():
+    """The recovery check is deliberately exact equality (``== 3``), never
+    ``>=`` -- a hypothetical future schema version 4 header missing
+    ``ruleset_id`` must not be silently auto-recovered as bytefray-rules-1
+    just because ``4 >= 3``. Whether that future version's shape falls
+    inside the proven-stable window is a fact to establish (and this
+    function to update) deliberately when that version is introduced.
+    """
+
+    header = ReplayHeader(MatchConfiguration(64), schema_version=4)
     assert resolve_replay_ruleset(header) == RulesetProvenance(None, "unknown")
 
 

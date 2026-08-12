@@ -124,24 +124,59 @@ gameplay Ruleset produced one native match:
   semantics"). Both are additive fields; neither schema was bumped (see
   [RESULT_SCHEMA.md](RESULT_SCHEMA.md)/[REPLAY_SCHEMA.md](REPLAY_SCHEMA.md)
   for the reader-tolerance evidence).
-- A `redcode94`/pMARS result **never** carries `ruleset_id` — Bytefray
-  Ruleset v1 is not applicable to Redcode execution (see
-  [RULES.md](RULES.md)'s "Redcode/pMARS — not Ruleset v1"). pMARS
-  produces no canonical replay at all, so the question does not arise for
-  replay.
+- A `redcode94`/pMARS result never *claims* Bytefray Ruleset v1 — but
+  "absent" and "explicit `null`" are two different, precisely distinguished
+  facts here, not interchangeable phrasing (see
+  [RESULT_SCHEMA.md](RESULT_SCHEMA.md)'s "Ruleset identity" for the full
+  detail): the current writer (`ResultEnvelope.as_dict()`, used by both the
+  native and pMARS paths) always emits the `ruleset_id` key, so a current
+  `redcode94` result has `"ruleset_id": null` — key **present**, value
+  `null` — never `"bytefray-rules-1"`. Only a `result.json` written
+  *before this field existed at all* (any pre-Phase-4 artifact, native or
+  pMARS) has the key genuinely, structurally **absent**. Both decode to
+  `ResultEnvelope.ruleset_id is None` at the Python level, and
+  `resolve_result_ruleset` treats them identically via `mode`, which is
+  what actually carries the "not applicable" fact — not whether the JSON
+  key itself was present. pMARS produces no canonical replay at all, so
+  this absent-vs-null question does not arise for `battle2.replay`.
 - `battle_engine.result_model.resolve_result_ruleset`/`battle_engine.
   replay.resolve_replay_ruleset` attribute a confidence-qualified answer
-  for an artifact that predates this field: `"recorded"` (field present),
-  `"recovered"` (field absent, but the artifact's own shape/mode is
-  evidence-backed as Ruleset v1 — every native `battle2.result` v1 result,
-  and every `battle2.replay` schema-version-3 header, since neither shape
-  ever existed before the v0.3.0 "Bytefray Rename & Native Core" rewrite
-  that established the currently-frozen gameplay semantics), `"unknown"`
-  (no evidence — a genuine `battle2.replay` schema-version-2 header, which
-  the pre-rename `v0.2.0` release's own canonical writer also produced, so
-  the shape alone cannot prove which era wrote it), or `"not_applicable"`
-  (a `redcode94` result). See the compatibility matrix below for the full
-  artifact/version/runtime table.
+  for an artifact that predates this field: `"recorded"` (field present
+  and non-null), `"recovered"` (field `None`, but the artifact's own
+  shape/mode is evidence-backed as Ruleset v1 — every native
+  `battle2.result` v1 result, and every `battle2.replay` header whose
+  `schema_version` is **exactly** `3`, since neither shape ever existed
+  before the v0.3.0 "Bytefray Rename & Native Core" rewrite that
+  established the currently-frozen gameplay semantics), `"unknown"` (no
+  evidence — a genuine `battle2.replay` schema-version-2 header, which the
+  pre-rename `v0.2.0` release's own canonical writer also produced, plus
+  any future schema version greater than 3 until deliberately proven to
+  fall in the same window — the check is exact equality, never `>=`, so an
+  unrelated future wire-shape bump is never silently also treated as a
+  Ruleset-provenance fact), or `"not_applicable"` (any `redcode94` result,
+  whether its `None` came from an explicit current-writer `null` or a
+  genuinely absent historical key). See the compatibility matrix below for
+  the full artifact/version/runtime table.
+- **`ruleset_id` is a first-class input to `match_id`'s hash payload**
+  (`match_service.canonical_match_id`), sibling to `reproducibility`/
+  `entrants`, never folded into `reproducibility` (see
+  [RULES.md](RULES.md)'s "Configuration values are not Ruleset identity").
+  `result_id`/`replay_id` inherit this transitively, since both already
+  embed `match_id`. This is a **deliberate, one-time native-ID
+  transition**: because exactly one Ruleset has ever existed, hashing its
+  literal value in changes the `match_id`/`result_id`/`replay_id` a v0.10
+  Phase 4+ build computes relative to a pre-Phase-4 build, for
+  byte-identical execution inputs. Historical stored IDs are never
+  rewritten; only fresh computation changes. The direct consequence: a
+  `tournament.json`/`evaluation.json` left mid-run by a pre-Phase-4 build
+  will show its already-completed matches/cells as
+  `resumed_result_mismatch`/`corrupted` on the first Phase-4+ resume — the
+  existing, safe, fail-closed behavior any other `match_id` mismatch
+  already produces (never silently trusted, never a crash), requiring
+  `--retry-failed` or a fresh run. This mirrors the precedent already set
+  when `bytefray.evaluation` moved v1 → v2's strictly richer identity
+  payload. See [RESULT_SCHEMA.md](RESULT_SCHEMA.md#identity-recipe) for
+  the full rationale and pinned tests.
 - These four states deliberately reuse a self-contained
   `battle_engine.rules.RulesetProvenance`/`RulesetConfidence` vocabulary
   rather than importing `evaluation_history`'s richer `FieldConfidence`/

@@ -612,18 +612,23 @@ def resolve_replay_ruleset(header: ReplayHeader) -> RulesetProvenance:
       docs/REPLAY_SCHEMA.md's "Compatibility note"), so every real
       schema-version-3 record -- adapted or canonical -- falls inside the
       source-proven-stable v0.3.0+ window docs/RULES.md establishes.
-    * ``ruleset_id`` absent, ``schema_version < 3`` -> ``"unknown"``.
-      Schema version 2 was genuinely the canonical wire format of the
-      pre-rename ``v0.2.0`` release (confirmed by inspecting that tag's own
-      ``replay.py``), and the same internal ``schema_version == 2`` shape
-      is also what a genuinely unversioned v0.1 record adapts to
-      (:func:`adapt_v01_record`) -- neither case can be proven to fall
-      inside the window docs/RULES.md's historical evidence actually
-      covers, so this deliberately does not guess.
+    * ``ruleset_id`` absent, any other ``schema_version`` -> ``"unknown"``.
+      Deliberately an exact ``== 3`` check, not ``>= 3``: schema version 2
+      was genuinely the canonical wire format of the pre-rename ``v0.2.0``
+      release (confirmed by inspecting that tag's own ``replay.py``), and
+      the same internal ``schema_version == 2`` shape is also what a
+      genuinely unversioned v0.1 record adapts to
+      (:func:`adapt_v01_record`) -- neither can be proven to fall inside the
+      window docs/RULES.md's historical evidence actually covers, so this
+      deliberately does not guess. A future schema version greater than 3
+      is equally not automatically recoverable: whether it still falls
+      inside a Ruleset-v1-proven window is a fact about *that* version's own
+      history, to be established (and this function updated) deliberately
+      when that version is introduced, never inferred from ``>=``.
     """
 
     if header.ruleset_id is not None:
         return RulesetProvenance(header.ruleset_id, "recorded")
-    if header.schema_version >= 3:
+    if header.schema_version == 3:
         return RulesetProvenance(BYTEFRAY_RULESET_ID, "recovered")
     return RulesetProvenance(None, "unknown")

@@ -71,20 +71,29 @@ key on a header record (verified directly against the `v0.9.0`-tagged
 `replay.py` in an isolated worktree, not merely inferred). `battle_engine.
 replay.resolve_replay_ruleset(header)` gives the honest,
 confidence-qualified answer for a header that predates the field:
-`"recorded"` when present, `"recovered"` `bytefray-rules-1` for a
-schema-version-3 header missing it (schema version 3 never existed before
-the v0.3.0 development branch that also established the currently-frozen
-gameplay semantics -- see [RULES.md](RULES.md)), or `"unknown"` for a
-schema-version-2 header. Schema version 2 deliberately does **not**
-recover: it was genuinely the pre-rename `v0.2.0` release's own canonical
-wire format (confirmed by inspecting that tag's own `replay.py`), so a
-schema-version-2 header cannot be proven to fall inside the
-source-proven-stable v0.3.0+ window -- treating it as `"recovered"` would
-be a guess, not evidence. `ruleset_id` does not participate in
-`match_id`/`result_id`/`replay_id` -- see
-[RESULT_SCHEMA.md](RESULT_SCHEMA.md#identity-recipe) for why, which
-applies identically here since the replay header carries the same three
-IDs the result envelope does.
+`"recorded"` when present, `"recovered"` `bytefray-rules-1` for a header
+whose `schema_version` is **exactly** `3` (not `>= 3`) and is missing it
+(schema version 3 never existed before the v0.3.0 development branch that
+also established the currently-frozen gameplay semantics -- see
+[RULES.md](RULES.md)), or `"unknown"` for anything else, including a
+schema-version-2 header and any future schema version greater than 3.
+Schema version 2 deliberately does **not** recover: it was genuinely the
+pre-rename `v0.2.0` release's own canonical wire format (confirmed by
+inspecting that tag's own `replay.py`), so a schema-version-2 header
+cannot be proven to fall inside the source-proven-stable v0.3.0+ window --
+treating it as `"recovered"` would be a guess, not evidence. The check is
+deliberately exact equality rather than `>=` so that a future schema
+version 4+ is never silently auto-recovered by this function without a
+deliberate decision (and update to this function) establishing that it
+belongs in the same proven window -- an unrelated future wire-shape change
+is not automatically also a Ruleset-provenance fact.
+
+`ruleset_id` **is** a first-class input to `match_id`'s hash payload as of
+v0.10 Phase 4 -- see [RESULT_SCHEMA.md](RESULT_SCHEMA.md#identity-recipe)
+for the full rationale and the documented native-ID transition this
+causes, which applies identically here: `replay_id`/`match_id`/`result_id`
+on the header are the same three IDs `result.json` carries, computed by
+the same `canonical_match_id`.
 
 ### Runtime-kind semantics
 
