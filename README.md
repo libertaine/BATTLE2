@@ -37,6 +37,20 @@ Development is incremental and repository-driven. Goals and architecture are est
 
 AI-generated code and review findings are treated as proposals, not authority. Claims are checked against executable behavior, tests, the current repository, and other reproducible evidence; findings that cannot be confirmed are rejected. Human judgment remains responsible for project direction, requirements, architecture, scope, tradeoffs, and deciding when a change is ready to enter the project.
 
+### Optional Local AI Development Assistance
+
+Bytefray development may optionally use local [Ollama](https://ollama.com)
+models for bounded secondary analysis — test-failure triage, focused
+diff/code review, regression-test brainstorming, Windows/Linux portability
+review, evidence review for ambiguous failures, and summarization of large
+test/CI output. This is **developer tooling, not a Bytefray feature**:
+local-model findings are advisory and non-authoritative, and are never a
+substitute for tests, reproduction, source inspection, or release
+validation. Ollama is not required to build, install, or run Bytefray,
+create or run agents, execute tests, use Agent Designer, run CI, or
+produce a release. See [tools/local_ai/README.md](tools/local_ai/README.md)
+for the full policy and current tooling status.
+
 ---
 
 ## Roadmap
@@ -72,7 +86,11 @@ VM/Redcode authoring and evaluation parity (Redcode is *not* cancelled;
 Python-side authoring, evaluation, provenance, and the ruleset itself are
 expected to mature first), richer statistical/evaluation analysis, ranking
 systems such as Elo/Glicko, parallel/distributed evaluation, and agent
-packaging/sharing.
+packaging/sharing. Post-v0.9 development may also explore deeper optional
+local-AI developer tooling (see [tools/local_ai/README.md](tools/local_ai/README.md))
+— standardized review packets, structured JSON review results, and
+benchmarking local models against known historical Bytefray defects are
+candidate directions, not promised for any specific release.
 
 ---
 

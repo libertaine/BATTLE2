@@ -1,0 +1,30 @@
+Design adversarial regression coverage for the supplied Bytefray change,
+requirement, defect, or proposed correction.
+
+Focus on behavior and invariants rather than implementation trivia.
+
+Include:
+
+### Core regression tests
+Tests directly required by the demonstrated behavior.
+
+### Boundary cases
+Relevant edge cases implied by the mechanism.
+
+### Negative controls
+Cases that must continue to succeed or must not be classified as defects.
+
+### Cross-platform cases
+Windows/POSIX differences where directly relevant.
+
+### Determinism and provenance cases
+Only when relevant to the supplied material.
+
+### Failure assertions
+What each test must prove, including fail-closed behavior where appropriate.
+
+### Avoid
+Tests that would overfit the current implementation or merely duplicate
+the reproduction without protecting the underlying invariant.
+
+Do not invent requirements not supplied in the input.

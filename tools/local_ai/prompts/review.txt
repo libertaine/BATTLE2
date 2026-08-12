@@ -1,0 +1,48 @@
+Perform a narrow Bytefray technical review of the supplied material.
+
+Focus on:
+
+1. What behavior is actually demonstrated.
+2. Whether a defect is established.
+3. The smallest root cause supported by evidence.
+4. The smallest safe correction.
+5. Regression coverage required before accepting the correction.
+6. Directly implied adjacent risks.
+7. Any unsupported assumptions in the supplied material.
+
+Return exactly these sections:
+
+### Disposition
+Choose exactly one:
+DEFECT
+TEST_DEFECT
+EXPECTED
+INSUFFICIENT_EVIDENCE
+
+### Confidence
+Choose exactly one:
+HIGH
+MEDIUM
+LOW
+
+### Evidence
+Only facts established by the supplied material.
+
+### Root cause
+Use "Not established." when evidence does not establish one.
+
+### Smallest safe correction
+Use "None established." when no correction is justified.
+
+### Required regression coverage
+Minimum tests justified by the demonstrated mechanism.
+
+### Adjacent risks
+Only directly implied risks. Do not brainstorm unrelated hardening.
+
+### Escalate
+YES or NO.
+
+Escalate when evidence is insufficient, requirements are ambiguous,
+or the correction materially affects architecture, security, provenance,
+identity, determinism, or documented behavior.

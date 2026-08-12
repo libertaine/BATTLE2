@@ -25,6 +25,9 @@ agents_build/
 *.blob
 *.jsonl
 
+# Local AI dev tooling (optional, generated artifacts)
+tools/local_ai/local-ai-results/
+
 # Logs / temps / backups
 *.log
 *.tmp

@@ -5,6 +5,15 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+### Documentation
+
+- Documented and integrated optional, non-authoritative local
+  Ollama-assisted development tooling under `tools/local_ai/`
+  (`README.md` policy doc, `Invoke-BytefrayLocalAI.ps1` harness, and its
+  tested prompt set) and linked it from the README's AI-Assisted
+  Development section and roadmap. Developer tooling only — Ollama is not
+  a Bytefray dependency, CI requirement, or user-facing feature.
+
 ## [0.9.0] - 2026-08-11
 
 v0.9's evaluation-methodology theme: **Orientation-Aware Evaluation**.

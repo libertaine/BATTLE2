@@ -1,0 +1,31 @@
+Summarize the supplied Bytefray technical output concisely.
+
+Do not diagnose beyond the evidence.
+
+Prioritize:
+
+- failing tests or commands;
+- repeated failure signatures;
+- affected files/modules if explicitly named;
+- infrastructure or environment errors if explicitly demonstrated;
+- warnings;
+- counts;
+- the first useful traceback/root failure;
+- items that appear related;
+- information needed for deeper triage.
+
+Return:
+
+### Summary
+
+### Failures
+
+### Likely related groups
+
+### Explicit environment/infrastructure findings
+
+### Information missing
+
+### Recommended next review target
+
+Do not invent a root cause.

@@ -1,0 +1,41 @@
+Triage the supplied Bytefray failure, traceback, test result, or CI output.
+
+The primary goal is diagnosis discipline, not producing a fix at any cost.
+
+Determine:
+
+1. Whether the evidence establishes a production defect, test defect,
+   expected behavior, or insufficient evidence.
+2. The narrowest demonstrated failure mechanism.
+3. What information is missing if root cause is not established.
+4. The next diagnostic action with the highest information value.
+5. A correction only if the evidence actually supports one.
+6. Minimum regression coverage if a correction is justified.
+
+Return exactly these sections:
+
+### Disposition
+DEFECT / TEST_DEFECT / EXPECTED / INSUFFICIENT_EVIDENCE
+
+### Confidence
+HIGH / MEDIUM / LOW
+
+### Demonstrated facts
+
+### Root cause
+Use "Not established." if appropriate.
+
+### Missing evidence
+
+### Next diagnostic action
+
+### Smallest safe correction
+Use "None established." if appropriate.
+
+### Required regression coverage
+
+### Escalate
+YES or NO.
+
+Do not recommend retries merely because a CI failure is intermittent.
+Do not infer environmental failure simply because a rerun passes.
