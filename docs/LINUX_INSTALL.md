@@ -1,8 +1,9 @@
-# Bytefray v0.3.0 Linux wheel installation
+# Bytefray Linux wheel installation
 
-Bytefray v0.3.0 supports Python 3.10 through 3.13. The Linux release artifact is a
+Bytefray supports Python 3.10 through 3.13. The Linux release artifact is a
 Python wheel; no PyInstaller, AppImage, Debian, or Flatpak artifact is currently
-provided.
+provided. (See [README.md](../README.md#-downloads) for the current release;
+the exact wheel filename below tracks that latest tag as later versions ship.)
 
 Create an isolated environment and install the wheel:
 
@@ -10,7 +11,7 @@ Create an isolated environment and install the wheel:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install ./bytefray-0.3.0-py3-none-any.whl
+python -m pip install ./bytefray-0.9.0-py3-none-any.whl
 ```
 
 The core install supports native matches and headless replay. Optional desktop
@@ -23,7 +24,7 @@ python -m pip install 'bytefray[designer]'  # PySide6 Agent Designer
 
 PySide6 and Pygame are not required for the core CLI. CI validates Pygame and
 Designer startup under X11/Xvfb. That is not full visible/input GUI validation,
-and native Wayland remains unvalidated, so the v0.3.0 Linux wheel should still be
+and native Wayland remains unvalidated, so the Linux wheel should still be
 treated as headless-first.
 
 ## Writable data and starter agents

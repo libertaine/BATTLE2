@@ -144,6 +144,48 @@ create → validate → test → inspect → modify → evaluate → compare →
 without needing undocumented project-development knowledge, from either
 the CLI or the Designer. This does not require full CLI/GUI parity.
 
+## Required pre-1.0 gate: branding/visual release integration
+
+**Final Bytefray v1.0 must not ship before a dedicated branding/presentation
+milestone lands.** This was identified as a required gate during v0.10
+Phase 5 (release qualification) and is deliberately **not** part of v0.10
+itself — v0.10 is a stabilization release with no branding-implementation
+work in its scope. It is recorded here so the roadmap cannot be read as
+"v0.10 stabilization complete → proceed straight to v1.0."
+
+The gate covers, narrowly:
+
+- production application/executable icons (the four PyInstaller
+  applications: `battle2`, `battle-cli`, `battle-agent-designer`,
+  `battle-replay-viewer`);
+- Windows executable icon resources (`tools/*.spec`);
+- installer icon/branding (`tools/installer.iss`);
+- the Agent Designer/application icon specifically;
+- repository/GitHub visual assets (social preview, badges as applicable);
+- a horizontal/project logo asset;
+- README/GitHub-page imagery;
+- approximately two representative product screenshots; and
+- any other narrowly-justified release-facing visual integration.
+
+None of this is implemented yet; a production brand sheet exists outside
+the repository for a later phase to use. Until that milestone lands, treat
+any plan to tag `v1.0.0` as blocked, regardless of how ready the underlying
+platform (Agent API, Ruleset, schemas, CLI, packaging) otherwise is.
+
+**Recommended sequencing:** `v0.10.0` → `v1.0.0-rc1` (branding integration
+happens here) → `v1.0.0`, rather than inserting a separate numbered
+`v0.11.0` branding release. Rationale: branding is release-facing polish
+for the 1.0 declaration, not a new capability in the sense every prior
+minor version (0.1 through 0.10) has been — bundling it into the release
+candidate keeps that convention intact, and an RC's own purpose is to be
+what v1.0 will actually look and feel like, which is weaker if the RC ships
+without the branding real users will see. It also avoids a full extra
+tag/build/publish/changelog cycle for content that is presentation, not
+architecture. If branding integration turns out to be larger or riskier
+than expected once scoped, revisit this and consider a dedicated `v0.11.0`
+instead — the RC can iterate (`-rc2`, `-rc3`, ...) either way before
+`v1.0.0` is tagged.
+
 ## v1.0.0 — Stable Bytefray Platform
 
 v1.0 is a **stability and maturity milestone**, not "every planned feature
@@ -158,7 +200,8 @@ The intended development model: v0.10 discovers and fixes anything that
 would make a 1.0 stability declaration premature. If no major architectural
 problem is uncovered, v1.0 follows directly, without another broad
 pre-1.0 feature cycle — v1.0 itself should ideally contain little or no new
-architecture compared with the stabilized v0.10 platform. A v0.11 feature
+architecture compared with the stabilized v0.10 platform, aside from the
+required branding/visual integration gate above. A v0.11 feature
 milestone is **not** created automatically after v1.0; what comes next is
 drawn deliberately from [FUTURE_PLANS.md](FUTURE_PLANS.md) as usage and
 evidence justify it, the same way milestones have been chosen throughout

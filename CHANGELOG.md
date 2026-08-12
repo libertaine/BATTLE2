@@ -117,6 +117,35 @@ This changelog records notable user- and developer-visible changes to Bytefray
   than labeling the whole platform experimental.
 - `docs/AGENT_API_V1.md` no longer describes the shipped (v0.5.0) Agent Lab
   supervised-worker timeout containment as "(unreleased) Agent Lab work."
+- v0.10 Phase 5 (release qualification): `bytefray agents test` printed
+  `Run 'bytefray replay <path>' to inspect it.` — a command the parser
+  itself rejects, since `bytefray replay` requires `--replay PATH` and has
+  no positional form. Reproduced against the packaged wheel and fixed at
+  the source (`agent_test.py`), across every doc/spec carrying the same
+  guidance text (`docs/AGENT_AUTHORING.md`, `docs/MANUAL_SMOKE_TESTS.md`,
+  `docs/specs/agent_test.md`), and in the tests that had pinned the buggy
+  string.
+- v0.10 Phase 5: `battle_engine.paths._source_checkout_root()` walked every
+  ancestor directory of its own installed location looking for sibling
+  `engine/`/`client/` folders, so installing the built (non-editable) wheel
+  into a virtualenv nested anywhere underneath an unrelated Bytefray
+  checkout silently redirected the writable data root to that checkout
+  instead of the documented installed-platform default (XDG data home /
+  `%LOCALAPPDATA%`) — reproduced by installing the wheel under this
+  repository's own tree, which surfaced the developer's own `agents/`
+  catalog instead of a clean starter set. Detection is now based solely on
+  the module's own fixed source-tree position
+  (`.../engine/src/battle_engine/paths.py`), which correctly covers a real
+  checkout and a `pip install -e .` editable install without an unbounded,
+  coincidence-prone ancestor search.
+- v0.10 Phase 5: `bytefray`/`battle2` had no `--version`/project-info CLI
+  surface at all — an unrecognized top-level argument (including
+  `--version`) silently fell through to a full help dump with exit `0`
+  instead of an error. Added `--version` (formatted from
+  `battle_engine.project_info.get_project_info()`) to the top-level parser,
+  and an unrecognized top-level argument now reports a normal
+  `unrecognized arguments` error with exit `2` instead of being silently
+  swallowed; a bare `bytefray` with no arguments is unaffected.
 
 ### Documentation
 
@@ -135,6 +164,21 @@ This changelog records notable user- and developer-visible changes to Bytefray
   instead of carrying an open-ended "Future / unscheduled" list inline.
   Corrected `INSTALL.md`'s stale v0.6.0 download references to the
   current v0.9.0 release.
+- v0.10 Phase 5 (release qualification): corrected `docs/LINUX_INSTALL.md`,
+  which was still titled and exampled for the `v0.3.0` release (including a
+  literal `bytefray-0.3.0-py3-none-any.whl` install command that no longer
+  matches any current release asset), to track the current release the way
+  `INSTALL.md` already does. Lightly reworded the same currency-confusion
+  in README's Linux callout. Added a portable-applications section to
+  `INSTALL.md` documenting that the four portable executables are
+  self-contained and do not share one agents/replays catalog unless
+  `BYTEFRAY_ROOT` is set explicitly (each defaults to its own directory —
+  intentional, existing, tested behavior; this was previously undocumented
+  for the portable distribution specifically, unlike the installed case
+  where the installer sets a shared machine-level `BYTEFRAY_ROOT`
+  automatically). Recorded the required pre-1.0 branding/visual-integration
+  gate in `docs/ROADMAP.md` and the README roadmap table so v1.0 cannot be
+  read as an automatic next step after v0.10 stabilization.
 
 ## [0.9.0] - 2026-08-11
 

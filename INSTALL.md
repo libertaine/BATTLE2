@@ -31,6 +31,36 @@ The installed executables remain available by their full paths, for example:
 & 'C:\Program Files\Bytefray\bin\battle-replay-viewer\battle-replay-viewer.exe'
 ```
 
+## Portable Windows applications
+
+Download `bytefray-0.9.0-windows.zip` from the release (see
+[README.md](README.md#-downloads) for the current release) and extract the
+entire archive; do not copy only the top-level executables, since their
+adjacent DLLs, Qt plugins, resources, and pMARS files are required.
+
+Each of the four extracted applications (`battle2`, `battle-cli`,
+`battle-agent-designer`, `battle-replay-viewer`) is self-contained and, with
+no `BYTEFRAY_ROOT` set, defaults its writable data (agents, replays,
+history) to its own directory beside its `.exe` — the same behavior the
+Windows installer relies on before it sets a shared `BYTEFRAY_ROOT`. This
+means the four portable applications do **not** share one agents/replays
+catalog with each other by default: an agent created with the portable
+`battle-agent-designer.exe` is not visible to a separately-launched portable
+`battle-replay-viewer.exe` or `battle-cli.exe` from the same extracted ZIP.
+Set `BYTEFRAY_ROOT` once, to any writable directory, before launching any of
+the four executables (for example in a small wrapper script placed next to
+the extracted folder) so they all read and write the same data:
+
+```powershell
+$env:BYTEFRAY_ROOT = "C:\path\to\shared\bytefray-data"
+& ".\battle-agent-designer\battle-agent-designer.exe"
+```
+
+Using only the unified `battle2.exe` (`battle2.exe run`, `battle2.exe
+design`, `battle2.exe replay`, `battle2.exe agents ...`) has the same effect
+without setting anything, since every one of its subcommands runs in that
+same process and therefore already shares its own adjacent data directory.
+
 ## Python wheel on Windows
 
 Python users can install the release wheel into an isolated environment:
