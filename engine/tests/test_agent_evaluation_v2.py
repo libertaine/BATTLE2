@@ -56,6 +56,14 @@ def _request(tmp_path: Path, **overrides) -> EvaluationRequest:
         "output_dir": tmp_path / "eval-out",
         "ticks": 10,
         "data_root": tmp_path,
+        # This suite predates entrant orientation (v0.9 Phase 6) and its
+        # assertions are about matrix/resume/identity/drift mechanics
+        # orthogonal to it -- pinned to the legacy single-orientation matrix
+        # shape/size so every pre-existing assertion here continues to test
+        # exactly what it always tested. `both_orientations=True` (the new
+        # production default) gets its own dedicated coverage in
+        # test_agent_evaluation_orientation.py.
+        "both_orientations": False,
     }
     defaults.update(overrides)
     return EvaluationRequest(**defaults)
@@ -686,6 +694,9 @@ def create_alt(): return Agent()
             "ticks": data["ticks"],
             "effective_conditions": data["effective_conditions"],
             "rules_compatibility_id": data["rules_compatibility_id"],
+            # v0.9 Phase 6 (Sec J.2/AA.4.2): new sibling payload keys.
+            "orientation_mode": data["orientation_mode"],
+            "arena_alignment_mode": data["arena_alignment_mode"],
         },
     )
     assert data["identity_version"] == CURRENT_IDENTITY_VERSION
@@ -1006,6 +1017,9 @@ def test_persisted_planned_identity_rehashes_to_the_recorded_evaluation_id(two_a
         "ticks": data["ticks"],
         "effective_conditions": data["effective_conditions"],
         "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
+        # v0.9 Phase 6 (Sec J.2/AA.4.2): new sibling payload keys.
+        "orientation_mode": data["orientation_mode"],
+        "arena_alignment_mode": data["arena_alignment_mode"],
     }
     assert stable_id("evaluation-v2", payload) == data["evaluation_id"]
 

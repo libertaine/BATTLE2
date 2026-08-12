@@ -45,6 +45,11 @@ def _run(tmp_path: Path, output_dir: Path, candidate: str = "candidate") -> str:
             output_dir=output_dir,
             ticks=10,
             data_root=tmp_path,
+            # This suite predates entrant orientation (v0.9 Phase 6) and its
+            # assertions are about list/show/compare CLI mechanics
+            # orthogonal to it -- pinned to the legacy single-orientation
+            # matrix shape/size.
+            both_orientations=False,
         )
     )
     return result.evaluation_id

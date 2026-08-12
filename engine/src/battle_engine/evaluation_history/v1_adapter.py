@@ -32,7 +32,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from battle_engine.agent_evaluation import aggregate_cells, compare_candidate_baseline
+from battle_engine.agent_evaluation import all_subject_aggregates, compare_candidate_baseline
 from battle_engine.agent_test import OPPONENT_SLOT, TESTED_AGENT_SLOT
 from battle_engine.result_model import ResultEnvelope, read_result
 
@@ -266,6 +266,11 @@ def adapt_v1_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 opponent_identity=opponent_identity_by_id.get(
                     raw.get("opponent_id"), ConfidenceValue.unknown()
                 ),
+                # v0.9 Phase 6 (Phase 5 spec Sec L.2): certain, not merely
+                # guessed -- every v1 cell was executed by a shipped version
+                # of this module that only ever put the subject in the
+                # always-first-acting slot.
+                orientation=ConfidenceValue.recovered("candidate_first"),
             )
         )
 
@@ -303,9 +308,11 @@ def adapt_v1_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
     real_cells = evaluation_cells_from_raw(raw_cells, path.parent)
     candidate_id = data["candidate_id"]
     baseline_id = data.get("baseline_id")
-    aggregates = [aggregate_cells("candidate", candidate_id, real_cells)]
-    if baseline_id is not None:
-        aggregates.append(aggregate_cells("baseline", baseline_id, real_cells))
+    # v0.9 Phase 6 (Sec K.2): pooled + per-orientation views. Every v1 cell
+    # reconstructed by `evaluation_cells_from_raw` defaults to
+    # `orientation="candidate_first"` (no v1 cell ever recorded the field),
+    # which is also the historically correct fact.
+    aggregates = all_subject_aggregates(candidate_id, baseline_id, real_cells)
     comparison = compare_candidate_baseline(real_cells) if baseline_id is not None else ()
 
     candidate_identity = _recover_identity(
@@ -346,6 +353,13 @@ def adapt_v1_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         health=HealthReport(codes=tuple(codes), detail=tuple(detail), verified=False),
         aggregates_recomputed=tuple(aggregates),
         comparison_recomputed=tuple(comparison),
+        # v0.9 Phase 6 (Phase 5 spec Sec L.2/AA.4.6): certain, not merely
+        # guessed -- every v1 evaluation ever executed used candidate_first
+        # exclusively (no orientation concept existed) at a single, fixed
+        # arena alignment (Sec C.8: entrant.start never affected a Python
+        # entrant's actual write addresses).
+        orientation_mode=ConfidenceValue.recovered("candidate_first_only"),
+        arena_alignment_mode=ConfidenceValue.recovered("fixed"),
     )
 
 

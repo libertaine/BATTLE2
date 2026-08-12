@@ -66,6 +66,7 @@ def _cell(
     unknown_opponent_identity: bool = False,
     verified: bool | None = None,
     execution_context_id: str | None = DEFAULT_CONTEXT_ID,
+    orientation: str | None = "candidate_first",
 ) -> AdaptedCell:
     return AdaptedCell(
         schedule_id=f"sched-{opponent_id}-{seed}-{occurrence}",
@@ -100,6 +101,16 @@ def _cell(
             if execution_context_id is not None
             else ConfidenceValue.unknown()
         ),
+        # v0.9 Phase 6 (Sec L.1): part of the alignment key now -- default
+        # to "candidate_first" (also every pre-Phase-6 cell's certain
+        # historical value) so this suite's existing fixtures keep aligning
+        # exactly as before; `orientation=None` opts into UNKNOWN for tests
+        # of that specific edge case.
+        orientation=(
+            ConfidenceValue.recorded(orientation)
+            if orientation is not None
+            else ConfidenceValue.unknown()
+        ),
     )
 
 
@@ -115,6 +126,7 @@ def _summary(
     conditions_known: bool = True,
     rules_id: str | None = RULES_ID,
     execution_contexts: tuple[dict, ...] = DEFAULT_CONTEXTS,
+    arena_alignment_mode: str | None = "fixed",
 ) -> EvaluationSummary:
     location = ArtifactLocation(
         evaluation_json_path=Path("evaluation.json"), directory=Path("."), file_modified_at="x"
@@ -157,6 +169,15 @@ def _summary(
         aggregates_recomputed=(),
         comparison_recomputed=(),
         execution_contexts=execution_contexts,
+        # v0.9 Phase 6 (Sec AA.4.5): part of the alignment key now -- default
+        # to "fixed" (v0.9's only value, and every pre-Phase-6 evaluation's
+        # certain historical value) so this suite's existing fixtures keep
+        # aligning exactly as before.
+        arena_alignment_mode=(
+            ConfidenceValue.recorded(arena_alignment_mode)
+            if arena_alignment_mode is not None
+            else ConfidenceValue.unknown()
+        ),
     )
 
 
@@ -651,6 +672,7 @@ def _baseline_cell(schedule_id: str, match_id: str, artifact_dir: str, outcome: 
         opponent_identity=ConfidenceValue.recorded(_identity("opponent")),
         verified=verified,
         execution_context_id=ConfidenceValue.recorded(DEFAULT_CONTEXT_ID),
+        orientation=ConfidenceValue.recorded("candidate_first"),
     )
 
 

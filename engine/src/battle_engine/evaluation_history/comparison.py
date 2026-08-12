@@ -217,16 +217,38 @@ def _rules_id(summary: EvaluationSummary) -> str | None:
     return summary.rules_compatibility_id.value
 
 
+def _arena_alignment_id(summary: EvaluationSummary) -> str | None:
+    """v0.9 Phase 6 (Phase 5 spec Sec AA.4.5): mirrors ``_rules_id`` exactly.
+
+    Two cells whose ``arena_alignment_mode`` differs, or where either is
+    unknown, never align -- the identical rule ``_rules_id`` already
+    enforces for rules-compatibility, applied to arena-alignment
+    methodology so a future translation-aware artifact can never silently
+    compare as methodologically equivalent to today's fixed alignment.
+    """
+
+    if summary.arena_alignment_mode.confidence == FieldConfidence.UNKNOWN:
+        return None
+    return summary.arena_alignment_mode.value
+
+
 def _condition_key(
-    cell: AdaptedCell, conditions_fp: str | None, rules_id: str | None
+    cell: AdaptedCell, conditions_fp: str | None, rules_id: str | None, arena_alignment_id: str | None
 ) -> tuple[Any, ...] | None:
     """Sec 14: excludes candidate identity by construction; unknowns never align."""
 
-    if conditions_fp is None or rules_id is None:
+    if conditions_fp is None or rules_id is None or arena_alignment_id is None:
         return None
     if cell.opponent_identity.confidence == FieldConfidence.UNKNOWN:
         return None
     if cell.condition_occurrence_index.confidence == FieldConfidence.UNKNOWN:
+        return None
+    # v0.9 Phase 6 (Sec L.1): orientation joins the alignment key exactly
+    # like condition_occurrence_index already does -- a legacy/recovered
+    # candidate_first cell aligns only against another candidate_first
+    # cell; a new opponent_first cell has no legacy counterpart and falls
+    # through to unmatched, never silently folded into a verdict.
+    if cell.orientation.confidence == FieldConfidence.UNKNOWN:
         return None
     opponent = cell.opponent_identity.value or {}
     return (
@@ -245,7 +267,9 @@ def _condition_key(
         cell.seed,
         conditions_fp,
         rules_id,
+        arena_alignment_id,
         cell.condition_occurrence_index.value,
+        cell.orientation.value,
     )
 
 
@@ -343,6 +367,8 @@ def _align_cell_sets(
     right_rules_id: str | None,
     *,
     identical_candidate_fingerprint: bool,
+    left_arena_alignment_id: str | None = None,
+    right_arena_alignment_id: str | None = None,
     deep_verified: bool = False,
     left_context_by_id: dict[str, dict[str, Any]] | None = None,
     right_context_by_id: dict[str, dict[str, Any]] | None = None,
@@ -356,12 +382,12 @@ def _align_cell_sets(
 ]:
     left_by_key: dict[tuple[Any, ...], list[AdaptedCell]] = {}
     for cell in left_cells:
-        key = _condition_key(cell, left_conditions_fp, left_rules_id)
+        key = _condition_key(cell, left_conditions_fp, left_rules_id, left_arena_alignment_id)
         if key is not None:
             left_by_key.setdefault(key, []).append(cell)
     right_by_key: dict[tuple[Any, ...], list[AdaptedCell]] = {}
     for cell in right_cells:
-        key = _condition_key(cell, right_conditions_fp, right_rules_id)
+        key = _condition_key(cell, right_conditions_fp, right_rules_id, right_arena_alignment_id)
         if key is not None:
             right_by_key.setdefault(key, []).append(cell)
 
@@ -533,6 +559,7 @@ def align(
 
     left_cfp, right_cfp = _conditions_fingerprint(left), _conditions_fingerprint(right)
     left_rules, right_rules = _rules_id(left), _rules_id(right)
+    left_arena, right_arena = _arena_alignment_id(left), _arena_alignment_id(right)
     left_contexts, right_contexts = _context_by_id(left), _context_by_id(right)
 
     rows, unmatched_left, unmatched_right, changed_condition, anomalies, ambiguous_groups = (
@@ -544,6 +571,8 @@ def align(
             right_cfp,
             right_rules,
             identical_candidate_fingerprint=identical_candidate_fingerprint,
+            left_arena_alignment_id=left_arena,
+            right_arena_alignment_id=right_arena,
             deep_verified=deep_verified,
             left_context_by_id=left_contexts,
             right_context_by_id=right_contexts,
@@ -576,6 +605,8 @@ def align(
             right_cfp,
             right_rules,
             identical_candidate_fingerprint=True,
+            left_arena_alignment_id=left_arena,
+            right_arena_alignment_id=right_arena,
             deep_verified=deep_verified,
             left_context_by_id=left_contexts,
             right_context_by_id=right_contexts,

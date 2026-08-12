@@ -95,6 +95,14 @@ def _request(tmp_path: Path, **overrides) -> EvaluationRequest:
         "output_dir": tmp_path / "eval-out",
         "ticks": 20,
         "data_root": tmp_path,
+        # This suite predates entrant orientation (v0.9 Phase 6) and its
+        # assertions are about matrix/resume/identity mechanics orthogonal
+        # to it -- pinned to the legacy single-orientation matrix shape/size
+        # so every pre-existing assertion here continues to test exactly
+        # what it always tested. `both_orientations=True` (the new
+        # production default) gets its own dedicated coverage in
+        # test_agent_evaluation_orientation.py.
+        "both_orientations": False,
     }
     defaults.update(overrides)
     return EvaluationRequest(**defaults)
@@ -106,11 +114,15 @@ def _request(tmp_path: Path, **overrides) -> EvaluationRequest:
 
 
 def test_matrix_cell_count_and_order_single_candidate():
+    # both_orientations=False: this test is about the opponent x seed
+    # formula, orthogonal to entrant orientation -- doubling coverage lives
+    # in test_agent_evaluation_orientation.py.
     request = EvaluationRequest(
         candidate_id="cand",
         opponent_ids=("opp_a", "opp_b"),
         seeds=(1, 2, 3),
         output_dir=Path("out"),
+        both_orientations=False,
     )
     matrix = build_matrix(request, "evaluation_x")
     assert len(matrix) == 6
@@ -131,6 +143,7 @@ def test_matrix_cell_count_with_baseline_matches_expected_formula():
         opponent_ids=("a", "b", "c", "d"),
         seeds=(1, 2, 3, 4, 5),
         output_dir=Path("out"),
+        both_orientations=False,
     )
     matrix = build_matrix(request, "evaluation_x")
     assert len(matrix) == 2 * 4 * 5 == 40
@@ -145,6 +158,7 @@ def test_matrix_preserves_repeated_opponent_and_seed_as_distinct_cells():
         opponent_ids=("opp", "opp"),
         seeds=(1, 1),
         output_dir=Path("out"),
+        both_orientations=False,
     )
     matrix = build_matrix(request, "evaluation_x")
     assert len(matrix) == 4
@@ -433,7 +447,11 @@ def test_single_candidate_evaluation_end_to_end(tmp_path):
 
     assert len(result.cells) == 2
     assert all(cell.status == "completed" for cell in result.cells)
-    assert len(result.aggregates) == 1
+    # v0.9 Phase 6: 3 aggregate views per subject (pooled "all" +
+    # candidate_first + opponent_first, Sec K.2) -- element 0 is always the
+    # pooled view (all_subject_aggregates's own deterministic ordering).
+    assert len(result.aggregates) == 3
+    assert result.aggregates[0].orientation_scope == "all"
     assert result.aggregates[0].matches_played == 2
     assert result.comparison == ()
     assert result.state_path.is_file()
@@ -460,7 +478,8 @@ def test_paired_candidate_baseline_evaluation_end_to_end(tmp_path):
     result = service.run(request)
 
     assert len(result.cells) == 4
-    assert len(result.aggregates) == 2
+    # v0.9 Phase 6: 3 aggregate views per subject (Sec K.2) -- 2 subjects.
+    assert len(result.aggregates) == 6
     assert len(result.comparison) == 2
 
 
@@ -755,7 +774,9 @@ def test_cli_dry_run_prints_matrix_and_runs_nothing(tmp_path, monkeypatch, capsy
     scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
     _write_python_agent(tmp_path, "opp", NOP_ACTION)
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
-    exit_code = main(["cand", "--opponents", "opp", "--seeds", "1,2", "--dry-run"])
+    exit_code = main(
+        ["cand", "--opponents", "opp", "--seeds", "1,2", "--dry-run", "--single-orientation"]
+    )
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "matches: 2" in captured.out

@@ -46,6 +46,10 @@ def _run_v2(tmp_path: Path, **overrides) -> Path:
         "output_dir": tmp_path / "eval-out",
         "ticks": 5,
         "data_root": tmp_path,
+        # This suite predates entrant orientation (v0.9 Phase 6) and its
+        # assertions are about deep-verification mechanics orthogonal to
+        # it -- pinned to the legacy single-orientation matrix shape/size.
+        "both_orientations": False,
     }
     defaults.update(overrides)
     result = EvaluationService().run(EvaluationRequest(**defaults))
