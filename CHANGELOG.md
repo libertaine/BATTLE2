@@ -26,6 +26,36 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ### Added
 
+- Native `result.json`/`replay.jsonl` now persist Bytefray Ruleset identity
+  directly (v0.10 Phase 4: Artifact Compatibility & Ruleset Persistence).
+  Every current native VM or Python match writes `ruleset_id:
+  "bytefray-rules-1"` into both the result envelope and the canonical
+  replay header — one discriminator per match, following the exact
+  precedent `runtime_kind` already set. Both fields are additive: no
+  `battle2.result`/`battle2.replay` schema bump was required, verified
+  directly (not merely inferred) by running the `v0.9.0`-tagged readers
+  against a synthetic artifact carrying the new field in an isolated
+  worktree. `redcode94`/pMARS results never claim Bytefray Ruleset v1.
+  `battle_engine.result_model.resolve_result_ruleset`/`battle_engine.
+  replay.resolve_replay_ruleset` give a confidence-qualified answer
+  (`recorded`/`recovered`/`unknown`/`not_applicable`) for artifacts written
+  before this field existed, informed by a fresh git-history audit proving
+  Python-vs-Python native gameplay semantics — scheduling order, action
+  execution, READ/WRITE addressing, mortality, forfeit handling, scoring
+  and winner-resolution integration — were byte-for-byte unchanged for the
+  Python runtime's entire existence (v0.3.0 onward, the same range already
+  proven for the VM). A resumed tournament match or evaluation cell whose
+  result and replay disagree on `ruleset_id` is now demoted to
+  `corrupted`, the same treatment an existing `match_id`/`result_id`
+  disagreement already receives. `bytefray.evaluation`'s historical
+  `"evaluation-rules-1"` value is now explicitly normalized (a small,
+  finite alias table, `battle_engine.rules.normalize_ruleset_id`) to align
+  with a fresh `"bytefray-rules-1"` evaluation for cross-evaluation
+  comparison, without rewriting the historical artifact's own recorded
+  value. `battle2.tournament` deliberately gains no Ruleset field —
+  tournament-level compatibility derives from constituent match artifacts.
+  See `docs/COMPATIBILITY.md`'s "Legacy compatibility matrix" for the full
+  artifact/version/runtime table.
 - `battle_engine.rules.BYTEFRAY_RULESET_ID = "bytefray-rules-1"` — a new,
   first-class gameplay-semantics compatibility identity (v0.10 Phase 2:
   Freeze Ruleset v1), documented in full as `docs/RULES.md`, a rewritten

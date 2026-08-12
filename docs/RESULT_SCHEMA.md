@@ -8,6 +8,38 @@ Required envelope fields are `result_id`, `match_id`, `mode`, `status`, `winner`
 and `backend`. Native results reference a replay by `replay_id`, SHA-256 digest,
 and portable filename. pMARS results set `replay` to `null`.
 
+## Ruleset identity
+
+`ruleset_id` (v0.10 Phase 4) is an *additive* envelope field: the Bytefray
+gameplay Ruleset identity (`battle_engine.rules.BYTEFRAY_RULESET_ID`, see
+[RULES.md](RULES.md)) this match executed under. It is **required for
+current native writers** — every VM or Python match produced by
+`NativeMatchService`/`match_service._finalize_native_artifacts` sets it to
+`"bytefray-rules-1"` — but it is **not required for all historical
+artifacts**: any `battle2.result` v1 result written before this field
+existed simply omits the key entirely, and remains a fully valid,
+fully readable v1 result. A `redcode94`/pMARS result never sets this field
+— Bytefray Ruleset v1 is not applicable to Redcode/pMARS execution (see
+[RULES.md](RULES.md)'s "Redcode/pMARS — not Ruleset v1") — so `ruleset_id`
+being absent on a pMARS result is not a compatibility gap to close, it is
+the honest, permanent answer.
+
+No `battle2.result` schema bump was required to add this field: every
+released `read_result` implementation constructs its `ResultEnvelope` by
+extracting named keys it already expects and has never rejected an
+unrecognized key (verified directly, not merely inferred, against the
+`v0.9.0`-tagged `result_model.py` in an isolated worktree — see
+`docs/COMPATIBILITY.md`). `battle_engine.result_model.
+resolve_result_ruleset(envelope)` gives the honest, confidence-qualified
+answer for a result that predates the field: `"recorded"` when present,
+`"recovered"` `bytefray-rules-1` for a native (`mode: "b2"`) result missing
+it (the schema itself never existed before v0.3.0, and VM/Python gameplay
+semantics are proven byte-for-byte unchanged across the entire
+`battle2.result` v1 lifetime — see [RULES.md](RULES.md)), `"not_applicable"`
+for a `redcode94` result, or `"unknown"` for anything else. `ruleset_id`
+does not participate in `result_id`'s identity hash — see "Identity
+recipe" below for why.
+
 Native entrant records include identity, final state, score, statistics,
 termination reason, optional structured diagnostic, and execution metadata.
 Python metadata includes API version, agent version, derived seed, request slot,
@@ -47,6 +79,22 @@ pins this directly: `test_match_id_is_stable_across_different_absolute_checkout_
 runs the identical logical match from two different directory trees and
 asserts equal `match_id`s; `test_match_id_changes_with_meaningful_config_or_code_changes`
 asserts a changed seed or changed agent bytecode changes it.
+
+**`ruleset_id` deliberately does not participate in `match_id`/`result_id`'s
+hash payload.** Two otherwise-identical results genuinely could not
+legitimately share one identity if they ran under different gameplay
+Rulesets -- but as of v0.10 Phase 4 exactly one Ruleset
+(`BYTEFRAY_RULESET_ID = "bytefray-rules-1"`) has ever existed, so adding a
+constant value to every hash payload today would only churn every
+`match_id`/`result_id` this build computes relative to a build without the
+field, for zero present disambiguating benefit -- see
+`docs/COMPATIBILITY.md`. This is deliberately deferred, not overlooked:
+when a future Ruleset v2 is actually introduced, incorporating Ruleset
+identity into the hash payload becomes a genuine, scoped identity decision
+to make explicitly alongside that work, not a speculative change made in
+advance of any second Ruleset ever existing. Historical `match_id`/
+`result_id` values are unaffected either way -- this document's identity
+recipe is completely unchanged by v0.10 Phase 4.
 
 `result_id` additionally covers the outcome (`winner`, `termination_reason`,
 `ticks`, `score`, and full per-entrant `entrants` records including

@@ -43,6 +43,7 @@ from battle_engine.result_model import (
     write_json_atomic,
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
+from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
@@ -615,6 +616,7 @@ def _finalize_native_artifacts(
                 runtime_kind=runtime_kind,
                 reproducibility=reproducibility,
                 entrants=tuple(entrants),
+                ruleset_id=BYTEFRAY_RULESET_ID,
                 schema_version=3,
             )
         else:
@@ -680,6 +682,7 @@ def _finalize_native_artifacts(
             entrants=tuple(entrants),
             reproducibility=reproducibility,
             replay=ReplayReference(match_id, replay_digest, publish_path.name),
+            ruleset_id=BYTEFRAY_RULESET_ID,
         )
         write_json_atomic(result_path, envelope.as_dict())
         complete = True

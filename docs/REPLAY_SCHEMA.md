@@ -49,6 +49,43 @@ as absent/default rather than populated. A future incompatible change to
 the wire shape (not just an additive field) should bump `SCHEMA_VERSION`
 rather than repeat this reasoning.
 
+### Ruleset identity
+
+`ReplayHeader.ruleset_id` (v0.10 Phase 4) is an *additive* header field:
+the Bytefray gameplay Ruleset identity (`battle_engine.rules.
+BYTEFRAY_RULESET_ID`, see [RULES.md](RULES.md)) this match executed under.
+One discriminator per match, on the header only -- the identical precedent
+`runtime_kind` already establishes ("it is not repeated per tick or per
+agent"; see "Runtime-kind semantics" below). It is **required for current
+native writers** -- `match_service._finalize_native_artifacts` sets it to
+`"bytefray-rules-1"` on every header it produces, VM or Python -- but it is
+**not required for all historical artifacts**: any header written before
+this field existed simply has it absent (`None`), and remains fully
+readable.
+
+No `SCHEMA_VERSION` bump was required: schema version 3 was already
+designed to be extended in place with safe, explicit-default additive
+fields (see "Compatibility note" above), and this addition follows that
+exact precedent -- every released reader accepts an unrecognized top-level
+key on a header record (verified directly against the `v0.9.0`-tagged
+`replay.py` in an isolated worktree, not merely inferred). `battle_engine.
+replay.resolve_replay_ruleset(header)` gives the honest,
+confidence-qualified answer for a header that predates the field:
+`"recorded"` when present, `"recovered"` `bytefray-rules-1` for a
+schema-version-3 header missing it (schema version 3 never existed before
+the v0.3.0 development branch that also established the currently-frozen
+gameplay semantics -- see [RULES.md](RULES.md)), or `"unknown"` for a
+schema-version-2 header. Schema version 2 deliberately does **not**
+recover: it was genuinely the pre-rename `v0.2.0` release's own canonical
+wire format (confirmed by inspecting that tag's own `replay.py`), so a
+schema-version-2 header cannot be proven to fall inside the
+source-proven-stable v0.3.0+ window -- treating it as `"recovered"` would
+be a guess, not evidence. `ruleset_id` does not participate in
+`match_id`/`result_id`/`replay_id` -- see
+[RESULT_SCHEMA.md](RESULT_SCHEMA.md#identity-recipe) for why, which
+applies identically here since the replay header carries the same three
+IDs the result envelope does.
+
 ### Runtime-kind semantics
 
 `ReplayHeader.runtime_kind` is `"vm"` or `"python"` -- matches are homogeneous
@@ -258,7 +295,9 @@ names. `MatchConfiguration` contains `arena_size`, `instr_per_tick`, `seed`,
 `result_id`, `runtime_kind` (`"vm"` or `"python"`, see "Runtime-kind semantics"
 above), `reproducibility` (mirrors `result.json`'s `reproducibility`), and
 `entrants` (identity/metadata per entrant, mirroring `result.json`'s
-`entrants` shape).
+`entrants` shape). `ruleset_id` (v0.10 Phase 4, see "Ruleset identity"
+above) is present (non-null) only on a header produced by a current native
+writer; absent on any header written before that field existed.
 
 ### Tick
 

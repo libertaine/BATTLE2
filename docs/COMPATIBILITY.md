@@ -87,12 +87,103 @@ persisted before this alias existed still literally contains the string
 `"evaluation-rules-1"` in its `rules_compatibility_id` field; it never
 contained, and readers must never pretend it contained, the string
 `"bytefray-rules-1"`. Historical wire field names (`rules_compatibility_id`)
-are unchanged, and comparison behavior between two artifacts' recorded
-values is unchanged — only how the *current* value is computed changed,
-from an independently maintained literal to a derived one. The practical
-effect going forward: a gameplay-semantic change requires exactly one
-Ruleset bump, not a Ruleset bump plus a separate hand-maintained
-evaluation-rules bump.
+are unchanged — only how the *current* value is computed changed, from an
+independently maintained literal to a derived one. The practical effect
+going forward: a gameplay-semantic change requires exactly one Ruleset
+bump, not a Ruleset bump plus a separate hand-maintained evaluation-rules
+bump.
+
+As of v0.10 Phase 4, comparison behavior between two artifacts' recorded
+values is explicitly **normalized**, not merely unchanged:
+`battle_engine.rules.normalize_ruleset_id` maps the one established
+historical alias (`"evaluation-rules-1"` → `BYTEFRAY_RULESET_ID`) so that
+`bytefray agents evaluations compare` can align a historical baseline
+against a fresh run's cells directly, rather than reporting every pair as a
+`changed_condition` merely because Phase 2 renamed the canonical spelling.
+This is a small, explicit, finite lookup table (`battle_engine.rules.
+_RULESET_ALIASES`) — **never** prefix/pattern matching — so an unrelated
+or future Ruleset identity (a hypothetical `"bytefray-rules-2"`) never
+opportunistically normalizes to today's value. The artifact's own recorded
+value (`rules_compatibility_id`/`EvaluationSummary.rules_compatibility_id
+.value`) is exposed unchanged; only the *comparison alignment key* is
+normalized.
+
+## Persisted Ruleset identity on native result/replay artifacts
+
+v0.10 Phase 4 makes `battle2.result`/`battle2.replay` independently
+answer, from the artifact itself or an evidence-backed adapter, which
+gameplay Ruleset produced one native match:
+
+- Every current native (VM or Python) match writes `ruleset_id:
+  "bytefray-rules-1"` into both `result.json`'s envelope
+  (`battle_engine.result_model.ResultEnvelope.ruleset_id`) and the
+  canonical replay's header record
+  (`battle_engine.replay.ReplayHeader.ruleset_id`) — one discriminator
+  per match, on the header only, exactly like `runtime_kind` already
+  works (see [REPLAY_SCHEMA.md](REPLAY_SCHEMA.md)'s "Runtime-kind
+  semantics"). Both are additive fields; neither schema was bumped (see
+  [RESULT_SCHEMA.md](RESULT_SCHEMA.md)/[REPLAY_SCHEMA.md](REPLAY_SCHEMA.md)
+  for the reader-tolerance evidence).
+- A `redcode94`/pMARS result **never** carries `ruleset_id` — Bytefray
+  Ruleset v1 is not applicable to Redcode execution (see
+  [RULES.md](RULES.md)'s "Redcode/pMARS — not Ruleset v1"). pMARS
+  produces no canonical replay at all, so the question does not arise for
+  replay.
+- `battle_engine.result_model.resolve_result_ruleset`/`battle_engine.
+  replay.resolve_replay_ruleset` attribute a confidence-qualified answer
+  for an artifact that predates this field: `"recorded"` (field present),
+  `"recovered"` (field absent, but the artifact's own shape/mode is
+  evidence-backed as Ruleset v1 — every native `battle2.result` v1 result,
+  and every `battle2.replay` schema-version-3 header, since neither shape
+  ever existed before the v0.3.0 "Bytefray Rename & Native Core" rewrite
+  that established the currently-frozen gameplay semantics), `"unknown"`
+  (no evidence — a genuine `battle2.replay` schema-version-2 header, which
+  the pre-rename `v0.2.0` release's own canonical writer also produced, so
+  the shape alone cannot prove which era wrote it), or `"not_applicable"`
+  (a `redcode94` result). See the compatibility matrix below for the full
+  artifact/version/runtime table.
+- These four states deliberately reuse a self-contained
+  `battle_engine.rules.RulesetProvenance`/`RulesetConfidence` vocabulary
+  rather than importing `evaluation_history`'s richer `FieldConfidence`/
+  `ConfidenceValue` machinery, which depends on `battle_engine.
+  agent_evaluation` and sits well above `battle_engine.rules` in the
+  dependency direction. Do not collapse the two vocabularies into one.
+- Cross-artifact consistency: a resumed tournament match or evaluation
+  cell whose recorded `result.json` `ruleset_id` disagrees with its own
+  replay header's `ruleset_id` is treated exactly like an existing
+  `match_id`/`result_id` disagreement — demoted to `corrupted`, never
+  silently trusted
+  (`tournament_service._resumed_result_mismatch`/`agent_evaluation.
+  _resumed_cell_mismatch`). The same check is part of `evaluations
+  show/compare --verify`'s deep verification
+  (`evaluation_history.verification.verify_cell`).
+- `battle2.tournament` intentionally does **not** gain a `ruleset_id`
+  field: every tournament match already references its own canonical
+  `result.json`/`replay.jsonl`, tournament divisions are already
+  homogeneous (all-VM or all-Python), and an echoed field would be purely
+  redundant informational data with a compatibility-documentation cost and
+  no concrete benefit. Tournament-level Ruleset compatibility is derived
+  from constituent match artifacts, not stored separately.
+- `bytefray.agent_trace` and agent revision manifests
+  (`battle_engine.agent_revisions`) are unchanged. A trace records the
+  Agent API boundary, not gameplay outcome, and revision identity answers
+  "what exact source tree" independently of "under what game rules it
+  ran" — see [RULES.md](RULES.md) and `docs/specs/agent_revision.md`.
+
+## Legacy compatibility matrix
+
+| Artifact | Version/era | Rules identity behavior |
+| --- | --- | --- |
+| `result.json` | current native (VM or Python) | `recorded` `bytefray-rules-1` |
+| `result.json` | legacy native, `battle2.result` v1, missing field | `recovered` `bytefray-rules-1` (proven stable since v0.3.0) |
+| `result.json` | `redcode94`/pMARS | `not_applicable` |
+| `replay.jsonl` header | current native, schema v3 | `recorded` `bytefray-rules-1` |
+| `replay.jsonl` header | legacy schema v3, missing field | `recovered` `bytefray-rules-1` (v3 never existed before v0.3.0) |
+| `replay.jsonl` header | genuine schema v2 (v0.2.0-era canonical, or adapted v0.1) | `unknown` (predates the proven-stable window) |
+| `evaluation.json` | current, `rules_compatibility_id: "bytefray-rules-1"` | recorded; treated as canonical |
+| `evaluation.json` | historical v2-v4, `rules_compatibility_id: "evaluation-rules-1"` | recorded verbatim; **normalized** to `bytefray-rules-1` for comparison alignment only |
+| `evaluation.json` | v1 (no `rules_compatibility_id` field at all) | `unknown` (never recoverable — v1 never persisted this identifier) |
+| `tournament.json` | any | no field; derive from each constituent match's own `result.json`/`replay.jsonl` |
 
 ## Experimental/unsupported boundaries
 

@@ -423,6 +423,34 @@ def test_rules_compatibility_mismatch_prevents_direct_comparison():
     assert result.denominators.directly_comparable == 0
 
 
+def test_historical_evaluation_rules_1_aligns_with_current_bytefray_rules_1():
+    """v0.10 Phase 4: evaluation-rules-1 (historical) and bytefray-rules-1
+    (current) denote the same gameplay semantics for their entire shared
+    history (docs/RULES.md) and must align directly, not merely land in
+    "changed_condition" -- Phase 2 renaming the canonical spelling must not,
+    by itself, make an old baseline incomparable to a fresh run.
+    """
+
+    left = _summary(cells=(_cell(outcome="win"),), rules_id="evaluation-rules-1")
+    right = _summary(cells=(_cell(outcome="tie"),), rules_id="bytefray-rules-1")
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 1
+    assert [row.verdict for row in result.rows] == ["regressed"]
+
+
+def test_unrelated_rules_id_does_not_alias_by_naming_convention():
+    """Only the one finite, evidence-backed alias normalizes -- a
+    superficially similar but genuinely different Ruleset identity (a
+    hypothetical future ``bytefray-rules-2``) must never silently compare
+    equal to ``bytefray-rules-1`` just because it shares a naming pattern.
+    """
+
+    left = _summary(cells=(_cell(outcome="win"),), rules_id="bytefray-rules-1")
+    right = _summary(cells=(_cell(outcome="win"),), rules_id="bytefray-rules-2")
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 0
+
+
 def test_v1_unknown_rules_id_never_compares_equal_even_to_another_unknown():
     left = _summary(cells=(_cell(outcome="win"),), rules_id=None)
     right = _summary(cells=(_cell(outcome="win"),), rules_id=None)

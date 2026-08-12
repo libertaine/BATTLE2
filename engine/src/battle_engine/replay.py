@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Literal, Mapping, TypeAlias
 
+from battle_engine.rules import BYTEFRAY_RULESET_ID, RulesetProvenance
 
 SCHEMA_NAME = "battle2.replay"
 SCHEMA_VERSION = 3
@@ -112,6 +113,17 @@ class ReplayHeader:
     runtime_kind: RuntimeKind | None = None
     reproducibility: Mapping[str, Any] = field(default_factory=dict)
     entrants: tuple[Mapping[str, Any], ...] = ()
+    # v0.10 Phase 4: the Bytefray gameplay Ruleset identity this match
+    # executed under. One discriminator per match, carried on the header
+    # only -- the identical precedent ``runtime_kind`` already establishes
+    # ("it is not repeated per tick or per agent"; see "Runtime-kind
+    # semantics" in docs/REPLAY_SCHEMA.md). Additive to schema version 3
+    # (extended in place, like every other v3 field before it -- see
+    # docs/REPLAY_SCHEMA.md's "Compatibility note"); ``None`` for any
+    # header produced before this field existed, and always ``None`` for a
+    # non-native/non-canonical header (Redcode/pMARS produces no canonical
+    # replay at all, so this case does not arise in practice).
+    ruleset_id: str | None = None
     schema: str = SCHEMA_NAME
     schema_version: int = SCHEMA_VERSION
     record_type: Literal["header"] = "header"
@@ -322,6 +334,7 @@ def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
             runtime_kind=record.runtime_kind,
             reproducibility=dict(record.reproducibility),
             entrants=[dict(entrant) for entrant in record.entrants],
+            ruleset_id=record.ruleset_id,
         )
     elif isinstance(record, TickSnapshot):
         base.update(
@@ -449,6 +462,9 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
         entrants_value = data.get("entrants", ())
         if not isinstance(entrants_value, (list, tuple)):
             raise ReplayFormatError("header.entrants must be an array")
+        ruleset_id = data.get("ruleset_id")
+        if ruleset_id is not None and not isinstance(ruleset_id, str):
+            raise ReplayFormatError("header.ruleset_id must be a string or null")
         return ReplayHeader(
             _config_from_dict(data.get("config")),
             {str(k): str(v) for k, v in agents.items()},
@@ -460,6 +476,7 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
             entrants=tuple(
                 _require_mapping(item, "header.entrants item") for item in entrants_value
             ),
+            ruleset_id=ruleset_id,
             schema_version=version,
         )
     if record_type == "tick":
@@ -582,3 +599,31 @@ def write_replay(path: str | Path, records: Iterable[ReplayRecord]) -> None:
     with Path(path).open("w", encoding="utf-8") as stream:
         for record in records:
             stream.write(serialize_record(record) + "\n")
+
+
+def resolve_replay_ruleset(header: ReplayHeader) -> RulesetProvenance:
+    """Attribute a confidence-qualified Ruleset identity to one replay header.
+
+    * ``ruleset_id`` present -> ``"recorded"`` with that exact value.
+    * ``ruleset_id`` absent, ``schema_version == 3`` -> ``"recovered"``
+      ``BYTEFRAY_RULESET_ID``. Schema version 3 was introduced (and
+      extended into its current shape) entirely within the v0.3.0
+      development branch, before v0.3.0 was ever tagged (see
+      docs/REPLAY_SCHEMA.md's "Compatibility note"), so every real
+      schema-version-3 record -- adapted or canonical -- falls inside the
+      source-proven-stable v0.3.0+ window docs/RULES.md establishes.
+    * ``ruleset_id`` absent, ``schema_version < 3`` -> ``"unknown"``.
+      Schema version 2 was genuinely the canonical wire format of the
+      pre-rename ``v0.2.0`` release (confirmed by inspecting that tag's own
+      ``replay.py``), and the same internal ``schema_version == 2`` shape
+      is also what a genuinely unversioned v0.1 record adapts to
+      (:func:`adapt_v01_record`) -- neither case can be proven to fall
+      inside the window docs/RULES.md's historical evidence actually
+      covers, so this deliberately does not guess.
+    """
+
+    if header.ruleset_id is not None:
+        return RulesetProvenance(header.ruleset_id, "recorded")
+    if header.schema_version >= 3:
+        return RulesetProvenance(BYTEFRAY_RULESET_ID, "recovered")
+    return RulesetProvenance(None, "unknown")

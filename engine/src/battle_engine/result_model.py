@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from battle_engine.rules import BYTEFRAY_RULESET_ID, RulesetProvenance
+
 SCHEMA_NAME = "battle2.result"
 SCHEMA_VERSION = 1
 
@@ -42,6 +44,17 @@ class ResultEnvelope:
     reproducibility: Mapping[str, Any] = field(default_factory=dict)
     replay: ReplayReference | None = None
     backend: Mapping[str, Any] | None = None
+    # v0.10 Phase 4: the Bytefray gameplay Ruleset identity this match
+    # actually executed under (``battle_engine.rules.BYTEFRAY_RULESET_ID``
+    # for a current native VM/Python match). Additive to battle2.result v1
+    # -- unknown keys have always been tolerated by every released reader
+    # (see docs/RESULT_SCHEMA.md), so no schema bump was required. ``None``
+    # for a pMARS/redcode94 result (Bytefray Ruleset v1 is never applicable
+    # to Redcode execution -- see docs/RULES.md) and for any result written
+    # before this field existed; use :func:`resolve_result_ruleset` to
+    # recover a confidence-qualified answer for the latter case rather than
+    # treating an absent field as "unknown gameplay" by itself.
+    ruleset_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -67,6 +80,7 @@ class ResultEnvelope:
                 }
             ),
             "backend": None if self.backend is None else dict(self.backend),
+            "ruleset_id": self.ruleset_id,
         }
 
 
@@ -104,7 +118,38 @@ def read_result(path: str | Path) -> ResultEnvelope:
             else ReplayReference(replay["replay_id"], replay["sha256"], replay["filename"])
         ),
         backend=data.get("backend"),
+        ruleset_id=data.get("ruleset_id"),
     )
+
+
+# Native mode discriminators (``ResultEnvelope.mode``) for which a missing
+# ``ruleset_id`` can be safely recovered as ``BYTEFRAY_RULESET_ID`` -- see
+# docs/RULES.md's historical source-stability evidence, which covers the VM
+# and Python runtimes identically across the entire ``battle2.result`` v1
+# lifetime (the schema itself did not exist before v0.3.0, so there is no
+# older, unproven era of "b2"-mode results to worry about).
+_NATIVE_RECOVERABLE_MODES = frozenset({"b2"})
+
+
+def resolve_result_ruleset(envelope: ResultEnvelope) -> RulesetProvenance:
+    """Attribute a confidence-qualified Ruleset identity to one result.
+
+    * ``ruleset_id`` present -> ``"recorded"`` with that exact value.
+    * ``ruleset_id`` absent, native (``mode == "b2"``) -> ``"recovered"``
+      ``BYTEFRAY_RULESET_ID`` (VM and Python alike -- see docs/RULES.md).
+    * ``ruleset_id`` absent, pMARS (``mode == "redcode94"``) ->
+      ``"not_applicable"``: Redcode/pMARS execution never runs under
+      Bytefray Ruleset v1 and must never be stamped with it.
+    * anything else (an unrecognized/corrupt ``mode``) -> ``"unknown"``.
+    """
+
+    if envelope.ruleset_id is not None:
+        return RulesetProvenance(envelope.ruleset_id, "recorded")
+    if envelope.mode == "redcode94":
+        return RulesetProvenance(None, "not_applicable")
+    if envelope.mode in _NATIVE_RECOVERABLE_MODES:
+        return RulesetProvenance(BYTEFRAY_RULESET_ID, "recovered")
+    return RulesetProvenance(None, "unknown")
 
 
 class ReplayIntegrityError(ValueError):

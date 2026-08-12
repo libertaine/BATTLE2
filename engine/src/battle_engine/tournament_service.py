@@ -199,6 +199,11 @@ def _resumed_result_mismatch(
         return "replay header match ID does not match result envelope"
     if header.result_id != envelope.result_id:
         return "replay header result ID does not match result envelope"
+    if header.ruleset_id != envelope.ruleset_id:
+        return (
+            f"replay header ruleset_id {header.ruleset_id!r} does not match "
+            f"result envelope ruleset_id {envelope.ruleset_id!r}"
+        )
     return None
 
 

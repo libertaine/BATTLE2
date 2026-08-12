@@ -67,6 +67,11 @@ of `MatchEntrant`s, a tick limit, and a replay path) and returns a typed
    replay (`replay.jsonl`) alongside `result.json`
    (`battle2.result` schema v1, written by `write_json_atomic`) with a
    SHA-256 replay digest recorded in `result.json`'s `replay` reference.
+   Both the replay header and the result envelope also carry `ruleset_id:
+   "bytefray-rules-1"` (`battle_engine.rules.BYTEFRAY_RULESET_ID`, v0.10
+   Phase 4) — an additive field on both schemas; see
+   [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for the historical
+   recovery policy for artifacts written before it existed.
 
 A partially-failed match never leaves a success-shaped replay, result, or
 `summary.json` at the requested path — every write path clears stale
