@@ -146,7 +146,7 @@ packaged-application confirmation.
 3. Run the suggested `bytefray agents inspect <run-dir>` command from
    step 2; confirm the summary reports `failures: 0` and a sane tick
    range.
-4. `bytefray replay <replay-path>` from step 2's output; confirm it opens
+4. `bytefray replay --replay <replay-path>` from step 2's output; confirm it opens
    the same match the trace describes (spot-check one tick's arena state
    against `agents inspect --tick N`'s reported action).
 5. Edit `smoke_agent`'s `agent.py` to introduce a **legal but wrong**

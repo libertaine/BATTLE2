@@ -514,7 +514,7 @@ def _print_completed_match(outcome: DevelopmentTestOutcome) -> None:
     print(f"summary: {outcome.summary_path}")
     print(f"trace: {outcome.trace_path if outcome.trace_path is not None else 'none'}")
     print()
-    print(f"Run 'bytefray replay {match_result.replay_path}' to inspect it.")
+    print(f"Run 'bytefray replay --replay {match_result.replay_path}' to inspect it.")
     if outcome.trace_path is not None:
         print(f"Run 'bytefray agents inspect {outcome.trace_path.parent}' to inspect decisions.")
 
