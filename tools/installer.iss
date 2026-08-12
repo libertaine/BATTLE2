@@ -3,7 +3,7 @@
 ;   ISCC.exe tools\installer.iss
 
 #define AppName "Bytefray"
-#define AppVersion "0.8.0"
+#define AppVersion "0.9.0"
 #define AppPublisher "Bytefray Project"
 #define DistRoot "..\dist\windows"
 #define OutputRoot "..\dist\installer"

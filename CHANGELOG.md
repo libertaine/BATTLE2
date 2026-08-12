@@ -5,6 +5,89 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-11
+
+v0.9's evaluation-methodology theme: **Orientation-Aware Evaluation**.
+`bytefray agents evaluate` gave the candidate an always-first-acting
+physical slot in every match it ever ran — a shipped starter agent
+(`adaptive`) already documents and exploits exactly this structural
+first-mover bias. Both entrant orientations are now evaluated by default.
+
+### Added
+
+- `bytefray agents evaluate` now runs **both entrant orientations** by
+  default for every `(opponent, seed)` pair: `candidate_first` (today's
+  historical behavior) and the new `opponent_first` (the same unmodified
+  executor, called with roles swapped) — **matrices roughly double in
+  size** by default. Each orientation is a fully independent
+  `EvaluationCell`: its own `schedule_id`, artifact directory, result/replay
+  pair, status, and resume/retry lifecycle — never averaged together.
+  Results stay expressed from the subject/opponent evaluation-role
+  perspective even when the physical match roles are swapped.
+- `--single-orientation` restores the exact legacy `candidate_first`-only
+  methodology and matrix size — its output (CLI and Designer) is labeled
+  explicitly: "does not generalize across entrant order."
+- Every evaluation now discloses `Arena alignment: fixed — translation
+  robustness not evaluated`, whether both orientations ran or not. Both
+  entrant orientations exercise the same, single arena alignment; running
+  both orientations makes the evaluation orientation-fair, **not**
+  translation-robust — arena address translation remains unimplemented
+  runtime work (Phase 4/5 research, tracked separately) and is not
+  evaluated by this release.
+- `bytefray.evaluation` bumps to **schema v4** / **identity v4**: cells gain
+  `orientation`/`orientation_index`; evaluations gain `orientation_mode`
+  (`"both"` | `"candidate_first_only"`) and `arena_alignment_mode`
+  (`"fixed"`, v0.9's only value) — both new evaluation-wide fields, threaded
+  through identity/comparison the same way `rules_compatibility_id` already
+  is. `EVALUATION_RULES_COMPATIBILITY_ID` is **unchanged**: this is an
+  evaluation-methodology/coverage change, not a gameplay-rules change.
+  Gameplay, scoring, winner resolution, and Python scheduling order are
+  byte-for-byte unmodified.
+- `bytefray agents evaluations show` prints entrant-orientation and
+  arena-alignment methodology alongside `rules_compatibility_id`, plus a
+  per-orientation win-rate breakdown. Cross-evaluation comparison folds
+  orientation into its alignment key: a legacy (pre-v0.9) artifact's cells
+  are recovered as `candidate_first` with certainty (never `unknown`) and
+  align only against a new evaluation's `candidate_first` half; the new
+  `opponent_first` cells have no legacy counterpart and surface as
+  unmatched, never silently folded into an improved/regressed verdict.
+- Agent Designer's Evaluate dialog gains one checkbox, "Run both entrant
+  orientations (recommended)" (checked by default); unchecking it passes
+  the CLI-equivalent `--single-orientation`. Results presentation shows the
+  same methodology disclosure and per-cell orientation the CLI does.
+
+### Fixed
+
+- Resuming an `agents evaluate` run whose `opponent_first` cells had
+  already completed — including the ordinary case of simply re-running the
+  identical command a second time against an existing `--output`, with
+  nothing missing or failed — could falsely demote those cells to
+  `corrupted` (`resumed_result_mismatch`) even though nothing about the
+  match had changed. The resume-verification helper that recomputes each
+  cell's expected match id built its entrant list in a different order
+  than a real `opponent_first` match execution actually uses, which
+  produces a genuinely different id (match identity is sensitive to
+  entrant position, not just which agent occupies which slot).
+
+### Known Limitations
+
+- Arena translation/alignment is not implemented in v0.9. Both-orientations
+  coverage makes an evaluation entrant-order-fair; it says nothing about
+  sensitivity to arena placement, which remains untested by this tool.
+
+## [0.8.1] - 2026-08-11
+
+Patch release correcting Linux/POSIX symlink-cycle handling in the v0.8
+agent revision system.
+
+### Fixed
+
+- Agent revision walking now treats filesystem symlink-resolution cycles as
+  `REASON_RESOLVE_ERROR` omissions instead of allowing `Path.resolve()` to
+  raise an uncaught `RuntimeError` during evaluation.
+- Added regression coverage for cyclic symlinks through both revision
+  walking and evaluation execution.
+
 ## [0.8.0] - 2026-08-11
 
 v0.8.0's theme is **Agent Revision & Provenance**: an agent's exact source
