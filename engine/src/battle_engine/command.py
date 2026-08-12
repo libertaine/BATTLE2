@@ -20,10 +20,29 @@ BATTLE2_DEPRECATION_NOTICE = (
 )
 
 
+def _version_string() -> str:
+    from battle_engine.project_info import get_project_info
+
+    info = get_project_info()
+    return (
+        f"{info.project_name} {info.version} (formerly {info.former_project_name}), "
+        f"Agent API v{info.agent_api_version}, "
+        f"result schema v{info.result_schema_version}, "
+        f"replay schema v{info.replay_schema_version}, "
+        f"Python {info.python_version}"
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bytefray",
         description="Bytefray engine, replay, designer, and agent tools.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=_version_string(),
+        help="show the installed Bytefray version and active API/schema versions and exit",
     )
     subcommands = parser.add_subparsers(dest="command")
     subcommands.add_parser(
@@ -150,6 +169,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     namespace, remainder = parser.parse_known_args(arguments)
     if namespace.command is None:
+        if remainder:
+            parser.error(f"unrecognized arguments: {' '.join(remainder)}")
         parser.print_help()
         return 0
 

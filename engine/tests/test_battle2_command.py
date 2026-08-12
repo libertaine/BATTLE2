@@ -31,6 +31,45 @@ def _run(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_version_flag_reports_installed_version_and_api_versions():
+    result = _run("--version")
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    # argparse's version action word-wraps long text, so compare against
+    # whitespace-normalized output rather than depending on exact line breaks.
+    normalized = " ".join(result.stdout.split())
+    assert "Bytefray" in normalized
+    assert "Agent API v" in normalized
+    assert "result schema v" in normalized
+    assert "replay schema v" in normalized
+
+
+def test_battle2_version_flag_matches_bytefray():
+    bytefray_result = _run("--version")
+    battle2_result = subprocess.run(
+        [sys.executable, "-c", "from battle_engine.command import battle2_main; raise SystemExit(battle2_main(['--version']))"],
+        cwd=ROOT,
+        env=dict(
+            os.environ,
+            PYTHONPATH=os.pathsep.join(
+                [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
+            ),
+        ),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert battle2_result.returncode == bytefray_result.returncode == 0
+    assert battle2_result.stdout == bytefray_result.stdout
+    assert "BATTLE2 has been renamed Bytefray" in battle2_result.stderr
+
+
+def test_unrecognized_top_level_flag_is_a_controlled_error_not_a_silent_help_dump():
+    result = _run("--this-flag-does-not-exist")
+    assert result.returncode == 2
+    assert "unrecognized arguments" in result.stderr
+
+
 def test_primary_help_lists_all_subcommands():
     result = _run("--help")
     assert result.returncode == 0
