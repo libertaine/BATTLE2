@@ -212,6 +212,28 @@ def create_agent(): return Agent()
     assert not controller.states[0].alive
 
 
+def test_derive_agent_seed_golden_vectors():
+    """Pin the Agent API v1 entrant-seed derivation to literal expected
+    integers, computed once (offline) from the currently shipping
+    algorithm -- see docs/AGENT_API_V1.md's "Frozen entrant-seed
+    derivation" section. This must fail immediately if the formula (prefix,
+    field order, separators, hash, byte selection, or endianness) ever
+    drifts, not just if two calls stop agreeing with each other; an
+    incompatible change here requires AGENT_API_VERSION = 2, not a silent
+    edit of this function.
+    """
+
+    assert derive_agent_seed(71, 0, "A", 1) == 69379702161355071673401689362214398906
+    assert derive_agent_seed(71, 1, "B", 1) == 162330885650030089838522377773947429270
+    assert derive_agent_seed(1337, 0, "A", 1) == 281274714441147123573529567979375554366
+    assert derive_agent_seed(1337, 2, "C", 1) == 213243685613712157156274405999378198566
+    assert derive_agent_seed(0, 0, "A", 1) == 58770878450558924688994560674375508955
+    assert (
+        derive_agent_seed(999999, 5, "candidate", 1)
+        == 328925147824341361150750412572932710975
+    )
+
+
 def test_rng_is_deterministic_seeded_and_independent_per_entrant(tmp_path):
     random_writer = """
 from battle_engine.agent_api import ActionKind, AgentAction

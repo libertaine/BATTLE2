@@ -28,18 +28,25 @@ v0.1/native formats. See [RESULT_SCHEMA.md](RESULT_SCHEMA.md).
 
 ### Compatibility note: v3 was extended in place, not versioned to v4
 
-`battle2.replay` v3 was introduced in the same `v0.3-foundation` development
-branch as this extension and has never appeared in a tagged release (see
-CHANGELOG.md) -- earlier v3 output only existed as regenerable local/CI
-artifacts, not as a format any external consumer depended on. The fields
-described below (`runtime_kind`, memory-diff `values`, the tick-zero initial
-state record, terminal `agents`, per-agent register/termination state) were
-therefore added directly to schema version 3 rather than introduced as a new
-version 4. All new fields have safe, explicit defaults (`None`, `()`, or
-absence), so a reader encountering an older, pre-extension v3 file (or a
-genuine v0.1/v0.2 file) still parses it correctly -- it simply sees the new
-fields as absent/default rather than populated. A future incompatible change
-to the wire shape (not just an additive field) should bump `SCHEMA_VERSION`
+`battle2.replay` v3 was introduced, and then extended with the fields
+described below, in the same `v0.3-foundation` development branch, hours
+apart and both before `v0.3.0` was tagged -- so at the time of the
+extension, no tagged release yet existed that depended on the
+pre-extension v3 record shape; earlier v3 output only existed as
+regenerable local/CI artifacts. (`battle2.replay` v3, in this already-
+extended form, has since shipped in every tagged release from `v0.3.0`
+onward -- see CHANGELOG.md -- so it is not correct to say today that v3
+"has never appeared in a tagged release"; the point this note preserves is
+narrower: no *tagged release* ever shipped the pre-extension shape that
+would need to keep reading.) The fields described below (`runtime_kind`,
+memory-diff `values`, the tick-zero initial state record, terminal
+`agents`, per-agent register/termination state) were therefore added
+directly to schema version 3 rather than introduced as a new version 4.
+All new fields have safe, explicit defaults (`None`, `()`, or absence), so
+a reader encountering an older, pre-extension v3 file (or a genuine
+v0.1/v0.2 file) still parses it correctly -- it simply sees the new fields
+as absent/default rather than populated. A future incompatible change to
+the wire shape (not just an additive field) should bump `SCHEMA_VERSION`
 rather than repeat this reasoning.
 
 ### Runtime-kind semantics

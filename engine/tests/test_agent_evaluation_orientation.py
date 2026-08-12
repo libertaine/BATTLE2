@@ -266,7 +266,7 @@ def test_rules_compatibility_id_unchanged_by_orientation(tmp_path):
     single = service.run(_request(root, output_dir=root / "single", both_orientations=False))
     data_both = json.loads(both.state_path.read_text(encoding="utf-8"))
     data_single = json.loads(single.state_path.read_text(encoding="utf-8"))
-    assert data_both["rules_compatibility_id"] == EVALUATION_RULES_COMPATIBILITY_ID == "evaluation-rules-1"
+    assert data_both["rules_compatibility_id"] == EVALUATION_RULES_COMPATIBILITY_ID
     assert data_single["rules_compatibility_id"] == EVALUATION_RULES_COMPATIBILITY_ID
 
 

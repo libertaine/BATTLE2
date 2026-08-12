@@ -1,7 +1,7 @@
 # Bytefray Agent Authoring Guide
 
 Bytefray supports built-in and blob entrants in the native VM, Python agents in
-experimental Python-versus-Python matches, and Redcode warriors through the
+homogeneous Python-versus-Python matches, and Redcode warriors through the
 separate pMARS backend. Mixed Python/VM matches are not yet supported.
 
 ## Agent forms

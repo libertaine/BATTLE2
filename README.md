@@ -5,7 +5,7 @@
 
 **Bytefray** is a programmable-agent arena, inspired by Core War, where deterministic VM and Python agents compete in a shared memory arena. It supports:
 
-- Python agent discovery, Agent API v1 validation, and experimental Python-vs-Python matches
+- Python agent discovery, Agent API v1 validation, and homogeneous Python-vs-Python matches
 - Precompiled binary “blob” agents  
 - Integration with pMARS (Redcode) for interop  
 - Replay viewing and agent design tools  
@@ -97,10 +97,11 @@ not promised for any specific release.
 - [Agent Authoring Guide](docs/AGENT_AUTHORING.md)
 - [Agent Lab: trace, inspect, diverge, timeouts](docs/AGENT_LAB.md)
 - [Agent API v1 Technical Contract](docs/AGENT_API_V1.md)
-- [Current Native VM Rules Reference](docs/RULES.md)
+- [Bytefray Ruleset v1 Reference](docs/RULES.md)
 - [Canonical Result Schema](docs/RESULT_SCHEMA.md)
 - [Replay Schema](docs/REPLAY_SCHEMA.md)
 - [Headless Tournament Service](docs/TOURNAMENTS.md)
+- [Compatibility Reference](docs/COMPATIBILITY.md)
 - [Roadmap: v0.10 and v1.0](docs/ROADMAP.md)
 - [Future Plans (post-1.0)](docs/FUTURE_PLANS.md)
 
@@ -303,12 +304,12 @@ and the active Agent API, result, and replay schema versions.
 
 | Type    | File         | Execution Path            | Notes                                    |
 | ------- | ------------ | ------------------------- | ---------------------------------------- |
-| Python  | `agent.py`   | Agent API v1 Python-only runtime | Experimental; mixed VM/Python matches are not implemented |
+| Python  | `agent.py`   | Agent API v1 Python-only runtime | Stable candidate for 1.0 (homogeneous Python-vs-Python only); mixed VM/Python matches are not implemented |
 | Blob    | `model.blob` | Loaded directly by engine | Faster, minimal runtime                  |
 | Redcode | `.red/.asm`  | Via pMARS integration     | Compatible with existing Core War agents |
 
 * A directory containing **Python** source is discoverable, validated, and can
-  execute against another Python agent through the experimental Python-vs-Python
+  execute against another Python agent through the homogeneous Python-vs-Python
   runtime. Mixed Python/VM matches remain unsupported.
 * Use **blob** when you want to ship just the low-level compiled version.
 * The **Redcode** mode allows interop with legacy Core War agents (via pMARS). Use `--mode redcode94`.

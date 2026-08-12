@@ -5,6 +5,53 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+### Added
+
+- `battle_engine.rules.BYTEFRAY_RULESET_ID = "bytefray-rules-1"` — a new,
+  first-class gameplay-semantics compatibility identity (v0.10 Phase 2:
+  Freeze Ruleset v1), documented in full as `docs/RULES.md`, a rewritten
+  **Ruleset v1 reference** distinguishing Ruleset semantics from
+  configuration values, Agent API semantics, evaluation methodology, and
+  implementation details, plus a bump policy for future gameplay changes.
+  `bytefray.evaluation`'s `EVALUATION_RULES_COMPATIBILITY_ID` is now a
+  derived alias of `BYTEFRAY_RULESET_ID` rather than an independently
+  maintained second rules counter — its value, wire field name
+  (`rules_compatibility_id`), and comparison behavior are unchanged, and
+  historical `"evaluation-rules-1"` artifacts are documented as an honest
+  historical alias, never silently reinterpreted as containing the new
+  spelling. New `docs/COMPATIBILITY.md` names the independent compatibility
+  axes (project version, Agent API version, Ruleset identity, artifact
+  schema versions, evaluation methodology, agent revision identity, source
+  fingerprint versions) and gives a worked change-impact table for which
+  axis a given change actually requires.
+- `docs/AGENT_API_V1.md` now documents the exact, literal deterministic
+  entrant-seed derivation algorithm (UTF-8 material string, NUL-separated
+  fields, SHA-256, first 16 digest bytes, big-endian integer) as a frozen
+  Agent API v1 invariant — an incompatible change to it requires
+  `AGENT_API_VERSION = 2`, not a separate RNG compatibility identifier.
+  New golden-vector regression tests
+  (`test_derive_agent_seed_golden_vectors`) pin literal expected integers
+  for fixed inputs so accidental formula drift is caught immediately.
+
+### Fixed
+
+- Corrected `docs/REPLAY_SCHEMA.md`'s stale claim that `battle2.replay` v3
+  "has never appeared in a tagged release" — it has shipped, in its
+  already-extended form, in every tagged release since `v0.3.0`. The
+  narrower point the note was actually making (no tagged release ever
+  depended on the brief pre-extension record shape) is preserved.
+- Resolved a stable-vs-experimental documentation contradiction: several
+  docs (README, `docs/AGENT_AUTHORING.md`) described the entire homogeneous
+  Python-vs-Python runtime as "experimental," while `docs/ROADMAP.md`
+  already treats Agent API v1 and the core Python runtime as stability
+  candidates for 1.0. Docs now say what is actually still
+  unsupported/experimental (mixed VM/Python matches, security sandboxing,
+  hard callback containment outside `agents test`/`validate`, replication,
+  corruptible Python-core designs — see `docs/COMPATIBILITY.md`) rather
+  than labeling the whole platform experimental.
+- `docs/AGENT_API_V1.md` no longer describes the shipped (v0.5.0) Agent Lab
+  supervised-worker timeout containment as "(unreleased) Agent Lab work."
+
 ### Documentation
 
 - Documented and integrated optional, non-authoritative local
