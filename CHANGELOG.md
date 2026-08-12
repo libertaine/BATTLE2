@@ -13,6 +13,15 @@ This changelog records notable user- and developer-visible changes to Bytefray
   tested prompt set) and linked it from the README's AI-Assisted
   Development section and roadmap. Developer tooling only — Ollama is not
   a Bytefray dependency, CI requirement, or user-facing feature.
+- Added `docs/ROADMAP.md` (v0.10.0's stabilization scope and v1.0.0's
+  release criterion) and `docs/FUTURE_PLANS.md` (a maturity-labeled
+  catalogue of post-1.0 ideas: accessible agent-authoring DSL, agent
+  packaging/sharing, richer evaluation/statistics, evaluation performance/
+  scaling, and future simulation/combat research), and updated the
+  README's roadmap table and future-work paragraph to point at them
+  instead of carrying an open-ended "Future / unscheduled" list inline.
+  Corrected `INSTALL.md`'s stale v0.6.0 download references to the
+  current v0.9.0 release.
 
 ## [0.9.0] - 2026-08-11
 

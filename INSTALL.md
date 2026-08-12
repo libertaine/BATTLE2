@@ -2,15 +2,17 @@
 
 ## Windows installer
 
-Download `Bytefray-Setup-0.6.0.exe` from the
-[v0.6.0 release](https://github.com/libertaine/Bytefray/releases/tag/v0.6.0).
-It installs four
+Download `Bytefray-Setup-0.9.0.exe` from the
+[v0.9.0 release](https://github.com/libertaine/Bytefray/releases/tag/v0.9.0)
+(see [README.md](README.md#-downloads) for the current release; the exact
+filenames below track that latest tag as later versions ship). It installs
+four
 onedir applications beneath `C:\Program Files\Bytefray\bin`: `battle2`,
 `battle-cli`, `battle-agent-designer`, and `battle-replay-viewer`. The v0.1
 `match-runner` command was removed in v0.3; use `battle-replay-viewer` (or
 `bytefray replay --renderer pygame`) instead. The release archive containing
 the corresponding portable
-application trees is `Bytefray-0.6.0-windows-exes.zip`. Extract the entire ZIP
+application trees is `bytefray-0.9.0-windows.zip`. Extract the entire ZIP
 for portable use; do not copy only the top-level executables because their
 adjacent DLLs, Qt plugins, resources, and pMARS files are required.
 
@@ -36,7 +38,7 @@ Python users can install the release wheel into an isolated environment:
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install .\bytefray-0.6.0-py3-none-any.whl
+python -m pip install .\bytefray-0.9.0-py3-none-any.whl
 bytefray --help
 ```
 

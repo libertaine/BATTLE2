@@ -72,25 +72,23 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 0.6.1 | Default Agent Build-Out | Released — five bundled Python starter agents (Claimer, Strider, Hunter, Wanderer, Adaptive) demonstrating distinct, empirically balanced strategies, replacing the single fixed-behavior scaffold as every new user's first Python match. Surfaced an open scoring-model question — whether continual territory-claiming is structurally favored over observing or defending — that a future ruleset-review milestone (see **Future / unscheduled** below) will need real, unbiased evaluation tooling to study properly. |
 | 0.7.0 | Evaluation History | Released — `bytefray.evaluation` v2, persistent evaluation history (`evaluations list`/`show`/`compare`), execution provenance, and reproducibility-aware comparison against a stable baseline. **Major hardening:** frozen execution identity, local-source fingerprinting, resume/retry durability, malformed-artifact isolation, fail-closed execution-context validation, and replay/path containment. |
 | 0.8.0 | Agent Revision & Provenance | Released — durable identity/provenance for agent revisions, so historical evaluation results stay meaningful as an agent's source keeps evolving: a content-addressed revision store, freeze-time archival wired into `agents evaluate` (schema v3's additive `agent_revisions` field), revision-aware `evaluations show`/`--verify`, and `agents revisions list`/`show`/`restore`. **Major hardening:** fail-closed restore/snapshot verification, cross-platform artifact path containment, and Windows junction/reparse-point containment. |
-| 0.9.0 | Orientation-Aware Evaluation | Released — closed a structural first-mover bias present in every `agents evaluate` cell ever run (the candidate always occupied the always-first-acting physical slot; a shipped starter agent already documented and exploited this). Both entrant orientations (`candidate_first`/`opponent_first`) now run by default as independent, fully provenance-tracked cells; `--single-orientation` restores the exact legacy methodology. `bytefray.evaluation` bumps to schema/identity v4; every evaluation also now explicitly discloses that arena alignment is fixed (translation robustness remains research work, not yet evaluated). Reprioritized ahead of ruleset review below, on the reasoning that the tool measuring the rules needed fixing first. |
-| 1.0 | Stable Bytefray Platform | Tentative — a maturity milestone: a coherent, well-tuned simulation, mature agent-development tooling, trustworthy reproducible evaluations, durable provenance/history, and stable core interfaces with repeatable supported distribution. Exact feature boundary **TBD**. |
+| 0.9.0 | Orientation-Aware Evaluation | Released — closed a structural first-mover bias present in every `agents evaluate` cell ever run (the candidate always occupied the always-first-acting physical slot; a shipped starter agent already documented and exploited this). Both entrant orientations (`candidate_first`/`opponent_first`) now run by default as independent, fully provenance-tracked cells; `--single-orientation` restores the exact legacy methodology. `bytefray.evaluation` bumps to schema/identity v4; every evaluation also now explicitly discloses that arena alignment is fixed (translation robustness remains research work, not yet evaluated). A ruleset-review investigation conducted during v0.9 development (scoring counterfactuals, capped-territory experiments) found no gameplay-rule change justified yet, and reprioritized this entrant-orientation fix ahead of it, on the reasoning that the tool measuring the rules needed fixing first. |
+| 0.10.0 | Platform Stabilization / v1.0 Readiness | Planned — a stabilization release, not another feature release: freeze the Bytefray 1.0 rules contract, decide (with v0.9's translation-robustness research already in hand) whether arena-placement robustness should join entrant orientation as an evaluated dimension, define which interfaces v1.x commits to keeping stable, clarify supported product boundaries, perform release qualification, and polish the first-user workflow. See [docs/ROADMAP.md](docs/ROADMAP.md). |
+| 1.0.0 | Stable Bytefray Platform | Planned — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. If v0.10 finds no major architectural problem, v1.0 follows without another broad pre-1.0 feature cycle. See [docs/ROADMAP.md](docs/ROADMAP.md). |
 
-**Future / unscheduled:** ideas with real merit but no assigned release,
-revisited as usage justifies them — **Ruleset Review / Simulation Design**
-(revisit Bytefray's scoring model and mechanics now that evaluation tooling
-measures both entrant orientations: whether the rules favor a simple
-dominant strategy over experimentation, how observation/defense trade off
-against expansion, and whether the strategy diversity seen so far is
-genuinely produced by the rules — exploratory, no rule changes promised),
-VM/Redcode authoring and evaluation parity (Redcode is *not* cancelled;
-Python-side authoring, evaluation, provenance, and the ruleset itself are
-expected to mature first), richer statistical/evaluation analysis, ranking
-systems such as Elo/Glicko, parallel/distributed evaluation, and agent
-packaging/sharing. Post-v0.9 development may also explore deeper optional
-local-AI developer tooling (see [tools/local_ai/README.md](tools/local_ai/README.md))
-— standardized review packets, structured JSON review results, and
-benchmarking local models against known historical Bytefray defects are
-candidate directions, not promised for any specific release.
+**Future plans (post-1.0):** substantial ideas are deliberately kept out of
+v1.0's required scope so it isn't held hostage to every interesting
+feature — accessible agent-authoring (a small, deterministic DSL), agent
+packaging/sharing, richer evaluation/statistical analysis, evaluation
+performance/scaling, and deeper simulation/combat research (arena-size
+effects, multipronged/multi-process entrants, replication, future
+rulesets). None of it is lost; see the organized, maturity-labeled
+catalogue in [docs/FUTURE_PLANS.md](docs/FUTURE_PLANS.md). Post-v0.9
+development may also explore deeper optional local-AI developer tooling
+(see [tools/local_ai/README.md](tools/local_ai/README.md)) — standardized
+review packets, structured JSON review results, and benchmarking local
+models against known historical Bytefray defects are candidate directions,
+not promised for any specific release.
 
 ---
 
@@ -103,6 +101,8 @@ candidate directions, not promised for any specific release.
 - [Canonical Result Schema](docs/RESULT_SCHEMA.md)
 - [Replay Schema](docs/REPLAY_SCHEMA.md)
 - [Headless Tournament Service](docs/TOURNAMENTS.md)
+- [Roadmap: v0.10 and v1.0](docs/ROADMAP.md)
+- [Future Plans (post-1.0)](docs/FUTURE_PLANS.md)
 
 ---
 
