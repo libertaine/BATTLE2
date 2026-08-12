@@ -189,6 +189,152 @@ def test_evaluation_dialog_collects_fields(tmp_path):
 
 
 @pytest.mark.gui
+def test_evaluation_dialog_both_orientations_checkbox_defaults_checked(tmp_path):
+    """v0.9 Phase 6 (Phase 5 spec Sec P): checked by default ("recommended")."""
+
+    _make_app()
+    from app.views.evaluation import EvaluationDialog
+
+    dialog = EvaluationDialog(
+        [("Candidate", "candidate"), ("Opponent", "opponent")],
+        default_candidate="candidate",
+        default_output=tmp_path / "out",
+    )
+    try:
+        assert dialog.both_orientations() is True
+        dialog.bothOrientationsCheck.setChecked(False)
+        assert dialog.both_orientations() is False
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_evaluate_command_includes_single_orientation_flag_only_when_unchecked(
+    monkeypatch, tmp_path
+):
+    """v0.9 Phase 6: unchecking the checkbox must pass the CLI-equivalent
+    ``--single-orientation``; checked (the default) must not add any flag."""
+
+    _make_app()
+    from app.agent_designer import AgentDesigner
+    from app.services.agent_catalog import AgentRow
+
+    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    designer = AgentDesigner()
+    try:
+        designer.development.setAgents(
+            [
+                AgentRow(name="candidate", path="agents/candidate", blob_path=None, meta={"kind": "python"}),
+                AgentRow(name="opponent", path="agents/opponent", blob_path=None, meta={"kind": "python"}),
+            ]
+        )
+        designer.development.selectAgent("candidate")
+
+        captured_commands = []
+
+        class _RecordingDialog:
+            both_orientations_value = True
+
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return True
+
+            def candidate_id(self):
+                return "candidate"
+
+            def baseline_id(self):
+                return None
+
+            def opponent_ids(self):
+                return ("opponent",)
+
+            def seeds_text(self):
+                return "1"
+
+            def seed_range_text(self):
+                return ""
+
+            def ticks(self):
+                return 10
+
+            def both_orientations(self):
+                return _RecordingDialog.both_orientations_value
+
+            def output_path(self):
+                return tmp_path / "designer-eval-out"
+
+        monkeypatch.setattr("app.agent_designer.EvaluationDialog", _RecordingDialog)
+
+        class _FakeProc:
+            def start(self):
+                pass
+
+        def _fake_start_process(command, env, working_directory, *, label):
+            captured_commands.append(command)
+            designer._proc = _FakeProc()
+            return designer._proc
+
+        monkeypatch.setattr(designer, "_start_process", _fake_start_process)
+
+        _RecordingDialog.both_orientations_value = True
+        designer._on_evaluate()
+        assert "--single-orientation" not in captured_commands[0]
+
+        designer._proc = None
+        designer._active_workflow = None
+        _RecordingDialog.both_orientations_value = False
+        designer._on_evaluate()
+        assert "--single-orientation" in captured_commands[1]
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_results_dialog_shows_orientation_methodology_and_per_cell_orientation(tmp_path):
+    """v0.9 Phase 6 (Phase 5 spec Sec P): results presentation exposes both
+    the shared methodology disclosure and each cell's own orientation."""
+
+    _make_app()
+    from battle_engine.agent_evaluation import EvaluationRequest, EvaluationService
+
+    from app.services.designer_workflows import read_evaluation_presentation
+    from app.views.evaluation import EvaluationResultsDialog
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+
+    service = EvaluationService()
+    request = EvaluationRequest(
+        candidate_id="candidate",
+        opponent_ids=("opponent",),
+        seeds=(1,),
+        output_dir=tmp_path / "eval-out",
+        ticks=10,
+        data_root=tmp_path,
+    )
+    result = service.run(request)
+    presentation = read_evaluation_presentation(result.state_path)
+    assert presentation.orientation_mode == "both"
+    assert {cell.orientation for cell in presentation.cells} == {"candidate_first", "opponent_first"}
+
+    dialog = EvaluationResultsDialog(presentation)
+    try:
+        from PySide6.QtWidgets import QLabel
+
+        header_label = dialog.findChildren(QLabel)[0]
+        assert "Entrant orientation: both" in header_label.text()
+        assert "Arena alignment: fixed" in header_label.text()
+
+        labels = [dialog.resultsList.item(i).text() for i in range(dialog.resultsList.count())]
+        assert any("orientation=candidate_first" in label for label in labels)
+        assert any("orientation=opponent_first" in label for label in labels)
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
 def test_evaluation_dialog_returns_discovery_id_when_display_name_differs(tmp_path):
     """Regression: selecting an agent whose display text differs from its
     discovery id must still return the discovery id (Sec 17)."""
@@ -294,6 +440,10 @@ def test_results_dialog_duplicate_seed_open_replay_resolves_correct_duplicate(tm
         output_dir=tmp_path / "eval-out",
         ticks=15,
         data_root=tmp_path,
+        # This test predates entrant orientation (v0.9 Phase 6) and is about
+        # duplicate-seed drill-down resolution, orthogonal to it -- pinned
+        # to the legacy single-orientation matrix shape/size.
+        both_orientations=False,
     )
     result = service.run(request)
     presentation = read_evaluation_presentation(result.state_path)
@@ -428,6 +578,9 @@ def test_designer_evaluate_launches_process_on_accept(monkeypatch, tmp_path):
             def ticks(self):
                 return 30
 
+            def both_orientations(self):
+                return True
+
             def output_path(self):
                 return tmp_path / "designer-eval-out"
 
@@ -497,6 +650,9 @@ def test_designer_evaluate_shows_warning_on_invalid_request(monkeypatch, tmp_pat
 
             def ticks(self):
                 return 30
+
+            def both_orientations(self):
+                return True
 
             def output_path(self):
                 return tmp_path / "out"

@@ -13,6 +13,20 @@ Status: design spec, written before implementation, per `CONTRIBUTING.md`'s
 spec → issue → prompt → PR flow. Built incrementally alongside
 implementation; kept authoritative and synchronized as each slice lands.
 
+**v0.9 note:** this spec predates entrant orientation and fixed-arena-
+alignment disclosure (v0.9 Phase 6). `AdaptedCell.orientation` and
+`EvaluationSummary.orientation_mode`/`arena_alignment_mode`
+(`ConfidenceValue`-wrapped, same pattern as `rules_compatibility_id` below)
+are additive fields this document's `condition_key`/`AdaptedCell` sketches
+do not yet show; `condition_key` (§ below) now also includes `orientation`
+and `arena_alignment_mode` as tuple elements, alongside `rules_compatibility_id`.
+None of this changes the alignment/recovery *principles* this spec
+establishes — orientation and arena alignment follow the exact same
+sibling-key, recovered-not-unknown treatment already documented here for
+`rules_compatibility_id` — only the concrete field list has grown. See
+`CHANGELOG.md`'s Unreleased entry and `docs/AGENT_LAB.md` for the current,
+authoritative field list.
+
 ## 1. Established v0.6.1 facts (verified in source, not assumed)
 
 - `agent_evaluation.py` already implements `run_dir` on `agent_test.test_agent`

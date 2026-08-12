@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+from battle_engine.agent_evaluation import ORIENTATION_MODE_CANDIDATE_FIRST_ONLY, methodology_lines
+
 from .comparison import align
 from .discovery import AmbiguousSelectorError, adapt_any, discover, resolve_selector
 from .models import ArtifactReadError
@@ -117,6 +119,19 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None) -> 
         f"rules_compatibility_id: {summary.rules_compatibility_id.value or 'unknown'} "
         f"({summary.rules_compatibility_id.confidence.value})"
     )
+    # v0.9 Phase 6 (Phase 5 spec Sec O.2/AA.5): same shared methodology
+    # lines the live `agents evaluate` CLI prints, alongside each field's
+    # own recorded/recovered confidence so a reader can tell a fresh
+    # schema-4 evaluation's disclosure from a pre-v0.9 artifact's certain
+    # recovery.
+    orientation_mode_value = summary.orientation_mode.value or ORIENTATION_MODE_CANDIDATE_FIRST_ONLY
+    for line in methodology_lines(orientation_mode_value):
+        print(line)
+    print(
+        f"  orientation_mode: {orientation_mode_value} ({summary.orientation_mode.confidence.value})  "
+        f"arena_alignment_mode: {summary.arena_alignment_mode.value or 'unknown'} "
+        f"({summary.arena_alignment_mode.confidence.value})"
+    )
     codes = ", ".join(code.value for code in summary.health.codes) or "unknown"
     print(f"health: {codes}")
     for detail in summary.health.detail:
@@ -126,8 +141,38 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None) -> 
     for cell in summary.cells:
         status_counts[cell.status] = status_counts.get(cell.status, 0) + 1
     print("cell status counts: " + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())))
+    # v0.9 Phase 6 (Sec O.2/K.2): pooled ("all") row per subject, plus a
+    # per-orientation win-rate breakdown line when the recomputed cells
+    # actually cover more than one orientation.
     for aggregate in summary.aggregates_recomputed:
+        if aggregate.orientation_scope != "all":
+            continue
         print(f"[{aggregate.subject_role}] {aggregate.subject_id}  win_rate={aggregate.win_rate_display}")
+        candidate_first = next(
+            (
+                a
+                for a in summary.aggregates_recomputed
+                if a.subject_role == aggregate.subject_role
+                and a.subject_id == aggregate.subject_id
+                and a.orientation_scope == "candidate_first"
+            ),
+            None,
+        )
+        opponent_first = next(
+            (
+                a
+                for a in summary.aggregates_recomputed
+                if a.subject_role == aggregate.subject_role
+                and a.subject_id == aggregate.subject_id
+                and a.orientation_scope == "opponent_first"
+            ),
+            None,
+        )
+        if opponent_first is not None and opponent_first.matches_played > 0:
+            print(
+                f"    candidate_first: {candidate_first.win_rate_display if candidate_first else 'n/a'}   "
+                f"opponent_first: {opponent_first.win_rate_display}"
+            )
     _print_execution_contexts(summary)
     _print_agent_revisions(summary)
     if verified is not None:

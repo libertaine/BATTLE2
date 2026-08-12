@@ -71,7 +71,7 @@ from battle_engine.result_model import (
 from battle_engine.results import WINNER_TIE_SENTINEL
 
 SCHEMA_NAME = "bytefray.evaluation"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # Bumped 2 -> 3: each planned_identities entry (candidate/baseline/each
 # opponent) gains "agent_revision_id"/"agent_revision_error"
 # (docs/specs/agent_revision.md Sec 5) -- an additive wire-shape change,
@@ -91,7 +91,19 @@ SCHEMA_VERSION = 3
 # deliberately NOT folded into this hash -- see
 # docs/specs/agent_revision.md Sec 1.4 -- so IDENTITY_VERSION does not bump
 # again here.
-IDENTITY_VERSION = 3
+#
+# Bumped 3 -> 4 (schema and identity together, v0.9 Phase 6, per
+# runs/research_v0.9/PHASE5_EVALUATION_METHODOLOGY_SPEC.md Sec J.1/AA.4.8):
+# each cell gains "orientation"/"orientation_index" (schema-additive, and
+# identity-affecting because orientation enters schedule_id/
+# condition_fingerprint -- two cells differing only by orientation must
+# never collide); the evaluation level gains "orientation_mode" and
+# "arena_alignment_mode" (both enter _evaluation_id's payload and are
+# persisted as top-level sibling fields, following the exact
+# EVALUATION_RULES_COMPATIBILITY_ID sibling-key pattern below). None of
+# this changes EVALUATION_RULES_COMPATIBILITY_ID itself -- it is a
+# methodology/coverage change, never a gameplay-rules change.
+IDENTITY_VERSION = 4
 
 # Narrowly scoped compatibility identifier for evaluation/match comparison
 # semantics (scoring, winner resolution, Python scheduling order, derived-seed
@@ -100,8 +112,30 @@ IDENTITY_VERSION = 3
 # docs/specs/evaluation_history.md Sec 4.
 EVALUATION_RULES_COMPATIBILITY_ID = "evaluation-rules-1"
 
+# v0.9's only supported arena-alignment methodology (Phase 5 spec Sec AA):
+# every cell in every evaluation places both entrants at the same
+# untranslated arena alignment. This is evaluation-level methodology
+# provenance, not a gameplay rule -- it never causes address translation
+# and never changes EVALUATION_RULES_COMPATIBILITY_ID. Threaded through
+# identity/comparison the same sibling-key way
+# EVALUATION_RULES_COMPATIBILITY_ID already is (Sec AA.3/AA.4).
+EVALUATION_ARENA_ALIGNMENT_MODE = "fixed"
+
 CANDIDATE = "candidate"
 BASELINE = "baseline"
+
+# Entrant orientation (Phase 5 spec Sec H/I): which of the two match-
+# defining agents occupies the always-first-acting physical slot for one
+# cell. Named constants, mirroring CANDIDATE/BASELINE above, rather than a
+# runtime string validator -- orientation values are always constructed
+# internally by build_matrix from this fixed pair, never accepted as
+# free-text external/CLI input (the CLI only exposes the boolean
+# --single-orientation), so this is the existing project convention for a
+# closed internal string enum.
+ORIENTATION_CANDIDATE_FIRST = "candidate_first"
+ORIENTATION_OPPONENT_FIRST = "opponent_first"
+ORIENTATION_MODE_BOTH = "both"
+ORIENTATION_MODE_CANDIDATE_FIRST_ONLY = "candidate_first_only"
 
 _OUTCOME_RANK = {"loss": 0, "tie": 1, "win": 2}
 _REAL_OUTCOMES = frozenset(_OUTCOME_RANK)
@@ -116,6 +150,33 @@ def _utc_now_iso() -> str:
         .isoformat(timespec="microseconds")
         .replace("+00:00", "Z")
     )
+
+
+def physical_slots_for_orientation(orientation: str) -> tuple[str, str]:
+    """The physical ``(subject_slot, opponent_slot)`` a cell's orientation executes in.
+
+    ``candidate_first`` (today's only historical behavior): the subject
+    occupies the always-first-acting slot, exactly as every cell ever run
+    before Phase 6. ``opponent_first``: the physical roles are swapped --
+    the opponent occupies the first-acting slot, the subject the second --
+    while every *stored* evaluation field stays expressed from the
+    evaluation-role (subject/opponent) perspective, never the physical
+    slot. See Phase 5 spec Sec H.1/Sec 12.
+
+    Every place that reads real match-execution evidence keyed by physical
+    slot (result/envelope score-and-outcome mapping, post-execution
+    identity drift, initialization-failure classification, resumed-cell
+    verification, and ``evaluation_history.verification``'s deep-verify
+    path) must resolve slots through this one function rather than
+    hardcoding ``TESTED_AGENT_SLOT``/``OPPONENT_SLOT`` as "subject"/
+    "opponent" directly -- that hardcoding is exactly what made every
+    cell ever run give the candidate role a first-mover advantage with no
+    way to test the reverse (Phase 5 spec Sec C.6/C.7/B.6).
+    """
+
+    if orientation == ORIENTATION_OPPONENT_FIRST:
+        return OPPONENT_SLOT, TESTED_AGENT_SLOT
+    return TESTED_AGENT_SLOT, OPPONENT_SLOT
 
 
 class EvaluationConfigurationError(ValueError):
@@ -274,16 +335,18 @@ def _expected_cell_match_id(
     opponent_id: str,
     seed: int,
     ticks: int,
+    orientation: str,
 ) -> str:
     """Recompute the ``match_id`` a fresh cell run would produce.
 
     Mirrors ``agent_test._test_agent``'s own ``MatchRequest`` construction
-    exactly (same ``Config(seed=...)``, same fixed A/B slot entrants) so a
+    exactly (same ``Config(seed=...)``, same physical A/B slot entrants,
+    ``orientation``-mapped via :func:`physical_slots_for_orientation`) so a
     *resumed* cell's recorded ``match_id`` can be verified against what this
-    exact (subject, opponent, seed) combination would compute today --
-    catching a source-content change the way ``tournament_service``'s
-    resume verification already does (docs/specs/agent_evaluation.md
-    Sec 14).
+    exact (subject, opponent, seed, orientation) combination would compute
+    today -- catching a source-content change the way
+    ``tournament_service``'s resume verification already does
+    (docs/specs/agent_evaluation.md Sec 14).
 
     ``canonical_match_id`` reads ``spec.source_path`` from disk at call
     time (see ``match_service.canonical_match_id``), so this helper is only
@@ -295,13 +358,37 @@ def _expected_cell_match_id(
     silently observe the same (already-drifted) content the executor itself
     just read, making the comparison pass despite drift. See
     ``_post_execution_identity_drift`` for that check instead.
+
+    Phase 7 correctness fix: ``canonical_match_id`` is sensitive to the
+    *positional order* of ``request.entrants`` -- both each Python entrant's
+    derived seed (keyed by ``enumerate()`` position, not the "A"/"B" slot
+    label) and the recorded ``entrant_order`` list depend on it
+    (``match_service.canonical_match_id``). ``_test_agent`` always
+    constructs its entrants tuple as ``(TESTED_AGENT_SLOT-entrant,
+    OPPONENT_SLOT-entrant)`` positionally -- slot A's entrant always comes
+    first in the tuple, slot B's always second, regardless of which logical
+    role (subject/opponent) occupies which slot. This helper must build the
+    identical positional order (always ``TESTED_AGENT_SLOT`` first,
+    ``OPPONENT_SLOT`` second), with only *which agent* fills each slot
+    varying by orientation -- not a "subject first, opponent second" order,
+    which silently recomputes a different id than a real ``opponent_first``
+    execution actually produced. Previously this caught every
+    already-completed ``opponent_first`` cell in a false
+    ``resumed_result_mismatch`` on every subsequent resume, even when
+    nothing about the match had changed.
     """
 
+    if orientation == ORIENTATION_OPPONENT_FIRST:
+        slot_a_agent_id, slot_a_spec = opponent_id, opponent_spec
+        slot_b_agent_id, slot_b_spec = subject_id, subject_spec
+    else:
+        slot_a_agent_id, slot_a_spec = subject_id, subject_spec
+        slot_b_agent_id, slot_b_spec = opponent_id, opponent_spec
     request = MatchRequest(
         config=Config(seed=seed),
         entrants=(
-            MatchEntrant.python(TESTED_AGENT_SLOT, subject_id, 0, subject_spec),
-            MatchEntrant.python(OPPONENT_SLOT, opponent_id, 0, opponent_spec),
+            MatchEntrant.python(TESTED_AGENT_SLOT, slot_a_agent_id, 0, slot_a_spec),
+            MatchEntrant.python(OPPONENT_SLOT, slot_b_agent_id, 0, slot_b_spec),
         ),
         max_ticks=ticks,
         replay_path=Path("."),
@@ -353,6 +440,13 @@ def _post_execution_identity_drift(
 ) -> dict[str, Any] | None:
     """Cross-check the executor's own recorded entrant metadata against the frozen plan.
 
+    Orientation-aware (Phase 5 spec Sec H.1): resolves which physical slot
+    each role actually executed in via ``physical_slots_for_orientation``,
+    rather than assuming subject=A/opponent=B -- for an ``opponent_first``
+    cell the subject really executed in slot B and the opponent in slot A,
+    and checking the wrong slot would silently compare each side's frozen
+    identity against the other side's executed metadata.
+
     ``NativeAgentResult.metadata`` for a Python entrant is populated by
     ``python_runtime.PythonEntrantController``/``match_service.
     _build_python_result`` from the exact source the executor just loaded
@@ -397,9 +491,10 @@ def _post_execution_identity_drift(
     is cross-checked against the frozen plan.
     """
 
+    subject_slot, opponent_slot = physical_slots_for_orientation(cell.orientation)
     for role, agent_id, slot in (
-        (cell.subject_role, cell.subject_id, TESTED_AGENT_SLOT),
-        ("opponent", cell.opponent_id, OPPONENT_SLOT),
+        (cell.subject_role, cell.subject_id, subject_slot),
+        ("opponent", cell.opponent_id, opponent_slot),
     ):
         planned = planned_identities.get(agent_id)
         if planned is None:
@@ -447,6 +542,17 @@ class EvaluationRequest:
     resume: bool = True
     retry_failures: bool = False
     data_root: Path | None = None
+    # v0.9 Phase 6 (Phase 5 spec Sec H.3/I.2): both entrant orientations run
+    # by default -- a default that still only ran candidate_first would
+    # reproduce the exact "misleading default methodology" trap the shipped
+    # `adaptive` starter agent's own first-mover exploit (spec Sec B.6)
+    # demonstrates is real. False restores exactly today's historical,
+    # single-orientation (candidate_first-only) behavior and matrix size.
+    both_orientations: bool = True
+
+    @property
+    def orientation_mode(self) -> str:
+        return ORIENTATION_MODE_BOTH if self.both_orientations else ORIENTATION_MODE_CANDIDATE_FIRST_ONLY
 
 
 @dataclass(frozen=True)
@@ -478,6 +584,17 @@ class EvaluationCell:
     # Execution provenance and comparison support (Sec 6, Sec 14).
     execution_context_id: str | None = None
     condition_fingerprint: str | None = None
+    # v0.9 Phase 6 (Phase 5 spec Sec I.2): which evaluation-defining agent
+    # occupies the always-first-acting physical slot for this specific
+    # cell -- a matrix axis, structurally a sibling of seed/opponent_index,
+    # never folded into EffectiveConditions (Sec I.1). Two cells differing
+    # only by orientation must never collide in identity (Sec 9/W.1-2);
+    # `orientation_index` (0 or 1) is the duplicate-occurrence-style
+    # coordinate build_matrix assigns alongside it, mirroring
+    # condition_occurrence_index's own role for repeated (opponent, seed)
+    # tuples.
+    orientation: str = ORIENTATION_CANDIDATE_FIRST
+    orientation_index: int = 0
 
     @property
     def is_scored(self) -> bool:
@@ -501,6 +618,14 @@ class SubjectAggregate:
     ticks_avg: float = 0.0
     territory_avg: float = 0.0
     territory_differential_avg: float = 0.0
+    # v0.9 Phase 6 (Phase 5 spec Sec K.2): which cells this aggregate
+    # summarizes -- "all" (pooled across both orientations, today's only
+    # view before Phase 6), "candidate_first", or "opponent_first". Never
+    # averaged away: all three are always computed side by side (see
+    # `all_subject_aggregates`) so a regression hidden by pooling (e.g.
+    # candidate wins every candidate-first cell but loses every
+    # opponent-first cell) stays visible without extra author effort.
+    orientation_scope: str = "all"
 
     @property
     def win_rate_display(self) -> str:
@@ -533,6 +658,12 @@ class ComparisonEntry:
     # row was actually selected.
     candidate_schedule_id: str | None = None
     baseline_schedule_id: str | None = None
+    # v0.9 Phase 6 (Phase 5 spec Sec K.3): part of the grouping key now, so
+    # it must be visible on the entry itself -- without it, a
+    # both_orientations comparison would show two rows with an identical
+    # "opponent=X seed=Y" header that are actually different orientation
+    # pairs, with no way to tell them apart.
+    orientation: str = ORIENTATION_CANDIDATE_FIRST
 
 
 @dataclass(frozen=True)
@@ -567,17 +698,22 @@ def build_matrix(
     specs: Mapping[str, AgentSpec] | None = None,
     conditions_fingerprint: str | None = None,
     rules_compatibility_id: str | None = None,
+    arena_alignment_mode: str | None = None,
 ) -> tuple[EvaluationCell, ...]:
-    """Build the deterministic subject x opponent x seed matrix.
+    """Build the deterministic subject x opponent x seed x orientation matrix.
 
     Iteration order is candidate, then baseline (if present); opponents
     and seeds in exact request order, never re-sorted or deduplicated
-    (docs/specs/agent_evaluation.md Sec 7).
+    (docs/specs/agent_evaluation.md Sec 7); entrant orientation nests
+    innermost, ``candidate_first`` then ``opponent_first`` when
+    ``request.both_orientations`` (Phase 5 spec Sec I.3) -- only
+    ``candidate_first`` otherwise, reproducing today's historical matrix
+    shape and size exactly.
 
-    ``specs``/``conditions_fingerprint``/``rules_compatibility_id`` are
-    optional so any pre-v2 caller (none remain in this module, but the
-    signature stays permissive for library callers) still gets a usable
-    matrix without a ``condition_fingerprint`` per cell
+    ``specs``/``conditions_fingerprint``/``rules_compatibility_id``/
+    ``arena_alignment_mode`` are optional so any pre-v2 caller (none remain
+    in this module, but the signature stays permissive for library callers)
+    still gets a usable matrix without a ``condition_fingerprint`` per cell
     (docs/specs/evaluation_history.md Sec 8/Sec 14).
     """
 
@@ -585,65 +721,83 @@ def build_matrix(
     if request.baseline_id is not None:
         subjects.append((BASELINE, request.baseline_id))
 
+    orientations: tuple[str, ...] = (
+        (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST)
+        if request.both_orientations
+        else (ORIENTATION_CANDIDATE_FIRST,)
+    )
+
     cells: list[EvaluationCell] = []
     ordinal = 0
     for role, subject_id in subjects:
         occurrence_counts: dict[tuple[str, int], int] = {}
         for opponent_index, opponent_id in enumerate(request.opponent_ids):
             for seed_index, seed in enumerate(request.seeds):
-                ordinal += 1
                 condition_occurrence_index = occurrence_counts.get((opponent_id, seed), 0)
                 occurrence_counts[(opponent_id, seed)] = condition_occurrence_index + 1
-                # `ordinal` is included so a repeated (role, subject_id,
-                # opponent_id, seed) tuple -- explicitly preserved as
-                # distinct cells above -- still gets a distinct schedule_id.
-                # Without it, duplicate cells collide in the resume-state
-                # lookup dict (EvaluationService._resolve_from_state keys
-                # prior cells by schedule_id), which silently misattributes
-                # one duplicate's persisted state to another and can demote
-                # a legitimately never-yet-run duplicate to "corrupted".
-                schedule_id = stable_id(
-                    "evaluation-cell",
-                    {
-                        "evaluation_id": evaluation_id,
-                        "role": role,
-                        "subject_id": subject_id,
-                        "opponent_id": opponent_id,
-                        "seed": seed,
-                        "ordinal": ordinal,
-                    },
-                )
-                label = (
-                    f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
-                    f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}"
-                )
-                condition_fingerprint = None
-                if specs is not None and conditions_fingerprint is not None:
-                    condition_fingerprint = stable_id(
-                        "evaluation-condition",
+                for orientation_index, orientation in enumerate(orientations):
+                    ordinal += 1
+                    # `ordinal` is included so a repeated (role, subject_id,
+                    # opponent_id, seed, orientation) tuple -- explicitly
+                    # preserved as distinct cells above -- still gets a
+                    # distinct schedule_id. Without it, duplicate cells
+                    # collide in the resume-state lookup dict
+                    # (EvaluationService._resolve_from_state keys prior
+                    # cells by schedule_id), which silently misattributes
+                    # one duplicate's persisted state to another and can
+                    # demote a legitimately never-yet-run duplicate to
+                    # "corrupted". `orientation` is included in its own
+                    # right too (not just via ordinal) so two cells
+                    # differing only by orientation are guaranteed distinct
+                    # even if the ordinal derivation ever changed (v0.9
+                    # Phase 6, Sec 9/W.1).
+                    schedule_id = stable_id(
+                        "evaluation-cell",
                         {
-                            "opponent": agent_identity(specs[opponent_id]),
+                            "evaluation_id": evaluation_id,
+                            "role": role,
+                            "subject_id": subject_id,
+                            "opponent_id": opponent_id,
                             "seed": seed,
-                            "effective_conditions": conditions_fingerprint,
-                            "rules_compatibility_id": rules_compatibility_id,
-                            "condition_occurrence_index": condition_occurrence_index,
+                            "orientation": orientation,
+                            "ordinal": ordinal,
                         },
                     )
-                cells.append(
-                    EvaluationCell(
-                        schedule_id=schedule_id,
-                        subject_role=role,
-                        subject_id=subject_id,
-                        opponent_id=opponent_id,
-                        seed=seed,
-                        artifact_dir=request.output_dir / "matches" / label,
-                        opponent_index=opponent_index,
-                        seed_index=seed_index,
-                        matrix_ordinal=ordinal,
-                        condition_occurrence_index=condition_occurrence_index,
-                        condition_fingerprint=condition_fingerprint,
+                    label = (
+                        f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
+                        f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}-{orientation}"
                     )
-                )
+                    condition_fingerprint = None
+                    if specs is not None and conditions_fingerprint is not None:
+                        condition_fingerprint = stable_id(
+                            "evaluation-condition",
+                            {
+                                "opponent": agent_identity(specs[opponent_id]),
+                                "seed": seed,
+                                "effective_conditions": conditions_fingerprint,
+                                "rules_compatibility_id": rules_compatibility_id,
+                                "condition_occurrence_index": condition_occurrence_index,
+                                "orientation": orientation,
+                                "arena_alignment_mode": arena_alignment_mode,
+                            },
+                        )
+                    cells.append(
+                        EvaluationCell(
+                            schedule_id=schedule_id,
+                            subject_role=role,
+                            subject_id=subject_id,
+                            opponent_id=opponent_id,
+                            seed=seed,
+                            artifact_dir=request.output_dir / "matches" / label,
+                            opponent_index=opponent_index,
+                            seed_index=seed_index,
+                            matrix_ordinal=ordinal,
+                            condition_occurrence_index=condition_occurrence_index,
+                            condition_fingerprint=condition_fingerprint,
+                            orientation=orientation,
+                            orientation_index=orientation_index,
+                        )
+                    )
     return tuple(cells)
 
 
@@ -698,6 +852,46 @@ def aggregate_cells(
     )
 
 
+def all_subject_aggregates(
+    candidate_id: str, baseline_id: str | None, cells: Sequence[EvaluationCell]
+) -> tuple[SubjectAggregate, ...]:
+    """Pooled + per-orientation aggregate views for candidate (and baseline).
+
+    v0.9 Phase 6 (Phase 5 spec Sec K.2): three views per subject -- pooled
+    (``orientation_scope="all"``, today's only view before Phase 6, now
+    spanning up to 2x the cells), ``candidate_first``, and
+    ``opponent_first`` -- always computed and surfaced together, reusing
+    :func:`aggregate_cells` unchanged for each (never a second, drifting
+    aggregation implementation). Shared by
+    ``EvaluationService._all_aggregates`` (the live-run path) and
+    ``evaluation_history``'s v1/v2 adapters (the historical-read path) so
+    both compute this identically; a legacy cell reconstructed without a
+    recorded ``orientation`` field defaults to ``candidate_first``
+    (``EvaluationCell.orientation``'s own default), which is also the
+    historically correct fact for every pre-Phase-6 cell (Sec L.2).
+    """
+
+    subjects: list[tuple[str, str]] = [(CANDIDATE, candidate_id)]
+    if baseline_id is not None:
+        subjects.append((BASELINE, baseline_id))
+    scoped_cells: dict[str, list[EvaluationCell]] = {
+        "all": list(cells),
+        ORIENTATION_CANDIDATE_FIRST: [
+            cell for cell in cells if cell.orientation == ORIENTATION_CANDIDATE_FIRST
+        ],
+        ORIENTATION_OPPONENT_FIRST: [
+            cell for cell in cells if cell.orientation == ORIENTATION_OPPONENT_FIRST
+        ],
+    }
+    aggregates: list[SubjectAggregate] = []
+    for role, subject_id in subjects:
+        for scope, scope_cells in scoped_cells.items():
+            aggregates.append(
+                replace(aggregate_cells(role, subject_id, scope_cells), orientation_scope=scope)
+            )
+    return tuple(aggregates)
+
+
 def classify(candidate_outcome: str, baseline_outcome: str) -> str:
     """Deterministic outcome-rank comparator (Sec 11). ``win > tie > loss`` only."""
 
@@ -712,33 +906,43 @@ def classify(candidate_outcome: str, baseline_outcome: str) -> str:
 def compare_candidate_baseline(
     cells: Sequence[EvaluationCell],
 ) -> tuple[ComparisonEntry, ...]:
-    # Grouped into lists (not a plain {(opponent_id, seed): cell} dict) and
-    # paired positionally below so a repeated (opponent_id, seed) pair --
-    # explicitly preserved as distinct cells by build_matrix -- produces one
-    # comparison entry per duplicate occurrence instead of silently
-    # collapsing all but the last-seen duplicate on each side into a single
-    # entry (which previously undercounted "of {total} matched cells" and
-    # dropped some duplicates from the comparison entirely).
-    candidate_by_key: dict[tuple[str, int], list[EvaluationCell]] = {}
+    # Grouped into lists (not a plain {(opponent_id, seed, orientation):
+    # cell} dict) and paired positionally below so a repeated (opponent_id,
+    # seed, orientation) triple -- explicitly preserved as distinct cells by
+    # build_matrix -- produces one comparison entry per duplicate occurrence
+    # instead of silently collapsing all but the last-seen duplicate on
+    # each side into a single entry (which previously undercounted "of
+    # {total} matched cells" and dropped some duplicates from the
+    # comparison entirely).
+    #
+    # v0.9 Phase 6 (Phase 5 spec Sec K.3): orientation joined the grouping
+    # key alongside (opponent_id, seed) -- without it, a candidate's
+    # candidate_first cell could pair against a baseline's opponent_first
+    # cell for the "same" nominal matchup, silently attributing an
+    # orientation effect to a candidate/baseline difference that isn't
+    # real. This is the direct comparison-side consequence of never
+    # averaging orientation away within a cell (Sec H.2).
+    candidate_by_key: dict[tuple[str, int, str], list[EvaluationCell]] = {}
     for cell in cells:
         if cell.subject_role == CANDIDATE:
-            candidate_by_key.setdefault((cell.opponent_id, cell.seed), []).append(cell)
-    baseline_by_key: dict[tuple[str, int], list[EvaluationCell]] = {}
+            candidate_by_key.setdefault((cell.opponent_id, cell.seed, cell.orientation), []).append(cell)
+    baseline_by_key: dict[tuple[str, int, str], list[EvaluationCell]] = {}
     for cell in cells:
         if cell.subject_role == BASELINE:
-            baseline_by_key.setdefault((cell.opponent_id, cell.seed), []).append(cell)
+            baseline_by_key.setdefault((cell.opponent_id, cell.seed, cell.orientation), []).append(cell)
     keys = sorted(set(candidate_by_key) | set(baseline_by_key))
 
     entries: list[ComparisonEntry] = []
-    for opponent_id, seed in keys:
-        candidate_list = candidate_by_key.get((opponent_id, seed), [])
-        baseline_list = baseline_by_key.get((opponent_id, seed), [])
+    for opponent_id, seed, orientation in keys:
+        candidate_list = candidate_by_key.get((opponent_id, seed, orientation), [])
+        baseline_list = baseline_by_key.get((opponent_id, seed, orientation), [])
         for candidate_cell, baseline_cell in zip_longest(candidate_list, baseline_list):
             if candidate_cell is None or baseline_cell is None:
                 entries.append(
                     ComparisonEntry(
                         opponent_id=opponent_id,
                         seed=seed,
+                        orientation=orientation,
                         classification="inconclusive",
                         candidate_outcome=candidate_cell.outcome if candidate_cell else None,
                         baseline_outcome=baseline_cell.outcome if baseline_cell else None,
@@ -753,6 +957,7 @@ def compare_candidate_baseline(
                     ComparisonEntry(
                         opponent_id=opponent_id,
                         seed=seed,
+                        orientation=orientation,
                         classification="inconclusive",
                         candidate_outcome=candidate_cell.outcome,
                         baseline_outcome=baseline_cell.outcome,
@@ -781,6 +986,7 @@ def compare_candidate_baseline(
                 ComparisonEntry(
                     opponent_id=opponent_id,
                     seed=seed,
+                    orientation=orientation,
                     classification=classification,
                     candidate_outcome=candidate_cell.outcome,
                     baseline_outcome=baseline_cell.outcome,
@@ -797,10 +1003,27 @@ def compare_candidate_baseline(
     return tuple(entries)
 
 
-def rerun_command(subject_id: str, opponent_id: str, seed: int, ticks: int) -> str:
-    """The exact ``agents test`` invocation that reproduces one cell (Sec 8/10)."""
+def rerun_command(
+    subject_id: str,
+    opponent_id: str,
+    seed: int,
+    ticks: int,
+    orientation: str = ORIENTATION_CANDIDATE_FIRST,
+) -> str:
+    """The exact ``agents test`` invocation that reproduces one cell (Sec 8/10).
 
-    return f"bytefray agents test {subject_id} --opponent {opponent_id} --seed {seed} --ticks {ticks}"
+    v0.9 Phase 6 (Phase 5 spec Sec H.1): an ``opponent_first`` cell's real
+    physical match ran with roles swapped
+    (``test_agent(opponent_id, opponent=subject_id, ...)``) -- the printed
+    command mirrors that exactly, so it reproduces the cell byte for byte
+    rather than silently reproducing the opposite orientation.
+    """
+
+    if orientation == ORIENTATION_OPPONENT_FIRST:
+        first_id, second_id = opponent_id, subject_id
+    else:
+        first_id, second_id = subject_id, opponent_id
+    return f"bytefray agents test {first_id} --opponent {second_id} --seed {seed} --ticks {ticks}"
 
 
 # ---------------------------------------------------------------------------
@@ -855,17 +1078,26 @@ def parse_seed_range(text: str) -> tuple[int, ...]:
 
 
 def _cell_from_match_result(cell: EvaluationCell, match_result: NativeMatchResult) -> EvaluationCell:
+    """Resolve outcome/score/territory from the correct physical slot for ``cell.orientation``.
+
+    Every stored field is expressed from the evaluation-role (subject/
+    opponent) perspective regardless of which physical slot actually
+    executed each role (Phase 5 spec Sec H.1/Sec 12) -- see
+    :func:`physical_slots_for_orientation`.
+    """
+
+    subject_slot, opponent_slot = physical_slots_for_orientation(cell.orientation)
     winner = match_result.winner
     outcome = (
         "tie"
         if winner == WINNER_TIE_SENTINEL
         else "win"
-        if winner == TESTED_AGENT_SLOT
+        if winner == subject_slot
         else "loss"
     )
     agents_by_id = match_result.agents_by_id
-    subject_agent = agents_by_id.get(TESTED_AGENT_SLOT)
-    opponent_agent = agents_by_id.get(OPPONENT_SLOT)
+    subject_agent = agents_by_id.get(subject_slot)
+    opponent_agent = agents_by_id.get(opponent_slot)
     return replace(
         cell,
         status="completed",
@@ -873,8 +1105,8 @@ def _cell_from_match_result(cell: EvaluationCell, match_result: NativeMatchResul
         match_id=match_result.match_id,
         result_id=match_result.result_id,
         ticks_run=match_result.ticks_run,
-        score_subject=float(match_result.score.get(TESTED_AGENT_SLOT, 0)),
-        score_opponent=float(match_result.score.get(OPPONENT_SLOT, 0)),
+        score_subject=float(match_result.score.get(subject_slot, 0)),
+        score_opponent=float(match_result.score.get(opponent_slot, 0)),
         territory_subject=(subject_agent.territory_pct_last if subject_agent else None),
         territory_opponent=(opponent_agent.territory_pct_last if opponent_agent else None),
         error_code=None,
@@ -883,19 +1115,22 @@ def _cell_from_match_result(cell: EvaluationCell, match_result: NativeMatchResul
 
 
 def _cell_from_envelope(cell: EvaluationCell, envelope: ResultEnvelope) -> EvaluationCell:
+    """Envelope-based mirror of :func:`_cell_from_match_result` (resume path)."""
+
+    subject_slot, opponent_slot = physical_slots_for_orientation(cell.orientation)
     winner = envelope.winner
     outcome = (
         "tie"
         if winner == WINNER_TIE_SENTINEL
         else "win"
-        if winner == TESTED_AGENT_SLOT
+        if winner == subject_slot
         else "loss"
     )
     subject_entrant = next(
-        (entry for entry in envelope.entrants if entry.get("agent_id") == TESTED_AGENT_SLOT), {}
+        (entry for entry in envelope.entrants if entry.get("agent_id") == subject_slot), {}
     )
     opponent_entrant = next(
-        (entry for entry in envelope.entrants if entry.get("agent_id") == OPPONENT_SLOT), {}
+        (entry for entry in envelope.entrants if entry.get("agent_id") == opponent_slot), {}
     )
     subject_stats = subject_entrant.get("statistics", {}) or {}
     opponent_stats = opponent_entrant.get("statistics", {}) or {}
@@ -906,8 +1141,8 @@ def _cell_from_envelope(cell: EvaluationCell, envelope: ResultEnvelope) -> Evalu
         match_id=envelope.match_id,
         result_id=envelope.result_id,
         ticks_run=envelope.ticks,
-        score_subject=float(envelope.score.get(TESTED_AGENT_SLOT, 0)),
-        score_opponent=float(envelope.score.get(OPPONENT_SLOT, 0)),
+        score_subject=float(envelope.score.get(subject_slot, 0)),
+        score_opponent=float(envelope.score.get(opponent_slot, 0)),
         territory_subject=subject_stats.get("territory_pct_last"),
         territory_opponent=opponent_stats.get("territory_pct_last"),
         error_code=None,
@@ -1127,6 +1362,7 @@ class EvaluationService:
         baseline_id: str | None = None,
         ticks: int = DEFAULT_TICKS,
         data_root: Path | None = None,
+        both_orientations: bool = True,
     ) -> tuple[dict[str, AgentSpec], str]:
         """Validate a request's agent/seed/tick shape and resolve its evaluation id.
 
@@ -1148,6 +1384,7 @@ class EvaluationService:
             baseline_id=baseline_id,
             ticks=ticks,
             data_root=data_root,
+            both_orientations=both_orientations,
         )
         specs = self._validate(request)
         conditions = self._effective_conditions(request)
@@ -1182,7 +1419,12 @@ class EvaluationService:
         # modified for this invocation.
         revision_plan = self._resolve_revision_results(request, specs, planned_identities, prior)
         matrix = build_matrix(
-            request, evaluation_id, specs, conditions_fp, EVALUATION_RULES_COMPATIBILITY_ID
+            request,
+            evaluation_id,
+            specs,
+            conditions_fp,
+            EVALUATION_RULES_COMPATIBILITY_ID,
+            EVALUATION_ARENA_ALIGNMENT_MODE,
         )
 
         created_at = prior.get("created_at") or _utc_now_iso()
@@ -1387,6 +1629,18 @@ class EvaluationService:
             "ticks": request.ticks,
             "effective_conditions": asdict(conditions),
             "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
+            # v0.9 Phase 6 (Phase 5 spec Sec J.2/AA.4.2): both are sibling
+            # keys, never folded into "effective_conditions" -- see Sec I.1/
+            # AA.3 for why. `orientation_mode` makes a both_orientations
+            # request and an explicit single-orientation request of
+            # otherwise-identical inputs hash to different evaluation_ids
+            # (different matrix sizes/experiments; must never share a
+            # resumable --output). `arena_alignment_mode` is v0.9's only
+            # value ("fixed") but is threaded through identity now so a
+            # future translation-aware methodology can never silently hash
+            # identically to this one (Sec AA.2).
+            "orientation_mode": request.orientation_mode,
+            "arena_alignment_mode": EVALUATION_ARENA_ALIGNMENT_MODE,
         }
         return stable_id("evaluation-v2", payload)
 
@@ -1495,6 +1749,7 @@ class EvaluationService:
             cell.opponent_id,
             cell.seed,
             request.ticks,
+            cell.orientation,
         )
         mismatch = _resumed_cell_mismatch(envelope, cell, expected_match_id)
         if mismatch is not None:
@@ -1523,10 +1778,23 @@ class EvaluationService:
         if drift is not None:
             return replace(cell, status="drift_detected", **drift)
 
+        # v0.9 Phase 6 (Phase 5 spec Sec H.1/T.4): `candidate_first` reuses
+        # the exact historical call; `opponent_first` calls the same
+        # unmodified executor with the two positional roles swapped --
+        # this alone is the entire "opposite entrant orientation"
+        # mechanism, no scheduler/executor change. Every subsequent
+        # mapping in this method resolves physical slot <-> evaluation
+        # role via `physical_slots_for_orientation`, never by assuming
+        # subject==A/opponent==B.
+        if cell.orientation == ORIENTATION_OPPONENT_FIRST:
+            test_agent_id, test_opponent_id = cell.opponent_id, cell.subject_id
+        else:
+            test_agent_id, test_opponent_id = cell.subject_id, cell.opponent_id
+
         try:
             outcome = test_agent(
-                cell.subject_id,
-                opponent=cell.opponent_id,
+                test_agent_id,
+                opponent=test_opponent_id,
                 seed=cell.seed,
                 ticks=request.ticks,
                 timeout=None,
@@ -1564,8 +1832,9 @@ class EvaluationService:
                     execution_context_id=record_context_usage(),
                 )
             failed_slot = outcome.diagnostic.agent_id
+            subject_slot, _opponent_slot = physical_slots_for_orientation(cell.orientation)
             result_outcome = (
-                "subject_init_failed" if failed_slot == TESTED_AGENT_SLOT else "opponent_init_failed"
+                "subject_init_failed" if failed_slot == subject_slot else "opponent_init_failed"
             )
             return replace(
                 cell,
@@ -1640,10 +1909,7 @@ class EvaluationService:
     def _all_aggregates(
         self, request: EvaluationRequest, cells: Sequence[EvaluationCell]
     ) -> tuple[SubjectAggregate, ...]:
-        aggregates = [aggregate_cells(CANDIDATE, request.candidate_id, cells)]
-        if request.baseline_id is not None:
-            aggregates.append(aggregate_cells(BASELINE, request.baseline_id, cells))
-        return tuple(aggregates)
+        return all_subject_aggregates(request.candidate_id, request.baseline_id, cells)
 
     # -- persistence --------------------------------------------------------
 
@@ -1763,6 +2029,12 @@ class EvaluationService:
                     "evaluation-conditions", conditions_dict
                 ),
                 "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
+                # v0.9 Phase 6: sibling top-level fields, same pattern as
+                # rules_compatibility_id immediately above (Phase 5 spec
+                # Sec AA.3/AA.4) -- evaluation-wide methodology, never
+                # folded into effective_conditions.
+                "orientation_mode": request.orientation_mode,
+                "arena_alignment_mode": EVALUATION_ARENA_ALIGNMENT_MODE,
                 "created_at": created_at,
                 "updated_at": _utc_now_iso(),
                 "finished_at": finished_at,
@@ -1858,6 +2130,15 @@ def _parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="print the matrix and exit without running anything"
     )
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--single-orientation",
+        action="store_true",
+        help=(
+            "opt out of the default both-entrant-orientations methodology; "
+            "candidate_first only, matching pre-v0.9 behavior and matrix size. "
+            "Does not generalize across entrant order -- see docs/AGENT_LAB.md."
+        ),
+    )
     return parser
 
 
@@ -1869,6 +2150,39 @@ def _resolve_seeds(args: argparse.Namespace) -> tuple[int, ...]:
     return (Config().seed,)
 
 
+def methodology_lines(orientation_mode: str) -> tuple[str, str]:
+    """Shared human-readable methodology disclosure (Phase 5 spec Sec O.1/AA.5).
+
+    Takes the same ``orientation_mode`` string vocabulary
+    (``ORIENTATION_MODE_BOTH``/``ORIENTATION_MODE_CANDIDATE_FIRST_ONLY``)
+    identity/provenance already use, rather than a bare bool, so both the
+    live-run CLI (``request.orientation_mode``) and the historical-read
+    path (``evaluation_history``'s recovered/recorded
+    ``EvaluationSummary.orientation_mode.value``) can call this one shared
+    function -- never two independently authored copies of the same
+    wording (Designer reuses it too, via
+    ``app.services.designer_workflows``). Must never describe a
+    both-orientations evaluation as "fully unbiased"/"fully robust": it
+    discloses entrant-orientation coverage and, separately, that arena
+    alignment is always fixed in v0.9 (translation robustness is not
+    evaluated -- Sec AA.1/AA.2).
+    """
+
+    orientation_line = (
+        "Entrant orientation: both"
+        if orientation_mode == ORIENTATION_MODE_BOTH
+        else (
+            "Entrant orientation: candidate-first only — does not generalize "
+            "across entrant order"
+        )
+    )
+    alignment_line = (
+        f"Arena alignment: {EVALUATION_ARENA_ALIGNMENT_MODE} — translation "
+        "robustness not evaluated"
+    )
+    return orientation_line, alignment_line
+
+
 def _print_matrix(request: EvaluationRequest, matrix: Sequence[EvaluationCell]) -> None:
     subjects = [request.candidate_id] + ([request.baseline_id] if request.baseline_id else [])
     print(f"candidate: {request.candidate_id}")
@@ -1878,6 +2192,8 @@ def _print_matrix(request: EvaluationRequest, matrix: Sequence[EvaluationCell]) 
     print(f"ticks: {request.ticks}")
     print(f"subjects: {len(subjects)}  opponents: {len(request.opponent_ids)}  seeds: {len(request.seeds)}")
     print(f"matches: {len(matrix)}")
+    for line in methodology_lines(request.orientation_mode):
+        print(line)
 
 
 def _print_aggregate(aggregate: SubjectAggregate) -> None:
@@ -1902,22 +2218,61 @@ def _print_aggregate(aggregate: SubjectAggregate) -> None:
         )
 
 
+def _print_orientation_breakdown(subject_aggregates: Sequence[SubjectAggregate]) -> None:
+    """K.2: a compact per-orientation win-rate line alongside the pooled block.
+
+    Never averages an orientation split away -- printed only alongside the
+    pooled aggregate, so a regression hidden by pooling (candidate wins
+    every candidate-first cell but loses every opponent-first cell) stays
+    visible in the ordinary, non-verbose CLI output.
+    """
+
+    candidate_first = next(
+        (a for a in subject_aggregates if a.orientation_scope == ORIENTATION_CANDIDATE_FIRST), None
+    )
+    opponent_first = next(
+        (a for a in subject_aggregates if a.orientation_scope == ORIENTATION_OPPONENT_FIRST), None
+    )
+    if candidate_first is not None and opponent_first is not None:
+        print(
+            f"  candidate_first: {candidate_first.win_rate_display}   "
+            f"opponent_first: {opponent_first.win_rate_display}"
+        )
+
+
 def _print_comparison_entry(entry: ComparisonEntry, ticks: int) -> None:
-    print(f"  opponent={entry.opponent_id} seed={entry.seed}")
+    print(f"  opponent={entry.opponent_id} seed={entry.seed} orientation={entry.orientation}")
     print(f"    candidate: {entry.candidate_outcome}  baseline: {entry.baseline_outcome}")
     if entry.reason:
         print(f"    reason: {entry.reason}")
     if entry.candidate_score is not None and entry.baseline_score is not None:
         print(f"    score: candidate={entry.candidate_score:g} baseline={entry.baseline_score:g}")
-    print(f"    rerun candidate: {rerun_command('<candidate>', entry.opponent_id, entry.seed, ticks)}")
+    print(
+        "    rerun candidate: "
+        f"{rerun_command('<candidate>', entry.opponent_id, entry.seed, ticks, entry.orientation)}"
+    )
     if entry.baseline_outcome is not None:
-        print(f"    rerun baseline:  {rerun_command('<baseline>', entry.opponent_id, entry.seed, ticks)}")
+        print(
+            "    rerun baseline:  "
+            f"{rerun_command('<baseline>', entry.opponent_id, entry.seed, ticks, entry.orientation)}"
+        )
 
 
 def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
     print(f"evaluation: {result.evaluation_id}")
+    for line in methodology_lines(request.orientation_mode):
+        print(line)
     for aggregate in result.aggregates:
+        if aggregate.orientation_scope != "all":
+            continue
         _print_aggregate(aggregate)
+        if request.both_orientations:
+            subject_aggregates = [
+                a
+                for a in result.aggregates
+                if a.subject_role == aggregate.subject_role and a.subject_id == aggregate.subject_id
+            ]
+            _print_orientation_breakdown(subject_aggregates)
     if request.baseline_id is not None:
         regressed = [entry for entry in result.comparison if entry.classification == "regressed"]
         improved = [entry for entry in result.comparison if entry.classification == "improved"]
@@ -1975,6 +2330,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
+    both_orientations = not args.single_orientation
+
     service = EvaluationService()
     try:
         _specs, evaluation_id = service.preflight(
@@ -1983,6 +2340,7 @@ def main(argv: list[str] | None = None) -> int:
             seeds=seeds,
             baseline_id=args.baseline,
             ticks=args.ticks,
+            both_orientations=both_orientations,
         )
     except EvaluationConfigurationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -2002,6 +2360,7 @@ def main(argv: list[str] | None = None) -> int:
         baseline_id=args.baseline,
         ticks=args.ticks,
         retry_failures=args.retry_failed,
+        both_orientations=both_orientations,
     )
     matrix = build_matrix(request, evaluation_id)
     if not args.quiet or args.dry_run:
@@ -2027,9 +2386,14 @@ if __name__ == "__main__":
 __all__ = [
     "BASELINE",
     "CANDIDATE",
+    "EVALUATION_ARENA_ALIGNMENT_MODE",
     "EVALUATION_RULES_COMPATIBILITY_ID",
     "IDENTITY_VERSION",
     "LOCAL_SOURCE_FINGERPRINT_VERSION",
+    "ORIENTATION_CANDIDATE_FIRST",
+    "ORIENTATION_MODE_BOTH",
+    "ORIENTATION_MODE_CANDIDATE_FIRST_ONLY",
+    "ORIENTATION_OPPONENT_FIRST",
     "SCHEMA_NAME",
     "SCHEMA_VERSION",
     "ComparisonEntry",
@@ -2043,6 +2407,7 @@ __all__ = [
     "SubjectAggregate",
     "agent_identity",
     "aggregate_cells",
+    "all_subject_aggregates",
     "build_matrix",
     "classify",
     "compare_candidate_baseline",
@@ -2050,9 +2415,11 @@ __all__ = [
     "effective_conditions_for",
     "local_source_fingerprint",
     "main",
+    "methodology_lines",
     "parse_opponents",
     "parse_seed_list",
     "parse_seed_range",
+    "physical_slots_for_orientation",
     "read_evaluation",
     "rerun_command",
     "source_digest",

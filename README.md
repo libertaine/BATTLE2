@@ -55,18 +55,24 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 0.5.0 | Agent Lab | Released — versioned agent traces, supervised worker-subprocess execution with OS-level timeout/process containment, `agents inspect`/`agents diverge`, and a Designer Trace Inspector. |
 | 0.5.1 | Cross-Platform / Packaging Hardening | Released — patch release. **Major fixes:** preserved the Linux virtualenv interpreter instead of resolving through its symlink to the base Python (which broke supervised workers), and stopped dynamic agent imports from leaving `__pycache__` contamination; also folded in late v0.5.0 frozen-build fixes (PyYAML missing from some frozen Windows executables, Designer subprocesses resolving the wrong data root in portable mode). |
 | 0.6.0 | Agent Evaluation | Released — deterministic candidate/baseline evaluation matrices (`agents evaluate`) built directly on the exact `agents test` execution boundary, plus duplicate-cell correctness fixes found during release validation. |
-| 0.6.1 | Default Agent Build-Out | Released — five bundled Python starter agents (Claimer, Strider, Hunter, Wanderer, Adaptive) demonstrating distinct, empirically balanced strategies, replacing the single fixed-behavior scaffold as every new user's first Python match. Surfaced an open scoring-model question — whether continual territory-claiming is structurally favored over observing or defending — carried forward into v0.9.0. |
+| 0.6.1 | Default Agent Build-Out | Released — five bundled Python starter agents (Claimer, Strider, Hunter, Wanderer, Adaptive) demonstrating distinct, empirically balanced strategies, replacing the single fixed-behavior scaffold as every new user's first Python match. Surfaced an open scoring-model question — whether continual territory-claiming is structurally favored over observing or defending — that a future ruleset-review milestone (see **Future / unscheduled** below) will need real, unbiased evaluation tooling to study properly. |
 | 0.7.0 | Evaluation History | Released — `bytefray.evaluation` v2, persistent evaluation history (`evaluations list`/`show`/`compare`), execution provenance, and reproducibility-aware comparison against a stable baseline. **Major hardening:** frozen execution identity, local-source fingerprinting, resume/retry durability, malformed-artifact isolation, fail-closed execution-context validation, and replay/path containment. |
 | 0.8.0 | Agent Revision & Provenance | Released — durable identity/provenance for agent revisions, so historical evaluation results stay meaningful as an agent's source keeps evolving: a content-addressed revision store, freeze-time archival wired into `agents evaluate` (schema v3's additive `agent_revisions` field), revision-aware `evaluations show`/`--verify`, and `agents revisions list`/`show`/`restore`. **Major hardening:** fail-closed restore/snapshot verification, cross-platform artifact path containment, and Windows junction/reparse-point containment. |
-| 0.9.0 | Ruleset Review / Simulation Design | Planned — revisit Bytefray's scoring model and mechanics once evaluation tooling can study them properly: whether the rules favor a simple dominant strategy over experimentation, how observation/defense trade off against expansion, and whether the strategy diversity seen so far is genuinely produced by the rules. Exploratory; no rule changes are promised yet. |
+| 0.9.0 | Orientation-Aware Evaluation | Released — closed a structural first-mover bias present in every `agents evaluate` cell ever run (the candidate always occupied the always-first-acting physical slot; a shipped starter agent already documented and exploited this). Both entrant orientations (`candidate_first`/`opponent_first`) now run by default as independent, fully provenance-tracked cells; `--single-orientation` restores the exact legacy methodology. `bytefray.evaluation` bumps to schema/identity v4; every evaluation also now explicitly discloses that arena alignment is fixed (translation robustness remains research work, not yet evaluated). Reprioritized ahead of ruleset review below, on the reasoning that the tool measuring the rules needed fixing first. |
 | 1.0 | Stable Bytefray Platform | Tentative — a maturity milestone: a coherent, well-tuned simulation, mature agent-development tooling, trustworthy reproducible evaluations, durable provenance/history, and stable core interfaces with repeatable supported distribution. Exact feature boundary **TBD**. |
 
 **Future / unscheduled:** ideas with real merit but no assigned release,
-revisited as usage justifies them — VM/Redcode authoring and evaluation
-parity (Redcode is *not* cancelled; Python-side authoring, evaluation,
-provenance, and the ruleset itself are expected to mature first), richer
-statistical/evaluation analysis, ranking systems such as Elo/Glicko,
-parallel/distributed evaluation, and agent packaging/sharing.
+revisited as usage justifies them — **Ruleset Review / Simulation Design**
+(revisit Bytefray's scoring model and mechanics now that evaluation tooling
+measures both entrant orientations: whether the rules favor a simple
+dominant strategy over experimentation, how observation/defense trade off
+against expansion, and whether the strategy diversity seen so far is
+genuinely produced by the rules — exploratory, no rule changes promised),
+VM/Redcode authoring and evaluation parity (Redcode is *not* cancelled;
+Python-side authoring, evaluation, provenance, and the ruleset itself are
+expected to mature first), richer statistical/evaluation analysis, ranking
+systems such as Elo/Glicko, parallel/distributed evaluation, and agent
+packaging/sharing.
 
 ---
 

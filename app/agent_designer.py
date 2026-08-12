@@ -699,6 +699,7 @@ class AgentDesigner(QMainWindow):
                 seed_range_text=dialog.seed_range_text(),
                 ticks=dialog.ticks(),
                 output_dir=output_dir,
+                both_orientations=dialog.both_orientations(),
             )
         except (DesignerValidationError, OSError) as exc:
             QMessageBox.warning(self, "Invalid Evaluation", str(exc))

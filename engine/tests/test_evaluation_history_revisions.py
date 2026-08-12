@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 
 import pytest
-from battle_engine.agent_evaluation import EvaluationRequest, EvaluationService
+from battle_engine.agent_evaluation import SCHEMA_VERSION, EvaluationRequest, EvaluationService
 from battle_engine.agent_revisions import agent_revisions_root
 from battle_engine.evaluation_history import FieldConfidence, RevisionVerificationStatus, adapt_any
 from battle_engine.evaluation_history.verification import verify_summary
@@ -59,6 +59,10 @@ def _request(tmp_path: Path, **overrides) -> EvaluationRequest:
         "output_dir": tmp_path / "eval-out",
         "ticks": 10,
         "data_root": tmp_path,
+        # This suite predates entrant orientation (v0.9 Phase 6) and its
+        # assertions are about revision-capture mechanics orthogonal to
+        # it -- pinned to the legacy single-orientation matrix shape/size.
+        "both_orientations": False,
     }
     defaults.update(overrides)
     return EvaluationRequest(**defaults)
@@ -128,7 +132,7 @@ def test_v2_shaped_artifact_without_agent_revisions_key_is_unknown(tmp_path: Pat
 def test_v3_artifact_exposes_recorded_revision_ids(evaluated) -> None:
     _tmp_path, result = evaluated
     summary = adapt_any(result.state_path)
-    assert summary.schema.schema_version == 3
+    assert summary.schema.schema_version == SCHEMA_VERSION
     assert summary.candidate_agent_revision_id.confidence == FieldConfidence.RECORDED
     assert summary.baseline_agent_revision_id.confidence == FieldConfidence.RECORDED
     assert summary.candidate_agent_revision_error.confidence == FieldConfidence.RECORDED

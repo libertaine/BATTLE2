@@ -289,10 +289,14 @@ opponents: opponent_a, opponent_b
 seeds: 1, 2, 3, 4, 5
 ticks: 200
 subjects: 1  opponents: 2  seeds: 5
-matches: 10
+matches: 20
+Entrant orientation: both
+Arena alignment: fixed — translation robustness not evaluated
 ```
 
-Add `--dry-run` to see this and stop without running a single match.
+Note **20** matches, not 10: since v0.9, every `(opponent, seed)` pair runs
+under **both entrant orientations** by default — see "Entrant orientation"
+below. Add `--dry-run` to see this and stop without running a single match.
 Compare against a previous version of your agent (kept under a different
 discovery id) with `--baseline`:
 
@@ -309,16 +313,57 @@ given — an evaluation cell's match seed is never re-derived from a parent
 seed the way tournament match seeds are, so a cell is always directly
 reproducible (see "Inspecting a regression" below).
 
+### Entrant orientation
+
+Python matches execute in fixed slot order — one entrant completes its
+whole action quota before the other begins, every tick — and every
+`agents evaluate` cell used to give the candidate that always-first-acting
+slot unconditionally, with no way to test the reverse. That's not just a
+theoretical asymmetry: the shipped `adaptive` starter agent's own source
+comments document and exploit it, deliberately avoiding contested cells
+because "that opponent's writes land *after* this agent's within every
+tick... so it continuously wins any cell both of them touch."
+
+Since v0.9, `agents evaluate` runs **both entrant orientations** by
+default for every `(opponent, seed)` pair: `candidate_first` (today's
+historical behavior) and `opponent_first` (the identical, unmodified
+executor, called with the two roles swapped) — this is why the matrix
+above resolved to 20 matches, not 10. Each orientation is a fully
+independent cell with its own `schedule_id`, artifact directory, and
+result/replay pair — never averaged together — but every result is still
+reported from the *evaluation* role's perspective (subject vs. opponent),
+never from whichever physical slot happened to execute first.
+
+Pass `--single-orientation` to restore the exact legacy `candidate_first`
+-only methodology and matrix size. Its output — CLI and Designer alike —
+is labeled explicitly:
+
+```text
+Entrant orientation: candidate-first only — does not generalize across entrant order
+Arena alignment: fixed — translation robustness not evaluated
+```
+
+Both modes also print the second line above unconditionally: every v0.9
+evaluation, regardless of entrant orientation coverage, places both
+entrants at the same fixed arena alignment. Running both orientations
+makes an evaluation **entrant-order-fair**, not translation-robust —
+arena address translation is separate research work
+(`runs/research_v0.9/` — not shipped in v0.9) and is not evaluated by this
+tool.
+
 ### Reading the results
 
-Without `--baseline`, you get one aggregate per subject:
+Without `--baseline`, you get one aggregate per subject — pooled across
+both orientations — followed by the per-orientation breakdown whenever
+both ran:
 
 ```text
 [candidate] my_agent
-  win rate: 7/10 (70%)
-  wins=7 losses=2 ties=1 played=10
+  win rate: 14/20 (70%)
+  wins=14 losses=4 ties=2 played=20
   score_avg=42.1 score_differential_avg=6.3 ticks_avg=198
   territory_avg=54.20% territory_differential_avg=8.40%
+  candidate_first: 8/10 (80%)   opponent_first: 6/10 (60%)
 ```
 
 Win rate is always shown with its raw counts (`7/10`), never a bare
@@ -326,22 +371,27 @@ percentage — a small sample is still a small sample no matter how it's
 formatted. With `--baseline`, you additionally get a per-cell comparison:
 
 ```text
-comparison: 2 improved, 1 regressed, 6 unchanged, 1 inconclusive (of 10 matched cells)
+comparison: 2 improved, 1 regressed, 6 unchanged, 1 inconclusive (of 20 matched cells)
 regressions:
-  opponent=opponent_b seed=4
+  opponent=opponent_b seed=4 orientation=opponent_first
     candidate: loss  baseline: tie
-    rerun candidate: bytefray agents test my_agent_v2 --opponent opponent_b --seed 4 --ticks 200
-    rerun baseline:  bytefray agents test my_agent_v1 --opponent opponent_b --seed 4 --ticks 200
+    rerun candidate: bytefray agents test opponent_b --opponent my_agent_v2 --seed 4 --ticks 200
+    rerun baseline:  bytefray agents test opponent_b --opponent my_agent_v1 --seed 4 --ticks 200
 ```
 
 `improved`/`regressed`/`unchanged` come from one deterministic rule: the
 candidate's and baseline's own `win`/`tie`/`loss` outcome at the same
-`(opponent, seed)` cell, ranked `win > tie > loss`. Nothing else —
-not score, not territory — ever flips this classification; those are
-reported alongside every cell as supporting data, never as a hidden
+`(opponent, seed, orientation)` cell, ranked `win > tie > loss`. Nothing
+else — not score, not territory — ever flips this classification; those
+are reported alongside every cell as supporting data, never as a hidden
 tiebreaker. A cell where either side failed to initialize (a fact about
 that side's own code, not a real match) is reported separately as
-**inconclusive**, not silently folded into "unchanged."
+**inconclusive**, not silently folded into "unchanged." Orientation joins
+the comparison key too: a candidate's `candidate_first` cell is never
+compared against a baseline's `opponent_first` cell for the "same" nominal
+matchup. Notice the printed rerun command for an `opponent_first` row: it
+reproduces the cell byte for byte, with the opponent (not the subject) in
+the always-first-acting slot, matching exactly how that cell actually ran.
 
 ### Inspecting a regression
 
@@ -356,8 +406,11 @@ bytefray agents test my_agent_v2 --opponent opponent_b --seed 4 --ticks 200
 bytefray agents inspect <printed-run-dir>
 ```
 
-This is the same `agents test`/`agents inspect` loop described earlier in
-this document — evaluation doesn't add a second tracing mechanism.
+(For a `candidate_first` cell, as here; an `opponent_first` cell's printed
+rerun command has the opponent and candidate positions swapped, as shown
+above.) This is the same `agents test`/`agents inspect` loop described
+earlier in this document — evaluation doesn't add a second tracing
+mechanism.
 Bulk evaluation itself always runs **untraced and unsupervised**
 (no `trace.jsonl`, no timeout) because tracing/supervision cost real wall
 time per match and most of a matrix's cells are never the ones you need
@@ -380,13 +433,25 @@ Evaluation is Python-agent-only in v0.6 — it reuses `agents test` as its
 per-cell executor, and `agents test` requires Python-kind agents. VM/blob
 agents can already be compared with `bytefray tournament`.
 
+Both-orientations coverage (v0.9) makes an evaluation entrant-order-fair;
+it does not make it arena-alignment-robust. Every v0.9 evaluation still
+places every entrant at the same, single, fixed arena alignment —
+translation sensitivity (whether a candidate's apparent strength depends
+on *where* in the arena it starts) is not evaluated by this tool. Don't
+read a both-orientations result as "fully unbiased" or "fully robust" —
+it discloses exactly what it covers, no more.
+
 ### In the Designer
 
 The Agent Development tab's **Evaluate…** button opens the same
-configuration options as the CLI, then shows results in a table with the
-same aggregate/comparison data described above. Selecting a cell enables
-**Test Candidate in Agent Lab** (reruns that exact cell through `agents
-test` and opens the Trace Inspector on it) and **Open Replay**.
+configuration options as the CLI — including the "Run both entrant
+orientations (recommended)" checkbox (checked by default; unchecking it is
+equivalent to the CLI's `--single-orientation`) — then shows results in a
+table with the same aggregate/comparison data described above, including
+each row's entrant orientation and the same methodology disclosure text.
+Selecting a cell enables **Test Candidate in Agent Lab** (reruns that exact
+cell through `agents test` and opens the Trace Inspector on it) and **Open
+Replay**.
 
 ### Evaluation history (v0.7)
 
@@ -424,8 +489,9 @@ bytefray agents evaluations compare <left> <right>         # right relative to l
 `compare` never uses the stored candidate-vs-baseline verdicts as its
 primary signal; it independently aligns the two evaluations' candidate
 cells by shared condition (opponent identity, seed, configuration, rules
-compatibility, duplicate occurrence — deliberately excluding candidate
-identity, since that's the thing being compared) and reports
+compatibility, arena alignment, entrant orientation, duplicate occurrence —
+deliberately excluding candidate identity, since that's the thing being
+compared) and reports
 `improved`/`regressed`/`unchanged`/`inconclusive` with honest denominators,
 same as a single evaluation's own comparison table. A candidate whose
 *logical id* changed between the two evaluations is reported as "different
@@ -473,3 +539,22 @@ deduplication and comparison, but `restore` reproduces only what was
 actually captured, and says so. See `docs/specs/agent_revision.md` for the
 full identity/storage/verification design, including exactly what a
 revision does and does not preserve.
+
+### Orientation-aware evaluation and fixed arena alignment (v0.9)
+
+Since v0.9, `bytefray agents evaluate` runs both entrant orientations by
+default (see "Entrant orientation" above) — `bytefray.evaluation` bumps to
+**schema v4**/**identity v4** to carry this: each cell gains
+`orientation`/`orientation_index`, and each evaluation gains
+`orientation_mode` (`"both"` | `"candidate_first_only"`) and
+`arena_alignment_mode` (`"fixed"`, v0.9's only value). Both are threaded
+through identity and cross-evaluation comparison the same way
+`rules_compatibility_id` already is; `rules_compatibility_id` itself is
+unaffected — this is an evaluation-methodology change, not a change to
+scoring, winner resolution, or scheduling. v1/v2/v3 artifacts remain fully
+readable and are never rewritten: `evaluations show`/`compare` recover
+every historical cell's orientation as `candidate_first` and every
+historical evaluation's arena alignment as `fixed` — both are certain
+historical facts (no prior version of this tool could have produced
+anything else), reported as *recovered*, not *unknown*, and not silently
+guessed either.

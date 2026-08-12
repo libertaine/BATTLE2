@@ -20,9 +20,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from battle_engine.agent_evaluation import ORIENTATION_MODE_BOTH, methodology_lines
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -125,6 +127,13 @@ class EvaluationDialog(QDialog):
         options_row.addRow("Ticks", self.ticksSpin)
         layout.addLayout(options_row)
 
+        # v0.9 Phase 6 (Phase 5 spec Sec P): the one minimal Designer UX
+        # addition -- checked by default, mirroring the CLI's own default
+        # (unchecked passes the CLI-equivalent --single-orientation).
+        self.bothOrientationsCheck = QCheckBox("Run both entrant orientations (recommended)")
+        self.bothOrientationsCheck.setChecked(True)
+        layout.addWidget(self.bothOrientationsCheck)
+
         output_row = QHBoxLayout()
         self.outputEdit = QLineEdit(str(default_output))
         choose = QPushButton("Choose…")
@@ -159,6 +168,9 @@ class EvaluationDialog(QDialog):
 
     def ticks(self) -> int:
         return self.ticksSpin.value()
+
+    def both_orientations(self) -> bool:
+        return self.bothOrientationsCheck.isChecked()
 
     def output_path(self) -> Path:
         return Path(self.outputEdit.text())
@@ -205,11 +217,14 @@ class EvaluationResultsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
+        orientation_line, alignment_line = methodology_lines(presentation.orientation_mode)
         header = QLabel(
             f"evaluation: {presentation.evaluation_id}\n"
             f"candidate: {presentation.candidate_id}\n"
             f"baseline: {presentation.baseline_id or 'none'}\n"
-            f"ticks: {presentation.ticks}"
+            f"ticks: {presentation.ticks}\n"
+            f"{orientation_line}\n"
+            f"{alignment_line}"
         )
         header.setWordWrap(True)
         layout.addWidget(header)
@@ -225,6 +240,7 @@ class EvaluationResultsDialog(QDialog):
 
         layout.addWidget(QLabel("Cells" if not presentation.comparison else "Comparison"))
         self.resultsList = QListWidget()
+        show_orientation = presentation.orientation_mode == ORIENTATION_MODE_BOTH
         if presentation.comparison:
             for entry in presentation.comparison:
                 label = (
@@ -232,6 +248,8 @@ class EvaluationResultsDialog(QDialog):
                     f"opponent={entry.opponent_id} seed={entry.seed}  "
                     f"candidate={entry.candidate_outcome} baseline={entry.baseline_outcome}"
                 )
+                if show_orientation:
+                    label += f"  orientation={entry.orientation}"
                 item = QListWidgetItem(label)
                 item.setData(Qt.UserRole, entry)
                 self.resultsList.addItem(item)
@@ -241,6 +259,8 @@ class EvaluationResultsDialog(QDialog):
                     f"[{cell.subject_role}] {cell.subject_id} vs {cell.opponent_id} "
                     f"seed={cell.seed}  status={cell.status} outcome={cell.outcome}"
                 )
+                if show_orientation:
+                    label += f"  orientation={cell.orientation}"
                 item = QListWidgetItem(label)
                 item.setData(Qt.UserRole, cell)
                 self.resultsList.addItem(item)
@@ -287,6 +307,7 @@ class EvaluationResultsDialog(QDialog):
             lines = [
                 f"opponent: {payload.opponent_id}",
                 f"seed: {payload.seed}",
+                f"orientation: {payload.orientation}",
                 f"classification: {payload.classification}",
                 f"candidate outcome: {payload.candidate_outcome}",
                 f"baseline outcome: {payload.baseline_outcome}",
@@ -300,6 +321,7 @@ class EvaluationResultsDialog(QDialog):
                 f"subject: [{payload.subject_role}] {payload.subject_id}",
                 f"opponent: {payload.opponent_id}",
                 f"seed: {payload.seed}",
+                f"orientation: {payload.orientation}",
                 f"status: {payload.status}",
                 f"outcome: {payload.outcome}",
                 f"score: subject={payload.score_subject} opponent={payload.score_opponent}",

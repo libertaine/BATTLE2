@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from battle_engine.agent_evaluation import (
+    EVALUATION_ARENA_ALIGNMENT_MODE,
+    ORIENTATION_CANDIDATE_FIRST,
+    ORIENTATION_MODE_CANDIDATE_FIRST_ONLY,
     EvaluationConfigurationError,
     parse_opponents,
     parse_seed_list,
@@ -164,6 +167,7 @@ def build_designer_evaluate_command(
     seed_range_text: str,
     ticks: int,
     output_dir: Path,
+    both_orientations: bool = True,
 ) -> list[str]:
     """Build the ``bytefray agents evaluate`` argument list for one Designer run.
 
@@ -174,6 +178,12 @@ def build_designer_evaluate_command(
     from either parser is re-raised as :class:`DesignerValidationError` so
     the dialog can present it the same way every other Designer validation
     error already is.
+
+    v0.9 Phase 6 (Phase 5 spec Sec P): ``both_orientations`` mirrors the
+    CLI's own default -- ``True`` (the checkbox checked) passes no extra
+    flag (both orientations run by default); ``False`` (unchecked) appends
+    ``--single-orientation``, the exact CLI-equivalent single-orientation
+    opt-out.
     """
 
     candidate = candidate_id.strip()
@@ -210,6 +220,8 @@ def build_designer_evaluate_command(
     elif seed_range_text.strip():
         arguments.extend(("--seed-range", seed_range_text.strip()))
     arguments.extend(("--ticks", str(ticks), "--output", str(output)))
+    if not both_orientations:
+        arguments.append("--single-orientation")
     return build_agents_command("evaluate", arguments)
 
 
@@ -225,6 +237,11 @@ class EvaluationCellPresentation:
     artifact_dir: Path
     score_subject: float | None
     score_opponent: float | None
+    # v0.9 Phase 6 (Phase 5 spec Sec P): which entrant orientation this cell
+    # executed under -- shown per-cell since results/comparison stay
+    # perspective-correct (subject/opponent) even when the physical
+    # match roles were swapped.
+    orientation: str = ORIENTATION_CANDIDATE_FIRST
 
 
 @dataclass(frozen=True)
@@ -247,6 +264,7 @@ class EvaluationComparisonPresentation:
     rerun_candidate: str
     rerun_baseline: str | None
     candidate_schedule_id: str | None
+    orientation: str = ORIENTATION_CANDIDATE_FIRST
 
 
 @dataclass(frozen=True)
@@ -259,6 +277,12 @@ class EvaluationPresentation:
     cells: tuple[EvaluationCellPresentation, ...]
     aggregates: tuple[EvaluationAggregatePresentation, ...]
     comparison: tuple[EvaluationComparisonPresentation, ...]
+    # v0.9 Phase 6 (Phase 5 spec Sec P/AA.5): the same shared methodology
+    # vocabulary the CLI's `_evaluation_id` payload/`_print_matrix` use --
+    # "both" | "candidate_first_only", and v0.9's only arena_alignment_mode
+    # value, "fixed".
+    orientation_mode: str = ORIENTATION_MODE_CANDIDATE_FIRST_ONLY
+    arena_alignment_mode: str = EVALUATION_ARENA_ALIGNMENT_MODE
 
 
 def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
@@ -293,9 +317,14 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
             artifact_dir=(base_dir / str(cell.get("artifact_dir", ""))),
             score_subject=cell.get("score_subject"),
             score_opponent=cell.get("score_opponent"),
+            orientation=str(cell.get("orientation", ORIENTATION_CANDIDATE_FIRST)),
         )
         for cell in data.get("cells", ())
     )
+    # v0.9 Phase 6 (Sec K.2): only the pooled ("all") row per subject is
+    # surfaced here -- the per-orientation breakdown is visible per cell
+    # above instead of tripling this summary list (Sec P/Sec 30's "do not
+    # design an elaborate new UI").
     aggregates = tuple(
         EvaluationAggregatePresentation(
             subject_role=str(row.get("subject_role", "")),
@@ -306,6 +335,7 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
             ties=int(row.get("ties", 0)),
         )
         for row in data.get("aggregates", ())
+        if row.get("orientation_scope", "all") == "all"
     )
     comparison = tuple(
         EvaluationComparisonPresentation(
@@ -314,13 +344,26 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
             classification=str(row.get("classification", "")),
             candidate_outcome=row.get("candidate_outcome"),
             baseline_outcome=row.get("baseline_outcome"),
-            rerun_candidate=rerun_command(candidate_id, str(row.get("opponent_id", "")), int(row.get("seed", 0)), ticks),
+            rerun_candidate=rerun_command(
+                candidate_id,
+                str(row.get("opponent_id", "")),
+                int(row.get("seed", 0)),
+                ticks,
+                str(row.get("orientation", ORIENTATION_CANDIDATE_FIRST)),
+            ),
             rerun_baseline=(
-                rerun_command(str(baseline_id), str(row.get("opponent_id", "")), int(row.get("seed", 0)), ticks)
+                rerun_command(
+                    str(baseline_id),
+                    str(row.get("opponent_id", "")),
+                    int(row.get("seed", 0)),
+                    ticks,
+                    str(row.get("orientation", ORIENTATION_CANDIDATE_FIRST)),
+                )
                 if baseline_id
                 else None
             ),
             candidate_schedule_id=row.get("candidate_schedule_id"),
+            orientation=str(row.get("orientation", ORIENTATION_CANDIDATE_FIRST)),
         )
         for row in data.get("comparison", ())
     )
@@ -333,4 +376,6 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
         cells=cells,
         aggregates=aggregates,
         comparison=comparison,
+        orientation_mode=str(data.get("orientation_mode", ORIENTATION_MODE_CANDIDATE_FIRST_ONLY)),
+        arena_alignment_mode=str(data.get("arena_alignment_mode", EVALUATION_ARENA_ALIGNMENT_MODE)),
     )

@@ -327,6 +327,15 @@ class AdaptedCell:
     # (non-``--verify``) adaptation and for any cell with no recorded
     # revision id to check.
     opponent_revision_verification: RevisionVerificationStatus = RevisionVerificationStatus.NOT_CHECKED
+    # v0.9 Phase 6 (Phase 5 spec Sec L.1/L.2): which entrant orientation
+    # this cell executed under -- "candidate_first" | "opponent_first".
+    # Every historical cell (schema < 4) is recovered as
+    # ``ConfidenceValue.recovered("candidate_first")``, never ``unknown()``,
+    # because the historical fact is certain: every cell ever executed by
+    # any shipped version of this module used the candidate/baseline in the
+    # always-first-acting slot, unconditionally (Sec C.6). A schema-4 cell
+    # reads this as ``RECORDED``.
+    orientation: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
 
     @property
     def is_scored(self) -> bool:
@@ -359,6 +368,7 @@ class AdaptedCell:
             "opponent_agent_revision_id": self.opponent_agent_revision_id.to_json(),
             "opponent_agent_revision_error": self.opponent_agent_revision_error.to_json(),
             "opponent_revision_verification": self.opponent_revision_verification.value,
+            "orientation": self.orientation.to_json(),
         }
 
 
@@ -406,6 +416,18 @@ class EvaluationSummary:
     # recorded for that role.
     candidate_revision_verification: RevisionVerificationStatus = RevisionVerificationStatus.NOT_CHECKED
     baseline_revision_verification: RevisionVerificationStatus = RevisionVerificationStatus.NOT_CHECKED
+    # v0.9 Phase 6 (Phase 5 spec Sec J.2/AA.4.4): evaluation-wide methodology
+    # metadata, following the exact sibling-key pattern
+    # ``rules_compatibility_id`` already uses (never folded into
+    # ``effective_conditions``). ``orientation_mode`` is "both" |
+    # "candidate_first_only"; every historical (schema < 4) evaluation is
+    # recovered as ``recovered("candidate_first_only")`` -- certain, not
+    # merely inferred, since no prior schema version could produce anything
+    # else. ``arena_alignment_mode``'s only v0.9 value is "fixed"; every
+    # historical evaluation is recovered as ``recovered("fixed")`` for the
+    # identical certainty reason (Sec AA.2/AA.4.6).
+    orientation_mode: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    arena_alignment_mode: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
 
     def to_json(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -438,6 +460,8 @@ class EvaluationSummary:
             "baseline_agent_revision_error": self.baseline_agent_revision_error.to_json(),
             "candidate_revision_verification": self.candidate_revision_verification.value,
             "baseline_revision_verification": self.baseline_revision_verification.value,
+            "orientation_mode": self.orientation_mode.to_json(),
+            "arena_alignment_mode": self.arena_alignment_mode.to_json(),
         }
 
 

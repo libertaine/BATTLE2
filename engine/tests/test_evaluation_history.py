@@ -54,6 +54,10 @@ def _run_v2(tmp_path: Path, **overrides) -> Path:
         "output_dir": tmp_path / "eval-out",
         "ticks": 10,
         "data_root": tmp_path,
+        # This suite predates entrant orientation (v0.9 Phase 6) and its
+        # assertions are about adapter/discovery mechanics orthogonal to
+        # it -- pinned to the legacy single-orientation matrix shape/size.
+        "both_orientations": False,
     }
     defaults.update(overrides)
     result = EvaluationService().run(EvaluationRequest(**defaults))
@@ -344,6 +348,8 @@ def test_v2_consistent_planned_identity_matches_evaluation_id_not_flagged(tmp_pa
     candidate_identity = {"agent_id": "candidate", "source_sha256": "abc"}
     conditions = {"tick_limit": 10}
     rules_id = "evaluation-rules-1"
+    orientation_mode = "candidate_first_only"
+    arena_alignment_mode = "fixed"
     payload = {
         "identity_version": IDENTITY_VERSION,
         "candidate": candidate_identity,
@@ -353,6 +359,11 @@ def test_v2_consistent_planned_identity_matches_evaluation_id_not_flagged(tmp_pa
         "ticks": 10,
         "effective_conditions": conditions,
         "rules_compatibility_id": rules_id,
+        # v0.9 Phase 6 (Sec J.1/AA.4.8): identity_version 4's payload gains
+        # these two sibling keys -- must match _write_state's own shape for
+        # this consistency test to mean anything at IDENTITY_VERSION 4.
+        "orientation_mode": orientation_mode,
+        "arena_alignment_mode": arena_alignment_mode,
     }
     evaluation_id = stable_id("evaluation-v2", payload)
     path = tmp_path / "evaluation.json"
@@ -363,6 +374,8 @@ def test_v2_consistent_planned_identity_matches_evaluation_id_not_flagged(tmp_pa
         planned_identities={"candidate": candidate_identity, "baseline": None, "opponents": []},
         effective_conditions=conditions,
         rules_compatibility_id=rules_id,
+        orientation_mode=orientation_mode,
+        arena_alignment_mode=arena_alignment_mode,
         seeds=[1],
         ticks=10,
     )

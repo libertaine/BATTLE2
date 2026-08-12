@@ -8,7 +8,7 @@ from typing import Any
 
 from battle_engine.agent_evaluation import (
     SCHEMA_NAME,
-    aggregate_cells,
+    all_subject_aggregates,
     compare_candidate_baseline,
 )
 from battle_engine.result_model import stable_id
@@ -37,7 +37,17 @@ from .models import (
 # HealthCode.UNSUPPORTED_VERSION by `list`/`show`/`compare`, a regression
 # in the already-shipped v0.7 evaluation_history feature that a "Phase 3
 # has no history changes" reading of the plan did not anticipate.
-SUPPORTED_V2_VERSIONS = (2, 3)
+#
+# v4 (v0.9 Phase 6, Phase 5 spec Sec J.1/AA.4.8) added per-cell
+# "orientation"/"orientation_index" and evaluation-wide "orientation_mode"/
+# "arena_alignment_mode" -- also additive over v3's wire shape, so it joins
+# this same adapter rather than a new module, following the identical
+# precedent this comment already documents for v2->v3. Field extraction
+# below is version-conditional: schema_version 4 reads the new fields as
+# RECORDED; schema_version 2/3 (which never had this concept) recover them
+# as certain historical facts (Sec L.2/AA.4.6), never UNKNOWN.
+SUPPORTED_V2_VERSIONS = (2, 3, 4)
+_ORIENTATION_AWARE_VERSIONS = (4,)
 
 # A cell that lacks any of these, or has the wrong type, cannot even be
 # safely represented as an `EvaluationCell`/`AdaptedCell` -- H1: this must
@@ -265,6 +275,13 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         context_id = raw.get("execution_context_id")
         if isinstance(context_id, str) and context_id:
             execution_context_refs.append((raw["schedule_id"], context_id))
+        # v0.9 Phase 6 (Sec L.2): schema < 4 never recorded orientation --
+        # recovered as the certain historical fact, never UNKNOWN.
+        orientation = (
+            _recorded_or_unknown(raw, "orientation", expected_type=str)
+            if version in _ORIENTATION_AWARE_VERSIONS
+            else ConfidenceValue.recovered("candidate_first")
+        )
         cells.append(
             AdaptedCell(
                 schedule_id=raw["schedule_id"],
@@ -295,6 +312,7 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 ),
                 opponent_agent_revision_id=opponent_agent_revision_id,
                 opponent_agent_revision_error=opponent_agent_revision_error,
+                orientation=orientation,
             )
         )
 
@@ -407,19 +425,37 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         detail.append("one or more cell artifact_dir entries are absolute paths")
 
     # H2: a cell's (subject_role, subject_id, opponent_id, seed,
-    # condition_occurrence_index) coordinate is supposed to be unique --
-    # `condition_occurrence_index` exists specifically to disambiguate
-    # otherwise-identical duplicates. More than one cell sharing the exact
-    # same coordinate means that uniqueness invariant is already broken;
-    # comparison.py's strict alignment independently refuses to pair such
-    # cells positionally (H4), but this is flagged here too as a structural
-    # diagnostic on the artifact itself.
+    # condition_occurrence_index, orientation) coordinate is supposed to be
+    # unique -- `condition_occurrence_index` exists specifically to
+    # disambiguate otherwise-identical duplicates. More than one cell
+    # sharing the exact same coordinate means that uniqueness invariant is
+    # already broken; comparison.py's strict alignment independently
+    # refuses to pair such cells positionally (H4), but this is flagged
+    # here too as a structural diagnostic on the artifact itself.
+    #
+    # v0.9 Phase 6 (Sec 9/W.1-2): `orientation` joins the coordinate for
+    # schema >= 4 artifacts -- a `candidate_first` and an `opponent_first`
+    # cell for the identical (opponent, seed) share the same
+    # `condition_occurrence_index` by design (Sec I.3: orientation, not
+    # occurrence, is what distinguishes them) and must never be reported as
+    # a duplicate-coordinate structural problem. Pre-Phase-6 artifacts have
+    # no `orientation` field at all, so every cell's absent-field value
+    # (`None`) is identical and contributes nothing to disambiguation --
+    # exactly the historical (single-orientation) behavior this check
+    # already had, unchanged.
     coordinate_counts: dict[tuple[Any, ...], list[str]] = {}
     for raw in raw_cells:
         occurrence = raw.get("condition_occurrence_index")
         if not isinstance(occurrence, int) or isinstance(occurrence, bool):
             continue
-        coordinate = (raw["subject_role"], raw["subject_id"], raw["opponent_id"], raw.get("seed"), occurrence)
+        coordinate = (
+            raw["subject_role"],
+            raw["subject_id"],
+            raw["opponent_id"],
+            raw.get("seed"),
+            occurrence,
+            raw.get("orientation"),
+        )
         coordinate_counts.setdefault(coordinate, []).append(raw["schedule_id"])
     duplicate_coordinates = {
         coordinate: ids for coordinate, ids in coordinate_counts.items() if len(ids) > 1
@@ -471,6 +507,15 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             "effective_conditions": effective_conditions,
             "rules_compatibility_id": rules_id,
         }
+        # v0.9 Phase 6 (Sec J.1/AA.4.8): identity_version 4's payload gains
+        # two sibling keys -- gated on the artifact's own recorded
+        # identity_version (M1's existing precedent), never the current
+        # module constant, so a valid pre-Phase-6 artifact (identity_version
+        # 2/3, which never had these keys) is not falsely flagged
+        # inconsistent for a shape it was never supposed to have.
+        if identity_version >= 4:
+            recomputed_payload["orientation_mode"] = data.get("orientation_mode")
+            recomputed_payload["arena_alignment_mode"] = data.get("arena_alignment_mode")
         recomputed_id = stable_id("evaluation-v2", recomputed_payload)
         if recomputed_id != data.get("evaluation_id"):
             codes.append(HealthCode.PLANNED_IDENTITY_INCONSISTENT)
@@ -501,16 +546,22 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 continue
             if idx >= len(opponent_identities):
                 continue
-            expected_fp = stable_id(
-                "evaluation-condition",
-                {
-                    "opponent": opponent_identities[idx],
-                    "seed": raw.get("seed"),
-                    "effective_conditions": conditions_fp,
-                    "rules_compatibility_id": rules_id,
-                    "condition_occurrence_index": occurrence,
-                },
-            )
+            fp_payload = {
+                "opponent": opponent_identities[idx],
+                "seed": raw.get("seed"),
+                "effective_conditions": conditions_fp,
+                "rules_compatibility_id": rules_id,
+                "condition_occurrence_index": occurrence,
+            }
+            # v0.9 Phase 6 (Sec I.3/AA.4.3): identity_version 4's per-cell
+            # condition_fingerprint payload gains two sibling keys -- same
+            # identity_version gate as the evaluation_id recomputation
+            # above, for the identical "don't flag a valid older artifact"
+            # reason.
+            if isinstance(identity_version, int) and identity_version >= 4:
+                fp_payload["orientation"] = raw.get("orientation")
+                fp_payload["arena_alignment_mode"] = data.get("arena_alignment_mode")
+            expected_fp = stable_id("evaluation-condition", fp_payload)
             if expected_fp != recorded_fp:
                 inconsistent_fingerprints.append(raw["schedule_id"])
         if inconsistent_fingerprints:
@@ -550,10 +601,22 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
     real_cells = evaluation_cells_from_raw(raw_cells, path.parent)
     candidate_id = data["candidate_id"]
     baseline_id = data.get("baseline_id")
-    aggregates = [aggregate_cells("candidate", candidate_id, real_cells)]
-    if baseline_id is not None:
-        aggregates.append(aggregate_cells("baseline", baseline_id, real_cells))
+    # v0.9 Phase 6 (Sec K.2): pooled + per-orientation views, computed
+    # identically to the live-run path. A legacy (schema < 4) cell
+    # reconstructed by `evaluation_cells_from_raw` defaults to
+    # `orientation="candidate_first"` (`EvaluationCell.orientation`'s own
+    # default), which is also the historically correct fact.
+    aggregates = all_subject_aggregates(candidate_id, baseline_id, real_cells)
     comparison = compare_candidate_baseline(real_cells) if baseline_id is not None else ()
+
+    # v0.9 Phase 6 (Sec L.2/AA.4.6): schema < 4 never recorded these --
+    # recovered as certain historical facts, never UNKNOWN.
+    if version in _ORIENTATION_AWARE_VERSIONS:
+        orientation_mode = _recorded_or_unknown(data, "orientation_mode", expected_type=str)
+        arena_alignment_mode = _recorded_or_unknown(data, "arena_alignment_mode", expected_type=str)
+    else:
+        orientation_mode = ConfidenceValue.recovered("candidate_first_only")
+        arena_alignment_mode = ConfidenceValue.recovered("fixed")
 
     return EvaluationSummary(
         location=location,
@@ -587,6 +650,8 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         candidate_agent_revision_error=candidate_agent_revision_error,
         baseline_agent_revision_id=baseline_agent_revision_id,
         baseline_agent_revision_error=baseline_agent_revision_error,
+        orientation_mode=orientation_mode,
+        arena_alignment_mode=arena_alignment_mode,
     )
 
 

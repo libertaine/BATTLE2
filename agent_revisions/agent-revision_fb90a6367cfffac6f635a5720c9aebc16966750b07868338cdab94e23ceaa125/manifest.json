@@ -1,0 +1,14 @@
+{
+  "agent_revision_id": "agent-revision_fb90a6367cfffac6f635a5720c9aebc16966750b07868338cdab94e23ceaa125",
+  "archived_at": "2026-08-11T18:24:07.795460Z",
+  "complete": true,
+  "files": [
+    "agent.py",
+    "agent.yaml"
+  ],
+  "fingerprint_version": 1,
+  "omitted": [],
+  "schema": "bytefray.agent_revision",
+  "schema_version": 1,
+  "source_agent_id": "wanderer"
+}

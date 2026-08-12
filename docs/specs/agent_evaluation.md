@@ -14,7 +14,14 @@ Lab (inspect → debug → modify → repeat). Evaluation adds the missing step
 after "modify": **did it actually get better?**
 
 Status: design spec, written before implementation, per `CONTRIBUTING.md`'s
-spec → issue → prompt → PR flow.
+spec → issue → prompt → PR flow. **Historical rationale only past v0.6** —
+the shipped module has moved well beyond this document (schema/identity
+now v4 as of v0.9, `agent_revisions` (v0.8), `evaluation_history` (v0.7),
+entrant-orientation matrix axis + fixed-arena-alignment disclosure (v0.9)).
+For current behavior see `docs/AGENT_LAB.md`'s "Evaluating a candidate"
+section and `CHANGELOG.md`; this spec is retained for the original v0.6
+design reasoning, which mostly still holds even where the wire shape has
+moved on.
 
 ## 1. User problem
 

@@ -13,6 +13,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from battle_engine.agent_evaluation import (
+    ORIENTATION_CANDIDATE_FIRST,
+    physical_slots_for_orientation,
+)
 from battle_engine.agent_revisions import agent_revisions_root, verify_revision
 from battle_engine.agent_test import OPPONENT_SLOT, TESTED_AGENT_SLOT
 from battle_engine.paths import contained_path, get_data_root
@@ -212,12 +216,22 @@ def verify_cell(
             f"result seed {actual_seed!r} does not match the recorded cell seed {cell.seed!r}",
         )
 
+    # v0.9 Phase 6 (Phase 5 spec Sec H.1, applied here per the same
+    # reasoning): which physical slot the subject/opponent actually
+    # executed in depends on `cell.orientation`, not always
+    # subject==A/opponent==B. `cell.orientation` is never UNKNOWN in
+    # practice (every adapter recovers/records a concrete value -- Sec
+    # L.2), but a defensive `candidate_first` fallback keeps this function
+    # total rather than raising on a hand-built/malformed fixture.
+    orientation = cell.orientation.value or ORIENTATION_CANDIDATE_FIRST
+    subject_slot, opponent_slot = physical_slots_for_orientation(orientation)
+
     winner = envelope.winner
     expected_outcome = (
         "tie"
         if winner == WINNER_TIE_SENTINEL
         else "win"
-        if winner == TESTED_AGENT_SLOT
+        if winner == subject_slot
         else "loss"
     )
     if expected_outcome != cell.outcome:
@@ -234,7 +248,7 @@ def verify_cell(
     # `source_sha256`/entry_point/etc. in either the plan or the result
     # went entirely uncaught by deep verification.
     subject_mismatched = _identity_mismatch(
-        envelope.entrants, TESTED_AGENT_SLOT, subject_identity or ConfidenceValue.unknown()
+        envelope.entrants, subject_slot, subject_identity or ConfidenceValue.unknown()
     )
     if subject_mismatched:
         return CellVerificationOutcome(
@@ -244,7 +258,7 @@ def verify_cell(
             f"{cell.subject_role} identity fields {subject_mismatched} do not match the recorded plan",
         )
 
-    opponent_mismatched = _identity_mismatch(envelope.entrants, OPPONENT_SLOT, cell.opponent_identity)
+    opponent_mismatched = _identity_mismatch(envelope.entrants, opponent_slot, cell.opponent_identity)
     if opponent_mismatched:
         return CellVerificationOutcome(
             cell.schedule_id,
