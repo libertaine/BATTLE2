@@ -3,6 +3,37 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
+## [1.0.1] - 2026-08-13
+
+Patch release. No gameplay, Agent API, Ruleset, or evaluation-schema
+change — this is a maintenance release consisting of one user-visible bug
+fix plus repository/build cleanup.
+
+- **Fix:** the Agent Designer Advanced tab's per-agent JSON parameter
+  editors were validated locally and then silently discarded before ever
+  reaching the agents they configure. `app/agent_designer.py`'s
+  `_on_advanced_run` now exports each agent's params on the child
+  process's environment, and `engine/src/battle_engine/cli.py`'s
+  `_resolve_agent` now merges that environment JSON over the shared CLI
+  defaults for both discovered and built-in agents, instead of parsing it
+  for discovered agents only and discarding the result.
+- Removed confirmed-dead repository debris: personal debug scripts,
+  stale IDE state, ~132MB of committed build output, `requirements-*.txt`
+  duplicates of `pyproject.toml`'s extras, and the unreferenced `sdk/`
+  tree (135 files, including a byte-identical duplicate of already-dead
+  `_legacy/agents_tooling/` code and an accidental duplicate example
+  bundle).
+- Consolidated packaging/tooling: removed `sync.sh` (source of prior
+  `update: <timestamp>` commit spam) and the hardcoded `start.ps1`;
+  rewrote `sync_win.ps1` to install via `pip install -e ".[...]"`.
+- Established a Ruff-clean baseline (`docs/RUFF_DEBT.md` records the
+  applied fixes, project-wide rule exclusions, and per-line exceptions
+  with rationale) and added `ruff check .` to CI so it doesn't
+  silently reaccumulate.
+- Contributor/security/documentation cleanup: `CONTRIBUTING.md` rewritten
+  as an external-contributor guide, `SECURITY.md` added, and stale
+  references fixed across `AGENTS.md`/`README.md`.
+
 ## [1.0.0] - 2026-08-13
 
 Bytefray's first stable release. `v1.0.0` promotes `v1.0.0-rc2` to general
