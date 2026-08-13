@@ -153,11 +153,10 @@ class AgentDesigner(QMainWindow):
         """
         try:
             rows = self.catalog.list_agents()  # returns list of AgentRow
-            names = [r.name for r in rows] or ["(none found)"]
             if hasattr(self, "simple"):
-                self.simple.setAgents(names)
+                self.simple.setAgents(rows)
             if hasattr(self, "advanced"):
-                self.advanced.setAgents(names)
+                self.advanced.setAgents(rows)
             if hasattr(self, "development"):
                 self.development.setAgents(rows)
                 if select:

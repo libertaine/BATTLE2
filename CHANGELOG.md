@@ -3,7 +3,27 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
-## [Unreleased]
+## [1.0.0-rc2] - 2026-08-13
+
+Bytefray v1.0.0's second release candidate. This closes an Agent Designer
+UX gap surfaced during RC1 qualification: match selectors now show each
+agent's runtime kind and disable incompatible opponents before a match is
+attempted, rather than only after `validate_homogeneous` rejects it at
+run time. No gameplay, Agent API, Ruleset, or evaluation-schema change is
+included. Final `v1.0.0` follows once RC2 qualification is complete.
+
+### Agent Designer
+
+- Agent Designer now displays each agent's runtime kind (`[Python]`/`[VM]`)
+  in the Simple and Advanced tabs' match selectors, so the existing
+  mixed-VM/Python-execution restriction is visible before a match is
+  attempted instead of only after it is rejected.
+- Incompatible VM/Python opponents remain visible in the Agent B selector
+  but are disabled once Agent A is selected, and an Agent B selection that
+  becomes incompatible when Agent A changes is repaired automatically to
+  the nearest compatible choice.
+- Backend homogeneous-runtime validation (`validate_homogeneous`) is
+  unchanged and remains the authoritative check for both tabs.
 
 ## [1.0.0-rc1] - 2026-08-13
 

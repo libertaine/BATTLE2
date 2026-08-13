@@ -23,8 +23,14 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
 )
 
+from app.services.agent_catalog import AgentRow
 from app.services.engine import RunConfig
 from app.services.osutil import get_default_paths
+from app.widgets.agent_combo import (
+    populate_agent_combo,
+    selected_agent_name,
+    sync_compatible_b_choices,
+)
 from app.widgets.json_editor import JsonEditor
 
 
@@ -151,19 +157,16 @@ class AdvancedPanel(QWidget):
         self.btnRefresh.clicked.connect(self.refreshAgentsRequested.emit)
         self.btnChooseReplay.clicked.connect(self._choose_replay)
         self.btnOpenReplay.clicked.connect(self._open_replay_browser)
+        self.agentA.currentIndexChanged.connect(self._on_agent_a_changed)
 
     # API for MainWindow
-    def setAgents(self, names: List[str]) -> None:
-        for cb in (self.agentA, self.agentB):
-            prev = cb.currentText()
-            cb.blockSignals(True)
-            cb.clear()
-            cb.addItems(names)
-            if prev:
-                idx = cb.findText(prev)
-                if idx >= 0:
-                    cb.setCurrentIndex(idx)
-            cb.blockSignals(False)
+    def setAgents(self, rows: List[AgentRow]) -> None:
+        populate_agent_combo(self.agentA, rows)
+        populate_agent_combo(self.agentB, rows)
+        sync_compatible_b_choices(self.agentA, self.agentB)
+
+    def _on_agent_a_changed(self, _index: int) -> None:
+        sync_compatible_b_choices(self.agentA, self.agentB)
 
     def setBusy(self, busy: bool) -> None:
         for w in (
@@ -229,8 +232,8 @@ class AdvancedPanel(QWidget):
     # Helpers
     def _emit_run(self) -> None:
         cfg = RunConfig(
-            a_type=self.agentA.currentText() or "runner",
-            b_type=self.agentB.currentText() or "writer",
+            a_type=selected_agent_name(self.agentA) or "runner",
+            b_type=selected_agent_name(self.agentB) or "writer",
             arena=int(self.arena.value()),
             ticks=int(self.ticks.value()),
             alive_w=float(self.alive_w.value()),

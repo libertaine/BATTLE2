@@ -9,7 +9,9 @@ import pytest
 from app.services.agent_catalog import AgentRow
 from app.services.designer_workflows import (
     DesignerValidationError,
+    agent_runtime_label,
     build_designer_tournament_command,
+    decorate_agent_display,
     match_artifact_paths,
     new_match_run_directory,
     read_match_presentation,
@@ -27,6 +29,20 @@ def _row(name: str, kind: str) -> AgentRow:
 
 def test_designer_adapter_import_does_not_require_qt():
     assert validate_homogeneous([_row("alpha", "python"), _row("beta", "python")]) == "python"
+
+
+def test_agent_runtime_label_reflects_python_vs_vm():
+    assert agent_runtime_label(_row("claimer", "python")) == "Python"
+    # Unset/unknown kind maps to VM, per agent_kind()'s existing semantics.
+    assert agent_runtime_label(_row("runner", "builtin")) == "VM"
+    assert agent_runtime_label(AgentRow("runner", "/agents/runner", None, {})) == "VM"
+
+
+def test_decorate_agent_display_appends_runtime_suffix_without_altering_identity():
+    row = _row("claimer", "python")
+    assert decorate_agent_display(row) == "CLAIMER [Python]"
+    # The undecorated identifier callers must actually use is untouched.
+    assert row.name == "CLAIMER"
 
 
 def test_new_match_run_directory_is_unique_and_isolated(tmp_path):

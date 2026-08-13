@@ -187,18 +187,25 @@ The gate covers, narrowly:
   identified.
 
 The visual-asset and integration work above is functionally complete as of
-`v1.0-rc1-branding`. The branch's version identity is now `1.0.0rc1`
-(PEP 440 package/CLI spelling; `1.0.0-rc1` for release-artifact filenames
-and the eventual Git tag — see [CHANGELOG.md](../CHANGELOG.md)). What
-remains before this gate can be called fully closed is RC-level
-qualification that was always out of this gate's narrow scope: full
-installer lifecycle qualification under an elevated session, portable ZIP
-and wheel qualification, and a full RC-version test pass — see the
+`v1.0-rc1-branding`, and `v1.0.0-rc1` itself is published. A small, UX-only
+correction was found during real RC1 use (Agent Designer's match selectors
+did not surface an agent's runtime kind before the existing mixed-VM/Python
+restriction rejected an invalid pairing) and is being prepared as
+`v1.0.0-rc2` on `v1.0-rc2-agent-runtime-ux`: the branch's version identity
+is `1.0.0rc2` (PEP 440 package/CLI spelling; `1.0.0-rc2` for
+release-artifact filenames and the eventual Git tag — see
+[CHANGELOG.md](../CHANGELOG.md)). This does not reopen the branding gate
+above or change the underlying mixed-runtime restriction itself — only its
+presentation. What remains before this gate can be called fully closed is
+RC-level qualification that was always out of this gate's narrow scope:
+full installer lifecycle qualification under an elevated session, portable
+ZIP and wheel qualification, and a full RC-version test pass — see the
 branding-integration and version-preparation commits on
-`v1.0-rc1-branding` for exactly what shipped and what those commits' own
-reports listed as deferred. Until that qualification lands, treat any plan
-to tag `v1.0.0` as blocked, regardless of how ready the underlying
-platform (Agent API, Ruleset, schemas, CLI, packaging) otherwise is.
+`v1.0-rc1-branding`/`v1.0-rc2-agent-runtime-ux` for exactly what shipped
+and what those commits' own reports listed as deferred. Until that
+qualification lands, treat any plan to tag `v1.0.0` as blocked, regardless
+of how ready the underlying platform (Agent API, Ruleset, schemas, CLI,
+packaging) otherwise is.
 
 **Recommended sequencing:** `v0.10.0` → `v1.0.0-rc1` (branding integration
 happens here) → `v1.0.0`, rather than inserting a separate numbered
