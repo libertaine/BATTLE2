@@ -60,6 +60,27 @@ def agent_kind(row: AgentRow) -> str:
     return "python" if value == "python" else "vm"
 
 
+# User-facing runtime-kind vocabulary for match selectors (RC2 UX
+# correction) -- concise labels, not the internal ``agent_kind()`` values
+# themselves, which stay implementation vocabulary.
+RUNTIME_LABELS: dict[str, str] = {"python": "Python", "vm": "VM"}
+
+
+def agent_runtime_label(row: AgentRow) -> str:
+    """The short, user-facing runtime label for one agent (``"Python"``/``"VM"``)."""
+    return RUNTIME_LABELS[agent_kind(row)]
+
+
+def decorate_agent_display(row: AgentRow) -> str:
+    """Combo-box display text: the agent's own name plus its runtime kind.
+
+    This is presentation only. The real agent identifier a caller must use
+    to resolve/launch a match is ``row.name`` (unchanged) -- never recover
+    it by stripping the ``[Python]``/``[VM]`` suffix back off this string.
+    """
+    return f"{row.name} [{agent_runtime_label(row)}]"
+
+
 def validate_homogeneous(rows: Iterable[AgentRow], *, minimum: int = 2) -> str:
     selected = tuple(rows)
     if len(selected) < minimum:

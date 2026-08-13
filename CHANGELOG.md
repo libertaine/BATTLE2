@@ -5,6 +5,19 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+### Agent Designer
+
+- Agent Designer now displays each agent's runtime kind (`[Python]`/`[VM]`)
+  in the Simple and Advanced tabs' match selectors, so the existing
+  mixed-VM/Python-execution restriction is visible before a match is
+  attempted instead of only after it is rejected.
+- Incompatible VM/Python opponents remain visible in the Agent B selector
+  but are disabled once Agent A is selected, and an Agent B selection that
+  becomes incompatible when Agent A changes is repaired automatically to
+  the nearest compatible choice.
+- Backend homogeneous-runtime validation (`validate_homogeneous`) is
+  unchanged and remains the authoritative check for both tabs.
+
 ## [1.0.0-rc1] - 2026-08-13
 
 Bytefray v1.0.0's first release candidate. This closes the required pre-1.0

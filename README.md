@@ -294,8 +294,11 @@ same replay, unaffected by any of the above.
 
 The optional Designer uses the same supported commands. Its Simple and Advanced
 tabs can run VM-vs-VM or Python-vs-Python matches, show the canonical winner and
-termination reason, and hand canonical replays to the existing viewer. Mixed
-VM/Python selections are rejected explicitly. **Tools → Run Tournament…** opens
+termination reason, and hand canonical replays to the existing viewer. Match
+selectors label each agent as `[Python]` or `[VM]` and disable incompatible
+Agent B choices once Agent A is selected, so mixed VM/Python selections are
+prevented in the UI as well as rejected explicitly by the backend.
+**Tools → Run Tournament…** opens
 a minimal homogeneous round-robin launcher; tournament artifacts are written to
 the selected directory. **Help → About Bytefray** reports the installed version
 and the active Agent API, result, and replay schema versions.
