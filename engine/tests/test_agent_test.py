@@ -514,6 +514,10 @@ def test_cli_success_output_and_exit_code(tmp_path, monkeypatch, capsys):
     assert "replay:" in captured.out
     assert "summary:" in captured.out
     assert "bytefray replay" in captured.out
+    # Regression test (Phase 5.8): the printed hint must be directly runnable.
+    # `bytefray replay` requires `--replay PATH` (see battle_client.cli); a
+    # hint that omits the flag is a copy-paste trap for a first-time user.
+    assert "Run 'bytefray replay --replay " in captured.out
     assert "Traceback" not in captured.out
 
 

@@ -69,6 +69,7 @@ from battle_engine.result_model import (
     write_json_atomic,
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
+from battle_engine.rules import BYTEFRAY_RULESET_ID
 
 SCHEMA_NAME = "bytefray.evaluation"
 SCHEMA_VERSION = 4
@@ -105,12 +106,32 @@ SCHEMA_VERSION = 4
 # methodology/coverage change, never a gameplay-rules change.
 IDENTITY_VERSION = 4
 
-# Narrowly scoped compatibility identifier for evaluation/match comparison
-# semantics (scoring, winner resolution, Python scheduling order, derived-seed
-# policy). Deliberately separate from ``ProjectInfo.version`` -- bump by hand
-# only when one of those specific behaviors changes; see
-# docs/specs/evaluation_history.md Sec 4.
-EVALUATION_RULES_COMPATIBILITY_ID = "evaluation-rules-1"
+# Narrowly scoped compatibility identifier surfaced at evaluation scope, in
+# the historical wire field name ``rules_compatibility_id``
+# (``bytefray.evaluation``'s per-evaluation and per-execution-context
+# payloads). Preserved under its original name and comparison behavior for
+# compatibility with existing artifacts and tests -- its *value* now
+# changes to track ``BYTEFRAY_RULESET_ID`` (still "bytefray-rules-1" today,
+# since Ruleset v1 is what "evaluation-rules-1" always meant; see the
+# historical note below). As of v0.10 Phase 2 this is a derived alias of
+# ``battle_engine.rules.BYTEFRAY_RULESET_ID``, the first-class gameplay
+# Ruleset identity (see docs/RULES.md), rather than an independently
+# maintained second rules counter -- a gameplay-semantic change now
+# requires exactly one Ruleset bump, not a Ruleset bump plus a separate
+# evaluation-rules bump. Deliberately still separate from
+# ``ProjectInfo.version``. See docs/COMPATIBILITY.md for the full
+# compatibility-axis table.
+#
+# Historical note: for the whole period this value has existed as the
+# literal string ``"evaluation-rules-1"`` (schema v1 onward), it has always
+# meant exactly the gameplay semantics ``bytefray-rules-1`` now names
+# explicitly -- see docs/RULES.md's "Historical relationship to
+# evaluation-rules-1" section for the supporting git-history evidence.
+# Evaluation artifacts persisted before this alias existed still literally
+# contain the string ``"evaluation-rules-1"``, not ``"bytefray-rules-1"``;
+# readers must not pretend otherwise. See docs/specs/evaluation_history.md
+# Sec 4 for the original field design.
+EVALUATION_RULES_COMPATIBILITY_ID = BYTEFRAY_RULESET_ID
 
 # v0.9's only supported arena-alignment methodology (Phase 5 spec Sec AA):
 # every cell in every evaluation places both entrants at the same
@@ -1252,6 +1273,11 @@ def _resumed_cell_mismatch(
         return "replay header match ID does not match result envelope"
     if header.result_id != envelope.result_id:
         return "replay header result ID does not match result envelope"
+    if header.ruleset_id != envelope.ruleset_id:
+        return (
+            f"replay header ruleset_id {header.ruleset_id!r} does not match "
+            f"result envelope ruleset_id {envelope.ruleset_id!r}"
+        )
     return None
 
 

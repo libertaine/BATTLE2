@@ -257,6 +257,77 @@ def test_resumed_result_mismatch_accepts_a_genuinely_matching_result(tmp_path):
     ) is None
 
 
+def test_resumed_result_mismatch_detects_ruleset_id_divergence(tmp_path):
+    """v0.10 Phase 4.13: a resumed result whose recorded ``ruleset_id``
+    disagrees with its own replay header's ``ruleset_id`` must never be
+    silently trusted -- this is the same "cannot internally contradict
+    itself" check already applied to match_id/result_id.
+    """
+
+    replay_path = tmp_path / "replay.jsonl"
+    write_replay(
+        replay_path,
+        [
+            ReplayHeader(
+                MatchConfiguration(64),
+                match_id="match_x",
+                result_id="result_x",
+                ruleset_id="bytefray-rules-1",
+            )
+        ],
+    )
+    digest = hashlib.sha256(replay_path.read_bytes()).hexdigest()
+    envelope = ResultEnvelope(
+        result_id="result_x",
+        match_id="match_x",
+        mode="b2",
+        winner="tie",
+        termination_reason="tick_limit",
+        ticks=2,
+        score={},
+        entrants=tuple({"agent_id": agent_id} for agent_id in ("A", "B")),
+        reproducibility={"seed": 5},
+        replay=ReplayReference("r", digest, "replay.jsonl"),
+        ruleset_id="corrupted-ruleset-id",
+    )
+    reason = _resumed_result_mismatch(
+        envelope, _scheduled(("A", "B"), seed=5), replay_path, "match_x"
+    )
+    assert reason is not None and "ruleset_id" in reason
+
+
+def test_resumed_result_mismatch_accepts_matching_ruleset_id(tmp_path):
+    replay_path = tmp_path / "replay.jsonl"
+    write_replay(
+        replay_path,
+        [
+            ReplayHeader(
+                MatchConfiguration(64),
+                match_id="match_x",
+                result_id="result_x",
+                ruleset_id="bytefray-rules-1",
+            )
+        ],
+    )
+    digest = hashlib.sha256(replay_path.read_bytes()).hexdigest()
+    envelope = ResultEnvelope(
+        result_id="result_x",
+        match_id="match_x",
+        mode="b2",
+        winner="tie",
+        termination_reason="tick_limit",
+        ticks=2,
+        score={},
+        entrants=tuple({"agent_id": agent_id} for agent_id in ("A", "B")),
+        reproducibility={"seed": 5},
+        replay=ReplayReference("r", digest, "replay.jsonl"),
+        ruleset_id="bytefray-rules-1",
+    )
+    assert _resumed_result_mismatch(
+        envelope, _scheduled(("A", "B"), seed=5), replay_path, "match_x"
+    ) is None
+
+
 # ---------------------------------------------------------------------------
 # Resume validation: end-to-end integration
 # ---------------------------------------------------------------------------

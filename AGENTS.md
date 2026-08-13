@@ -164,9 +164,10 @@ abbreviated.
 | Writing agents | [docs/AGENT_AUTHORING.md](docs/AGENT_AUTHORING.md) |
 | Debugging agents: trace, inspect, diverge, timeouts | [docs/AGENT_LAB.md](docs/AGENT_LAB.md) |
 | Agent API v1 contract | [docs/AGENT_API_V1.md](docs/AGENT_API_V1.md) |
-| VM/native rules | [docs/RULES.md](docs/RULES.md) |
+| Bytefray Ruleset v1 (gameplay semantics) | [docs/RULES.md](docs/RULES.md) |
 | Result schema | [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md) |
 | Replay schema | [docs/REPLAY_SCHEMA.md](docs/REPLAY_SCHEMA.md) |
 | Headless tournaments | [docs/TOURNAMENTS.md](docs/TOURNAMENTS.md) |
+| Compatibility axes (Ruleset/Agent API/schema/methodology) | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) |
 | Manual smoke-test checklist | [docs/MANUAL_SMOKE_TESTS.md](docs/MANUAL_SMOKE_TESTS.md) |
 | Feature specs (source of truth before implementing) | `docs/specs/` |

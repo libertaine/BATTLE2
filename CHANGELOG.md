@@ -5,6 +5,160 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-12
+
+v0.10's theme: **Platform Stabilization / v1.0 Readiness**. This is a
+stabilization release, not a feature release: it freezes the Bytefray 1.0
+gameplay Ruleset contract (`bytefray-rules-1`), closes the entrant-
+orientation-vs-translation evaluation-methodology question left open by
+v0.9, documents the compatibility model and the stable Agent API v1
+surface, persists Ruleset identity directly into every native result/
+replay artifact, hardens canonical match identity, and completes release
+qualification — including first-user workflow and packaging/install
+correctness fixes surfaced during that qualification pass.
+
+### Documentation
+
+- Closed v0.10's evaluation-methodology question (Phase 3): the standard
+  Bytefray 1.0 `agents evaluate` contract is orientation-aware with a
+  single, fixed arena alignment, and explicitly does not claim translation/
+  placement robustness. This is a deliberate, evidence-informed deferral,
+  not an oversight — re-verified against the now-frozen Ruleset v1/Agent
+  API v1 contracts that Python arena translation cannot be implemented
+  without either an incompatible Agent API v1 change (out of bounds) or
+  substantial new shared Python-runtime engineering that remains its own,
+  separately scoped future effort. A fresh, independent VM-entrant study
+  (using the existing production `MatchEntrant.start` placement mechanism,
+  not a research hack) corroborated v0.9's finding that relative placement
+  can materially change match outcomes (3 of 4 tested matchups flipped
+  winner across placements), reinforcing that the deferral is a scope
+  limitation, not a claim that placement doesn't matter. No engine,
+  Ruleset, Agent API, or evaluation schema code changed as a result.
+  `docs/ROADMAP.md` and `docs/COMPATIBILITY.md` updated accordingly.
+
+### Added
+
+- Native `result.json`/`replay.jsonl` now persist Bytefray Ruleset identity
+  directly (v0.10 Phase 4: Artifact Compatibility & Ruleset Persistence).
+  Every current native VM or Python match writes `ruleset_id:
+  "bytefray-rules-1"` into both the result envelope and the canonical
+  replay header — one discriminator per match, following the exact
+  precedent `runtime_kind` already set. Both fields are additive: no
+  `battle2.result`/`battle2.replay` schema bump was required, verified
+  directly (not merely inferred) by running the `v0.9.0`-tagged readers
+  against a synthetic artifact carrying the new field in an isolated
+  worktree. `redcode94`/pMARS results never claim Bytefray Ruleset v1.
+  `battle_engine.result_model.resolve_result_ruleset`/`battle_engine.
+  replay.resolve_replay_ruleset` give a confidence-qualified answer
+  (`recorded`/`recovered`/`unknown`/`not_applicable`) for artifacts written
+  before this field existed, informed by a fresh git-history audit proving
+  Python-vs-Python native gameplay semantics — scheduling order, action
+  execution, READ/WRITE addressing, mortality, forfeit handling, scoring
+  and winner-resolution integration — were byte-for-byte unchanged for the
+  Python runtime's entire existence (v0.3.0 onward, the same range already
+  proven for the VM). `ruleset_id` is also now a first-class input to
+  `match_id`'s identity hash (`match_service.canonical_match_id`), so two
+  otherwise-identical matches can never collide under one `match_id` if
+  they ran under different declared gameplay semantics; `result_id`/
+  `replay_id` inherit this transitively. **This is a deliberate, one-time
+  native-ID transition**: a v0.10 Phase 4+ build computes a different
+  `match_id`/`result_id`/`replay_id` than a pre-Phase-4 build would for
+  byte-identical inputs, since exactly one Ruleset's literal value is now
+  hashed in where previously nothing was. Historical stored IDs are never
+  rewritten; a `tournament.json`/`evaluation.json` left mid-run by an older
+  build will show its prior completed matches/cells as
+  `resumed_result_mismatch`/`corrupted` on the first Phase-4+ resume — the
+  same safe, fail-closed behavior any other `match_id` mismatch already
+  produces (`--retry-failed` or a fresh run recovers it), mirroring the
+  precedent already set when `bytefray.evaluation` moved v1 → v2's
+  strictly richer identity payload. See `docs/RESULT_SCHEMA.md`'s
+  "Identity recipe" for the full rationale and pinned tests. A resumed
+  tournament match or evaluation cell whose result and replay disagree on
+  `ruleset_id` is now demoted to `corrupted`, the same treatment an
+  existing `match_id`/`result_id` disagreement already receives.
+  `bytefray.evaluation`'s historical
+  `"evaluation-rules-1"` value is now explicitly normalized (a small,
+  finite alias table, `battle_engine.rules.normalize_ruleset_id`) to align
+  with a fresh `"bytefray-rules-1"` evaluation for cross-evaluation
+  comparison, without rewriting the historical artifact's own recorded
+  value. `battle2.tournament` deliberately gains no Ruleset field —
+  tournament-level compatibility derives from constituent match artifacts.
+  See `docs/COMPATIBILITY.md`'s "Legacy compatibility matrix" for the full
+  artifact/version/runtime table.
+- `battle_engine.rules.BYTEFRAY_RULESET_ID = "bytefray-rules-1"` — a new,
+  first-class gameplay-semantics compatibility identity (v0.10 Phase 2:
+  Freeze Ruleset v1), documented in full as `docs/RULES.md`, a rewritten
+  **Ruleset v1 reference** distinguishing Ruleset semantics from
+  configuration values, Agent API semantics, evaluation methodology, and
+  implementation details, plus a bump policy for future gameplay changes.
+  `bytefray.evaluation`'s `EVALUATION_RULES_COMPATIBILITY_ID` is now a
+  derived alias of `BYTEFRAY_RULESET_ID` rather than an independently
+  maintained second rules counter — its value, wire field name
+  (`rules_compatibility_id`), and comparison behavior are unchanged, and
+  historical `"evaluation-rules-1"` artifacts are documented as an honest
+  historical alias, never silently reinterpreted as containing the new
+  spelling. New `docs/COMPATIBILITY.md` names the independent compatibility
+  axes (project version, Agent API version, Ruleset identity, artifact
+  schema versions, evaluation methodology, agent revision identity, source
+  fingerprint versions) and gives a worked change-impact table for which
+  axis a given change actually requires.
+- `docs/AGENT_API_V1.md` now documents the exact, literal deterministic
+  entrant-seed derivation algorithm (UTF-8 material string, NUL-separated
+  fields, SHA-256, first 16 digest bytes, big-endian integer) as a frozen
+  Agent API v1 invariant — an incompatible change to it requires
+  `AGENT_API_VERSION = 2`, not a separate RNG compatibility identifier.
+  New golden-vector regression tests
+  (`test_derive_agent_seed_golden_vectors`) pin literal expected integers
+  for fixed inputs so accidental formula drift is caught immediately.
+
+### Fixed
+
+- Corrected `docs/REPLAY_SCHEMA.md`'s stale claim that `battle2.replay` v3
+  "has never appeared in a tagged release" — it has shipped, in its
+  already-extended form, in every tagged release since `v0.3.0`. The
+  narrower point the note was actually making (no tagged release ever
+  depended on the brief pre-extension record shape) is preserved.
+- Resolved a stable-vs-experimental documentation contradiction: several
+  docs (README, `docs/AGENT_AUTHORING.md`) described the entire homogeneous
+  Python-vs-Python runtime as "experimental," while `docs/ROADMAP.md`
+  already treats Agent API v1 and the core Python runtime as stability
+  candidates for 1.0. Docs now say what is actually still
+  unsupported/experimental (mixed VM/Python matches, security sandboxing,
+  hard callback containment outside `agents test`/`validate`, replication,
+  corruptible Python-core designs — see `docs/COMPATIBILITY.md`) rather
+  than labeling the whole platform experimental.
+- `docs/AGENT_API_V1.md` no longer describes the shipped (v0.5.0) Agent Lab
+  supervised-worker timeout containment as "(unreleased) Agent Lab work."
+- v0.10 Phase 5 (release qualification): `bytefray agents test` printed
+  `Run 'bytefray replay <path>' to inspect it.` — a command the parser
+  itself rejects, since `bytefray replay` requires `--replay PATH` and has
+  no positional form. Reproduced against the packaged wheel and fixed at
+  the source (`agent_test.py`), across every doc/spec carrying the same
+  guidance text (`docs/AGENT_AUTHORING.md`, `docs/MANUAL_SMOKE_TESTS.md`,
+  `docs/specs/agent_test.md`), and in the tests that had pinned the buggy
+  string.
+- v0.10 Phase 5: `battle_engine.paths._source_checkout_root()` walked every
+  ancestor directory of its own installed location looking for sibling
+  `engine/`/`client/` folders, so installing the built (non-editable) wheel
+  into a virtualenv nested anywhere underneath an unrelated Bytefray
+  checkout silently redirected the writable data root to that checkout
+  instead of the documented installed-platform default (XDG data home /
+  `%LOCALAPPDATA%`) — reproduced by installing the wheel under this
+  repository's own tree, which surfaced the developer's own `agents/`
+  catalog instead of a clean starter set. Detection is now based solely on
+  the module's own fixed source-tree position
+  (`.../engine/src/battle_engine/paths.py`), which correctly covers a real
+  checkout and a `pip install -e .` editable install without an unbounded,
+  coincidence-prone ancestor search.
+- v0.10 Phase 5: `bytefray`/`battle2` had no `--version`/project-info CLI
+  surface at all — an unrecognized top-level argument (including
+  `--version`) silently fell through to a full help dump with exit `0`
+  instead of an error. Added `--version` (formatted from
+  `battle_engine.project_info.get_project_info()`) to the top-level parser,
+  and an unrecognized top-level argument now reports a normal
+  `unrecognized arguments` error with exit `2` instead of being silently
+  swallowed; a bare `bytefray` with no arguments is unaffected.
+
 ### Documentation
 
 - Documented and integrated optional, non-authoritative local
@@ -22,6 +176,33 @@ This changelog records notable user- and developer-visible changes to Bytefray
   instead of carrying an open-ended "Future / unscheduled" list inline.
   Corrected `INSTALL.md`'s stale v0.6.0 download references to the
   current v0.9.0 release.
+- v0.10 Phase 5 (release qualification): corrected `docs/LINUX_INSTALL.md`,
+  which was still titled and exampled for the `v0.3.0` release (including a
+  literal `bytefray-0.3.0-py3-none-any.whl` install command that no longer
+  matches any current release asset), to track the current release the way
+  `INSTALL.md` already does. Lightly reworded the same currency-confusion
+  in README's Linux callout. Added a portable-applications section to
+  `INSTALL.md` documenting that the four portable executables are
+  self-contained and do not share one agents/replays catalog unless
+  `BYTEFRAY_ROOT` is set explicitly (each defaults to its own directory —
+  intentional, existing, tested behavior; this was previously undocumented
+  for the portable distribution specifically, unlike the installed case
+  where the installer sets a shared machine-level `BYTEFRAY_ROOT`
+  automatically). Recorded the required pre-1.0 branding/visual-integration
+  gate in `docs/ROADMAP.md` and the README roadmap table so v1.0 cannot be
+  read as an automatic next step after v0.10 stabilization.
+- v0.10 release preparation: investigated a reported garbled character
+  (`ù`) in the packaged replay client's `--help` description text. The
+  source (`client/src/battle_client/cli.py`) contains a correct UTF-8 em
+  dash; confirmed byte-for-byte and confirmed rendering correctly in a
+  native Windows console regardless of active code page (Python 3.6+'s
+  `PEP 528` console handling writes Unicode directly through the Win32
+  console API there). The garbled character only appears when output is
+  captured through a non-native-console path (redirected output, a
+  pseudo-terminal) where that direct-Unicode path isn't available and
+  Python falls back to encoding through the legacy ANSI code page — a
+  terminal/log-rendering artifact of that fallback, not a source or
+  packaging defect. No source change made.
 
 ## [0.9.0] - 2026-08-11
 

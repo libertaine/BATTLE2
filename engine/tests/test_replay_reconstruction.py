@@ -16,7 +16,12 @@ from battle_engine.agent_state import Agent
 from battle_engine.builtins import build_agent
 from battle_engine.config import Config, Weights
 from battle_engine.core import HALT, NOP, enc
-from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
+from battle_engine.match_service import (
+    MatchEntrant,
+    MatchRequest,
+    NativeMatchService,
+    canonical_match_id,
+)
 from battle_engine.replay import (
     KillDeathEvent,
     MatchResult,
@@ -519,6 +524,34 @@ def test_match_id_changes_with_meaningful_config_or_code_changes(tmp_path):
     )
     assert different_seed.match_id != baseline.match_id
     assert different_code.match_id != baseline.match_id
+
+
+def test_canonical_match_id_changes_if_ruleset_identity_changes(monkeypatch, tmp_path):
+    """v0.10 Phase 4: Ruleset identity is a first-class, live input to
+    ``canonical_match_id``'s hash payload, not decorative -- two otherwise-
+    identical execution inputs must never collide under one ``match_id`` if
+    they ran under different declared gameplay semantics. There is only one
+    Ruleset today, so this is proven by monkeypatching the canonical
+    constant ``canonical_match_id`` actually reads (rather than requiring a
+    real second Ruleset to exist) and confirming the computed id changes.
+    """
+
+    entrants = (
+        MatchEntrant("A", "a", 0, build_agent("runner", 0)),
+        MatchEntrant("B", "b", 16, build_agent("runner", 16)),
+    )
+    request = MatchRequest(
+        _config(arena_size=32), entrants, max_ticks=2,
+        replay_path=tmp_path / "replay.jsonl", verbose=False,
+    )
+    baseline_id = canonical_match_id(request)
+
+    monkeypatch.setattr(
+        "battle_engine.match_service.BYTEFRAY_RULESET_ID", "bytefray-rules-2-hypothetical"
+    )
+    changed_id = canonical_match_id(request)
+
+    assert changed_id != baseline_id
 
 
 def test_result_id_changes_when_outcome_differs_for_same_match_id(tmp_path):

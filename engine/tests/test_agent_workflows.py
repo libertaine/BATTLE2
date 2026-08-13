@@ -199,7 +199,7 @@ def test_completed_match_reuses_real_result_json_for_authoritative_fields(tmp_pa
         f"replay: {replay_path}\n"
         f"summary: {tmp_path / 'summary.json'}\n"
         "\n"
-        f"Run 'bytefray replay {replay_path}' to inspect it.\n"
+        f"Run 'bytefray replay --replay {replay_path}' to inspect it.\n"
     )
 
     presentation = build_development_test_presentation(0, stdout, "", agent_id="my_agent")
@@ -445,7 +445,7 @@ def test_replay_hint_line_is_ignored_not_treated_as_structured_data():
         "replay: /r/replay.jsonl\n"
         "summary: /r/summary.json\n"
         "\n"
-        "Run 'bytefray replay /r/replay.jsonl' to inspect it.\n"
+        "Run 'bytefray replay --replay /r/replay.jsonl' to inspect it.\n"
     )
 
     presentation = build_development_test_presentation(0, stdout, "", agent_id="my_agent")

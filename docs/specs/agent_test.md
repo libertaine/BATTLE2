@@ -927,7 +927,7 @@ result: <data_root>/runs/agents_test/my_agent/20260808T211055123456-a1b2c3d4-vs-
 replay: <data_root>/runs/agents_test/my_agent/20260808T211055123456-a1b2c3d4-vs-reference/replay.jsonl
 summary: <data_root>/runs/agents_test/my_agent/20260808T211055123456-a1b2c3d4-vs-reference/summary.json
 
-Run 'bytefray replay <replay-path>' to inspect it.
+Run 'bytefray replay --replay <replay-path>' to inspect it.
 ```
 
 If either entrant forfeited, one additional line per forfeited entrant,
@@ -1052,7 +1052,7 @@ failure kinds.
 Restated from the task's own scope boundary, for this spec's completeness:
 
 - GUI test controls, automatically opening the replay viewer, or live
-  match viewing (§0/§1 — `bytefray replay <path>` remains a separate,
+  match viewing (§0/§1 — `bytefray replay --replay <path>` remains a separate,
   explicit next step).
 - Mixed VM/Python matches, Redcode/pMARS development testing — unsupported
   everywhere in this codebase today, not something this phase changes.
@@ -1286,7 +1286,7 @@ itself, per the task's "do not modify production code/tests" instruction):
   bytefray agents create my_agent
   bytefray agents validate my_agent
   bytefray agents test my_agent
-  bytefray replay <reported-replay-path>
+  bytefray replay --replay <reported-replay-path>
   ```
 
 - A new short section, "Development-test your agent" (or similar), placed

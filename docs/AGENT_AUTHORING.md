@@ -1,7 +1,7 @@
 # Bytefray Agent Authoring Guide
 
 Bytefray supports built-in and blob entrants in the native VM, Python agents in
-experimental Python-versus-Python matches, and Redcode warriors through the
+homogeneous Python-versus-Python matches, and Redcode warriors through the
 separate pMARS backend. Mixed Python/VM matches are not yet supported.
 
 ## Agent forms
@@ -104,7 +104,7 @@ modify → repeat**:
 bytefray agents create my_agent
 bytefray agents validate my_agent
 bytefray agents test my_agent
-bytefray replay <reported-replay-path>
+bytefray replay --replay <reported-replay-path>
 ```
 
 See [AGENT_API_V1.md](AGENT_API_V1.md) for the full loading, lifecycle, and
@@ -165,7 +165,7 @@ replay: <data_root>/runs/agents_test/my_agent/<run-label>/replay.jsonl
 summary: <data_root>/runs/agents_test/my_agent/<run-label>/summary.json
 trace: <data_root>/runs/agents_test/my_agent/<run-label>/trace.jsonl
 
-Run 'bytefray replay <replay-path>' to inspect it.
+Run 'bytefray replay --replay <replay-path>' to inspect it.
 Run 'bytefray agents inspect <run-dir>' to inspect decisions.
 ```
 
@@ -219,7 +219,7 @@ infrastructure, not user code, so its own failure means the tool or its
 bundled fixture is broken -- not a result about your agent.
 
 `bytefray agents test` never opens the replay viewer automatically; run
-the printed `bytefray replay <path>` command as a separate, explicit next
+the printed `bytefray replay --replay <path>` command as a separate, explicit next
 step. If you want to compare more than one opponent, or run more than a
 short development match, use `bytefray tournament` or `bytefray run`
 directly -- see [TOURNAMENTS.md](TOURNAMENTS.md).

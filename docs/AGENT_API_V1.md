@@ -54,6 +54,51 @@ match seed, slot/order, canonical slot ID, and Agent API version. Python's
 randomized `hash()` is not used, and one entrant consuming random values cannot
 advance another entrant's stream.
 
+### Frozen entrant-seed derivation (Agent API v1 invariant)
+
+The exact derivation algorithm below is part of the Agent API v1 contract,
+not a separately versioned RNG axis — see
+[COMPATIBILITY.md](COMPATIBILITY.md). It is specified here precisely enough
+for an independent implementation to reproduce it byte-for-byte:
+
+1. Build a material string from, in this exact field order, separated by
+   NUL (`\0`) bytes:
+   - the literal prefix `battle2-python-v1`;
+   - the match seed (`Config.seed`), as its decimal string representation;
+   - the entrant's slot/order index, as its decimal string representation;
+   - the entrant's canonical agent ID string; and
+   - the Agent API version in effect (`1`), as its decimal string
+     representation.
+2. Encode that material string as UTF-8.
+3. Compute its SHA-256 digest.
+4. Take the digest's first 16 bytes.
+5. Interpret those 16 bytes as a big-endian unsigned integer. That integer
+   is the entrant's derived seed, passed to `random.Random(seed)`.
+
+Equivalently, in the exact form currently shipping
+(`battle_engine.python_runtime.derive_agent_seed`):
+
+```python
+def derive_agent_seed(
+    match_seed: int, slot: int, agent_id: str, api_version: int = AGENT_API_VERSION
+) -> int:
+    material = f"battle2-python-v1\0{match_seed}\0{slot}\0{agent_id}\0{api_version}"
+    digest = hashlib.sha256(material.encode("utf-8")).digest()
+    return int.from_bytes(digest[:16], "big")
+```
+
+This literal formula — prefix, field order, NUL separators, SHA-256,
+first-16-bytes, big-endian interpretation — is frozen for Agent API v1.
+Golden-vector regression tests
+(`engine/tests/test_python_runtime.py::test_derive_agent_seed_golden_vectors`)
+pin literal expected integers for fixed inputs so an accidental change to
+this formula is caught immediately, not just a change in relative
+behavior. **Any incompatible change to this derivation — a different
+prefix, field order, separator, hash algorithm, byte selection, or integer
+interpretation — requires bumping `AGENT_API_VERSION` to `2`**, exactly
+like any other incompatible Agent API change; it does not get an
+independent `RNG_VERSION`/`RNG_COMPATIBILITY_ID` of its own.
+
 ## Observation
 
 `Observation` is frozen and contains only:
@@ -138,11 +183,11 @@ metadata belongs with later result/replay normalization.
 - Python entrants are not vulnerable to arena code corruption.
 - `bytefray run`/tournament still run every Python entrant in-process with
   no hard timeout, exactly as above -- a non-returning callback there is
-  still only interruptible by an operator's Ctrl-C/`SystemExit`. As of the
-  (unreleased) Agent Lab work, `bytefray agents test`/`agents validate`
+  still only interruptible by an operator's Ctrl-C/`SystemExit`. Since the
+  Agent Lab work (v0.5.0), `bytefray agents test`/`agents validate`
   optionally run each Python entrant's `load`/`reset`/`act` calls through
   one whole-match-lifetime worker subprocess instead, with a per-call
-  timeout; see `docs/specs/agent_lab.md`. This is development-time hang
+  timeout; see `docs/AGENT_LAB.md`. This is development-time hang
   containment, not a security sandbox, and is not (yet) available to
   `bytefray run`/tournament.
 - Python replication and vulnerable-core designs are not implemented.
@@ -150,3 +195,18 @@ metadata belongs with later result/replay normalization.
   native service; mixed-runtime tournament divisions remain unsupported.
 - Type hints and method signatures are not statically enforced at load time;
   incompatible calls become controlled reset or act failures.
+
+## Stability boundary for 1.0
+
+The loading/lifecycle contract, `Observation`/`AgentAction`, the
+deterministic RNG derivation above, homogeneous Python-vs-Python
+scheduling, and failure/forfeit semantics described in this document are a
+**stable contract candidate for Bytefray 1.0** — see
+[COMPATIBILITY.md](COMPATIBILITY.md) and `docs/ROADMAP.md`. This
+supersedes any earlier blanket description of the whole Python runtime as
+"experimental"; what remains explicitly unsupported/experimental for 1.0
+is narrower and listed there: mixed VM/Python matches, security
+sandboxing (the worker-subprocess timeout containment above is
+development-time hang containment, not a sandbox), hard callback
+containment on every `bytefray run`/tournament execution path,
+replication, and corruptible Python-core designs.

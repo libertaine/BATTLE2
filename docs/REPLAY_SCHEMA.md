@@ -28,19 +28,72 @@ v0.1/native formats. See [RESULT_SCHEMA.md](RESULT_SCHEMA.md).
 
 ### Compatibility note: v3 was extended in place, not versioned to v4
 
-`battle2.replay` v3 was introduced in the same `v0.3-foundation` development
-branch as this extension and has never appeared in a tagged release (see
-CHANGELOG.md) -- earlier v3 output only existed as regenerable local/CI
-artifacts, not as a format any external consumer depended on. The fields
-described below (`runtime_kind`, memory-diff `values`, the tick-zero initial
-state record, terminal `agents`, per-agent register/termination state) were
-therefore added directly to schema version 3 rather than introduced as a new
-version 4. All new fields have safe, explicit defaults (`None`, `()`, or
-absence), so a reader encountering an older, pre-extension v3 file (or a
-genuine v0.1/v0.2 file) still parses it correctly -- it simply sees the new
-fields as absent/default rather than populated. A future incompatible change
-to the wire shape (not just an additive field) should bump `SCHEMA_VERSION`
+`battle2.replay` v3 was introduced, and then extended with the fields
+described below, in the same `v0.3-foundation` development branch, hours
+apart and both before `v0.3.0` was tagged -- so at the time of the
+extension, no tagged release yet existed that depended on the
+pre-extension v3 record shape; earlier v3 output only existed as
+regenerable local/CI artifacts. (`battle2.replay` v3, in this already-
+extended form, has since shipped in every tagged release from `v0.3.0`
+onward -- see CHANGELOG.md -- so it is not correct to say today that v3
+"has never appeared in a tagged release"; the point this note preserves is
+narrower: no *tagged release* ever shipped the pre-extension shape that
+would need to keep reading.) The fields described below (`runtime_kind`,
+memory-diff `values`, the tick-zero initial state record, terminal
+`agents`, per-agent register/termination state) were therefore added
+directly to schema version 3 rather than introduced as a new version 4.
+All new fields have safe, explicit defaults (`None`, `()`, or absence), so
+a reader encountering an older, pre-extension v3 file (or a genuine
+v0.1/v0.2 file) still parses it correctly -- it simply sees the new fields
+as absent/default rather than populated. A future incompatible change to
+the wire shape (not just an additive field) should bump `SCHEMA_VERSION`
 rather than repeat this reasoning.
+
+### Ruleset identity
+
+`ReplayHeader.ruleset_id` (v0.10 Phase 4) is an *additive* header field:
+the Bytefray gameplay Ruleset identity (`battle_engine.rules.
+BYTEFRAY_RULESET_ID`, see [RULES.md](RULES.md)) this match executed under.
+One discriminator per match, on the header only -- the identical precedent
+`runtime_kind` already establishes ("it is not repeated per tick or per
+agent"; see "Runtime-kind semantics" below). It is **required for current
+native writers** -- `match_service._finalize_native_artifacts` sets it to
+`"bytefray-rules-1"` on every header it produces, VM or Python -- but it is
+**not required for all historical artifacts**: any header written before
+this field existed simply has it absent (`None`), and remains fully
+readable.
+
+No `SCHEMA_VERSION` bump was required: schema version 3 was already
+designed to be extended in place with safe, explicit-default additive
+fields (see "Compatibility note" above), and this addition follows that
+exact precedent -- every released reader accepts an unrecognized top-level
+key on a header record (verified directly against the `v0.9.0`-tagged
+`replay.py` in an isolated worktree, not merely inferred). `battle_engine.
+replay.resolve_replay_ruleset(header)` gives the honest,
+confidence-qualified answer for a header that predates the field:
+`"recorded"` when present, `"recovered"` `bytefray-rules-1` for a header
+whose `schema_version` is **exactly** `3` (not `>= 3`) and is missing it
+(schema version 3 never existed before the v0.3.0 development branch that
+also established the currently-frozen gameplay semantics -- see
+[RULES.md](RULES.md)), or `"unknown"` for anything else, including a
+schema-version-2 header and any future schema version greater than 3.
+Schema version 2 deliberately does **not** recover: it was genuinely the
+pre-rename `v0.2.0` release's own canonical wire format (confirmed by
+inspecting that tag's own `replay.py`), so a schema-version-2 header
+cannot be proven to fall inside the source-proven-stable v0.3.0+ window --
+treating it as `"recovered"` would be a guess, not evidence. The check is
+deliberately exact equality rather than `>=` so that a future schema
+version 4+ is never silently auto-recovered by this function without a
+deliberate decision (and update to this function) establishing that it
+belongs in the same proven window -- an unrelated future wire-shape change
+is not automatically also a Ruleset-provenance fact.
+
+`ruleset_id` **is** a first-class input to `match_id`'s hash payload as of
+v0.10 Phase 4 -- see [RESULT_SCHEMA.md](RESULT_SCHEMA.md#identity-recipe)
+for the full rationale and the documented native-ID transition this
+causes, which applies identically here: `replay_id`/`match_id`/`result_id`
+on the header are the same three IDs `result.json` carries, computed by
+the same `canonical_match_id`.
 
 ### Runtime-kind semantics
 
@@ -251,7 +304,9 @@ names. `MatchConfiguration` contains `arena_size`, `instr_per_tick`, `seed`,
 `result_id`, `runtime_kind` (`"vm"` or `"python"`, see "Runtime-kind semantics"
 above), `reproducibility` (mirrors `result.json`'s `reproducibility`), and
 `entrants` (identity/metadata per entrant, mirroring `result.json`'s
-`entrants` shape).
+`entrants` shape). `ruleset_id` (v0.10 Phase 4, see "Ruleset identity"
+above) is present (non-null) only on a header produced by a current native
+writer; absent on any header written before that field existed.
 
 ### Tick
 

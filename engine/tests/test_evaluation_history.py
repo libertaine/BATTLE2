@@ -7,7 +7,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from battle_engine.agent_evaluation import SCHEMA_VERSION, EvaluationRequest, EvaluationService
+from battle_engine.agent_evaluation import (
+    EVALUATION_RULES_COMPATIBILITY_ID,
+    SCHEMA_VERSION,
+    EvaluationRequest,
+    EvaluationService,
+)
 from battle_engine.evaluation_history import (
     AmbiguousSelectorError,
     ArtifactReadError,
@@ -94,7 +99,7 @@ def test_v2_round_trip_via_adapt_any(tmp_path: Path):
     assert summary.candidate_id == "candidate"
     assert summary.lifecycle_state.value == "finished"
     assert summary.lifecycle_state.confidence == FieldConfidence.RECORDED
-    assert summary.rules_compatibility_id.value == "evaluation-rules-1"
+    assert summary.rules_compatibility_id.value == EVALUATION_RULES_COMPATIBILITY_ID
     assert len(summary.cells) == 1
     cell = summary.cells[0]
     assert cell.opponent_index.confidence == FieldConfidence.RECORDED

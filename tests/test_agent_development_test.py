@@ -102,7 +102,7 @@ def _completed_stdout(
         f"replay: {replay_path}\n"
         f"summary: {summary_path}\n"
         "\n"
-        f"Run 'bytefray replay {replay_path}' to inspect it.\n"
+        f"Run 'bytefray replay --replay {replay_path}' to inspect it.\n"
     )
 
 

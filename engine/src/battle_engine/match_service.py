@@ -43,6 +43,7 @@ from battle_engine.result_model import (
     write_json_atomic,
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
+from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
@@ -501,7 +502,23 @@ def _identity_safe_diagnostic(diagnostic: Any) -> dict[str, Any] | None:
 
 
 def canonical_match_id(request: MatchRequest) -> str:
-    """Derive canonical match identity entirely from request inputs."""
+    """Derive canonical match identity entirely from request inputs.
+
+    Includes ``BYTEFRAY_RULESET_ID`` as a first-class identity axis, sibling
+    to ``reproducibility``/``entrants`` (v0.10 Phase 4) -- never folded into
+    ``reproducibility``, which is specifically about per-match
+    *configuration*, not gameplay identity (see docs/RULES.md's
+    "Configuration values are not Ruleset identity"). Two otherwise-identical
+    execution inputs must never collide under one ``match_id`` if they ran
+    under different declared gameplay semantics.
+
+    This is a deliberate, one-time native-ID transition: because exactly one
+    Ruleset has ever existed, adding it to this payload changes the
+    `match_id`/`result_id`/`replay_id` a v0.10+ build computes for the same
+    logical inputs relative to a pre-v0.10 build -- see
+    docs/RESULT_SCHEMA.md's "Identity recipe" and docs/COMPATIBILITY.md for
+    the full rationale and the resume-compatibility consequence.
+    """
 
     entrant_identities = []
     for slot, entrant in enumerate(request.entrants):
@@ -543,7 +560,12 @@ def canonical_match_id(request: MatchRequest) -> str:
     }
     return stable_id(
         "match",
-        {"mode": "b2", "reproducibility": reproducibility, "entrants": entrant_identities},
+        {
+            "mode": "b2",
+            "ruleset_id": BYTEFRAY_RULESET_ID,
+            "reproducibility": reproducibility,
+            "entrants": entrant_identities,
+        },
     )
 
 
@@ -615,6 +637,7 @@ def _finalize_native_artifacts(
                 runtime_kind=runtime_kind,
                 reproducibility=reproducibility,
                 entrants=tuple(entrants),
+                ruleset_id=BYTEFRAY_RULESET_ID,
                 schema_version=3,
             )
         else:
@@ -680,6 +703,7 @@ def _finalize_native_artifacts(
             entrants=tuple(entrants),
             reproducibility=reproducibility,
             replay=ReplayReference(match_id, replay_digest, publish_path.name),
+            ruleset_id=BYTEFRAY_RULESET_ID,
         )
         write_json_atomic(result_path, envelope.as_dict())
         complete = True

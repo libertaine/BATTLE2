@@ -30,12 +30,31 @@ def configured_data_root(environ: Mapping[str, str] | None = None) -> Path | Non
 
 
 def _source_checkout_root() -> Path | None:
-    # .../engine/src/battle_engine/paths.py -> repository root at parents[3].
+    """Return the repository root iff this module is running from its own
+    known source-tree position, ``.../engine/src/battle_engine/paths.py``
+    (parents[3] is the repository root) -- covering both a plain source
+    checkout and a ``pip install -e .`` editable install, both of which
+    resolve ``__file__`` to that literal path rather than a copy.
+
+    Deliberately checks only that fixed structural suffix, not an unbounded
+    walk up every ancestor directory: a normal (non-editable) wheel install
+    copies this file into ``site-packages/battle_engine/paths.py``, and an
+    ancestor-name search (looking for *any* directory above the module that
+    happens to contain sibling ``engine/`` and ``client/`` subdirectories)
+    would misidentify that installed copy as a source checkout whenever the
+    installing virtualenv happens to be created underneath an unrelated
+    checkout that contains its own ``engine/``/``client/`` directories --
+    confirmed by installing the built wheel into a venv nested under this
+    very repository, which silently redirected the writable data root to
+    the repository's own ``agents/`` directory instead of the documented
+    installed-platform default.
+    """
     module_path = Path(__file__).resolve()
-    candidates = [module_path.parents[3], *module_path.parents]
-    for candidate in candidates:
-        if (candidate / "engine").is_dir() and (candidate / "client").is_dir():
-            return candidate.resolve()
+    if module_path.parts[-4:-1] != ("engine", "src", "battle_engine"):
+        return None
+    candidate = module_path.parents[3]
+    if (candidate / "engine").is_dir() and (candidate / "client").is_dir():
+        return candidate.resolve()
     return None
 
 

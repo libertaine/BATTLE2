@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from battle_engine.rules import normalize_ruleset_id
+
 from .models import (
     EXECUTION_CONTEXT_REQUIRED_FIELD_TYPES,
     AdaptedCell,
@@ -212,9 +214,26 @@ def _conditions_fingerprint(summary: EvaluationSummary) -> str | None:
 
 
 def _rules_id(summary: EvaluationSummary) -> str | None:
+    """The recorded rules-compatibility id, normalized to its current spelling.
+
+    v0.10 Phase 4: a historical evaluation may have recorded the literal
+    ``"evaluation-rules-1"`` string a v0.7.0-v0.9.x writer wrote; a fresh
+    evaluation now records ``"bytefray-rules-1"``. Both denote the same
+    gameplay semantics for the entire period either has existed (see
+    docs/RULES.md's "Historical relationship to evaluation-rules-1"), so
+    the *alignment key* this feeds must treat them as one value -- without
+    this, a historical baseline could never strict-align against a fresh
+    comparison run merely because Phase 2 renamed the canonical spelling,
+    even though nothing about the gameplay itself changed.
+    :func:`~battle_engine.rules.normalize_ruleset_id` never rewrites the
+    artifact's own recorded value (``summary.rules_compatibility_id.value``
+    stays exactly what was read) -- only this comparison-time key.
+    """
+
     if summary.rules_compatibility_id.confidence == FieldConfidence.UNKNOWN:
         return None
-    return summary.rules_compatibility_id.value
+    value = summary.rules_compatibility_id.value
+    return normalize_ruleset_id(value) if isinstance(value, str) else None
 
 
 def _arena_alignment_id(summary: EvaluationSummary) -> str | None:

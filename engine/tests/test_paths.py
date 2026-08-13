@@ -102,6 +102,44 @@ def test_source_checkout_defaults_remain_repository_compatible():
     assert paths.get_resource_root() == repository
 
 
+def test_source_checkout_detection_matches_expected_source_layout(monkeypatch, tmp_path):
+    repository = tmp_path / "repo"
+    module_path = repository / "engine" / "src" / "battle_engine" / "paths.py"
+    module_path.parent.mkdir(parents=True)
+    module_path.write_text("# stand-in for the real source file\n")
+    (repository / "client").mkdir()
+    monkeypatch.setattr(paths, "__file__", str(module_path))
+
+    assert paths._source_checkout_root() == repository.resolve()
+
+
+def test_source_checkout_detection_ignores_unrelated_ancestor_checkout(monkeypatch, tmp_path):
+    """Regression: installing the built wheel into a venv nested under this
+    repository's own checkout previously redirected the writable data root
+    to the repository's ``agents/`` directory instead of the documented
+    installed-platform default, because the old detection walked every
+    ancestor directory looking for sibling engine/+client/ folders rather
+    than checking this module's own known source-tree position.
+    """
+    unrelated_checkout = tmp_path / "unrelated checkout"
+    (unrelated_checkout / "engine").mkdir(parents=True)
+    (unrelated_checkout / "client").mkdir()
+    installed_module = (
+        unrelated_checkout
+        / ".venv"
+        / "lib"
+        / "python3.12"
+        / "site-packages"
+        / "battle_engine"
+        / "paths.py"
+    )
+    installed_module.parent.mkdir(parents=True)
+    installed_module.write_text("# stand-in for an installed (non-editable) copy\n")
+    monkeypatch.setattr(paths, "__file__", str(installed_module))
+
+    assert paths._source_checkout_root() is None
+
+
 def test_regular_install_uses_package_container_for_resources(monkeypatch):
     monkeypatch.setattr(paths, "_source_checkout_root", lambda: None)
 

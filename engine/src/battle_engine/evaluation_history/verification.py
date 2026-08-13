@@ -176,6 +176,14 @@ def verify_cell(
         return CellVerificationOutcome(
             cell.schedule_id, True, False, "replay header result_id does not match result envelope"
         )
+    if header.ruleset_id != envelope.ruleset_id:
+        return CellVerificationOutcome(
+            cell.schedule_id,
+            True,
+            False,
+            f"replay header ruleset_id {header.ruleset_id!r} does not match result "
+            f"envelope ruleset_id {envelope.ruleset_id!r}",
+        )
 
     # H1: the result's own result_id, as recorded on the evaluation cell,
     # must match what the canonical result actually carries -- catches a

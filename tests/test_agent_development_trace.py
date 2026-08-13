@@ -196,7 +196,7 @@ def test_stdout_trace_line_is_parsed_into_presentation(tmp_path):
         f"summary: {summary_path}\n"
         f"trace: {trace_path}\n"
         "\n"
-        f"Run 'bytefray replay {replay_path}' to inspect it.\n"
+        f"Run 'bytefray replay --replay {replay_path}' to inspect it.\n"
     )
 
     presentation = build_development_test_presentation(0, stdout, "", agent_id="example")

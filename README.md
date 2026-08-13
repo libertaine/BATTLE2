@@ -5,7 +5,7 @@
 
 **Bytefray** is a programmable-agent arena, inspired by Core War, where deterministic VM and Python agents compete in a shared memory arena. It supports:
 
-- Python agent discovery, Agent API v1 validation, and experimental Python-vs-Python matches
+- Python agent discovery, Agent API v1 validation, and homogeneous Python-vs-Python matches
 - Precompiled binary “blob” agents  
 - Integration with pMARS (Redcode) for interop  
 - Replay viewing and agent design tools  
@@ -73,8 +73,8 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 0.7.0 | Evaluation History | Released — `bytefray.evaluation` v2, persistent evaluation history (`evaluations list`/`show`/`compare`), execution provenance, and reproducibility-aware comparison against a stable baseline. **Major hardening:** frozen execution identity, local-source fingerprinting, resume/retry durability, malformed-artifact isolation, fail-closed execution-context validation, and replay/path containment. |
 | 0.8.0 | Agent Revision & Provenance | Released — durable identity/provenance for agent revisions, so historical evaluation results stay meaningful as an agent's source keeps evolving: a content-addressed revision store, freeze-time archival wired into `agents evaluate` (schema v3's additive `agent_revisions` field), revision-aware `evaluations show`/`--verify`, and `agents revisions list`/`show`/`restore`. **Major hardening:** fail-closed restore/snapshot verification, cross-platform artifact path containment, and Windows junction/reparse-point containment. |
 | 0.9.0 | Orientation-Aware Evaluation | Released — closed a structural first-mover bias present in every `agents evaluate` cell ever run (the candidate always occupied the always-first-acting physical slot; a shipped starter agent already documented and exploited this). Both entrant orientations (`candidate_first`/`opponent_first`) now run by default as independent, fully provenance-tracked cells; `--single-orientation` restores the exact legacy methodology. `bytefray.evaluation` bumps to schema/identity v4; every evaluation also now explicitly discloses that arena alignment is fixed (translation robustness remains research work, not yet evaluated). A ruleset-review investigation conducted during v0.9 development (scoring counterfactuals, capped-territory experiments) found no gameplay-rule change justified yet, and reprioritized this entrant-orientation fix ahead of it, on the reasoning that the tool measuring the rules needed fixing first. |
-| 0.10.0 | Platform Stabilization / v1.0 Readiness | Planned — a stabilization release, not another feature release: freeze the Bytefray 1.0 rules contract, decide (with v0.9's translation-robustness research already in hand) whether arena-placement robustness should join entrant orientation as an evaluated dimension, define which interfaces v1.x commits to keeping stable, clarify supported product boundaries, perform release qualification, and polish the first-user workflow. See [docs/ROADMAP.md](docs/ROADMAP.md). |
-| 1.0.0 | Stable Bytefray Platform | Planned — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. If v0.10 finds no major architectural problem, v1.0 follows without another broad pre-1.0 feature cycle. See [docs/ROADMAP.md](docs/ROADMAP.md). |
+| 0.10.0 | Platform Stabilization / v1.0 Readiness | Released — a stabilization release, not another feature release: froze the Bytefray 1.0 rules contract (`bytefray-rules-1`), closed the entrant-orientation-vs-translation evaluation-methodology question, defined the stable Agent API v1 and compatibility model, persisted Ruleset identity into native result/replay artifacts, hardened canonical match identity, and completed release qualification and first-user-workflow/packaging fixes. See [docs/ROADMAP.md](docs/ROADMAP.md). |
+| 1.0.0 | Stable Bytefray Platform | Planned — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. If v0.10 finds no major architectural problem, v1.0 follows without another broad pre-1.0 feature cycle. **Blocked on a required pre-1.0 branding/visual-integration gate** (executable/installer icons, GitHub/README imagery, representative screenshots) identified during v0.10 release qualification — see [docs/ROADMAP.md](docs/ROADMAP.md#required-pre-10-gate-brandingvisual-release-integration). |
 
 **Future plans (post-1.0):** substantial ideas are deliberately kept out of
 v1.0's required scope so it isn't held hostage to every interesting
@@ -97,10 +97,11 @@ not promised for any specific release.
 - [Agent Authoring Guide](docs/AGENT_AUTHORING.md)
 - [Agent Lab: trace, inspect, diverge, timeouts](docs/AGENT_LAB.md)
 - [Agent API v1 Technical Contract](docs/AGENT_API_V1.md)
-- [Current Native VM Rules Reference](docs/RULES.md)
+- [Bytefray Ruleset v1 Reference](docs/RULES.md)
 - [Canonical Result Schema](docs/RESULT_SCHEMA.md)
 - [Replay Schema](docs/REPLAY_SCHEMA.md)
 - [Headless Tournament Service](docs/TOURNAMENTS.md)
+- [Compatibility Reference](docs/COMPATIBILITY.md)
 - [Roadmap: v0.10 and v1.0](docs/ROADMAP.md)
 - [Future Plans (post-1.0)](docs/FUTURE_PLANS.md)
 
@@ -171,7 +172,7 @@ Uninstall removes installed programs and shortcuts but retains `%ProgramData%\BA
 Remove that directory manually only when its agents, replays, logs, and settings
 are no longer needed.
 
-> **Linux:** The v0.3 wheel is headless-first. See
+> **Linux:** The wheel has been headless-first since v0.3.0. See
 > [Linux wheel installation](docs/LINUX_INSTALL.md) for virtual-environment,
 > XDG data, starter-agent, optional GUI, and current pMARS guidance.
 
@@ -303,12 +304,12 @@ and the active Agent API, result, and replay schema versions.
 
 | Type    | File         | Execution Path            | Notes                                    |
 | ------- | ------------ | ------------------------- | ---------------------------------------- |
-| Python  | `agent.py`   | Agent API v1 Python-only runtime | Experimental; mixed VM/Python matches are not implemented |
+| Python  | `agent.py`   | Agent API v1 Python-only runtime | Stable candidate for 1.0 (homogeneous Python-vs-Python only); mixed VM/Python matches are not implemented |
 | Blob    | `model.blob` | Loaded directly by engine | Faster, minimal runtime                  |
 | Redcode | `.red/.asm`  | Via pMARS integration     | Compatible with existing Core War agents |
 
 * A directory containing **Python** source is discoverable, validated, and can
-  execute against another Python agent through the experimental Python-vs-Python
+  execute against another Python agent through the homogeneous Python-vs-Python
   runtime. Mixed Python/VM matches remain unsupported.
 * Use **blob** when you want to ship just the low-level compiled version.
 * The **Redcode** mode allows interop with legacy Core War agents (via pMARS). Use `--mode redcode94`.
