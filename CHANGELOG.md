@@ -5,7 +5,16 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
-### Branding / presentation (pre-1.0 gate, in progress on `v1.0-rc1-branding`)
+## [1.0.0-rc1] - 2026-08-13
+
+Bytefray v1.0.0's first release candidate. This closes the required pre-1.0
+branding/visual-integration gate identified during v0.10 qualification (see
+[docs/ROADMAP.md](docs/ROADMAP.md#required-pre-10-gate-brandingvisual-release-integration))
+on top of the already-stabilized v0.10.0 platform; no gameplay, Agent API,
+Ruleset, or evaluation-schema change is included. Final `v1.0.0` follows once
+RC1 qualification is complete.
+
+### Branding / presentation
 
 - Added production Bytefray visual assets (`assets/branding/`): icon,
   horizontal logo, and the source brand sheet.
@@ -20,8 +29,6 @@ This changelog records notable user- and developer-visible changes to Bytefray
   source checkout, a frozen build, and a wheel install alike.
 - Added the horizontal logo and two representative product screenshots
   (Agent Designer, Replay Viewer) to the README.
-- See [docs/ROADMAP.md](docs/ROADMAP.md#required-pre-10-gate-brandingvisual-release-integration)
-  for the gate this closes out and what remains before `v1.0.0-rc1`.
 
 ## [0.10.0] - 2026-08-12
 
