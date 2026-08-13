@@ -5,6 +5,31 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [1.0.0-rc1] - 2026-08-13
+
+Bytefray v1.0.0's first release candidate. This closes the required pre-1.0
+branding/visual-integration gate identified during v0.10 qualification (see
+[docs/ROADMAP.md](docs/ROADMAP.md#required-pre-10-gate-brandingvisual-release-integration))
+on top of the already-stabilized v0.10.0 platform; no gameplay, Agent API,
+Ruleset, or evaluation-schema change is included. Final `v1.0.0` follows once
+RC1 qualification is complete.
+
+### Branding / presentation
+
+- Added production Bytefray visual assets (`assets/branding/`): icon,
+  horizontal logo, and the source brand sheet.
+- Wired the production icon into all four PyInstaller executables
+  (`battle2`, `battle-cli`, `battle-agent-designer`,
+  `battle-replay-viewer`) and the Windows installer
+  (`SetupIconFile`/`UninstallDisplayIcon`).
+- Added a runtime window icon to Agent Designer
+  (`QApplication.setWindowIcon`) and Replay Viewer
+  (`pygame.display.set_icon`), resolved through a new
+  `battle_engine.paths.get_branding_icon_path()` helper that works from a
+  source checkout, a frozen build, and a wheel install alike.
+- Added the horizontal logo and two representative product screenshots
+  (Agent Designer, Replay Viewer) to the README.
+
 ## [0.10.0] - 2026-08-12
 
 v0.10's theme: **Platform Stabilization / v1.0 Readiness**. This is a

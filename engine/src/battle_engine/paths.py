@@ -113,6 +113,36 @@ def get_resource_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def get_branding_icon_path(filename: str = "bytefray-icon.png") -> Path | None:
+    """Return the packaged Bytefray branding icon for the current run
+    context, or ``None`` if it cannot be found.
+
+    Checked in order under :func:`get_resource_root`:
+
+    1. ``assets/branding/<filename>`` -- the canonical tree. Present
+       directly in a source checkout, and bundled wholesale into frozen
+       PyInstaller GUI builds (both GUI specs already collect the
+       repository-root ``assets/`` directory).
+    2. ``app/assets/branding/<filename>`` -- a synced runtime copy that
+       exists only because a wheel install can only expose package-data
+       files that live inside an installed package directory, not the
+       repository-root ``assets/`` tree. ``tools/generate_brand_assets.ps1``
+       writes both copies from the same source crop, so they cannot drift.
+
+    Callers must treat ``None`` as a normal, silent case (skip the icon)
+    rather than an error -- this deliberately never raises, so a missing or
+    unbundled icon never blocks unrelated GUI or headless operation.
+    """
+    root = get_resource_root()
+    for candidate in (
+        root / "assets" / "branding" / filename,
+        root / "app" / "assets" / "branding" / filename,
+    ):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def get_data_root(environ: Mapping[str, str] | None = None) -> Path:
     """Return the writable root for agents, replays, logs, and user config."""
     values = os.environ if environ is None else environ

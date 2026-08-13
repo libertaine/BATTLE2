@@ -1,6 +1,10 @@
 
 # Bytefray
 
+<p align="center">
+  <img src="assets/branding/bytefray-logo-horizontal.png" alt="Bytefray logo" width="420">
+</p>
+
 *(formerly BATTLE2)*
 
 **Bytefray** is a programmable-agent arena, inspired by Core War, where deterministic VM and Python agents compete in a shared memory arena. It supports:
@@ -74,7 +78,7 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 0.8.0 | Agent Revision & Provenance | Released — durable identity/provenance for agent revisions, so historical evaluation results stay meaningful as an agent's source keeps evolving: a content-addressed revision store, freeze-time archival wired into `agents evaluate` (schema v3's additive `agent_revisions` field), revision-aware `evaluations show`/`--verify`, and `agents revisions list`/`show`/`restore`. **Major hardening:** fail-closed restore/snapshot verification, cross-platform artifact path containment, and Windows junction/reparse-point containment. |
 | 0.9.0 | Orientation-Aware Evaluation | Released — closed a structural first-mover bias present in every `agents evaluate` cell ever run (the candidate always occupied the always-first-acting physical slot; a shipped starter agent already documented and exploited this). Both entrant orientations (`candidate_first`/`opponent_first`) now run by default as independent, fully provenance-tracked cells; `--single-orientation` restores the exact legacy methodology. `bytefray.evaluation` bumps to schema/identity v4; every evaluation also now explicitly discloses that arena alignment is fixed (translation robustness remains research work, not yet evaluated). A ruleset-review investigation conducted during v0.9 development (scoring counterfactuals, capped-territory experiments) found no gameplay-rule change justified yet, and reprioritized this entrant-orientation fix ahead of it, on the reasoning that the tool measuring the rules needed fixing first. |
 | 0.10.0 | Platform Stabilization / v1.0 Readiness | Released — a stabilization release, not another feature release: froze the Bytefray 1.0 rules contract (`bytefray-rules-1`), closed the entrant-orientation-vs-translation evaluation-methodology question, defined the stable Agent API v1 and compatibility model, persisted Ruleset identity into native result/replay artifacts, hardened canonical match identity, and completed release qualification and first-user-workflow/packaging fixes. See [docs/ROADMAP.md](docs/ROADMAP.md). |
-| 1.0.0 | Stable Bytefray Platform | Planned — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. If v0.10 finds no major architectural problem, v1.0 follows without another broad pre-1.0 feature cycle. **Blocked on a required pre-1.0 branding/visual-integration gate** (executable/installer icons, GitHub/README imagery, representative screenshots) identified during v0.10 release qualification — see [docs/ROADMAP.md](docs/ROADMAP.md#required-pre-10-gate-brandingvisual-release-integration). |
+| 1.0.0 | Stable Bytefray Platform | Planned — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. If v0.10 finds no major architectural problem, v1.0 follows without another broad pre-1.0 feature cycle. The required pre-1.0 branding/visual-integration gate (executable/installer icons, GitHub/README imagery, representative screenshots) identified during v0.10 release qualification is now integrated on `v1.0-rc1-branding`; **still blocked on RC-level qualification and versioning** before a `v1.0.0` tag — see [docs/ROADMAP.md](docs/ROADMAP.md#required-pre-10-gate-brandingvisual-release-integration). |
 
 **Future plans (post-1.0):** substantial ideas are deliberately kept out of
 v1.0's required scope so it isn't held hostage to every interesting
@@ -365,7 +369,17 @@ Trace Inspector dialog over that test's `trace.jsonl`). See the
 [Agent Authoring Guide](docs/AGENT_AUTHORING.md) and
 [Agent Lab](docs/AGENT_LAB.md) for details.
 
+### Screenshots
 
+<p align="center">
+  <img src="docs/screenshots/agent-designer.png" alt="Agent Designer running a match" width="480"><br>
+  <sub>Agent Designer — Simple tab after a Quick Match run</sub>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/replay-viewer.png" alt="Replay Viewer showing a paused, territory-split match" width="480"><br>
+  <sub>Replay Viewer — paused mid-match, showing territory split and the live history graph</sub>
+</p>
 
 ---
 

@@ -10,11 +10,11 @@ from battle_engine.launchers import (
     build_designer_match_arguments,
     build_match_command,
 )
-from battle_engine.paths import get_data_root
+from battle_engine.paths import get_branding_icon_path, get_data_root
 from battle_engine.project_info import get_project_info
 from battle_engine.starters import ensure_starter_agents
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, QUrl, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QTabWidget
 
 from app.services.agent_catalog import AgentCatalog
@@ -1034,6 +1034,9 @@ class AgentDesigner(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
+    icon_path = get_branding_icon_path()
+    if icon_path is not None:
+        app.setWindowIcon(QIcon(str(icon_path)))
     win = AgentDesigner()
     win.show()
     smoke_exit_ms = os.environ.get("BATTLE2_GUI_SMOKE_EXIT_MS", "").strip()

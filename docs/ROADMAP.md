@@ -164,19 +164,40 @@ The gate covers, narrowly:
 
 - production application/executable icons (the four PyInstaller
   applications: `battle2`, `battle-cli`, `battle-agent-designer`,
-  `battle-replay-viewer`);
-- Windows executable icon resources (`tools/*.spec`);
-- installer icon/branding (`tools/installer.iss`);
-- the Agent Designer/application icon specifically;
-- repository/GitHub visual assets (social preview, badges as applicable);
-- a horizontal/project logo asset;
-- README/GitHub-page imagery;
-- approximately two representative product screenshots; and
-- any other narrowly-justified release-facing visual integration.
+  `battle-replay-viewer`) — **done**;
+- Windows executable icon resources (`tools/*.spec`) — **done**;
+- installer icon/branding (`tools/installer.iss`) — **done**
+  (`SetupIconFile`/`UninstallDisplayIcon`; live installer-lifecycle smoke
+  under an elevated session is still open, see below);
+- the Agent Designer and Replay Viewer application icons specifically
+  (`QApplication.setWindowIcon` / `pygame.display.set_icon`, resolved via
+  `battle_engine.paths.get_branding_icon_path`) — **done**;
+- a horizontal/project logo asset — **done** (in the README header);
+- README/GitHub-page imagery and approximately two representative product
+  screenshots — **done** (Agent Designer and Replay Viewer, under
+  `docs/screenshots/`);
+- repository/GitHub visual assets: badges — already present and unchanged;
+  a dedicated social-preview image — **considered and deliberately
+  deferred**. GitHub's automatic fallback preview is adequate for now, and
+  a 1280×640 preview needs its own composition (the horizontal logo's
+  3.7:1 aspect doesn't fill that canvas cleanly) plus a manual upload
+  through repository Settings that no git-tracked change can perform —
+  narrow enough to pick up later rather than block this gate on it;
+- any other narrowly-justified release-facing visual integration — none
+  identified.
 
-None of this is implemented yet; a production brand sheet exists outside
-the repository for a later phase to use. Until that milestone lands, treat
-any plan to tag `v1.0.0` as blocked, regardless of how ready the underlying
+The visual-asset and integration work above is functionally complete as of
+`v1.0-rc1-branding`. The branch's version identity is now `1.0.0rc1`
+(PEP 440 package/CLI spelling; `1.0.0-rc1` for release-artifact filenames
+and the eventual Git tag — see [CHANGELOG.md](../CHANGELOG.md)). What
+remains before this gate can be called fully closed is RC-level
+qualification that was always out of this gate's narrow scope: full
+installer lifecycle qualification under an elevated session, portable ZIP
+and wheel qualification, and a full RC-version test pass — see the
+branding-integration and version-preparation commits on
+`v1.0-rc1-branding` for exactly what shipped and what those commits' own
+reports listed as deferred. Until that qualification lands, treat any plan
+to tag `v1.0.0` as blocked, regardless of how ready the underlying
 platform (Agent API, Ruleset, schemas, CLI, packaging) otherwise is.
 
 **Recommended sequencing:** `v0.10.0` → `v1.0.0-rc1` (branding integration

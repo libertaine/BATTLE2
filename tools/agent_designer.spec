@@ -12,6 +12,7 @@ assets_dir   = os.path.join(project_root, "assets")
 starter_agents_dir = os.path.join(engine_src, "battle_engine", "data", "starter_agents")
 agent_template_dir = os.path.join(engine_src, "battle_engine", "data", "agent_template")
 script_path  = os.path.join(project_root, "app", "agent_designer.py")  # ABSOLUTE
+icon_path    = os.path.join(project_root, "assets", "branding", "bytefray-icon.ico")
 
 block_cipher = None
 hiddenimports = collect_submodules("battle_engine") + collect_submodules("battle_client")
@@ -40,6 +41,6 @@ exe = EXE(
     pyz, a.scripts, a.binaries, a.zipfiles, a.datas,
     name='battle-agent-designer',
     console=False,
-    icon=None,
+    icon=icon_path,
 )
 coll = COLLECT(exe, name='battle-agent-designer')

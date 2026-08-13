@@ -9,6 +9,7 @@ engine_src   = os.path.join(project_root, "engine", "src")
 client_src   = os.path.join(project_root, "client", "src")
 assets_dir   = os.path.join(project_root, "assets")
 script_path  = os.path.join(project_root, "app", "replay_viewer.py")  # ABSOLUTE
+icon_path    = os.path.join(project_root, "assets", "branding", "bytefray-icon.ico")
 
 block_cipher = None
 hiddenimports = collect_submodules("battle_engine") + collect_submodules("battle_client")
@@ -33,6 +34,6 @@ exe = EXE(
     pyz, a.scripts, a.binaries, a.zipfiles, a.datas,
     name='battle-replay-viewer',
     console=False,
-    icon=None,
+    icon=icon_path,
 )
 coll = COLLECT(exe, name='battle-replay-viewer')

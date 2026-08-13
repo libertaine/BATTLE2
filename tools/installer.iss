@@ -3,7 +3,14 @@
 ;   ISCC.exe tools\installer.iss
 
 #define AppName "Bytefray"
-#define AppVersion "0.10.0"
+#define AppVersion "1.0.0rc1"
+; Release-artifact filenames use the hyphenated tag spelling (matching the
+; eventual "v1.0.0-rc1" Git tag/GitHub prerelease name) while AppVersion
+; keeps the PEP 440 spelling used by the Python package/CLI, so the two
+; version strings shown to a user (installer identity vs. release filename)
+; are intentionally different spellings of the same identity, not a
+; mismatch. See docs/ROADMAP.md and CHANGELOG.md for context.
+#define ReleaseTag "1.0.0-rc1"
 #define AppPublisher "Bytefray Project"
 #define DistRoot "..\dist\windows"
 #define OutputRoot "..\dist\installer"
@@ -18,11 +25,13 @@ AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
 UninstallDisplayName={#AppName} {#AppVersion}
+SetupIconFile=..\assets\branding\bytefray-icon.ico
+UninstallDisplayIcon={app}\bin\battle2\battle2.exe
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir={#OutputRoot}
-OutputBaseFilename=Bytefray-Setup-{#AppVersion}
+OutputBaseFilename=Bytefray-Setup-{#ReleaseTag}
 ArchitecturesAllowed=x64os
 ArchitecturesInstallIn64BitMode=x64os
 PrivilegesRequired=admin
