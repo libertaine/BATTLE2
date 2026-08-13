@@ -5,7 +5,7 @@ Post-install smoke:
   pwsh tools/smoke_after_install.ps1
 
 Full isolated lifecycle validation:
-  pwsh tools/smoke_after_install.ps1 -InstallerPath dist\installer\Bytefray-Setup-0.10.0.exe `
+  pwsh tools/smoke_after_install.ps1 -InstallerPath dist\installer\Bytefray-Setup-1.0.0-rc1.exe `
     -AppDir "D:\Bytefray Test\Application" -DataRoot "D:\Bytefray Test\Data" -Lifecycle
 #>
 [CmdletBinding()]
