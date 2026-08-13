@@ -338,7 +338,28 @@ def test_seed_and_ticks_default_to_canonical_phase3_defaults(monkeypatch, tmp_pa
 
 
 @pytest.mark.gui
-def test_test_disabled_with_no_agent_and_enabled_after_selection(monkeypatch, tmp_path):
+def test_test_disabled_with_no_agents():
+    """Isolated panel unit test: no catalog means nothing is selectable.
+
+    Uses a bare ``AgentDevelopmentPanel`` (same pattern as this file's
+    presentation-only tests above) rather than a full ``AgentDesigner``,
+    because Bytefray's real startup always seeds Python starter agents
+    (``battle_engine.starters``) -- there is no way to observe a genuinely
+    empty, nothing-selected catalog through the full Designer anymore.
+    """
+    _make_app()
+    from app.views.development import AgentDevelopmentPanel
+
+    panel = AgentDevelopmentPanel()
+    try:
+        assert panel.agentCombo.count() == 0
+        assert panel.btnTest.isEnabled() is False
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
+def test_test_enabled_after_creation_and_selection(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
     monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
@@ -348,11 +369,10 @@ def test_test_disabled_with_no_agent_and_enabled_after_selection(monkeypatch, tm
 
     designer = AgentDesigner()
     try:
-        assert designer.development.btnTest.isEnabled() is False
-
         create_agent("testable", data_root=data_root)
         designer.refresh_agents(select="testable")
 
+        assert designer.development.agentCombo.currentText() == "testable"
         assert designer.development.btnTest.isEnabled() is True
     finally:
         designer.deleteLater()
