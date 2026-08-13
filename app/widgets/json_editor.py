@@ -1,15 +1,14 @@
 from __future__ import annotations
-import json
-from typing import Optional
 
-from PySide6.QtCore import Qt
+import json
+
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QMessageBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 
@@ -37,12 +36,12 @@ class JsonEditor(QWidget):
             return
         try:
             json.loads(txt)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             QMessageBox.critical(self, "Invalid JSON", f"Error: {e}")
             return
         QMessageBox.information(self, "Validation", "Looks good.")
 
-    def get_data_or_none(self) -> Optional[dict]:
+    def get_data_or_none(self) -> dict | None:
         txt = self.text.toPlainText().strip()
         if not txt:
             return None

@@ -4,7 +4,6 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from battle_engine.paths import get_data_root, get_resource_root
 
@@ -52,7 +51,7 @@ def ensure_dirs(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def read_summary_json(path: Path) -> Optional[dict]:
+def read_summary_json(path: Path) -> dict | None:
     try:
         if not path.exists():
             return None

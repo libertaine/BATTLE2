@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 # Python 3.13
-import argparse, csv, json, os, shlex, subprocess, sys, time
-from collections import defaultdict, Counter
+import argparse
+import csv
+import json
+import os
+import shlex
+import subprocess
+import sys
+import time
+from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,7 +17,7 @@ ROSTER = ROOT / "roster.json"
 OUTROOT = ROOT / "results"
 
 # Defaults (your spec)
-DEF = dict(arena=2048, ticks=2000, win_mode="score_fallback", territory_w=1, territory_bucket=32)
+DEF = {"arena": 2048, "ticks": 2000, "win_mode": "score_fallback", "territory_w": 1, "territory_bucket": 32}
 
 def _find_build_sh() -> Path:
     # Priority: env override -> likely repo spots
@@ -20,7 +27,6 @@ def _find_build_sh() -> Path:
         if p.exists() and p.is_file():
             return p
     candidates = (
-        REPO_ROOT / "sdk" / "tooling" / "build.sh",
         ROOT / "build.sh",
         ROOT / "agents_tooling" / "build.sh",
         ROOT / "tools" / "build.sh",
@@ -309,7 +315,7 @@ def main():
         return
 
     builtins, customs = load_roster()
-    built_map = {c["name"]: str((ROOT/"agents_build"/f"{c['name']}.blob")) for c in customs}
+    built_map = {c["name"]: str(ROOT/"agents_build"/f"{c['name']}.blob") for c in customs}
 
     if args.cmd == "build":
         built = build_customs(customs, args.out)
@@ -322,8 +328,8 @@ def main():
     if args.cmd == "smoke":
         players = _parse_players(args.players)
         seeds = _parse_seeds(args.seeds)
-        params = dict(arena=args.arena, ticks=args.ticks, win_mode=args.win_mode,
-                      territory_w=args.territory_w, territory_bucket=args.territory_bucket)
+        params = {"arena": args.arena, "ticks": args.ticks, "win_mode": args.win_mode,
+                      "territory_w": args.territory_w, "territory_bucket": args.territory_bucket}
         runs = []
         for p in players:
             for q in builtins:
@@ -335,8 +341,8 @@ def main():
 
     if args.cmd == "sweep":
         seeds = _parse_seeds(args.seeds)
-        params = dict(arena=args.arena, ticks=args.ticks, win_mode=args.win_mode,
-                      territory_w=args.territory_w, territory_bucket=args.territory_bucket)
+        params = {"arena": args.arena, "ticks": args.ticks, "win_mode": args.win_mode,
+                      "territory_w": args.territory_w, "territory_bucket": args.territory_bucket}
         runs = balanced_pair(args.a, args.b, seeds, args.out, built_map, params=params)
         write_match_csv(runs, Path(args.out)/f"{args.a}-vs-{args.b}.csv")
         aggregate_leaderboard(args.out, Path(args.out)/"leaderboard.csv", Path(args.out)/"leaderboard.md")
@@ -345,8 +351,8 @@ def main():
     if args.cmd == "roundrobin":
         players = _parse_players(args.players)
         seeds = _parse_seeds(args.seeds)
-        params = dict(arena=args.arena, ticks=args.ticks, win_mode=args.win_mode,
-                      territory_w=args.territory_w, territory_bucket=args.territory_bucket)
+        params = {"arena": args.arena, "ticks": args.ticks, "win_mode": args.win_mode,
+                      "territory_w": args.territory_w, "territory_bucket": args.territory_bucket}
         runs = round_robin(players, seeds, args.out, built_map, params=params)
         write_match_csv(runs, Path(args.out)/"roundrobin.csv")
         aggregate_leaderboard(args.out, Path(args.out)/"leaderboard.csv", Path(args.out)/"leaderboard.md")
@@ -355,8 +361,8 @@ def main():
     if args.cmd == "elim":
         players = _parse_players(args.players)
         seeds = _parse_seeds(args.seeds)
-        params = dict(arena=args.arena, ticks=args.ticks, win_mode=args.win_mode,
-                      territory_w=args.territory_w, territory_bucket=args.territory_bucket)
+        params = {"arena": args.arena, "ticks": args.ticks, "win_mode": args.win_mode,
+                      "territory_w": args.territory_w, "territory_bucket": args.territory_bucket}
         runs = single_elim(players, seeds, args.out, built_map, params=params, best_of=args.best_of)
         write_match_csv(runs, Path(args.out)/"elim.csv")
         aggregate_leaderboard(args.out, Path(args.out)/"leaderboard.csv", Path(args.out)/"leaderboard.md")

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 from battle_engine.agent_state import Agent
 from battle_engine.config import Config

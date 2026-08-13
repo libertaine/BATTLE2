@@ -7,7 +7,6 @@ from typing import TypeAlias
 
 from battle_engine.agent_state import Agent
 
-
 AgentStatistics: TypeAlias = dict[str, int]
 StatisticsMap: TypeAlias = dict[str, AgentStatistics]
 
@@ -44,8 +43,7 @@ class StatisticsCollector:
             state = statistics[agent.agent_id]
             state["territory_last"] = cells
             state["territory_sum"] += cells
-            if cells > state["territory_max"]:
-                state["territory_max"] = cells
+            state["territory_max"] = max(state["territory_max"], cells)
 
     def record_death(
         self,

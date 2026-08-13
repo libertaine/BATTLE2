@@ -398,7 +398,7 @@ def _handle_reset(state: _WorkerState, request: dict[str, Any], out: Any) -> Non
     )
     try:
         state.loaded.instance.reset(context)
-    except Exception as exc:  # noqa: BLE001 - forwarded as a structured diagnostic
+    except Exception as exc:
         diagnostic = diagnose_reset_failure(exc, agent_id=state.agent_id or "", slot=state.slot or 0)
         _respond(out, {"ok": False, "diagnostic": asdict(diagnostic)})
         return
@@ -426,7 +426,7 @@ def _handle_act(state: _WorkerState, request: dict[str, Any], out: Any) -> None:
     action_slot = request.get("action_slot", 0)
     try:
         action = state.loaded.instance.act(observation)
-    except Exception as exc:  # noqa: BLE001 - forwarded as a structured diagnostic
+    except Exception as exc:
         diagnostic = diagnose_action_exception(
             exc,
             agent_id=state.agent_id or "",

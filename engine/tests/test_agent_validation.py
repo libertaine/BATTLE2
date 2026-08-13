@@ -120,8 +120,7 @@ def _run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None):
         cwd=cwd,
         env=full_env,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
 
@@ -680,8 +679,7 @@ def test_battle2_alias_dispatches_validate(tmp_path):
         cwd=tmp_path,
         env=env,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
     assert created.returncode == 0, created.stderr
@@ -695,8 +693,7 @@ def test_battle2_alias_dispatches_validate(tmp_path):
         cwd=tmp_path,
         env=env,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
     assert validated.returncode == 0, validated.stderr

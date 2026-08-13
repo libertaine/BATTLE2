@@ -4,11 +4,9 @@ import builtins
 import json
 
 import pytest
-
 from battle_client import cli
 from battle_client.player import ReplayPlayer
-from battle_client.renderers.base import AbstractRenderer
-from battle_client.renderers.base import RendererDependencyError
+from battle_client.renderers.base import AbstractRenderer, RendererDependencyError
 from battle_engine.replay import MatchConfiguration, ReplayHeader, ReplayRecord, TickSnapshot
 
 # Phase 7a Slice 3: PygameRenderer is no longer driven through this

@@ -17,11 +17,11 @@ from battle_engine.core import (
     NOP,
     STORE,
     STOREI,
+    VM,
     Agent,
     Config,
     JSONLSink,
     Kernel,
-    VM,
     Weights,
     enc,
 )

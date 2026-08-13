@@ -1,14 +1,16 @@
 from __future__ import annotations
+
 import sys
-from typing import Any, Dict, Optional
+from typing import Any
+
 from battle_engine.replay import (
     AgentEvent,
     KillDeathEvent,
     MatchResult,
     ReplayHeader,
     ReplayRecord,
-    TickSnapshot,
 )
+
 from .base import AbstractRenderer
 
 
@@ -22,9 +24,9 @@ class HeadlessRenderer(AbstractRenderer):
         super().__init__()
         self._out = stream or sys.stdout
         self._arena = None
-        self._agents: Dict[str, Any] = {}
+        self._agents: dict[str, Any] = {}
 
-    def setup(self, metadata: Optional[Dict[str, Any]] = None) -> None:
+    def setup(self, metadata: dict[str, Any] | None = None) -> None:
         super().setup(metadata)
         if not metadata:
             return

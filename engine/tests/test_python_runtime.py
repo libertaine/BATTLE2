@@ -4,13 +4,12 @@ import json
 import random
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from battle_engine.agent_api import ActionKind, AgentAction
 from battle_engine.agents import resolve_agent
 from battle_engine.builtins import build_agent
-from battle_engine.config import Config, Weights
+from battle_engine.config import Config
 from battle_engine.match_service import (
     MatchEntrant,
     MatchRequest,
@@ -30,7 +29,6 @@ from battle_engine.python_runtime import (
 )
 from battle_engine.telemetry import JSONLSink
 from battle_engine.vm import VM
-
 
 PASSIVE_SOURCE = """
 from battle_engine.agent_api import ActionKind, AgentAction

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
-
 from battle_engine.replay import (
     AgentEvent,
     AgentState,
@@ -19,7 +17,6 @@ from battle_engine.replay import (
     deserialize_record,
     serialize_record,
 )
-
 
 FIXTURES = Path(__file__).parent / "fixtures" / "replay"
 

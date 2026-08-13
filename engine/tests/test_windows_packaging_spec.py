@@ -69,10 +69,10 @@ def _exec_spec_datas(
         runs to completion without needing real PyInstaller build classes.
         """
 
-        def __call__(self, *args: object, **kwargs: object) -> "_BuildStub":
+        def __call__(self, *args: object, **kwargs: object) -> _BuildStub:
             return self
 
-        def __getattr__(self, name: str) -> "_BuildStub":
+        def __getattr__(self, name: str) -> _BuildStub:
             return self
 
     stub = _BuildStub()
@@ -113,7 +113,7 @@ def _exec_spec_datas(
     # the repository root per tools/build_win.ps1's `Set-Location $RepoRoot`).
     monkeypatch.chdir(ROOT)
     code = compile(spec_path.read_text(encoding="utf-8"), str(spec_path), "exec")
-    exec(code, namespace)
+    exec(code, namespace)  # noqa: S102 -- introspecting our own trusted .spec file, test-only
     return list(namespace["datas"])  # type: ignore[arg-type]
 
 

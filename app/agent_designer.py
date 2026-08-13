@@ -1,6 +1,7 @@
 # app/agent_designer.py
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -328,6 +329,17 @@ class AgentDesigner(QMainWindow):
         # the child would silently look for agents this process just wrote
         # in the wrong place ("Unknown agent") without this override.
         env.insert("BYTEFRAY_ROOT", str(root))
+
+        # Advanced tab's per-agent "Agent Params" JSON editors (RunConfig.a_params
+        # /b_params) are a per-run override of the selected agent's construction
+        # parameters -- they must reach the child process, not just be validated
+        # locally and dropped. cli.py's _resolve_agent reads these exact names.
+        a_params = self._cfgget(cfg, "a_params", "aParams")
+        b_params = self._cfgget(cfg, "b_params", "bParams")
+        if a_params is not None:
+            env.insert("BATTLE_AGENT_A_PARAMS_JSON", json.dumps(a_params))
+        if b_params is not None:
+            env.insert("BATTLE_AGENT_B_PARAMS_JSON", json.dumps(b_params))
 
         proc = self._start_process(command, env, root, label="RunMatch")
 

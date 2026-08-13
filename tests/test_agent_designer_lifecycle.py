@@ -12,6 +12,7 @@ default headless run, exercised by the dedicated display-backed workflow.
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -190,3 +191,51 @@ def test_close_event_disposes_active_process_without_raising(monkeypatch, tmp_pa
     assert designer._proc is None
     designer.deleteLater()
     application.processEvents()
+
+
+@pytest.mark.gui
+def test_advanced_run_exports_agent_params_json_to_child_env(monkeypatch, tmp_path):
+    """Advanced tab's per-agent "Agent Params" JSON editors (RunConfig.a_params/
+    b_params) must reach the launched match process as BATTLE_AGENT_A_PARAMS_JSON/
+    BATTLE_AGENT_B_PARAMS_JSON -- previously the JSON was validated locally and
+    then silently discarded (docs/specs/agent_designer_workflow.md Sec 2.8), never
+    reaching the child process for either agent.
+    """
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app.agent_designer import AgentDesigner
+    from app.services.engine import RunConfig
+
+    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    QApplication.instance() or QApplication([])
+    designer = AgentDesigner()
+
+    captured = {}
+
+    class _FakeProc:
+        def start(self):
+            pass
+
+    def _fake_start_process(command, env, working_directory, *, label):
+        captured["env"] = env
+        return _FakeProc()
+
+    monkeypatch.setattr(designer, "_start_process", _fake_start_process)
+
+    cfg = RunConfig(
+        a_type="Runner (Starter)",
+        b_type="Writer (Starter)",
+        arena=256,
+        ticks=100,
+        a_params={"byte": 7, "stride": 3},
+        b_params=None,
+    )
+    designer._on_advanced_run(cfg)
+
+    env = captured["env"]
+    assert env.value("BATTLE_AGENT_A_PARAMS_JSON") == json.dumps({"byte": 7, "stride": 3})
+    assert env.contains("BATTLE_AGENT_B_PARAMS_JSON") is False
+
+    designer.deleteLater()

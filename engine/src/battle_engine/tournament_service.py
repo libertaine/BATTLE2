@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import asdict, dataclass, field, replace
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 from battle_engine.config import Config
 from battle_engine.match_service import (
@@ -140,7 +141,7 @@ def _safe_name(value: str) -> str:
 
 def _resumed_result_mismatch(
     envelope: ResultEnvelope,
-    item: "TournamentMatch",
+    item: TournamentMatch,
     replay_path: Path,
     expected_match_id: str,
 ) -> str | None:

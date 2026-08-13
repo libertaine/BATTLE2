@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Literal, Mapping, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from battle_engine.rules import BYTEFRAY_RULESET_ID, RulesetProvenance
 
@@ -597,8 +598,7 @@ def iter_replay(path: str | Path) -> Iterator[ReplayRecord]:
 
 def write_replay(path: str | Path, records: Iterable[ReplayRecord]) -> None:
     with Path(path).open("w", encoding="utf-8") as stream:
-        for record in records:
-            stream.write(serialize_record(record) + "\n")
+        stream.writelines(serialize_record(record) + "\n" for record in records)
 
 
 def resolve_replay_ruleset(header: ReplayHeader) -> RulesetProvenance:

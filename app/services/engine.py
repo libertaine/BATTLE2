@@ -3,7 +3,6 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
-from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 
@@ -29,8 +28,8 @@ class EngineRunner(QObject):
         super().__init__()
         self.paths = get_default_paths(battle_root)
         ensure_dirs(self.paths.replay_path.parent)
-        self._proc: Optional[Popen[str]] = None
-        self._reader: Optional[threading.Thread] = None
+        self._proc: Popen[str] | None = None
+        self._reader: threading.Thread | None = None
 
     @property
     def is_running(self) -> bool:
@@ -46,7 +45,7 @@ class EngineRunner(QObject):
         except FileNotFoundError as e:
             self.error.emit(str(e))
             return
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.error.emit(f"Failed to build engine command: {e}")
             return
 
@@ -62,7 +61,7 @@ class EngineRunner(QObject):
         except FileNotFoundError:
             self.error.emit(f"Match executable not found when starting: {cmd[0]}")
             return
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             self.error.emit(f"Failed to start engine: {e}")
             return
 

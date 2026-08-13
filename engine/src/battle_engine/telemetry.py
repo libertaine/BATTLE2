@@ -24,7 +24,7 @@ class SummarySink(Protocol):
 
 class JSONLSink:
     def __init__(self, path: str = "replay.jsonl"):
-        self._f = open(path, "w", buffering=1)
+        self._f = open(path, "w", buffering=1)  # noqa: SIM115 -- held open for this sink's lifetime, closed by its own close()
 
     def emit(self, record: dict[str, Any]) -> None:
         self._f.write(json.dumps(record, separators=(",", ":")) + "\n")

@@ -25,3 +25,16 @@ variables remain supported as deprecated fallbacks, in that precedence
 order. See [docs/COMPATIBILITY.md](COMPATIBILITY.md) for the full
 compatibility reference across the Ruleset, Agent API, schema, and
 methodology axes.
+
+## Post-1.0 repository cleanup
+
+After v1.0.0 shipped, a maintenance pass removed development-era residue
+that had accumulated across the BATTLE2 → Bytefray evolution: ~132MB of
+accidentally-committed PyInstaller build output and generated runtime data,
+personal IDE state, one-off debug scripts, duplicate/stale packaging
+metadata (including a stale `app/pyproject.toml`), superseded pre-v0.3
+build tooling (`tools/build_executables*.ps1`, `tools/match_runner.spec`),
+and an unreferenced `sdk/` directory of early-migration examples that
+included an accidental duplicate result bundle. None of this changed
+documented runtime behavior or compatibility contracts. See `CHANGELOG.md`
+and the repository's git history around that time for the full accounting.

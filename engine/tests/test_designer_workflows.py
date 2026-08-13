@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
 import pytest
+from battle_engine.project_info import get_project_info
+from battle_engine.replay import SCHEMA_VERSION as REPLAY_SCHEMA_VERSION
+from battle_engine.result_model import SCHEMA_VERSION as RESULT_SCHEMA_VERSION
 
 from app.services.agent_catalog import AgentRow
 from app.services.designer_workflows import (
@@ -18,9 +20,6 @@ from app.services.designer_workflows import (
     read_tournament_presentation,
     validate_homogeneous,
 )
-from battle_engine.project_info import get_project_info
-from battle_engine.replay import SCHEMA_VERSION as REPLAY_SCHEMA_VERSION
-from battle_engine.result_model import SCHEMA_VERSION as RESULT_SCHEMA_VERSION
 
 
 def _row(name: str, kind: str) -> AgentRow:

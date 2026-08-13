@@ -8,7 +8,6 @@ from typing import TypeAlias
 from battle_engine.agent_state import Agent
 from battle_engine.config import Weights
 
-
 ScoreMap: TypeAlias = dict[str, int | float]
 
 

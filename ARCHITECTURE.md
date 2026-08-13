@@ -262,9 +262,12 @@ engine, not part of `battle_engine.core`.
   v1, with a SHA-256 digest of the replay), and a compatibility
   `summary.json`. A `redcode94` match writes `summary.json` and
   `result.json` with `replay: null` — no canonical replay stream.
-- Historical run output, prebuilt executables, pMARS binaries, SDK
-  examples, and `_legacy/` coexist with the active source tree but are
-  not part of the current architecture.
+- Historical run output, prebuilt executables, pMARS binaries, and
+  `_legacy/` coexist with the active source tree but are not part of the
+  current architecture. (A `sdk/` directory of unreferenced early-migration
+  examples and an accidental duplicate result bundle previously sat
+  alongside these; it was removed in a post-1.0 maintenance pass — see
+  `docs/PROJECT_HISTORY.md`.)
 
 ## Packaging and commands
 
@@ -291,20 +294,19 @@ the same four onedir trees beneath `{app}\bin\`.
 
 **`app/match_runner.py` is not shipped.** There is no PyInstaller spec
 invoked by `tools/build_win.ps1` or `tools/installer.iss` for it, and its
-console-script entry point was removed in v0.3 (see CHANGELOG). The only
-references that would build it into an executable are two older helper
-scripts, `tools/build_executables.ps1` and
-`tools/build_executables_windows.ps1` — both predate the current
-four-executable build, are not invoked by CI or any documented workflow,
-and would fail if run today because `app/match_runner.py` calls
+console-script entry point was removed in v0.3 (see CHANGELOG). Two older
+helper scripts, `tools/build_executables.ps1` and
+`tools/build_executables_windows.ps1`, and their matching PyInstaller spec
+`tools/match_runner.spec`, once could have built it into an executable —
+they predated the current four-executable build, were not invoked by CI or
+any documented workflow, and would have failed if run because
+`app/match_runner.py` calls
 `PygameRenderer.setup()`/`.update()`/`.on_complete()`/`.teardown()`,
 methods that no longer exist on `PygameRenderer` (see
-[`docs/WINDOWS_DEV_NOTES.md`](docs/WINDOWS_DEV_NOTES.md)). `tools/match_runner.spec`,
-the PyInstaller spec for it, is likewise not referenced by any build
-script CI runs. Because none of these three files are part of the actual
-release build surface today, none were changed as part of this cleanup;
-whether to delete them as unreachable leftovers is left for a human
-decision rather than treated as implied by this audit.
+[`docs/WINDOWS_DEV_NOTES.md`](docs/WINDOWS_DEV_NOTES.md)). All three were
+removed in a post-1.0 maintenance pass as confirmed-unreachable leftovers;
+`app/match_runner.py` itself is unchanged and remains intentionally
+retained dead source (see AGENTS.md's "Architecture boundaries").
 
 Wheels contain Python packages and package-local assets only (see
 `[tool.setuptools.package-data]`). Repository-level `agents/` directories

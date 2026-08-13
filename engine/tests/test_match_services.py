@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from battle_engine.agent_state import Agent
 from battle_engine.config import Config, Weights
 from battle_engine.core import HALT, NOP, Kernel, enc

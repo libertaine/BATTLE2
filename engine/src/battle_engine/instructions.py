@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 NOP, MOV, ADD, LOAD, STORE, JMP, JZ, HALT = range(8)
 MOVP, ADDP, LOADI, STOREI = 8, 9, 10, 11
 

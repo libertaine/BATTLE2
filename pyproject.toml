@@ -100,10 +100,46 @@ battle_engine = [
 # "share/battle2/warriors" = ["warriors/*"]
 # "share/battle2/licenses" = ["third_party_licenses/*"]
 
-# -------------------- Ruff (example) --------------------
+# -------------------- Ruff --------------------
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# _legacy/core.py, agents.py, main.py, renderers.py, agents_tooling/, and
+# app/match_runner.py are documented frozen/dead code (AGENTS.md's
+# "Architecture boundaries": kept for compatibility/historical reasons, not
+# actively maintained) -- excluded from lint enforcement rather than edited
+# to satisfy rules. _legacy/tests/ is NOT excluded: it's an active suite
+# (pytest.ini's testpaths runs it against the packaged engine).
+extend-exclude = [
+  "_legacy/core.py",
+  "_legacy/agents.py",
+  "_legacy/main.py",
+  "_legacy/renderers.py",
+  "_legacy/agents_tooling",
+  "app/match_runner.py",
+]
+
+[tool.ruff.lint]
+# Ruff's own (broad, multi-plugin) default selection is kept as-is rather
+# than pinned to an explicit `select` list -- see docs/RUFF_DEBT.md for how
+# that default set was audited against this codebase. The three codes below
+# are excluded project-wide because they conflict with a deliberate,
+# pre-existing pattern here (broad `except Exception: pass` used for
+# documented v0.1-compatibility/optional-feature suppression, e.g.
+# battle_engine/core.py's Kernel.run and battle_engine/telemetry.py) rather
+# than being oversights; see docs/RUFF_DEBT.md before re-enabling any of
+# them. One-off false positives elsewhere are suppressed with an inline
+# `# noqa: <CODE>` and a one-line reason instead of a project-wide ignore.
+ignore = [
+  "BLE001", # blind-except: this codebase deliberately uses `except
+            # Exception: pass` for several documented best-effort/
+            # compatibility code paths; narrowing each one is a real
+            # behavior change, not a lint fix.
+  "S110",   # try-except-pass: same deliberate pattern as BLE001 above.
+  "TRY004", # prefer-type-error: the one flagged `raise ValueError(...)` is
+            # an existing, potentially-caught error type; changing it is a
+            # behavior change outside a lint pass's scope.
+]
 
 # -------------------- mypy --------------------
 # The engine and client packages live under two separate src roots

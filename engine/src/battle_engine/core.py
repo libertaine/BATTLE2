@@ -21,7 +21,6 @@ from battle_engine.instructions import (
     STOREI,
     enc,
 )
-from battle_engine.vm import VM
 from battle_engine.match import MatchRunner
 from battle_engine.results import build_summary, resolve_winner
 from battle_engine.scoring import ScoreMap, ScoringPolicy
@@ -35,6 +34,50 @@ from battle_engine.telemetry import (
     SummarySink,
     build_snapshot,
 )
+from battle_engine.vm import VM
+
+# `core` is a deliberate compatibility facade (see AGENTS.md's "Compatibility
+# surfaces are deliberate, not accidental"): these imports exist so
+# `from battle_engine.core import ...` keeps working for names now defined in
+# extracted modules. __all__ tells static tools (ruff's F401 among them) that
+# every name below is intentionally re-exported, not dead -- without it, an
+# "unused import" auto-fix will silently delete a supported public import
+# path. Don't collapse or prune this list without checking who still imports
+# through it.
+__all__ = [
+    "ADD",
+    "ADDP",
+    "HALT",
+    "JMP",
+    "JZ",
+    "LOAD",
+    "LOADI",
+    "MOV",
+    "MOVP",
+    "NOP",
+    "STORE",
+    "STOREI",
+    "VM",
+    "Agent",
+    "Config",
+    "JSONLSink",
+    "JSONSummarySink",
+    "Kernel",
+    "LegacyRendererObserver",
+    "MatchRunner",
+    "ReplayPublisher",
+    "ReplaySink",
+    "ScoreMap",
+    "ScoringPolicy",
+    "StatisticsCollector",
+    "StatisticsMap",
+    "SummarySink",
+    "Weights",
+    "build_snapshot",
+    "build_summary",
+    "enc",
+    "resolve_winner",
+]
 
 
 # ----- Kernel -----

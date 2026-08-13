@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import pytest
-
-import battle_engine.core as core
+from battle_engine import core
 from battle_engine.agent_state import Agent
 from battle_engine.config import Config, Weights
 from battle_engine.instructions import (

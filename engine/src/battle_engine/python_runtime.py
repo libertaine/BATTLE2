@@ -5,11 +5,12 @@ from __future__ import annotations
 import hashlib
 import random
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 from battle_engine.agent_api import (
     AGENT_API_VERSION,
@@ -425,9 +426,7 @@ def apply_action(action: AgentAction, state: PythonEntrantState, vm: VM) -> None
         state.register_p = operand & 0xFFFFFFFF
     elif action.kind is ActionKind.ADD_P:
         state.register_p = (state.register_p + operand) & 0xFFFFFFFF
-    elif action.kind is ActionKind.JUMP:
-        state.pc = operand & 0xFFFFFFFF
-    elif action.kind is ActionKind.JUMP_IF_ZERO and state.zero_flag:
+    elif action.kind is ActionKind.JUMP or action.kind is ActionKind.JUMP_IF_ZERO and state.zero_flag:
         state.pc = operand & 0xFFFFFFFF
 
 

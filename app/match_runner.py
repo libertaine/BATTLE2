@@ -1,6 +1,7 @@
 # app/match_runner.py
 import sys
 
+
 def main() -> int:
     try:
         import pygame

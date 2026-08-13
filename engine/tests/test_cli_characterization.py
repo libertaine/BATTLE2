@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -25,8 +24,7 @@ def _run(*args: str, cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
         cwd=cwd,
         env=env,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
 
@@ -78,3 +76,39 @@ def test_cli_creates_replay_and_summary_json(tmp_path):
     assert summary["params"]["ticks_requested"] == 3
     assert summary["agents"] == {"A": "writer", "B": "runner"}
     assert set(summary["score"]) == {"A", "B"}
+
+
+def test_resolve_agent_applies_per_agent_env_json_to_builtin_construction(
+    monkeypatch, tmp_path
+):
+    """BATTLE_AGENT_A_PARAMS_JSON/BATTLE_AGENT_B_PARAMS_JSON must actually
+    override a built-in agent's construction kwargs, not just be parsed and
+    discarded. This is the engine-side half of the previously-confirmed
+    "Agent Params silently discarded" bug: the Designer's Advanced tab
+    exports its per-agent JSON editors to exactly these two env vars for the
+    child process to consume.
+    """
+    from battle_engine.builtins import build_agent
+    from battle_engine.cli import _resolve_agent, parse_args
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    monkeypatch.delenv("BATTLE_AGENT_A_PARAMS_JSON", raising=False)
+
+    args = parse_args(["--a-type", "writer", "--b-type", "writer"])
+    common_kwargs = {"offset": 1, "byte": 1}
+
+    baseline_code, name, start, python_spec = _resolve_agent(
+        "A", {}, None, args, None, common_kwargs
+    )
+    assert name == "writer"
+    assert python_spec is None
+    assert baseline_code == build_agent("writer", start, **common_kwargs)
+
+    monkeypatch.setenv(
+        "BATTLE_AGENT_A_PARAMS_JSON", json.dumps({"offset": 99, "byte": 66})
+    )
+    overridden_code, _, _, _ = _resolve_agent(
+        "A", {}, None, args, None, common_kwargs
+    )
+    assert overridden_code == build_agent("writer", start, offset=99, byte=66)
+    assert overridden_code != baseline_code

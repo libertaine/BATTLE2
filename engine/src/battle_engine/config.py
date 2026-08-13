@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 
 @dataclass
@@ -23,7 +24,7 @@ class Config:
     weights: Weights = field(default_factory=Weights)
 
     @staticmethod
-    def from_dict(d: Mapping[str, Any]) -> "Config":
+    def from_dict(d: Mapping[str, Any]) -> Config:
         w = d.get("weights", {})
         return Config(
             arena_size=int(d.get("arena_size", 4096)),

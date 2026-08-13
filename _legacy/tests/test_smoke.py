@@ -1,4 +1,4 @@
-from core import Kernel, Config
+from core import Config, Kernel
 
 
 def test_ticks_progress():

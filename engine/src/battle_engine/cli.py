@@ -3,8 +3,9 @@ import hashlib
 import json
 import os
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any
 
 from battle_engine.agent_api import AgentValidationError
 from battle_engine.agents import discover_agents, resolve_agent
@@ -19,8 +20,8 @@ from battle_engine.match_service import (
 )
 from battle_engine.paths import get_data_root
 from battle_engine.pmars import PMarsError, run_pmars
-from battle_engine.result_model import ResultEnvelope, stable_id, write_json_atomic
 from battle_engine.python_runtime import PythonEntrantInitializationError
+from battle_engine.result_model import ResultEnvelope, stable_id, write_json_atomic
 from battle_engine.starters import ensure_starter_agents
 
 DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
@@ -74,7 +75,7 @@ def _resolve_replay_path(value: str | None) -> Path:
     return Path(value).expanduser().resolve()
 
 
-def _parse_env_json(varname: str) -> Dict[str, Any]:
+def _parse_env_json(varname: str) -> dict[str, Any]:
     """
     Read JSON object from environment variable.
     Return {} on empty/missing.
@@ -97,14 +98,14 @@ def _parse_env_json(varname: str) -> Dict[str, Any]:
 
 
 def _merge_params(
-    defaults: Dict[str, Any], overrides: Dict[str, Any]
-) -> Dict[str, Any]:
+    defaults: dict[str, Any], overrides: dict[str, Any]
+) -> dict[str, Any]:
     merged = dict(defaults or {})
     merged.update(overrides or {})
     return merged
 
 
-def _keys_preview(d: Dict[str, Any]) -> str:
+def _keys_preview(d: dict[str, Any]) -> str:
     return "{" + ", ".join(sorted(map(str, (d or {}).keys()))) + "}"
 
 
@@ -113,7 +114,7 @@ def read_blob(path: str | os.PathLike[str]) -> bytes:
     return p.read_bytes()
 
 
-def _load_agents_spec_from_env() -> Tuple[Dict[str, Any], Optional[Path]]:
+def _load_agents_spec_from_env() -> tuple[dict[str, Any], Path | None]:
     """
     Back-compat:
       BATTLE_AGENTS_JSON='{"A":{"type":"blob","path":"agents/x/model.blob"}}'
@@ -292,12 +293,12 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 
 def _resolve_agent(
     letter: str,
-    spec: Dict[str, Any],
-    spec_dir: Optional[Path],
+    spec: dict[str, Any],
+    spec_dir: Path | None,
     args: argparse.Namespace,
     cfg: Config,
-    common_kwargs: Dict[str, Any],
-) -> Tuple[Optional[bytes], str, int, Any | None]:
+    common_kwargs: dict[str, Any],
+) -> tuple[bytes | None, str, int, Any | None]:
     """
     Resolve an agent for slot A/B/C.
 
@@ -353,13 +354,12 @@ def _resolve_agent(
 
     if spec_obj is not None:
         side_env = _parse_env_json(f"BATTLE_AGENT_{letter}_PARAMS_JSON")
-        _merged = _merge_params(spec_obj.defaults, side_env)
 
         if spec_obj.kind == "python":
             return None, agent_name, start, spec_obj
 
         env_blob = side_env.get("blob_path")
-        blob_path: Optional[Path]
+        blob_path: Path | None
         if isinstance(env_blob, str) and env_blob:
             blob_path = Path(env_blob).expanduser()
             if not blob_path.is_absolute():
@@ -389,7 +389,8 @@ def _resolve_agent(
 
     # 4) built-in fallback
     if agent_name in SUPPORTED:
-        code = build_agent(agent_name, start, **common_kwargs)
+        side_env = _parse_env_json(f"BATTLE_AGENT_{letter}_PARAMS_JSON")
+        code = build_agent(agent_name, start, **_merge_params(common_kwargs, side_env))
         return code, agent_name, start, None
 
     print(
@@ -433,7 +434,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 0
 
     # Build current Config correctly against Config.weights
-    cfg_kwargs: Dict[str, Any] = {}
+    cfg_kwargs: dict[str, Any] = {}
     if args.seed is not None:
         cfg_kwargs["seed"] = args.seed
     if args.arena is not None:
@@ -600,7 +601,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         b_env = _parse_env_json("BATTLE_AGENT_B_PARAMS_JSON")
         c_env = _parse_env_json("BATTLE_AGENT_C_PARAMS_JSON")
 
-        def _try_resolve(name: Optional[str]):
+        def _try_resolve(name: str | None):
             if not name:
                 return None
             try:
@@ -612,7 +613,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         b_spec = _try_resolve(args.b_type)
         c_spec = _try_resolve(args.c_type)
 
-        def keys(d: Dict[str, Any]) -> str:
+        def keys(d: dict[str, Any]) -> str:
             return _keys_preview(d or {})
 
         print("Agents:")

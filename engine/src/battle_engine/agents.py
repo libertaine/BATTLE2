@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import yaml
 
@@ -23,20 +23,20 @@ class AgentSpec:
     display: str
     dir: Path
     blob: Path | None
-    defaults: Dict[str, Any]
+    defaults: dict[str, Any]
     kind: str = "builtin"
     api_version: int | None = None
     version: str | None = None
     source_path: Path | None = None
     entry_point: str | None = None
-    manifest: Dict[str, Any] = field(default_factory=dict)
+    manifest: dict[str, Any] = field(default_factory=dict)
 
 
 def _agents_root(root: Path) -> Path:
     return (root / "agents").resolve()
 
 
-def _read_json_like(path: Path) -> Dict[str, Any]:
+def _read_json_like(path: Path) -> dict[str, Any]:
     """
     Parse agent.yaml as JSON, falling back to YAML (the format the
     `agents create` scaffold actually writes).
@@ -86,8 +86,8 @@ def _spec_from_dir(agent_dir: Path) -> AgentSpec | None:
     blob_path = agent_dir / "model.blob"
 
     display = name
-    defaults: Dict[str, Any] = {}
-    meta: Dict[str, Any] = {}
+    defaults: dict[str, Any] = {}
+    meta: dict[str, Any] = {}
 
     if yaml_path.exists():
         try:
@@ -171,17 +171,17 @@ def _spec_from_dir(agent_dir: Path) -> AgentSpec | None:
     )
 
 
-def discover_agents(root: Path) -> Dict[str, AgentSpec]:
+def discover_agents(root: Path) -> dict[str, AgentSpec]:
     return discover_agents_in(_agents_root(root))
 
 
-def discover_agents_in(base: Path) -> Dict[str, AgentSpec]:
+def discover_agents_in(base: Path) -> dict[str, AgentSpec]:
     """Discover agents in an explicit directory, for UI/test path overrides."""
 
     base = base.resolve()
     if not base.exists():
         return {}
-    specs: Dict[str, AgentSpec] = {}
+    specs: dict[str, AgentSpec] = {}
     for child in sorted(base.iterdir()):
         if not child.is_dir():
             continue

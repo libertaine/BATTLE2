@@ -1,5 +1,7 @@
-from PySide6 import QtCore, QtWidgets
 import os
+
+from PySide6 import QtCore, QtWidgets
+
 
 class PygameCanvas(QtWidgets.QWidget):
     def __init__(self, parent=None):

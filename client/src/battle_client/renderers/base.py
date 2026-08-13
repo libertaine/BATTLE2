@@ -1,6 +1,7 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 from battle_engine.replay import ReplayRecord
 
@@ -17,7 +18,7 @@ class AbstractRenderer(ABC):
     def __init__(self) -> None:
         self._initialized = False
 
-    def setup(self, metadata: Optional[Dict[str, Any]] = None) -> None:
+    def setup(self, metadata: dict[str, Any] | None = None) -> None:
         """
         Called once before events stream. `metadata` may include:
           - 'arena' (int), 'ticks' (int), 'params' (dict), 'agents' (dict), etc.
@@ -52,4 +53,3 @@ class AbstractRenderer(ABC):
         """
         Called once after stream ends (or on error).
         """
-        pass

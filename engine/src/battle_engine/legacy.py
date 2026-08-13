@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import importlib
 import argparse
+import importlib
 import sys
 from collections.abc import Sequence
 

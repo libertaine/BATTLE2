@@ -32,6 +32,12 @@ replay viewer), and the `designer` extra (PySide6, for the Agent Designer
 GUI). If you only need the headless engine and CLI, `pip install -e .` is
 enough — GUI extras are optional.
 
+On Windows, `sync_win.ps1` (`pwsh -ExecutionPolicy Bypass -File .\sync_win.ps1`)
+is an optional convenience script that fetches/pulls the current branch
+(auto-stashing local changes first) and then creates/activates `.venv` and
+runs the same editable install for you; it's equivalent to the manual steps
+above, not a separate workflow.
+
 Windows is the primary GUI development target; see
 [docs/WINDOWS_DEV_NOTES.md](docs/WINDOWS_DEV_NOTES.md) for platform-specific
 quirks (stale cache/temp directories, mypy import resolution). The Linux

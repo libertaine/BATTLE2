@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import json
 import time
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, Optional
+from typing import Any
 
 from battle_engine.replay import ReplayRecord, iter_replay
+
 
 def iter_jsonl(path: Path) -> Iterator[ReplayRecord]:
     """
@@ -13,7 +16,7 @@ def iter_jsonl(path: Path) -> Iterator[ReplayRecord]:
     """
     yield from iter_replay(path)
 
-def maybe_load_summary(replay_path: Path) -> Optional[Dict[str, Any]]:
+def maybe_load_summary(replay_path: Path) -> dict[str, Any] | None:
     """
     Try to locate a sibling summary.json for convenience. Returns None if missing.
     """

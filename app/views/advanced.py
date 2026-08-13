@@ -1,26 +1,24 @@
 from __future__ import annotations
-from dataclasses import asdict
-from json import loads
-from pathlib import Path
-from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, Signal
+from pathlib import Path
+
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QTabWidget,
-    QFormLayout,
-    QSpinBox,
+    QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QComboBox,
+    QPlainTextEdit,
     QPushButton,
-    QFileDialog,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
-    QGroupBox,
-    QPlainTextEdit,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from app.services.agent_catalog import AgentRow
@@ -160,7 +158,7 @@ class AdvancedPanel(QWidget):
         self.agentA.currentIndexChanged.connect(self._on_agent_a_changed)
 
     # API for MainWindow
-    def setAgents(self, rows: List[AgentRow]) -> None:
+    def setAgents(self, rows: list[AgentRow]) -> None:
         populate_agent_combo(self.agentA, rows)
         populate_agent_combo(self.agentB, rows)
         sync_compatible_b_choices(self.agentA, self.agentB)

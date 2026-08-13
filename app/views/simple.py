@@ -1,17 +1,15 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import List
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
     QComboBox,
-    QPushButton,
+    QGroupBox,
+    QHBoxLayout,
     QLabel,
     QPlainTextEdit,
-    QGroupBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 from app.services.agent_catalog import AgentRow
@@ -21,7 +19,6 @@ from app.widgets.agent_combo import (
     selected_agent_name,
     sync_compatible_b_choices,
 )
-
 
 GRID_PRESETS = {
     "Small (256)": 256,
@@ -98,7 +95,7 @@ class SimplePanel(QWidget):
         self.agentA.currentIndexChanged.connect(self._on_agent_a_changed)
 
     # API consumed by MainWindow
-    def setAgents(self, rows: List[AgentRow]) -> None:
+    def setAgents(self, rows: list[AgentRow]) -> None:
         populate_agent_combo(self.agentA, rows)
         populate_agent_combo(self.agentB, rows)
         sync_compatible_b_choices(self.agentA, self.agentB)

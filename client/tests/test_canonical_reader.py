@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 from battle_client import cli
 from battle_client.renderers.base import AbstractRenderer
@@ -9,7 +10,7 @@ from battle_engine.replay import ReplayHeader, ReplayRecord, TickSnapshot
 
 
 class CapturingRenderer(AbstractRenderer):
-    instances: list["CapturingRenderer"] = []
+    instances: ClassVar[list[CapturingRenderer]] = []
 
     def __init__(self) -> None:
         super().__init__()

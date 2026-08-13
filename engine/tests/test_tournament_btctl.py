@@ -6,7 +6,6 @@ import os
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 BTCTL_PATH = ROOT / "tournament" / "scripts" / "btctl.py"
 
@@ -105,8 +104,14 @@ def test_build_script_resolution_prefers_override_then_current_tool(monkeypatch,
     monkeypatch.setenv("BUILD_SH", str(override))
     assert module._find_build_sh() == override
 
+    # Point the module's own ROOT at an isolated directory so "falls through
+    # to the first candidate that exists on disk" is proven against a
+    # controlled fixture, not real repository-tree state.
     monkeypatch.delenv("BUILD_SH")
-    assert module._find_build_sh() == ROOT / "sdk" / "tooling" / "build.sh"
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    current_tool = tmp_path / "build.sh"
+    current_tool.write_text("#!/bin/sh\n", encoding="utf-8")
+    assert module._find_build_sh() == current_tool
 
 
 def test_build_customs_uses_current_build_script_contract(monkeypatch, tmp_path):

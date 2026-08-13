@@ -288,6 +288,21 @@ neither of which Phase 4 otherwise needs to change. See §28 — classified as
 a **later roadmap item**, explicitly called out so it is not confused with
 Phase 4's new "Agent Development" tab.
 
+**Resolved** (post-1.0 maintenance pass): `_on_advanced_run` now reads
+`cfg.a_params`/`cfg.b_params` and exports them as
+`BATTLE_AGENT_A_PARAMS_JSON`/`BATTLE_AGENT_B_PARAMS_JSON` on the child
+process's environment, matching the export `build_engine_command` already
+performed in the dead `EngineRunner` path (§2.9). `_resolve_agent`
+(`cli.py`) also had its own half of the bug: it parsed
+`BATTLE_AGENT_{letter}_PARAMS_JSON` for a *discovered* agent but discarded
+the merged result (`_merged` was computed and never read), and never parsed
+it at all for the *built-in* fallback branch — the common case for the
+starter VM agents. Both are now fixed: the built-in branch merges the
+per-agent JSON over the shared `--byte`/`--offset`/etc. CLI defaults before
+calling `build_agent`, so per-agent overrides actually take effect.
+Covered by `tests/test_agent_designer_lifecycle.py::test_advanced_run_exports_agent_params_json_to_child_env`
+and `engine/tests/test_cli_characterization.py::test_resolve_agent_applies_per_agent_env_json_to_builtin_construction`.
+
 The task's premise — that this tab's existing purpose is materially
 different from authoring/editing an agent's own source or catalog
 definition — is correct regardless of the dead-wiring bug: even if the
@@ -1299,9 +1314,10 @@ and manually smoke-tested on Windows per §19.5.
   separate cleanup).
 
 **Later roadmap items:**
-- `AdvancedPanel`'s "Agent Params" tab is completely disconnected from the
+- ~~`AdvancedPanel`'s "Agent Params" tab is completely disconnected from the
   actual match-launch path (§2.8) — a genuine, pre-existing bug, unrelated
-  to agent authoring, left for a separate fix.
+  to agent authoring, left for a separate fix.~~ **Resolved** in a later
+  post-1.0 maintenance pass — see the "Resolved" note under §2.8.
 - `app/services/agents.py`'s unused `AgentCatalog` and
   `app/services/agent_meta.py`'s unused `read_agent_meta` (§2.7) — dead
   code, harmless, candidates for removal in an unrelated cleanup pass.

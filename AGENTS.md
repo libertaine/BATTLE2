@@ -59,6 +59,13 @@ abbreviated.
   `[tool.mypy]` in `pyproject.toml` and
   [docs/WINDOWS_DEV_NOTES.md](docs/WINDOWS_DEV_NOTES.md) for why a plain
   `mypy .` doesn't resolve imports correctly on some platforms).
+- Lint with `ruff check .` — required by `ci.yml`'s `test-linux-core` job.
+  Three rule codes (`BLE001`, `S110`, `TRY004`) are ignored project-wide
+  because they conflict with a deliberate, documented `except Exception:
+  pass` pattern used in several compatibility/optional-feature code paths;
+  see [docs/RUFF_DEBT.md](docs/RUFF_DEBT.md) before changing that ignore
+  list or adding a new one. `_legacy/`'s frozen source files and
+  `app/match_runner.py` are excluded from linting entirely (same doc).
 - If `pytest` fails with a Windows `PermissionError` on a temp/cache path,
   that's a known stale-directory/ACL class of problem documented in
   WINDOWS_DEV_NOTES.md, not a project bug — don't "fix" it by changing
@@ -66,8 +73,7 @@ abbreviated.
 - New engine behavior should get characterization or scenario coverage under
   `engine/tests`; client/renderer behavior under `client/tests`. Prefer
   extending existing focused test modules over adding ad hoc scripts at the
-  repo root (note there are several stray one-off `*.py`/`.patch` files at
-  the repo root already — don't treat their presence as precedent).
+  repo root.
 
 ## Supported environments
 

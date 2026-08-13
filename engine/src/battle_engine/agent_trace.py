@@ -193,7 +193,7 @@ class TraceWriter:
     def close(self) -> None:
         self._fh.close()
 
-    def __enter__(self) -> TraceWriter:
+    def __enter__(self) -> TraceWriter:  # noqa: PYI034 -- typing.Self needs 3.11+; runtime floor is 3.10
         return self
 
     def __exit__(self, *exc: object) -> None:

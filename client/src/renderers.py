@@ -1,5 +1,8 @@
 # renderers.py — richer visualization + GAME OVER page
-import pygame, math, hashlib
+import hashlib
+import math
+
+import pygame
 
 
 def _color_for(agent_id: str):
@@ -167,8 +170,6 @@ class PygameRenderer:
         waiting = True
         while waiting:
             for ev in pygame.event.get():
-                if ev.type == pygame.QUIT:
-                    waiting = False
-                elif ev.type == pygame.KEYDOWN or ev.type == pygame.MOUSEBUTTONDOWN:
+                if ev.type == pygame.QUIT or ev.type == pygame.KEYDOWN or ev.type == pygame.MOUSEBUTTONDOWN:
                     waiting = False
             self.clock.tick(30)

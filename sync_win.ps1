@@ -1,8 +1,9 @@
-<# 
-  Purpose: Sync working copy on Windows
-  - Fetch/pull latest, optional auto-stash
-  - Init/update submodules
-  - Ensure venv and install requirements
+<#
+  Purpose: Optional Windows convenience script for a returning contributor.
+  - Fetch/pull latest (optional auto-stash of local changes)
+  - Create/activate a .venv if missing
+  - Install the project in editable mode with the extras CONTRIBUTING.md
+    documents (dev, replay, designer)
   Usage:
     pwsh -ExecutionPolicy Bypass -File .\sync_win.ps1
     pwsh -ExecutionPolicy Bypass -File .\sync_win.ps1 -Branch main -NoStash -NoDevDeps
@@ -12,7 +13,6 @@
 param(
   [string]$Branch = "main",
   [switch]$NoStash,
-  [switch]$NoSubmodules,
   [switch]$NoDevDeps
 )
 
@@ -27,9 +27,6 @@ function Has-GitChanges {
 # 0) Preconditions
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git not found in PATH." }
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) { throw "python not found in PATH." }
-
-# Normalize line endings for Windows devs (safe for CRLF checkouts)
-git config core.autocrlf true | Out-Null
 
 # 1) Stash any local changes (unless disabled)
 if (-not $NoStash) {
@@ -50,13 +47,7 @@ git checkout $Branch
 Write-Host "[sync] Pulling latest (ff-only)..."
 git pull --ff-only origin $Branch
 
-# 3) Submodules
-if (-not $NoSubmodules) {
-  Write-Host "[sync] Updating submodules..."
-  git submodule update --init --recursive --jobs 4
-}
-
-# 4) Python venv
+# 3) Python venv
 $venv = Join-Path $PWD ".venv"
 if (-not (Test-Path $venv)) {
   Write-Host "[sync] Creating virtual environment..."
@@ -66,31 +57,14 @@ if (-not (Test-Path $venv)) {
 Write-Host "[sync] Activating virtual environment..."
 . .\.venv\Scripts\Activate.ps1
 
-# 5) Pip + requirements
+# 4) Editable install with the extras CONTRIBUTING.md/INSTALL.md document
 python -m pip install --upgrade pip wheel
 
-# Install core/client requirements if present
-$reqs = @()
-if (Test-Path ".\requirements-core.txt")   { $reqs += ".\requirements-core.txt" }
-if (Test-Path ".\requirements-client.txt") { $reqs += ".\requirements-client.txt" }
-if (-not $NoDevDeps -and (Test-Path ".\requirements-dev.txt")) { $reqs += ".\requirements-dev.txt" }
-
-if ($reqs.Count -gt 0) {
-  Write-Host "[sync] Installing requirements: $($reqs -join ', ')"
-  pip install -r $reqs
-} else {
-  Write-Host "[sync] No requirements files found; skipping pip install."
-}
-
-# 6) Create common run/build dirs (idempotent)
-New-Item -ItemType Directory -Force -Path ".\runs\_loose" | Out-Null
-New-Item -ItemType Directory -Force -Path ".\dist\windows" | Out-Null
-New-Item -ItemType Directory -Force -Path ".\build\windows" | Out-Null
-
-# 7) Helpful environment echo
-$sep = ";"
-Write-Host "[sync] Recommended PYTHONPATH for this shell:"
-Write-Host ("engine\src{0}client\src" -f $sep)
+$extras = "replay,designer"
+if (-not $NoDevDeps) { $extras = "dev,$extras" }
+Write-Host "[sync] Installing: pip install -e .[$extras]"
+python -m pip install -e ".[$extras]"
 
 Write-Host "[done] Sync complete. Activate venv with:  .\.venv\Scripts\Activate.ps1"
-Write-Host "[done] Next: run editor via:  python .\app\main.py"
+Write-Host "[done] Next: run the designer via:  bytefray design"
+Write-Host "[done] Or run tests via:  python -m pytest"

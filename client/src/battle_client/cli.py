@@ -120,7 +120,7 @@ def _run_streaming(args: argparse.Namespace, replay_path: Path) -> int:
     except RendererDependencyError as e:
         print(f"[battle_client] dependency error: {e}", file=sys.stderr)
         return 2
-    except Exception as e:  # noqa: BLE001 - CLI boundary reports renderer/runtime failures
+    except Exception as e:
         print(f"[battle_client] error: {e}", file=sys.stderr)
         return 1
 
@@ -158,7 +158,7 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
     except RendererDependencyError as e:
         print(f"[battle_client] dependency error: {e}", file=sys.stderr)
         return 2
-    except Exception as e:  # noqa: BLE001 - CLI boundary reports renderer/runtime failures
+    except Exception as e:
         print(f"[battle_client] error: {e}", file=sys.stderr)
         return 1
 

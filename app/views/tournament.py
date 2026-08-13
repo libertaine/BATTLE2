@@ -6,9 +6,9 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QDialog,
     QDialogButtonBox,
-    QAbstractItemView,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
