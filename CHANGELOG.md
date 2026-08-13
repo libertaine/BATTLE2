@@ -3,7 +3,14 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
-## [Unreleased]
+## [1.0.0-rc2] - 2026-08-13
+
+Bytefray v1.0.0's second release candidate. This closes an Agent Designer
+UX gap surfaced during RC1 qualification: match selectors now show each
+agent's runtime kind and disable incompatible opponents before a match is
+attempted, rather than only after `validate_homogeneous` rejects it at
+run time. No gameplay, Agent API, Ruleset, or evaluation-schema change is
+included. Final `v1.0.0` follows once RC2 qualification is complete.
 
 ### Agent Designer
 
