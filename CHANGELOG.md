@@ -5,6 +5,18 @@ This changelog records notable user- and developer-visible changes to Bytefray
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-12
+
+v0.10's theme: **Platform Stabilization / v1.0 Readiness**. This is a
+stabilization release, not a feature release: it freezes the Bytefray 1.0
+gameplay Ruleset contract (`bytefray-rules-1`), closes the entrant-
+orientation-vs-translation evaluation-methodology question left open by
+v0.9, documents the compatibility model and the stable Agent API v1
+surface, persists Ruleset identity directly into every native result/
+replay artifact, hardens canonical match identity, and completes release
+qualification — including first-user workflow and packaging/install
+correctness fixes surfaced during that qualification pass.
+
 ### Documentation
 
 - Closed v0.10's evaluation-methodology question (Phase 3): the standard
@@ -179,6 +191,18 @@ This changelog records notable user- and developer-visible changes to Bytefray
   automatically). Recorded the required pre-1.0 branding/visual-integration
   gate in `docs/ROADMAP.md` and the README roadmap table so v1.0 cannot be
   read as an automatic next step after v0.10 stabilization.
+- v0.10 release preparation: investigated a reported garbled character
+  (`ù`) in the packaged replay client's `--help` description text. The
+  source (`client/src/battle_client/cli.py`) contains a correct UTF-8 em
+  dash; confirmed byte-for-byte and confirmed rendering correctly in a
+  native Windows console regardless of active code page (Python 3.6+'s
+  `PEP 528` console handling writes Unicode directly through the Win32
+  console API there). The garbled character only appears when output is
+  captured through a non-native-console path (redirected output, a
+  pseudo-terminal) where that direct-Unicode path isn't available and
+  Python falls back to encoding through the legacy ANSI code page — a
+  terminal/log-rendering artifact of that fallback, not a source or
+  packaging defect. No source change made.
 
 ## [0.9.0] - 2026-08-11
 
