@@ -31,7 +31,7 @@ held, not when — or whether — it ships.
 
 ## Where Bytefray is now
 
-Bytefray has shipped through **v0.10.0** (see the version table in
+**Bytefray has shipped `v1.0.0`** (see the version table in
 [README.md](../README.md#roadmap) for the full milestone-by-milestone
 history). v0.10's theme, **Platform Stabilization / v1.0 Readiness**,
 answered the question below (all six numbered items are closed): the
@@ -45,10 +45,14 @@ folded into canonical match identity, and release qualification
 first-user workflow) is complete. No gameplay, Agent API, or evaluation
 schema change shipped beyond what is recorded as closed below.
 
-**Next milestone: `v1.0.0-rc1`.** The required pre-1.0 branding/visual-
-integration gate (see below) is mandatory work for that release candidate,
-alongside RC-level qualification; final `v1.0.0` remains blocked until both
-are complete.
+The required pre-1.0 branding/visual-integration gate (see below) landed
+across `v1.0.0-rc1`/`v1.0.0-rc2`, and RC-level qualification — full
+installer lifecycle qualification, portable ZIP and wheel qualification, a
+full RC-version test pass, and a final pre-tag sweep that repaired seven
+pre-existing stale-test-debt GUI failures — completed against `v1.0.0-rc2`
+before `v1.0.0` itself was tagged and published. No gameplay, Agent API,
+Ruleset, or evaluation-schema change shipped between `v1.0.0-rc2` and the
+final `v1.0.0` tag.
 
 ## v0.10.0 — Platform Stabilization / v1.0 Readiness
 
@@ -187,25 +191,18 @@ The gate covers, narrowly:
   identified.
 
 The visual-asset and integration work above is functionally complete as of
-`v1.0-rc1-branding`, and `v1.0.0-rc1` itself is published. A small, UX-only
-correction was found during real RC1 use (Agent Designer's match selectors
-did not surface an agent's runtime kind before the existing mixed-VM/Python
-restriction rejected an invalid pairing) and is being prepared as
-`v1.0.0-rc2` on `v1.0-rc2-agent-runtime-ux`: the branch's version identity
-is `1.0.0rc2` (PEP 440 package/CLI spelling; `1.0.0-rc2` for
-release-artifact filenames and the eventual Git tag — see
-[CHANGELOG.md](../CHANGELOG.md)). This does not reopen the branding gate
-above or change the underlying mixed-runtime restriction itself — only its
-presentation. What remains before this gate can be called fully closed is
-RC-level qualification that was always out of this gate's narrow scope:
-full installer lifecycle qualification under an elevated session, portable
-ZIP and wheel qualification, and a full RC-version test pass — see the
-branding-integration and version-preparation commits on
-`v1.0-rc1-branding`/`v1.0-rc2-agent-runtime-ux` for exactly what shipped
-and what those commits' own reports listed as deferred. Until that
-qualification lands, treat any plan to tag `v1.0.0` as blocked, regardless
-of how ready the underlying platform (Agent API, Ruleset, schemas, CLI,
-packaging) otherwise is.
+`v1.0-rc1-branding`, and both `v1.0.0-rc1` and `v1.0.0-rc2` were published
+(RC2 closed a small, UX-only correction found during real RC1 use: Agent
+Designer's match selectors now surface an agent's runtime kind before the
+existing mixed-VM/Python restriction would reject an invalid pairing,
+rather than only after). Neither RC reopened the branding gate above or
+changed the underlying mixed-runtime restriction itself — only its
+presentation. RC-level qualification that was always out of this gate's
+narrow scope — full installer lifecycle qualification, portable ZIP and
+wheel qualification, a full RC-version test pass, and a final pre-tag
+sweep that repaired seven pre-existing stale-test-debt GUI failures (see
+the `pre-v1.0-gui-test-cleanup` merge) — completed against `v1.0.0-rc2`
+before `v1.0.0` was tagged. **This gate is closed.**
 
 **Recommended sequencing:** `v0.10.0` → `v1.0.0-rc1` (branding integration
 happens here) → `v1.0.0`, rather than inserting a separate numbered
@@ -222,6 +219,10 @@ instead — the RC can iterate (`-rc2`, `-rc3`, ...) either way before
 `v1.0.0` is tagged.
 
 ## v1.0.0 — Stable Bytefray Platform
+
+**Status: shipped.** `v1.0.0` is tagged and published; the criterion below
+is recorded as the durable definition of what that declaration means for
+the 1.x series, not a forward-looking aspiration.
 
 v1.0 is a **stability and maturity milestone**, not "every planned feature
 implemented." The release criterion is approximately:

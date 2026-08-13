@@ -3,6 +3,21 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
+## [1.0.0] - 2026-08-13
+
+Bytefray's first stable release. `v1.0.0` promotes `v1.0.0-rc2` to general
+availability: no gameplay, Agent API, Ruleset, or evaluation-schema change
+is included beyond what `v1.0.0-rc1`/`v1.0.0-rc2` already shipped (branding/
+visual-release integration and the Agent Designer runtime-kind
+match-selector correction, respectively). The only change since RC2 is a
+pre-tag, test-only cleanup: seven GUI tests carried a stale assumption from
+before Bytefray shipped Python starter agents (that the Agent Development
+combo starts empty with nothing selected); they now identify agents by
+discovery id and real catalog state instead of count or position, so they
+keep holding as the starter catalog grows. No production code changed. See
+[docs/ROADMAP.md](docs/ROADMAP.md#v100--stable-bytefray-platform) for the
+release criterion this milestone satisfies.
+
 ## [1.0.0-rc2] - 2026-08-13
 
 Bytefray v1.0.0's second release candidate. This closes an Agent Designer
