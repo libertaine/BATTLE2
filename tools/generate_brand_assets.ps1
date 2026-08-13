@@ -21,6 +21,14 @@
     bicubic resampling (see New-ResizedBitmap for why nearest-neighbor was
     tried first and rejected).
 
+    Also refreshes app/assets/branding/bytefray-icon.png, a byte-identical
+    runtime copy of the square icon used by the wheel-packaged GUI apps.
+    setuptools package-data can only pull files from inside an installed
+    package directory, so the repository-root assets/branding/ tree (outside
+    the "app" package) is not reachable from a wheel; this copy is the
+    smallest fix that avoids a tracked symlink or a second hand-maintained
+    master. Regenerating from the brand sheet keeps both copies identical.
+
 .EXAMPLE
     pwsh -File tools/generate_brand_assets.ps1
     Run from the repository root (or pass -RepoRoot explicitly).
@@ -29,7 +37,8 @@
 param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$SourcePath = (Join-Path $RepoRoot "assets/branding/bytefray-brand-sheet.png"),
-    [string]$OutDir = (Join-Path $RepoRoot "assets/branding")
+    [string]$OutDir = (Join-Path $RepoRoot "assets/branding"),
+    [string]$WheelIconDir = (Join-Path $RepoRoot "app/assets/branding")
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -221,6 +230,11 @@ Set-BorderFloodFillTransparent -Bitmap $iconBmp -Key $PageGray -Tolerance $KeyTo
 $iconPngPath = Join-Path $OutDir "bytefray-icon.png"
 Save-Png -Bitmap $iconBmp -Path $iconPngPath
 Write-Output "Wrote $iconPngPath ($($iconBmp.Width)x$($iconBmp.Height))"
+
+New-Item -ItemType Directory -Force -Path $WheelIconDir | Out-Null
+$wheelIconPngPath = Join-Path $WheelIconDir "bytefray-icon.png"
+Copy-Item -Path $iconPngPath -Destination $wheelIconPngPath -Force
+Write-Output "Copied $wheelIconPngPath (wheel package-data runtime copy)"
 
 $icoFrames = @()
 foreach ($sz in $IcoSizes) {

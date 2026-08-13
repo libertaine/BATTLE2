@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from battle_engine.paths import get_branding_icon_path
 from battle_engine.replay import AgentEvent, AgentState, EngineEvent, KillDeathEvent, RuntimeEvent
 
 from battle_client.analysis import (
@@ -706,6 +707,11 @@ class PygameRenderer:
             requested_scale=self._requested_scale,
         )
         window_size = (self.grid_cols * self.scale, self.grid_rows * self.scale)
+        # Some platforms ignore an icon set after the window is created, so
+        # this must run before set_mode().
+        icon_path = get_branding_icon_path()
+        if icon_path is not None:
+            pg.display.set_icon(pg.image.load(str(icon_path)))
         self.screen = pg.display.set_mode(window_size, pg.RESIZABLE)
         pg.display.set_caption(self.title)
         self.grid_surf = pg.Surface((self.grid_cols, self.grid_rows))

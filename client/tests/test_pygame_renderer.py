@@ -278,10 +278,12 @@ def _display_stub(width, height):
 
 def test_configure_window_uses_display_margin_and_preferred_viewport():
     set_mode_calls = []
+    set_icon_calls = []
     display = SimpleNamespace(
         Info=lambda: SimpleNamespace(current_w=1920, current_h=1080),
         set_mode=lambda size, flags: set_mode_calls.append((size, flags)) or object(),
         set_caption=lambda title: None,
+        set_icon=lambda surface: set_icon_calls.append(surface),
     )
     renderer = PygameRenderer()
     renderer.pg = SimpleNamespace(
@@ -290,6 +292,7 @@ def test_configure_window_uses_display_margin_and_preferred_viewport():
         RESIZABLE=1,
         Surface=lambda size: object(),
         font=SimpleNamespace(SysFont=lambda name, size: object()),
+        image=SimpleNamespace(load=lambda path: path),
     )
     renderer.grid_cols, renderer.grid_rows = 32, 16
 
@@ -298,6 +301,9 @@ def test_configure_window_uses_display_margin_and_preferred_viewport():
     assert renderer._display_safe_bounds == (1728, 972)
     assert renderer.scale == 30
     assert set_mode_calls == [((960, 480), 1)]
+    # The source checkout ships assets/branding/bytefray-icon.png, so this
+    # runs for real (not mocked) -- see get_branding_icon_path.
+    assert len(set_icon_calls) == 1
 
 
 def test_display_bounds_are_captured_before_set_mode_and_reused():

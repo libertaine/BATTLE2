@@ -200,6 +200,42 @@ def test_regular_windows_install_falls_back_under_user_profile(tmp_path):
     assert resolved == (profile / "AppData" / "Local" / "BATTLE2").resolve()
 
 
+def test_branding_icon_resolves_in_source_checkout():
+    repository = Path(__file__).resolve().parents[2]
+
+    resolved = paths.get_branding_icon_path()
+
+    assert resolved == repository / "assets" / "branding" / "bytefray-icon.png"
+    assert resolved.is_file()
+
+
+def test_branding_icon_resolves_under_frozen_meipass(monkeypatch, tmp_path):
+    extraction = tmp_path / "temporary extraction"
+    (extraction / "assets" / "branding").mkdir(parents=True)
+    icon = extraction / "assets" / "branding" / "bytefray-icon.png"
+    icon.write_bytes(b"stand-in icon bytes")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(extraction), raising=False)
+
+    assert paths.get_branding_icon_path() == icon.resolve()
+
+
+def test_branding_icon_falls_back_to_app_assets_for_wheel_installs(monkeypatch, tmp_path):
+    package_container = tmp_path / "site-packages"
+    (package_container / "app" / "assets" / "branding").mkdir(parents=True)
+    icon = package_container / "app" / "assets" / "branding" / "bytefray-icon.png"
+    icon.write_bytes(b"stand-in icon bytes")
+    monkeypatch.setattr(paths, "get_resource_root", lambda: package_container)
+
+    assert paths.get_branding_icon_path() == icon.resolve()
+
+
+def test_branding_icon_returns_none_when_unresolvable(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths, "get_resource_root", lambda: tmp_path / "empty")
+
+    assert paths.get_branding_icon_path() is None
+
+
 def test_default_paths_normalize_their_writable_root(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
