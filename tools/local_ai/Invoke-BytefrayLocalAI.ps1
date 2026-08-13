@@ -883,7 +883,7 @@ $errorPath
 
 ---
 
-$response.response
+$($response.response)
 
 ---
 
