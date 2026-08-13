@@ -43,21 +43,28 @@ def test_agent_development_tab_present_and_catalog_filters_to_python_agents(monk
         assert hasattr(designer, "development")
         assert designer.tabs.indexOf(designer.development) >= 0
 
-        # Starter agents (runner/writer/seeker/spiral) are VM built-ins
-        # (kind != python), so before creating any Python agent the
-        # Agent Development combo must be empty even though Simple/Advanced
-        # already show the starters.
+        # Bytefray seeds both VM starters (kind != python) and Python
+        # starters (kind == python) at startup -- see
+        # battle_engine.starters. The Agent Development combo must show
+        # only the Python ones. Identify them by discovery id (independent
+        # of the catalog's current size or ordering) so this keeps holding
+        # if the starter roster grows on either side of that split.
         assert designer.simple.agentA.count() > 0
-        assert designer.development.agentCombo.count() == 0
+        catalog_rows = designer.catalog.list_agents()
+        python_ids = {row.agent_id for row in catalog_rows if row.meta.get("kind") == "python"}
+        non_python_ids = {row.agent_id for row in catalog_rows if row.meta.get("kind") != "python"}
+        assert python_ids, "expected at least one Python starter agent"
+        assert non_python_ids, "expected at least one non-Python (VM) starter agent"
+
+        dev_ids_before = {agent_id for _, agent_id in designer.development.python_agent_names()}
+        assert dev_ids_before == python_ids
+        assert dev_ids_before.isdisjoint(non_python_ids)
 
         create_agent("my_first_agent", data_root=data_root)
         designer.refresh_agents()
 
-        names = [
-            designer.development.agentCombo.itemText(i)
-            for i in range(designer.development.agentCombo.count())
-        ]
-        assert names == ["my_first_agent"]
+        dev_ids_after = {agent_id for _, agent_id in designer.development.python_agent_names()}
+        assert dev_ids_after == dev_ids_before | {"my_first_agent"}
     finally:
         designer.deleteLater()
 
@@ -157,7 +164,28 @@ def test_new_agent_dialog_respects_custom_data_root_with_spaces(monkeypatch, tmp
 
 
 @pytest.mark.gui
-def test_open_folder_disabled_with_no_selection_and_enabled_after_creation(monkeypatch, tmp_path):
+def test_open_folder_disabled_with_no_agents():
+    """Isolated panel unit test: no catalog means nothing is selectable.
+
+    Uses a bare ``AgentDevelopmentPanel`` (same pattern as the panel's other
+    presentation-only tests below) rather than a full ``AgentDesigner``,
+    because Bytefray's real startup always seeds Python starter agents
+    (``battle_engine.starters``) -- there is no way to observe a genuinely
+    empty, nothing-selected catalog through the full Designer anymore.
+    """
+    _make_app()
+    from app.views.development import AgentDevelopmentPanel
+
+    panel = AgentDevelopmentPanel()
+    try:
+        assert panel.agentCombo.count() == 0
+        assert panel.btnOpenFolder.isEnabled() is False
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
+def test_open_folder_enabled_after_creation_and_selection(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
     monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
@@ -166,17 +194,16 @@ def test_open_folder_disabled_with_no_selection_and_enabled_after_creation(monke
 
     designer = AgentDesigner()
     try:
-        assert designer.development.agentCombo.count() == 0
-        assert designer.development.btnOpenFolder.isEnabled() is False
-
         from battle_engine.agent_scaffold import create_agent
 
         result = create_agent("folder_agent", data_root=data_root)
         designer.refresh_agents(select="folder_agent")
 
+        assert designer.development.agentCombo.currentText() == "folder_agent"
         assert designer.development.btnOpenFolder.isEnabled() is True
         row = designer.development.selectedAgentRow()
         assert row is not None
+        assert row.agent_id == "folder_agent"
         assert row.path == str(result.manifest_path.parent)
     finally:
         designer.deleteLater()
@@ -224,7 +251,17 @@ def test_open_agent_folder_noop_when_nothing_selected(monkeypatch, tmp_path):
 
     designer = AgentDesigner()
     try:
+        # Force an empty Python-agent catalog so nothing is selectable, even
+        # though Bytefray now seeds Python starter agents by default (see
+        # battle_engine.starters). Open Agent Folder's "nothing selected"
+        # guard is still real production behavior (app.agent_designer
+        # ._on_open_agent_folder) and needs its own coverage independent of
+        # startup seeding.
+        designer.development.setAgents([])
+        assert designer.development.selectedAgentRow() is None
+
         captured: list[str] = []
+        informed: list[bool] = []
         monkeypatch.setattr(
             agent_designer_module.QDesktopServices,
             "openUrl",
@@ -233,12 +270,13 @@ def test_open_agent_folder_noop_when_nothing_selected(monkeypatch, tmp_path):
         monkeypatch.setattr(
             agent_designer_module.QMessageBox,
             "information",
-            staticmethod(lambda *a, **k: None),
+            staticmethod(lambda *a, **k: informed.append(True)),
         )
 
         designer._on_open_agent_folder()
 
         assert captured == []
+        assert informed == [True]
     finally:
         designer.deleteLater()
 
@@ -256,7 +294,18 @@ def test_existing_simple_and_advanced_selectors_still_populate(monkeypatch, tmp_
     try:
         assert designer.simple.agentA.count() > 0
         assert designer.advanced.agentA.count() > 0
-        # Development combo stays empty until a Python agent exists.
-        assert designer.development.agentCombo.count() == 0
+
+        catalog_rows = designer.catalog.list_agents()
+        python_ids = {row.agent_id for row in catalog_rows if row.meta.get("kind") == "python"}
+        non_python_ids = {row.agent_id for row in catalog_rows if row.meta.get("kind") != "python"}
+        assert non_python_ids, "expected at least one non-Python (VM) starter agent"
+
+        # Development is filtered to Python agents only; Simple/Advanced show
+        # the full catalog, including the VM starters Development excludes.
+        dev_ids = {agent_id for _, agent_id in designer.development.python_agent_names()}
+        assert dev_ids == python_ids
+        assert dev_ids.isdisjoint(non_python_ids)
+        assert designer.simple.agentA.count() == len(catalog_rows)
+        assert designer.advanced.agentA.count() == len(catalog_rows)
     finally:
         designer.deleteLater()

@@ -517,6 +517,14 @@ def test_designer_evaluate_is_noop_without_python_agents(monkeypatch, tmp_path):
     monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
     designer = AgentDesigner()
     try:
+        # Force an empty Python-agent catalog, even though Bytefray now
+        # seeds Python starter agents by default (see
+        # battle_engine.starters) -- _on_evaluate's "no Python agents yet"
+        # guard is still real production behavior (app.agent_designer
+        # ._on_evaluate) and needs its own coverage independent of startup
+        # seeding.
+        designer.development.setAgents([])
+
         opened = []
         informed = []
         monkeypatch.setattr(
