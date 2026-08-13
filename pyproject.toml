@@ -91,7 +91,6 @@ app = [
 ]
 battle_engine = [
   "data/**/*",
-  "warriors/**/*",
 ]
 
 # If you prefer installing external, non-package files to a known location, you can

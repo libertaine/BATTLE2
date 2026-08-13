@@ -97,7 +97,7 @@ abbreviated.
   distribution that bundles pMARS must preserve its GPLv2 licensing
   materials (see `third_party_licenses/`).
 - CI runs the headless suite on Python 3.10–3.13, validates the pure wheel,
-  and builds the five Windows executables. Optional workflows cover Linux
+  and builds the four Windows executables. Optional workflows cover Linux
   X11/Xvfb GUI startup smoke and Ubuntu pMARS build/runtime — these are
   startup checks, not a substitute for manual interactive testing.
 

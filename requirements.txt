@@ -1,6 +1,0 @@
-# Aggregate development environment. Runtime consumers should install the
-# appropriate project extra instead.
--r requirements-core.txt
--r requirements-client.txt
--r requirements-designer.txt
--r requirements-dev.txt

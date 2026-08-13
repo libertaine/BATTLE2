@@ -22,8 +22,14 @@ venv/
 runs/
 engine/src/battle_engine/runs/
 agents_build/
+agent_revisions/
 *.blob
 *.jsonl
+
+# Committed-by-accident PyInstaller scratch/output trees (not the canonical
+# /build/ and /dist/ paths tools/build_win.ps1 actually writes to)
+/builds/
+/work/
 
 # Local AI dev tooling (optional, generated artifacts)
 tools/local_ai/local-ai-results/

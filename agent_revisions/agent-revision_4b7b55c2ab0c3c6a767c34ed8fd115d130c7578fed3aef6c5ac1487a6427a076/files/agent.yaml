@@ -1,9 +1,0 @@
-{
-  "name": "claimer",
-  "display": "Claimer (Starter)",
-  "description": "Basic territorial strategy: sweeps the whole arena with a fixed stride, claiming every cell it visits. No reading, no reacting.",
-  "kind": "python",
-  "api_version": 1,
-  "entrypoint": "agent.py:create_agent",
-  "version": "0.1.0"
-}

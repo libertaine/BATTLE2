@@ -22,38 +22,28 @@ This project is released under the **MIT License**. See the [LICENSE](LICENSE) f
 [![Changelog](https://img.shields.io/badge/Changelog-view-blue)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+<p align="center">
+  <img src="docs/screenshots/replay-viewer.png" alt="Bytefray replay viewer showing a paused, territory-split match" width="560">
+</p>
+
 ## Project rename: BATTLE2 → Bytefray
 
-This project was previously named **BATTLE2**. The public CLI is now `bytefray`;
-the legacy `battle2` command remains available as a deprecated compatibility
-alias and prints a short deprecation notice when used. Internal Python package names (`battle_engine`, `battle_client`)
-and the `battle2.*` artifact schema identifiers (`battle2.result`,
-`battle2.replay`) are retained unchanged for compatibility — they are stable
-protocol identifiers, not user-facing branding. Set `BYTEFRAY_ROOT` to choose
-a writable data root explicitly; the legacy `BATTLE2_ROOT` and `BATTLE_ROOT`
-variables remain supported as deprecated fallbacks.
+This project was previously named **BATTLE2**. The public CLI is now
+`bytefray`; the legacy `battle2` command remains available as a deprecated
+compatibility alias. See [docs/PROJECT_HISTORY.md](docs/PROJECT_HISTORY.md)
+for the full rename story and compatibility details, including the
+`BYTEFRAY_ROOT` / `BATTLE2_ROOT` / `BATTLE_ROOT` environment variable
+precedence.
 
 ## AI-Assisted Development
 
-Bytefray (formerly BATTLE2) began partly as an experiment in whether large language models could contribute meaningfully to the creation of a real software project. It has evolved into an exploration of AI-assisted, human-directed software development. AI tools are used for implementation, repository exploration, debugging, architecture critique, test generation, documentation, code review, and independent second opinions.
-
-Development is incremental and repository-driven. Goals and architecture are established through human direction and AI-assisted analysis; coding agents work against branches and the current source tree; failures are reproduced; tests are run; and diffs are reviewed before changes are accepted. Different tools and models may also be used independently to challenge implementations or review one another's conclusions.
-
-AI-generated code and review findings are treated as proposals, not authority. Claims are checked against executable behavior, tests, the current repository, and other reproducible evidence; findings that cannot be confirmed are rejected. Human judgment remains responsible for project direction, requirements, architecture, scope, tradeoffs, and deciding when a change is ready to enter the project.
-
-### Optional Local AI Development Assistance
-
-Bytefray development may optionally use local [Ollama](https://ollama.com)
-models for bounded secondary analysis — test-failure triage, focused
-diff/code review, regression-test brainstorming, Windows/Linux portability
-review, evidence review for ambiguous failures, and summarization of large
-test/CI output. This is **developer tooling, not a Bytefray feature**:
-local-model findings are advisory and non-authoritative, and are never a
-substitute for tests, reproduction, source inspection, or release
-validation. Ollama is not required to build, install, or run Bytefray,
-create or run agents, execute tests, use Agent Designer, run CI, or
-produce a release. See [tools/local_ai/README.md](tools/local_ai/README.md)
-for the full policy and current tooling status.
+Bytefray's own development optionally uses AI tooling — coding agents, code
+review, and bounded local-model analysis — under human direction. This is
+project methodology, not a Bytefray feature: nothing described here is
+required to build, install, or run Bytefray, create or run agents, execute
+tests, use Agent Designer, run CI, or produce a release. See
+[docs/DEVELOPMENT_METHOD.md](docs/DEVELOPMENT_METHOD.md) for the full
+policy, including optional local [Ollama](https://ollama.com) tooling.
 
 ---
 
@@ -118,8 +108,8 @@ not promised for any specific release.
 ```bash
 git clone https://github.com/libertaine/Bytefray.git
 cd Bytefray
-python -m venv venv
-source venv/bin/activate     # or `.\venv\Scripts\activate` on Windows
+python -m venv .venv
+source .venv/bin/activate     # or `.\.venv\Scripts\activate` on Windows
 pip install -e .             # engine, headless replay, and agent discovery
 pip install -e ".[replay]"  # optional Pygame replay viewer
 pip install -e ".[designer]" # optional PySide6 designer
@@ -580,7 +570,9 @@ bytefray replay --renderer pygame   # Pygame replay viewer
 python -m app.agent_designer        # PySide6 designer GUI
 python -m battle_engine --help
 
-# 5️⃣ (Optional) Build executables
+# 5️⃣ (Optional) Build executables — requires the windows-build extra
+pip install -e ".[windows-build]"   # pyinstaller, pefile
+
 pyinstaller -y --clean --name battle-cli --console ^
   --paths engine\src --collect-all battle_engine -m battle_engine.cli
 
@@ -614,7 +606,7 @@ Bytefray/
 ├── client/
 │   └── src/battle_client/     # Renderer and interface code
 ├── tools/
-│   ├── build_executables.ps1  # Build helper script
+│   ├── build_win.ps1          # Windows build script (invoked by CI)
 │   ├── installer.iss          # Inno Setup installer definition
 │   └── smoke_after_install.ps1
 ├── examples/                  # Sample agents and match configs

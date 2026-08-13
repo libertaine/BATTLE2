@@ -1,9 +1,0 @@
-{
-  "name": "strider",
-  "display": "Strider (Starter)",
-  "description": "Improved territorial strategy: Claimer's sweep, but reads a cell first and skips re-claiming ground it already holds.",
-  "kind": "python",
-  "api_version": 1,
-  "entrypoint": "agent.py:create_agent",
-  "version": "0.1.0"
-}
