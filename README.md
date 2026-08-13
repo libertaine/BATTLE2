@@ -78,7 +78,7 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 0.8.0 | Agent Revision & Provenance | Released — durable identity/provenance for agent revisions, so historical evaluation results stay meaningful as an agent's source keeps evolving: a content-addressed revision store, freeze-time archival wired into `agents evaluate` (schema v3's additive `agent_revisions` field), revision-aware `evaluations show`/`--verify`, and `agents revisions list`/`show`/`restore`. **Major hardening:** fail-closed restore/snapshot verification, cross-platform artifact path containment, and Windows junction/reparse-point containment. |
 | 0.9.0 | Orientation-Aware Evaluation | Released — closed a structural first-mover bias present in every `agents evaluate` cell ever run (the candidate always occupied the always-first-acting physical slot; a shipped starter agent already documented and exploited this). Both entrant orientations (`candidate_first`/`opponent_first`) now run by default as independent, fully provenance-tracked cells; `--single-orientation` restores the exact legacy methodology. `bytefray.evaluation` bumps to schema/identity v4; every evaluation also now explicitly discloses that arena alignment is fixed (translation robustness remains research work, not yet evaluated). A ruleset-review investigation conducted during v0.9 development (scoring counterfactuals, capped-territory experiments) found no gameplay-rule change justified yet, and reprioritized this entrant-orientation fix ahead of it, on the reasoning that the tool measuring the rules needed fixing first. |
 | 0.10.0 | Platform Stabilization / v1.0 Readiness | Released — a stabilization release, not another feature release: froze the Bytefray 1.0 rules contract (`bytefray-rules-1`), closed the entrant-orientation-vs-translation evaluation-methodology question, defined the stable Agent API v1 and compatibility model, persisted Ruleset identity into native result/replay artifacts, hardened canonical match identity, and completed release qualification and first-user-workflow/packaging fixes. See [docs/ROADMAP.md](docs/ROADMAP.md). |
-| 1.0.0 | Stable Bytefray Platform | Planned — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. If v0.10 finds no major architectural problem, v1.0 follows without another broad pre-1.0 feature cycle. The required pre-1.0 branding/visual-integration gate (executable/installer icons, GitHub/README imagery, representative screenshots) identified during v0.10 release qualification is now integrated on `v1.0-rc1-branding`; **still blocked on RC-level qualification and versioning** before a `v1.0.0` tag — see [docs/ROADMAP.md](docs/ROADMAP.md#required-pre-10-gate-brandingvisual-release-integration). |
+| 1.0.0 | Stable Bytefray Platform | Released — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. Promotes `v1.0.0-rc2` (which closed the required pre-1.0 branding/visual-integration gate and an Agent Designer runtime-kind match-selector correction) to general availability, following full RC-level qualification; no gameplay, Agent API, Ruleset, or evaluation-schema change beyond what the release candidates already shipped. See [docs/ROADMAP.md](docs/ROADMAP.md#v100--stable-bytefray-platform). |
 
 **Future plans (post-1.0):** substantial ideas are deliberately kept out of
 v1.0's required scope so it isn't held hostage to every interesting
@@ -135,17 +135,17 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Current release:** [Bytefray v0.10.0](https://github.com/libertaine/Bytefray/releases/tag/v0.10.0).
+**Current release:** [Bytefray v1.0.0](https://github.com/libertaine/Bytefray/releases/tag/v1.0.0).
 Earlier downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Windows installer** | [Bytefray-Setup-0.10.0.exe](https://github.com/libertaine/Bytefray/releases/download/v0.10.0/Bytefray-Setup-0.10.0.exe) | Installs under `C:\Program Files\Bytefray` |
-| 💼 **Portable Windows applications** | [bytefray-0.10.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v0.10.0/bytefray-0.10.0-windows.zip) | Complete onedir layouts for all four executables |
-| 🐍 **Python wheel** | [bytefray-0.10.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v0.10.0/bytefray-0.10.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
-| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v0.10.0/SHA256SUMS.txt) | SHA-256 values for release assets |
+| 🧰 **Windows installer** | [Bytefray-Setup-1.0.0.exe](https://github.com/libertaine/Bytefray/releases/download/v1.0.0/Bytefray-Setup-1.0.0.exe) | Installs under `C:\Program Files\Bytefray` |
+| 💼 **Portable Windows applications** | [bytefray-1.0.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v1.0.0/bytefray-1.0.0-windows.zip) | Complete onedir layouts for all four executables |
+| 🐍 **Python wheel** | [bytefray-1.0.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v1.0.0/bytefray-1.0.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v1.0.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---
 
