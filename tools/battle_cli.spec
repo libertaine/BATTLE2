@@ -6,6 +6,7 @@ project_root = os.path.abspath(".")
 engine_src = os.path.join(project_root, "engine", "src")
 script_path = os.path.join(engine_src, "battle_engine", "cli.py")
 pmars_dir = os.path.join(project_root, "pmars", "windows")
+icon_path = os.path.join(project_root, "assets", "branding", "bytefray-icon.ico")
 starter_agents_dir = os.path.join(engine_src, "battle_engine", "data", "starter_agents")
 pmars_datas = [
     (os.path.join(pmars_dir, "pmars.exe"), "pmars/windows"),
@@ -27,5 +28,5 @@ a = Analysis(
     noarchive=False,
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="battle-cli", console=True)
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="battle-cli", console=True, icon=icon_path)
 coll = COLLECT(exe, a.binaries, a.datas, name="battle-cli")
