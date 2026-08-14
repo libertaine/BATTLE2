@@ -38,6 +38,7 @@ from app.services.engine import open_pygame_client_direct
 from app.views.advanced import AdvancedPanel
 from app.views.development import AgentDevelopmentPanel, NewAgentDialog
 from app.views.evaluation import EvaluationDialog, EvaluationResultsDialog
+from app.views.evaluation_history import EvaluationHistoryDialog
 from app.views.simple import SimplePanel
 from app.views.tournament import TournamentDialog
 
@@ -138,6 +139,7 @@ class AgentDesigner(QMainWindow):
     def _build_menus(self) -> None:
         tools = self.menuBar().addMenu("Tools")
         tools.addAction("Run Tournament…", self._on_tournament)
+        tools.addAction("Evaluation History…", self._on_evaluation_history)
         tools.addAction("Open Last Output Folder", self._on_open_output_folder)
         help_menu = self.menuBar().addMenu("Help")
         help_menu.addAction("About Bytefray", self._on_about)
@@ -657,6 +659,25 @@ class AgentDesigner(QMainWindow):
         except EvaluationConfigurationError as exc:
             raise DesignerValidationError(str(exc)) from exc
         return self.battle_root / "runs" / "evaluations" / evaluation_id
+
+    def _on_evaluation_history(self) -> None:
+        """Open the read-only Evaluation History browser (v1.1).
+
+        No agent code executes and no process is spawned to open this
+        dialog -- it only reads already-written ``evaluation.json``/
+        ``agent_revisions`` artifacts through
+        ``battle_engine.evaluation_history``/``battle_engine.agent_revisions``,
+        exactly like ``TraceInspectorDialog`` reads an already-written trace.
+        Its "Test in Agent Lab"/"Open Replay" cell drill-down reuses the
+        identical handlers the fresh-run ``EvaluationResultsDialog`` already
+        wires (``_on_evaluation_test_in_agent_lab``/
+        ``_on_evaluation_open_replay``) -- one execution/replay-launch path,
+        not two.
+        """
+        dialog = EvaluationHistoryDialog(self.battle_root, parent=self)
+        dialog.testInAgentLabRequested.connect(self._on_evaluation_test_in_agent_lab)
+        dialog.openReplayRequested.connect(self._on_evaluation_open_replay)
+        dialog.exec()
 
     def _on_evaluate(self) -> None:
         """Open the Evaluate dialog and launch ``bytefray agents evaluate`` (v0.6).

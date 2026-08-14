@@ -1200,6 +1200,28 @@ read-only "Evaluation History…" action reusing `EvaluationResultsDialog`/
 recorded here so a follow-up has a concrete starting point, not just a
 placeholder.
 
+**Landed in v1.1** (`docs/ROADMAP.md`'s "Evaluation Insight & Designer
+Polish"), almost exactly as sketched above: **Tools → Evaluation History…**
+opens `EvaluationHistoryDialog` (`app/views/evaluation_history.py`), a
+read-only browser over `discover()`/`adapt_any()`/`align()`/`verify_summary()`
+via a thin adapter (`app/services/evaluation_history_workflows.py`) that adds
+no domain logic of its own beyond Designer-appropriate `data_root` scoping
+and plain-text formatting mirroring `evaluation_history/cli.py`'s own field
+selection verbatim. Cell drill-down ("Test in Agent Lab"/"Open Replay")
+reuses `EvaluationResultsDialog`'s exact signal shape and the exact same
+`AgentDesigner` handlers — no second execution/replay-launch path exists.
+Two-run comparison (`EvaluationComparisonDialog`) and agent-revision
+provenance inspection (`RevisionBrowserDialog`, including a live check of
+whether an archived revision still matches an agent's *current* on-disk
+source — an Area D capability the CLI itself doesn't expose) are also
+implemented. **Still deferred, unchanged from above:** replay/Agent-Lab
+drill-down from a comparison row (as opposed to from the single-evaluation
+cell list, which is implemented) and any evaluation-history indexing (the
+~1.86s-at-1,000-artifacts on-demand-scan profile this section already
+measured was re-confirmed adequate during v1.1 qualification). Revision
+*restore* from the GUI remains out of scope for a different reason — see
+`docs/specs/agent_revision.md` §9's own v1.1 note.
+
 ## 18. Compatibility
 
 - No `battle2.result`/`battle2.replay`/Agent API v1 change.

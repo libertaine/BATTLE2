@@ -243,6 +243,44 @@ drawn deliberately from [FUTURE_PLANS.md](FUTURE_PLANS.md) as usage and
 evidence justify it, the same way milestones have been chosen throughout
 Bytefray's history.
 
+## v1.1.0 — Evaluation Insight & Designer Polish
+
+**Status: implemented on `main`, pending release qualification/tag.** Unlike
+every milestone above, v1.1 is not a new capability so much as it is
+*surfacing* one: `bytefray.evaluation`'s history/comparison layer
+(`battle_engine.evaluation_history`, v0.7) and the agent-revision provenance
+store (`battle_engine.agent_revisions`, v0.8) were already complete,
+Qt-free, and fully tested — only ever reachable through the CLI
+(`bytefray agents evaluations list/show/compare`, `bytefray agents
+revisions list/show/restore`). Both feature specs recorded the Designer-side
+gap explicitly rather than leaving it implicit (`docs/specs/
+evaluation_history.md` §17, `docs/specs/agent_revision.md` §9). v1.1 closes
+it:
+
+- an **Evaluation History** browser in Agent Designer (**Tools → Evaluation
+  History…**): discover, inspect, and optionally deep-verify past
+  `agents evaluate` runs, including legacy schema-v1 artifacts, without
+  leaving the GUI or reconstructing state from raw JSON;
+- **comparability-first two-run comparison**: candidate/baseline/rules/
+  methodology identity are checked and disclosed *before* any per-opponent
+  improved/regressed/unchanged/inconclusive verdict is shown, so differing
+  experimental conditions are never presented as a clean performance delta;
+- **revision/provenance inspection**, including a capability the CLI itself
+  doesn't have: a live check of whether an evaluation's archived agent
+  revision still matches that agent's *current* on-disk source, or has
+  drifted since the evaluation was run.
+
+No Ruleset, Agent API, evaluation/result/replay-schema, or evaluation-
+methodology change — this is additive Designer-layer code consuming
+already-stable, already-versioned artifacts, verified directly (no
+`engine/src`/`client/src` file was touched). Deliberately deferred out of
+this slice: replay/Agent-Lab drill-down from a comparison row, revision
+*restore* from the GUI (the store/restore primitives are read cleanly but
+never written to), cross-evaluation trend charts, and any evaluation-history
+indexing (the existing on-demand-scan performance profile, ~1.86s at 1,000
+artifacts, was re-confirmed adequate and is not blocking). See
+`CHANGELOG.md`'s Unreleased entry for the file-level summary.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:

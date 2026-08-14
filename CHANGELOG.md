@@ -3,6 +3,44 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
+## [Unreleased]
+
+Implementation and release qualification for the proposed v1.1 theme,
+**Evaluation Insight & Designer Polish** (see `docs/ROADMAP.md`/
+`docs/FUTURE_PLANS.md`'s "Richer GUI access to evaluation/history/
+provenance"). No gameplay, Agent API, Ruleset, or evaluation/result/replay
+schema change; no `engine/src`/`client/src` file was touched.
+
+### Agent Designer
+
+- Added an **Evaluation History** browser (**Tools → Evaluation History…**):
+  the Designer can now list, inspect, deep-verify, and compare past
+  `agents evaluate` runs (including legacy v1 artifacts) without leaving the
+  GUI, and inspect the durable agent-revision provenance (files, omissions,
+  live verification, and whether the archived revision still matches an
+  agent's *current* on-disk source) behind a candidate/baseline/opponent
+  role. This is the Designer history UI both `docs/specs/evaluation_history.md`
+  (Sec 17) and `docs/specs/agent_revision.md` (Sec 9) explicitly deferred
+  when the underlying `battle_engine.evaluation_history`/
+  `battle_engine.agent_revisions` engine layers shipped in v0.7/v0.8 — this
+  slice surfaces that already-shipped, already-tested capability rather than
+  adding new engine behavior. Cell drill-down ("Test in Agent Lab"/"Open
+  Replay") reuses the exact handlers `EvaluationResultsDialog` already uses;
+  no new execution or replay-launch path was added. New, presentation-only
+  files: `app/services/evaluation_history_workflows.py`,
+  `app/views/evaluation_history.py`.
+- Release-qualification polish, found via an interactive session against the
+  real (non-offscreen) Qt backend rather than assertions alone: a comparison
+  whose cells all fell into duplicate (opponent, seed) groups previously
+  rendered as an uninformative wall of zero counts with no visible signal
+  that detail was available — the summary now discloses the
+  `ambiguous_duplicate_groups` count directly; the deep-`Verify` outcome is
+  now also shown as an always-visible status line instead of only as the
+  last line of a long, scrollable detail block; history/comparison list rows
+  now carry a full-text tooltip for what a long single-line summary
+  truncates at typical window widths; and the "Compare With…" picker no
+  longer offers an unreadable/malformed sibling as a comparison target.
+
 ## [1.0.1] - 2026-08-13
 
 Patch release. No gameplay, Agent API, Ruleset, or evaluation-schema

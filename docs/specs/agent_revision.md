@@ -907,6 +907,25 @@ ahead of measured need.
 Designer UI is not a phase — deferred, matching v0.7's own precedent
 (`evaluation_history.md` §17).
 
+**Landed in v1.1** (`docs/ROADMAP.md`'s "Evaluation Insight & Designer
+Polish"), as part of the same Evaluation History browser
+`evaluation_history.md` §17 records: `RevisionBrowserDialog`
+(`app/views/evaluation_history.py`), reachable from a selected evaluation's
+"Show Revision…" button, is a read-only inspector over one revision's
+manifest — files, omissions, `complete`, and a live `verify_revision`
+result, mirroring `bytefray agents revisions show`'s own field selection.
+It also does something the CLI's `show` does not: given the role's own
+evaluation-time agent id (candidate/baseline/opponent), it live-compares the
+archived revision against that agent's *current* on-disk content and reports
+one of "matches the current source," "changed since this evaluation was
+run," or "this agent id no longer exists" — closing the "does this still
+match current source" question this document's own introduction and §8
+raise, using only the existing `agent_revision_fingerprint`/
+`agent_revision_id` primitives (no new engine code). **GUI revision
+`restore` remains explicitly deferred** — the Designer only ever reads the
+store; writing to it (restoring a snapshot to a target directory) stays a
+CLI-only operation (`bytefray agents revisions restore`) for this milestone.
+
 ## 10. Testing and validation criteria
 
 ### 10.1 Phase 2 — done (`engine/tests/test_agent_revisions.py`)

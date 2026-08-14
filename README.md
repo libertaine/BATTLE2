@@ -291,8 +291,14 @@ Agent B choices once Agent A is selected, so mixed VM/Python selections are
 prevented in the UI as well as rejected explicitly by the backend.
 **Tools → Run Tournament…** opens
 a minimal homogeneous round-robin launcher; tournament artifacts are written to
-the selected directory. **Help → About Bytefray** reports the installed version
-and the active Agent API, result, and replay schema versions.
+the selected directory. **Tools → Evaluation History…** opens a read-only
+browser over past `agents evaluate` runs — list/inspect/deep-verify one
+evaluation (including older schema versions), compare two runs with the same
+comparability disclosure the CLI's `evaluations compare` gives, and inspect
+the agent-revision provenance behind a candidate/baseline/opponent, including
+whether it still matches that agent's current source. **Help → About Bytefray**
+reports the installed version and the active Agent API, result, and replay
+schema versions.
 
 ---
 
