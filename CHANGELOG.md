@@ -3,7 +3,7 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
-## [Unreleased]
+## [1.1.0] - 2026-08-14
 
 Implementation and release qualification for the proposed v1.1 theme,
 **Evaluation Insight & Designer Polish** (see `docs/ROADMAP.md`/
