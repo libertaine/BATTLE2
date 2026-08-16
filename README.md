@@ -71,14 +71,15 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 1.0.0 | Stable Bytefray Platform | Released — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. Promotes `v1.0.0-rc2` (which closed the required pre-1.0 branding/visual-integration gate and an Agent Designer runtime-kind match-selector correction) to general availability, following full RC-level qualification; no gameplay, Agent API, Ruleset, or evaluation-schema change beyond what the release candidates already shipped. See [docs/ROADMAP.md](docs/ROADMAP.md#v100--stable-bytefray-platform). |
 | 1.0.1 | Post-1.0 Maintenance | Released — patch release. **Fix:** the Agent Designer Advanced tab's per-agent JSON params were silently discarded instead of reaching the agent process. Otherwise repository/build cleanup: removed dead code and ~132MB of committed build output, consolidated packaging/sync tooling, established a Ruff-clean baseline enforced in CI, and refreshed contributor/security documentation. No gameplay, Agent API, Ruleset, or evaluation-schema change. |
 | 1.1.0 | Evaluation Insight & Designer Polish | Released — brings the already-shipped v0.7/v0.8 evaluation-history and agent-revision engine layers into Agent Designer: a Tools → Evaluation History… browser for past `agents evaluate` runs (including legacy artifacts), comparability-first two-run comparison, and agent-revision provenance inspection with a live current-source-drift check the CLI itself doesn't have. No gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
+| 1.2.0 | Portable Agent Packaging & Sharing | Released — extends the existing content-addressed agent-revision store across a machine boundary: `agents export`/`agents package show`/`agents import` package one agent revision into a portable, inspectable-without-execution `.bytefray-agent` file, transfer it by any ordinary means, and import it transactionally into another installation with its `agent_revision_id` and provenance preserved. Adversarially tested against path traversal, tampering, and collision, and qualified with a genuine cross-platform (Windows/Linux) round trip. Introduces exactly one new, independent compatibility axis (`bytefray.agent_package` schema v1); no gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
 
 **Future plans (post-1.0):** substantial ideas are deliberately kept out of
 v1.0's required scope so it isn't held hostage to every interesting
-feature — accessible agent-authoring (a small, deterministic DSL), agent
-packaging/sharing, richer evaluation/statistical analysis, evaluation
-performance/scaling, and deeper simulation/combat research (arena-size
-effects, multipronged/multi-process entrants, replication, future
-rulesets). None of it is lost; see the organized, maturity-labeled
+feature — accessible agent-authoring (a small, deterministic DSL), richer
+evaluation/statistical analysis, evaluation performance/scaling, and
+deeper simulation/combat research (arena-size effects, multipronged/
+multi-process entrants, replication, future rulesets). None of it is
+lost; see the organized, maturity-labeled
 catalogue in [docs/FUTURE_PLANS.md](docs/FUTURE_PLANS.md). Post-v0.9
 development may also explore deeper optional local-AI developer tooling
 (see [tools/local_ai/README.md](tools/local_ai/README.md)) — standardized

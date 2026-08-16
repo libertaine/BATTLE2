@@ -283,7 +283,7 @@ artifacts, was re-confirmed adequate and is not blocking). See
 
 ## v1.2.0 — Portable Agent Packaging & Sharing
 
-**Status: implemented on `main`, pending release qualification/tag.**
+**Status: shipped.** `v1.2.0` is tagged and published.
 `docs/FUTURE_PLANS.md`'s "Agent packaging / sharing" (Candidate) promoted
 to this milestone: a Bytefray user can export an agent from one
 installation into a self-describing portable `.bytefray-agent` file,
@@ -306,7 +306,7 @@ not their own directory — cleanly excluded from export rather than
 producing a package that lies about being self-describing).
 
 - `bytefray agents export`/`agents package show`/`agents import` — see
-  `CHANGELOG.md`'s Unreleased entry for the full command reference.
+  `CHANGELOG.md`'s `[1.2.0]` entry for the full command reference.
 - Introduces exactly one new, independent compatibility axis
   (`bytefray.agent_package` schema/version, currently 1) — no Ruleset,
   Agent API, or artifact-schema change; see `docs/COMPATIBILITY.md`.

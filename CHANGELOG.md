@@ -3,12 +3,13 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
-## [Unreleased]
+## [1.2.0] - 2026-08-16
 
-Implementation for the proposed v1.2 theme, **Portable Agent Packaging &
-Sharing** (see `docs/ROADMAP.md`/`docs/FUTURE_PLANS.md`'s "Agent packaging
-/ sharing"). Extends Bytefray's existing content-addressed agent-revision
-provenance (`docs/specs/agent_revision.md`, v0.8) across a machine
+Implementation and release qualification for the proposed v1.2 theme,
+**Portable Agent Packaging & Sharing** (see `docs/ROADMAP.md`/
+`docs/FUTURE_PLANS.md`'s "Agent packaging / sharing"). Extends Bytefray's
+existing content-addressed agent-revision provenance
+(`docs/specs/agent_revision.md`, v0.8) across a machine
 boundary rather than inventing a parallel provenance system: an agent
 package is a transport wrapper around one already-archived revision. No
 gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change;

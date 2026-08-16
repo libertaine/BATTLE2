@@ -59,7 +59,7 @@ shift under it.
 
 ## Agent packaging / sharing
 
-**Status: implemented (v1.2.0, pending release qualification/tag)** — see
+**Status: shipped (v1.2.0)** — see
 `docs/ROADMAP.md`'s v1.2.0 section and `docs/specs/agent_package.md` for
 the full design. `bytefray agents export`/`agents package show`/`agents
 import` package one agent revision into a portable `.bytefray-agent` file,

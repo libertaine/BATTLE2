@@ -26,7 +26,7 @@ see `docs/ROADMAP.md` for the release criterion this feeds into:
   described in `docs/specs/evaluation_history.md`.
 - **Agent revision identity/verification behavior** — the content-
   addressed revision store described in `docs/specs/agent_revision.md`.
-- **Agent package format** (new in v1.2, pending release qualification) —
+- **Agent package format** (new in v1.2.0) —
   `bytefray.agent_package` schema version 1, a transport wrapper around
   one agent revision, described in `docs/specs/agent_package.md`. Newer
   than the other entries in this list, called out explicitly rather than

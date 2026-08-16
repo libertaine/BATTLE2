@@ -28,9 +28,10 @@ spec → issue → prompt → PR flow, produced during the v1.2 reconnaissance
 pass described in `docs/ROADMAP.md`'s "After v1.0" section and
 `docs/FUTURE_PLANS.md`'s "Agent packaging / sharing" (status: Candidate,
 promoted to this Milestone). Baseline recorded for this pass:
-branch `main`, HEAD `2c0071c` (the tagged `v1.1.0` release commit),
-working tree clean, `python -m pytest -q` / `mypy engine/src/battle_engine`
-/ `mypy client/src/battle_client` / `ruff check .` all pass with zero
+branch `main`, HEAD `2c0071c` (post-`v1.1.0` `main` -- the tagged
+`v1.1.0` release commit itself is `b50a499`, two commits back), working
+tree clean, `python -m pytest -q` / `mypy engine/src/battle_engine` /
+`mypy client/src/battle_client` / `ruff check .` all pass with zero
 findings before any code in this spec is written.
 
 ## 0. Why this reuses the revision store instead of inventing a new one
