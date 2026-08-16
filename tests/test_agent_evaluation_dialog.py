@@ -394,13 +394,17 @@ def test_results_dialog_comparison_mode_selection_and_signals(tmp_path):
         assert dialog.btnTestAgentLab.isEnabled()
         assert "candidate" in dialog.detailText.toPlainText()
 
-        captured_lab: list[tuple[str, str, int]] = []
+        captured_lab: list[tuple[str, str, int, int, str]] = []
         captured_replay: list[Path] = []
-        dialog.testInAgentLabRequested.connect(lambda s, o, seed: captured_lab.append((s, o, seed)))
+        dialog.testInAgentLabRequested.connect(
+            lambda s, o, seed, ticks, orientation: captured_lab.append(
+                (s, o, seed, ticks, orientation)
+            )
+        )
         dialog.openReplayRequested.connect(lambda p: captured_replay.append(p))
 
         dialog._on_test_agent_lab()
-        assert captured_lab == [("candidate", "opponent", 1)]
+        assert captured_lab == [("candidate", "opponent", 1, 15, "candidate_first")]
 
         dialog._on_open_replay()
         assert captured_replay
@@ -722,14 +726,16 @@ def test_designer_present_evaluation_result_opens_results_dialog(monkeypatch, tm
 
 
 @pytest.mark.gui
-def test_designer_evaluation_test_in_agent_lab_launches_agents_test(monkeypatch, tmp_path):
+def test_designer_evaluation_test_in_agent_lab_reproduces_ticks_and_orientation(
+    monkeypatch, tmp_path
+):
     _make_app()
     from app.agent_designer import AgentDesigner
 
     monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
     designer = AgentDesigner()
     try:
-        designer._evaluation_ticks = 40
+        designer._evaluation_ticks = 999  # selected-cell ticks must win over stale state
         captured = {}
 
         class _FakeProc:
@@ -743,16 +749,25 @@ def test_designer_evaluation_test_in_agent_lab_launches_agents_test(monkeypatch,
 
         monkeypatch.setattr(designer, "_start_process", _fake_start_process)
 
-        designer._on_evaluation_test_in_agent_lab("candidate", "opponent", 7)
+        designer._on_evaluation_test_in_agent_lab(
+            "candidate", "opponent", 7, 40, "opponent_first"
+        )
 
         assert captured["label"] == "AgentLabTest"
         assert captured["started"] is True
         assert designer._active_workflow == "evaluation_agent_lab_test"
-        assert "candidate" in captured["command"]
-        assert "--opponent" in captured["command"]
-        assert "opponent" in captured["command"]
-        assert "7" in captured["command"]
-        assert "40" in captured["command"]
+        command = captured["command"]
+        test_index = command.index("test")
+        assert command[test_index + 1 :] == [
+            "opponent",
+            "--opponent",
+            "candidate",
+            "--seed",
+            "7",
+            "--ticks",
+            "40",
+        ]
+        assert designer._test_agent_id == "opponent"
     finally:
         designer.deleteLater()
 

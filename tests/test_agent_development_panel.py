@@ -185,6 +185,67 @@ def test_open_folder_disabled_with_no_agents():
 
 
 @pytest.mark.gui
+def test_development_selection_and_state_invalidation_use_exact_agent_id(tmp_path):
+    _make_app()
+    from app.services.agent_catalog import AgentRow
+    from app.views.development import AgentDevelopmentPanel
+
+    first_dir = tmp_path / "alpha_id"
+    second_dir = tmp_path / "beta_id"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    rows = [
+        AgentRow(
+            "Friendly",
+            str(first_dir),
+            None,
+            {"display": "Friendly", "kind": "python"},
+            agent_id="alpha_id",
+        ),
+        AgentRow(
+            "Friendly",
+            str(second_dir),
+            None,
+            {"display": "Friendly", "kind": "python"},
+            agent_id="beta_id",
+        ),
+    ]
+    panel = AgentDevelopmentPanel()
+    try:
+        panel.setAgents(rows)
+        panel.selectAgent("beta_id")
+        selected = panel.selectedAgentRow()
+        assert selected is not None
+        assert selected.agent_id == "beta_id"
+        assert panel.agentCombo.currentText() == "Friendly (beta_id)"
+        assert panel.selected_opponent_id() in {None, "alpha_id", "beta_id"}
+
+        panel._last_validation = object()  # type: ignore[assignment]
+        panel._last_test = object()  # type: ignore[assignment]
+        panel._last_test_replay = tmp_path / "stale-replay.jsonl"
+        panel._last_test_trace = tmp_path / "stale-trace.jsonl"
+        panel.btnOpenTestReplay.setEnabled(True)
+        panel.btnInspectTrace.setEnabled(True)
+        before = panel.statusLabel.text()
+
+        panel.invalidateAgentState("alpha_id", "restored older source")
+        assert panel.statusLabel.text() == before  # wrong duplicate-display row: no-op
+
+        panel.invalidateAgentState("beta_id", "restored older source")
+        assert panel._last_validation is None
+        assert panel._last_test is None
+        assert panel.last_test_replay_path() is None
+        assert panel.last_test_trace_path() is None
+        assert panel.btnOpenTestReplay.isEnabled() is False
+        assert panel.btnInspectTrace.isEnabled() is False
+        assert "Source changed" in panel.statusLabel.text()
+        assert "restored older source" in panel.statusLabel.text()
+        assert "results were cleared" in panel.testStatusLabel.text()
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
 def test_open_folder_enabled_after_creation_and_selection(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"

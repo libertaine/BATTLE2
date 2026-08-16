@@ -33,7 +33,13 @@ def create_agent(): return Agent()
     )
 
 
-def _run(tmp_path: Path, output_dir: Path, candidate: str = "candidate") -> str:
+def _run(
+    tmp_path: Path,
+    output_dir: Path,
+    candidate: str = "candidate",
+    *,
+    seeds: tuple[int, ...] = (1,),
+) -> str:
     _write_python_agent(tmp_path, candidate) if not (tmp_path / "agents" / candidate).is_dir() else None
     if not (tmp_path / "agents" / "opponent").is_dir():
         _write_python_agent(tmp_path, "opponent")
@@ -41,7 +47,7 @@ def _run(tmp_path: Path, output_dir: Path, candidate: str = "candidate") -> str:
         EvaluationRequest(
             candidate_id=candidate,
             opponent_ids=("opponent",),
-            seeds=(1,),
+            seeds=seeds,
             output_dir=output_dir,
             ticks=10,
             data_root=tmp_path,
@@ -234,6 +240,40 @@ def test_cli_compare_regressions_exit_zero(tmp_path: Path, capsys):
     out = capsys.readouterr().out
     assert code == 0  # a comparison result -- even with regressions -- is a successful command
     assert "orientation: right_relative_to_left" in out
+
+
+def test_cli_compare_human_output_discloses_ambiguous_duplicate_groups(tmp_path: Path, capsys):
+    """v1.3 CLI/Designer consistency fix (docs/specs/evaluation_history.md Sec 16).
+
+    The v1.1 Designer already surfaced ``ambiguous_duplicate_groups`` in its
+    comparison summary; the CLI's own human-readable ``_print_compare`` did
+    not, even though the count was always present in ``--json`` output and
+    in ``ComparisonDenominators`` itself. This asserts the human-readable
+    line now includes it too, so the two presentations never disclose
+    different information about the same comparison result.
+    """
+
+    left_dir = tmp_path / "left"
+    right_dir = tmp_path / "right"
+    _run(tmp_path, left_dir, seeds=(1, 2))
+    _run(tmp_path, right_dir, candidate="candidate", seeds=(1, 2))
+
+    # Corrupt one coordinate deliberately: two left cells now claim the
+    # same (opponent, seed, occurrence) coordinate while seed 2 remains a
+    # normal directly-comparable row. Comparison must report, rather than
+    # guess-pair, that seed-1 group; retaining seed 2 keeps compare's exit
+    # status at zero so this test remains specifically about presentation.
+    left_path = left_dir / "evaluation.json"
+    left_data = json.loads(left_path.read_text(encoding="utf-8"))
+    duplicate = dict(left_data["cells"][0])
+    duplicate["schedule_id"] += "-duplicate"
+    left_data["cells"].append(duplicate)
+    left_path.write_text(json.dumps(left_data), encoding="utf-8")
+
+    code = evaluations_main(["compare", str(left_dir), str(right_dir)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "ambiguous_duplicate_groups=1" in out
 
 
 def test_cli_compare_json_output(tmp_path: Path, capsys):

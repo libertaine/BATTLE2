@@ -245,7 +245,7 @@ Bytefray's history.
 
 ## v1.1.0 — Evaluation Insight & Designer Polish
 
-**Status: implemented on `main`, pending release qualification/tag.** Unlike
+**Status: shipped.** `v1.1.0` is tagged and published. Unlike
 every milestone above, v1.1 is not a new capability so much as it is
 *surfacing* one: `bytefray.evaluation`'s history/comparison layer
 (`battle_engine.evaluation_history`, v0.7) and the agent-revision provenance
@@ -326,6 +326,86 @@ producing a package that lies about being self-describing).
   wrapper over the same authoritative `agent_package` functions remains a
   well-justified, low-risk candidate for a later slice, following the same
   precedent v1.1 set for evaluation history/revision provenance).
+
+## v1.3.0 — Designer Workflow Completion
+
+**Status: implemented in the current v1.3 candidate tree, pending release
+qualification/tag.** Where
+v1.1 surfaced evaluation history/revision provenance into Agent Designer and
+v1.2 shipped a CLI-only portable agent-package format, v1.3 finishes
+connecting Agent Designer to those already-shipped 1.x engine capabilities
+so a normal user manages agents, packages, revisions, evaluations, replays,
+and Agent Lab without repeatedly dropping to the CLI — plus a small set of
+Windows packaging/build-qualification fixes found during that work. Not a
+new gameplay or protocol release: the user-facing workflows primarily reuse
+stable v1.1/v1.2 services. Independent qualification also required narrow
+correctness hardening in `agent_package` and internal, non-serialized
+comparison-row references; describing the entire milestone as an unmodified
+thin layer would therefore be inaccurate.
+
+- **Agent package integration in Designer**: "Export Agent…" (Agent
+  Development tab), "Import Agent Package…" and "Inspect Agent Package…"
+  (Tools menu) wrap the exact, authoritative v1.2 `battle_engine.
+  agent_package` functions (`export_agent`/`inspect_package`/
+  `import_package`) with no reimplemented validation, ZIP extraction, or
+  compatibility logic. Selecting/inspecting a package never executes its
+  code; import validates before placement, reports best-effort cleanup
+  limitations honestly, and preserves the CLI's collision
+  semantics (fail without mutation on genuinely different content,
+  iterative explicit alternate-id retry, no-op on an identical revision,
+  never an automatic rename). Refresh/selection uses the exact imported
+  discovery id even when display names differ or collide, and package
+  mutation is guarded while an agent-executing process is active.
+- **Package qualification hardening**: the shared domain now bounds the raw
+  archive/central directory before `ZipFile` allocation, then validates all
+  ZIP metadata and compressed/uncompressed resource limits (including a
+  narrow safely parsed `agent.yaml` cap) before decompression; rejects non-portable member names (including Windows
+  ADS/device/trailing-dot-or-space hazards), special Unix entries, and
+  duplicate/case/ancestor collisions on both read and export; cross-checks
+  `package.json`'s compatibility and
+  identity metadata against the verified
+  archived payload, applies the same limits before export, and normalizes
+  malformed compression/read failures to typed package errors. Inspection
+  may parse manifest YAML as data but never imports, compiles, or executes
+  packaged agent code. This changes validation only; schema-v1 package bytes
+  and compatibility identity remain unchanged.
+- **Evaluation-comparison-row drill-down**: "Test in Agent Lab"/"Open
+  Replay" from a two-run comparison row, deferred explicitly by both
+  `docs/specs/evaluation_history.md` §17 and v1.1's own changelog entry.
+  Reuses the existing handlers/plumbing; internal left/right schedule ids
+  resolve the exact orientation-specific cells without entering comparison
+  JSON. The selected cell's own ticks, orientation, and artifact are carried
+  through; changed-condition pairs require an explicit side choice, while
+  ambiguous groups remain non-actionable. Side labels are neutral **Left
+  (selected)**/**Right (comparison)** because picker order is not chronology.
+- **Revision restore from Designer**: `RevisionBrowserDialog` gains an
+  explicit **"Restore Files…"** action calling `agent_revisions.
+  restore_revision`, the one capability `docs/specs/agent_revision.md` §9's
+  v1.1 note left CLI-only. It keeps the CLI's safe separate default target
+  and non-empty-target force gate, states that force leaves unrelated files
+  in place, and requires an extra confirmation for any target inside or
+  aliasing into the live `agents/` catalog. Restore is disabled while a
+  Designer-owned subprocess is active, including for the remainder of a
+  History session that launches an Agent Lab run. A successful live restore refreshes
+  the catalog and invalidates stale validation/test evidence.
+- **CLI/Designer presentation consistency**: `bytefray agents evaluations
+  compare`'s human-readable output now discloses `ambiguous_duplicate_groups`,
+  matching what the v1.1 Designer already showed. Its JSON contract is
+  unchanged.
+- **Windows packaging fixes**: `tools/agent_designer.spec`/`tools/
+  replay_viewer.spec` now build the same onedir (thin-launcher-plus-loose-files)
+  shape as `tools/battle2.spec`/`tools/battle_cli.spec`, correcting a real,
+  previously-shipped inconsistency (both specs previously baked every
+  dependency into one fat `EXE` first). `tools/build_win.ps1`'s GUI smoke
+  test now isolates its own `BYTEFRAY_ROOT`, waits for GUI-subsystem
+  processes with `Start-Process -Wait -PassThru`, checks their actual exit
+  codes, and fails closed if smoke roots cannot be removed. Build
+  qualification also rejects runtime-generated `agents/` data inside any
+  distributable application tree.
+
+No Ruleset, Agent API, evaluation/result/replay-schema, agent-package-schema,
+or agent-revision-identity change — see `docs/COMPATIBILITY.md`. See
+`CHANGELOG.md`'s `[Unreleased]` entry for the full file-level summary.
 
 ## After v1.0
 

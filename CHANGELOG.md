@@ -3,6 +3,140 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
+## [Unreleased]
+
+Implementation (not yet released/tagged) for the proposed v1.3 theme,
+**Designer Workflow Completion**: connects Agent Designer to mature v1.1/v1.2
+engine capabilities that were previously CLI-only, plus the narrow domain
+and Windows-build correctness fixes found by independent qualification. No
+gameplay, Agent API, Ruleset, evaluation/result/replay-schema,
+agent-package-schema, or agent-revision-identity change. See
+`docs/ROADMAP.md`'s v1.3.0 section for full scope disposition.
+
+### Agent Designer
+
+- Added Agent Development tab **"Export Agent…"**: packages the selected
+  discovery id through `battle_engine.agent_package.export_agent`
+  (in-process and synchronous, but disabled while another Designer process
+  is active). Export parses metadata and reads opaque payload bytes; it
+  never imports or executes agent code. Reports agent id, revision id, file
+  count, package path, and package SHA-256, matching `bytefray agents
+  export`'s own output text.
+- Added Tools menu **"Inspect Agent Package…"**: read-only, execution-free
+  package inspection (`battle_engine.agent_package.inspect_package`) via a
+  new, reusable `PackageDetailsDialog` (`app/views/agent_package.py`)
+  showing identity, integrity (recomputed live from packaged bytes),
+  compatibility, and an explicit Python/blob-agent trust disclosure
+  ("self-consistency does not authenticate the package author or make the
+  contained code safe"). Selecting a package for inspection never imports, executes,
+  compiles, or syntax-checks agent source; only archive/JSON/YAML metadata
+  and opaque payload bytes are inspected.
+- Added Tools menu **"Import Agent Package…"**: file picker → the same
+  `PackageDetailsDialog` (with an "Import…" action gated on the package
+  being both structurally valid and compatible with this installation) →
+  on explicit confirmation, the authoritative, fail-closed
+  `battle_engine.agent_package.import_package`. A destination-id collision
+  with genuinely different content is never silently overwritten; the
+  Designer offers an explicit, iterative alternate-id retry (the GUI
+  equivalent of the CLI's `--as`), never an automatic rename. Repeated
+  collisions do not recurse. A no-op (identical-revision) import is
+  reported as such, not as an error. A successful import refreshes the
+  Designer's agent catalog and selects the exact imported discovery id,
+  including when display names differ from ids or are duplicated, with no
+  restart required. Mutating package actions share the Designer's busy guard
+  and do not change source while an agent-executing subprocess is active;
+  read-only inspection remains available.
+- Hardened the authoritative package domain during qualification. It now
+  bounds the raw archive and central directory before `ZipFile` allocates
+  its member table, then validates that complete table (including
+  `package.json` and the safely parsed `agent.yaml`) and
+  member/name/count/compressed-and-uncompressed-size limits before decompression; normalizes
+  malformed/unsupported-compression failures to typed package errors;
+  rejects Windows ADS/reserved-device/trailing-dot-or-space path components
+  and special Unix filesystem entries portably on every host (and never
+  exports them), plus duplicate/case/ancestor collisions;
+  cross-checks declared kind/API/entry-point/version/display and revision
+  counts against the verified packaged payload metadata; and applies the
+  same resource limits before export creates an archive. These are
+  validation corrections inside the existing schema-v1 contract, not a
+  package wire-format change, and none executes packaged code.
+- **Evaluation History → comparison-row drill-down** (`EvaluationComparisonDialog`,
+  `app/views/evaluation_history.py`): "Test in Agent Lab"/"Open Replay" are
+  now available from a two-run comparison, not only from a single
+  evaluation's own cell list -- the capability both `docs/specs/
+  evaluation_history.md` §17 and v1.1's own changelog entry explicitly
+  deferred. Reuses `EvaluationHistoryDialog`'s exact existing signals and
+  `AgentDesigner` handlers -- no second execution/replay-launch path.
+  Actions are enabled only when a selection uniquely identifies a real
+  underlying match. Direct rows carry exact, internal left/right schedule
+  references (not serialized by `ComparisonRow.to_json()`), preventing
+  candidate-first/opponent-first cells with the same nominal coordinates
+  from resolving to the wrong artifact. The neutral Side labels are **Left
+  (selected)** and **Right (comparison)**; a direct row defaults right, an
+  unmatched cell offers its one real side, a changed-condition pair
+  requires an explicit side choice, and an ambiguous duplicate group is
+  never actionable. Agent Lab reruns preserve the chosen cell's ticks and
+  entrant orientation (including role-swapping `opponent_first`); replay
+  opening uses that exact artifact. Historical reruns still execute the
+  currently installed source, disclosed in the dialog, not an archived
+  revision implicitly.
+- **Agent revision restore from Designer** (`RestoreRevisionDialog`, new,
+  in `app/views/evaluation_history.py`): `RevisionBrowserDialog` gains an
+  explicit **"Restore Files…"** action calling the authoritative
+  `agent_revisions.restore_revision` -- the one capability `docs/specs/
+  agent_revision.md` §9's v1.1 note left CLI-only. The safe default target
+  remains `<data_root>/agent_revisions_restored/<revision_id>/`; a non-empty
+  target still requires the explicit force option. Force overwrites matching
+  paths but does **not** delete unrelated files, so the UI does not call it
+  directory replacement. Any target inside (or aliasing into) this
+  installation's live `agents/` catalog requires an additional explicit
+  confirmation, and restore is disabled while a Designer-owned subprocess
+  is active. Launching Agent Lab from the still-open History dialog also
+  disables restore for that dialog session. On a successful live restore
+  the Designer refreshes the catalog, preserves the
+  restored id selection, and invalidates stale validation/test evidence.
+  The dialog also shows completeness and current-source drift before the
+  user confirms.
+- CLI/Designer consistency fix: `bytefray agents evaluations compare`'s
+  human-readable output now discloses `ambiguous_duplicate_groups` (already
+  shown by the v1.1 Designer; the CLI's own `_print_compare` had this
+  identical count in `--json` output only). The JSON shape and all other
+  CLI behavior are unchanged.
+
+### Windows packaging
+
+- Fixed a real onedir/onefile packaging inconsistency: `tools/agent_designer.spec`
+  and `tools/replay_viewer.spec` built their `EXE` with every binary/data
+  file baked in (no `exclude_binaries=True`, `COLLECT(exe, name=...)` with
+  nothing further) instead of the thin-launcher-plus-loose-files onedir
+  shape `tools/battle2.spec`/`tools/battle_cli.spec` already used and
+  `tools/installer.iss`/the portable ZIP layout both assume for all four
+  applications. Both specs now build the identical onedir shape as their
+  two siblings. Pinned by a new parametrized regression test
+  (`engine/tests/test_windows_packaging_spec.py::test_spec_builds_onedir_layout_not_a_fat_exe`)
+  across all four specs, without requiring a real PyInstaller build.
+- Fixed `tools/build_win.ps1`'s GUI import/startup smoke test leaving
+  runtime-generated `agents/` data inside `dist\windows\battle2\` and
+  `dist\windows\battle-agent-designer\`: `AgentDesigner.__init__` eagerly
+  calls `ensure_starter_agents()`, and a frozen portable app with no
+  `BYTEFRAY_ROOT` set defaults to writing beside its own executable --
+  contaminating the exact tree the installer and portable ZIP both package
+  verbatim. The GUI smoke block now isolates its own temporary
+  `BYTEFRAY_ROOT`, the same way the adjacent `agents create` smoke block
+  already did. It also launches GUI-subsystem executables with
+  `Start-Process -Wait -PassThru` so qualification checks their real exit
+  codes instead of a stale `$LASTEXITCODE`, and cleanup now fails closed if
+  either temporary root remains. The build script finally asserts that no
+  `agents\` directory exists under any of the four distributable application
+  trees -- a concrete regression guard, not just a fixed instance.
+
+### Documentation
+
+- Corrected `docs/ROADMAP.md`'s v1.1.0 section, stale since that release
+  was tagged: it still read "Status: implemented on main, pending release
+  qualification/tag" despite `v1.1.0` having shipped. Added the v1.3.0
+  section describing this milestone's scope.
+
 ## [1.2.0] - 2026-08-16
 
 Implementation and release qualification for the proposed v1.2 theme,
@@ -38,7 +172,7 @@ this introduces exactly one new, independent compatibility axis
   are three explicitly distinct things (see the module docstring and
   `docs/specs/agent_package.md` Sec 6).
 - Added `bytefray agents import <package-file> [--as AGENT_ID] [--json]`:
-  safely, transactionally imports a package — full structural/schema/
+  safely imports a package with fail-closed pre-write gates — full structural/schema/
   integrity/compatibility validation and safe extraction to a private
   temporary directory happen before anything is written to `agents/`.
   Fails without mutation if the destination agent id already exists with

@@ -124,6 +124,136 @@ rendered text).
     Test and shows "Stopped by user" rather than any completed/failed
     shape.
 
+### Agent package integration (v1.3, packaged application)
+
+Release checklist for Designer "Export Agent…"/"Import Agent Package…"/
+"Inspect Agent Package…" (Area A of `docs/ROADMAP.md`'s v1.3.0 section).
+Automated coverage (`tests/test_agent_package_dialogs.py`, `gui`-marked)
+exercises the Qt plumbing against real `battle_engine.agent_package` calls
+under `QT_QPA_PLATFORM=offscreen`; this sequence is the interactive,
+two-data-root confirmation automation cannot substitute for.
+
+1. Set two isolated data roots, e.g. `BYTEFRAY_ROOT=C:\temp\root-a` and
+   `BYTEFRAY_ROOT=C:\temp\root-b` for two separate `battle-agent-designer.exe`
+   launches (or two portable extractions).
+2. In Data Root A's Designer, select an existing Python agent (e.g.
+   `hunter`) in Agent Development and click **Export Agent…**; choose a
+   destination folder. Confirm the success dialog reports the agent id,
+   revision id, file count, package path, and a SHA-256, and that a
+   `hunter-<fingerprint>.bytefray-agent` file exists at that path.
+3. In Data Root B's Designer, **Tools → Inspect Agent Package…**, select
+   that file. Confirm the dialog shows agent id/kind/entry point/Agent API
+   version/revision/completeness/integrity/compatibility and the trust
+   disclosure text, with **Close** only (no Import option from this
+   action), and that nothing under Data Root B's `agents/` changed.
+4. In Data Root B's Designer, **Tools → Import Agent Package…**, select the
+   same file. Confirm the same read-only details appear first, with an
+   **Import…** button this time; click it, then confirm a success message
+   naming the imported agent id/target path and the trust disclosure, and
+   that the Agent Development combo now shows the imported agent selected
+   without restarting the Designer.
+5. Validate/Test the freshly imported agent from Data Root B's Agent
+   Development tab; confirm it behaves identically to the original.
+6. Re-run step 4 for the same package a second time; confirm the dialog
+   reports "already present with this exact revision; nothing imported"
+   rather than an error, and nothing under `agents/` changes.
+7. In Data Root B, create a *different* agent already using the same id as
+   the package (e.g. hand-edit `agents/hunter/agent.py`), plus two occupied
+   alternate ids. Repeat step 4; confirm each occupied alternate prompts
+   again without a crash, then enter a free id. Confirm import selects that
+   exact discovery id and leaves every pre-existing directory untouched.
+   Repeat with display names that differ from directory ids (and, if
+   practical, duplicate display names) to confirm selection never targets a
+   same-looking but different agent.
+8. Attempt to inspect/import a hand-corrupted `.bytefray-agent` (flip a
+   byte, or rename an unrelated `.zip`); confirm a clear, non-crashing error
+   and that nothing is written to `agents/`.
+9. Attempt to export a native VM starter agent (`runner`/`writer`/`seeker`/
+   `spiral`) if reachable through any picker; confirm this is rejected with
+   a clear message rather than producing an empty/misleading package (these
+   are not selectable through the Agent Development picker at all, per
+   Sec 9 of `docs/specs/agent_designer_workflow.md`, so this step may only
+   be reachable via a hand-invoked package function during development,
+   not through the shipped UI).
+10. Start a deliberately long Agent Development Test or evaluation. While
+    its subprocess is running, confirm package export/import controls cannot
+    mutate agent source. Stop or let the run finish and confirm the controls
+    become available again. (Metadata/resource-limit, malicious-manifest,
+    and cross-platform ADS/device-name/path cases are adversarially covered
+    by `engine/tests/test_agent_package.py`; do not manufacture a zip bomb
+    for this manual smoke.)
+
+### Evaluation comparison drill-down and revision restore (v1.3, packaged application)
+
+Release checklist for Area B/C of `docs/ROADMAP.md`'s v1.3.0 section.
+Automated coverage lives in `tests/test_agent_evaluation_history_dialog.py`
+(`gui`-marked); this sequence is the interactive confirmation.
+
+1. Produce two evaluations for the same candidate using the same opponent,
+   seeds, ticks, rules, and both-orientations setting; change only the
+   candidate source between runs so they have distinct candidate revisions.
+   Candidate source is the experimental variable, **not** a changed
+   condition. Select one history entry, choose **Compare With…**, and select
+   the other.
+2. Select a directly-comparable row (a real per-opponent match on both
+   sides); confirm **Test in Agent Lab**/**Open Replay** become enabled,
+   the Side control offers **Left (selected)** and **Right (comparison)**
+   (neutral picker roles, not an old/new promise), defaulting to Right. With
+   both entrant orientations present, select each orientation row in turn;
+   confirm the detail text identifies it and each side opens that exact
+   schedule's replay. Confirm **Test in Agent Lab** preserves that cell's
+   ticks and physical entrant orientation; `opponent_first` must swap the
+   launched roles. The dialog must also disclose that this is a rerun of
+   currently installed source, not automatic execution of archived source.
+3. Produce a separate pair of single-orientation evaluations that differ
+   only in ticks (for example 10 versus 25). Compare them, reveal **Show
+   Unmatched / Changed-Condition / Ambiguous Details**, and select the
+   changed-condition entry. Confirm neither action is enabled until you
+   explicitly choose **Left (selected)** or **Right (comparison)**; then
+   confirm Agent Lab receives 10 or 25 ticks respectively.
+4. Create an unmatched case (for example, change the opponent or seed set)
+   and confirm only its one real side is offered and actionable. For a real
+   ambiguous group, compare two both-orientation evaluations whose ticks
+   differ: multiple cells share the nominal opponent/seed bucket, so no
+   unique changed-condition pairing exists. Confirm neither action is ever
+   enabled and the guidance tells you to select concrete cells in each
+   evaluation's Cells list, or use `evaluations show <id> --json` to locate
+   `schedule_id`/`artifact_dir`; it must not claim the CLI accepts a
+   schedule-id selector.
+5. From an evaluation with archived agent revisions, **Show Revision…**,
+   then **Restore Files…**. Confirm the dialog shows the archived revision
+   id, completeness, and current-source-drift status, a target directory
+   pre-filled to `<data_root>/agent_revisions_restored/<revision_id>/`, and
+   an unchecked option allowing writes into a non-empty target. Its text
+   must state that matching paths are overwritten but unrelated files are
+   left in place.
+6. Confirm restoring to the default (empty) target succeeds, writes the
+   expected files, and offers to open the resulting folder.
+7. Point the target field at that same directory again without enabling the
+   non-empty-target option; confirm restore is refused with nothing written
+   or changed.
+8. Create an unrelated sentinel file in the default target, enable the
+   non-empty-target option, and restore again. Confirm matching archived
+   paths are overwritten and the sentinel remains; this operation is not a
+   directory replacement.
+9. Point the target field explicitly at an existing live `agents/<id>/`
+   directory whose source has since changed. Confirm the drift line reports
+   the change and a second, live-target-specific warning names the agent and
+   requires explicit confirmation. After confirming, verify the catalog
+   refreshes automatically, keeps that exact agent selected, and clears any
+   stale Validate/Test result so the restored source must be validated and
+   tested again. Also confirm unrelated live-directory files remain.
+10. Attempt a restore against an unknown/removed revision id (e.g. delete
+   the `agent_revisions/<id>/` directory externally first); confirm a clear
+   error, not a crash, and nothing written.
+11. While a Designer-owned match, validation, test, tournament, or evaluation
+    process is running, open Evaluation History and Show Revision. Confirm
+    browsing remains available but **Restore Files…** is disabled, so live
+    source cannot be changed underneath the active child process. Also open
+    History while idle, launch **Test in Agent Lab** from a cell or comparison,
+    and confirm revision restore remains disabled for that still-open History
+    session; close and reopen History after the process finishes to restore it.
+
 ### Agent Lab (v0.5, packaged application)
 
 This is the release checklist for the Agent Lab feature set (deterministic
@@ -210,18 +340,26 @@ uses the bundled executable to cover its real output and platform behavior.
 
 ## Windows packaging and installation
 
-1. On a clean supported Windows host, run `pwsh tools/build_win.ps1`.
-2. Launch every produced executable and exercise `battle-cli --help`, one native
+1. On a clean supported Windows host, run `pwsh tools/build_win.ps1`. Confirm it
+   waits for both GUI startup smokes, checks their actual exit codes, and prints
+   success only after they have exited.
+2. Confirm no new `bytefray-gui-smoke-*` or
+   `bytefray-agents-create-smoke-*` directory remains under the system temp
+   directory, and no `agents/` directory exists under any `dist/windows/<app>/`
+   tree. Confirm pre-existing `BYTEFRAY_ROOT` and
+   `BATTLE2_GUI_SMOKE_EXIT_MS` values are restored exactly (or remain
+   unset). Cleanup failure is a build failure, not a warning.
+3. Launch every produced executable and exercise `battle-cli --help`, one native
    match, agent discovery, and replay viewing.
-3. Build/run the Inno Setup installer where release validation requires it.
-4. Confirm Start Menu/PATH choices, `%ProgramData%` locations, bundled resources,
+4. Build/run the Inno Setup installer where release validation requires it.
+5. Confirm Start Menu/PATH choices, `%ProgramData%` locations, bundled resources,
    uninstall behavior, and operation from a path containing spaces.
-5. Confirm all four executable trees exist and both CLI executables provide help.
-6. Initialize starters, run native and bundled-pMARS matches, and verify no data
+6. Confirm all four executable trees exist and both CLI executables provide help.
+7. Initialize starters, run native and bundled-pMARS matches, and verify no data
    is written beneath Program Files.
-7. Close all application processes, uninstall, and confirm program files and
+8. Close all application processes, uninstall, and confirm program files and
    shortcuts are removed while user data is preserved.
-8. Reinstall and repeat the CLI and GUI startup checks.
+9. Reinstall and repeat the CLI and GUI startup checks.
 
 For an isolated install/upgrade/uninstall cycle, compile `tools/installer.iss`
 and run `tools/smoke_after_install.ps1 -Lifecycle` with explicit `-InstallerPath`,

@@ -77,17 +77,36 @@ foreach ($Artifact in $Artifacts) {
 # Exercise the dynamically imported Designer from the unified dispatcher and
 # the standalone Designer. The internal timeout enters the Qt event loop and
 # closes deterministically without requiring desktop automation.
+#
+# AgentDesigner.__init__ eagerly calls ensure_starter_agents() against
+# whatever data root get_data_root() resolves; a portable/frozen app with no
+# BYTEFRAY_ROOT set defaults to writing beside its own executable
+# (battle_engine.paths), so without isolation this smoke test previously
+# left a runtime-generated agents/ directory inside dist\windows\battle2\
+# and dist\windows\battle-agent-designer\ -- contaminating the exact tree
+# tools/installer.iss and the portable ZIP both package verbatim. Isolated
+# the same way the 'agents create' smoke block below already isolates
+# BYTEFRAY_ROOT, so build qualification cannot pollute the distributable
+# tree regardless of what a smoked GUI happens to initialize on startup.
 $PreviousSmokeExit = $env:BATTLE2_GUI_SMOKE_EXIT_MS
+$PreviousGuiSmokeRoot = $env:BYTEFRAY_ROOT
+$GuiSmokeRoot = Join-Path ([IO.Path]::GetTempPath()) ("bytefray-gui-smoke-" + [Guid]::NewGuid().ToString("N"))
 try {
+  New-Item -ItemType Directory -Force -Path $GuiSmokeRoot | Out-Null
   $env:BATTLE2_GUI_SMOKE_EXIT_MS = "750"
+  $env:BYTEFRAY_ROOT = $GuiSmokeRoot
   foreach ($Smoke in @(
     @{ Path = (Join-Path $DistDir "battle2\battle2.exe"); Args = @("design") },
     @{ Path = (Join-Path $DistDir "battle-agent-designer\battle-agent-designer.exe"); Args = @() }
   )) {
     Write-Host ("[build] GUI import/startup smoke: {0}" -f $Smoke.Path)
-    & $Smoke.Path @($Smoke.Args)
-    if ($LASTEXITCODE -ne 0) {
-      throw "GUI import/startup smoke failed with exit code $LASTEXITCODE`: $($Smoke.Path)"
+    # PowerShell does not wait for a Windows GUI-subsystem executable when
+    # invoked with `&`. Start-Process -Wait is therefore required for the
+    # standalone Designer: without it, $LASTEXITCODE is stale and the temp
+    # root can be deleted before the still-starting child writes to it.
+    $SmokeProcess = Start-Process -FilePath $Smoke.Path -ArgumentList @($Smoke.Args) -Wait -PassThru -WindowStyle Hidden
+    if ($SmokeProcess.ExitCode -ne 0) {
+      throw "GUI import/startup smoke failed with exit code $($SmokeProcess.ExitCode)`: $($Smoke.Path)"
     }
   }
 } finally {
@@ -95,6 +114,17 @@ try {
     Remove-Item Env:BATTLE2_GUI_SMOKE_EXIT_MS -ErrorAction SilentlyContinue
   } else {
     $env:BATTLE2_GUI_SMOKE_EXIT_MS = $PreviousSmokeExit
+  }
+  if ($null -eq $PreviousGuiSmokeRoot) {
+    Remove-Item Env:BYTEFRAY_ROOT -ErrorAction SilentlyContinue
+  } else {
+    $env:BYTEFRAY_ROOT = $PreviousGuiSmokeRoot
+  }
+  if (Test-Path -LiteralPath $GuiSmokeRoot) {
+    Remove-Item -LiteralPath $GuiSmokeRoot -Recurse -Force -ErrorAction Stop
+  }
+  if (Test-Path -LiteralPath $GuiSmokeRoot) {
+    throw "GUI smoke temporary root could not be removed: $GuiSmokeRoot"
   }
 }
 
@@ -131,7 +161,25 @@ try {
   } else {
     $env:BYTEFRAY_ROOT = $PreviousBytefrayRoot
   }
-  Remove-Item -Recurse -Force $SmokeRoot -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $SmokeRoot) {
+    Remove-Item -LiteralPath $SmokeRoot -Recurse -Force -ErrorAction Stop
+  }
+  if (Test-Path -LiteralPath $SmokeRoot) {
+    throw "'agents create' smoke temporary root could not be removed: $SmokeRoot"
+  }
+}
+
+# Final proof, not just a hope, that build qualification above (GUI smoke,
+# 'agents create' smoke) left no runtime-generated data root under any of
+# the four distributable application trees -- both smoke blocks isolate
+# their own BYTEFRAY_ROOT, so an agents\ directory appearing here means
+# something still resolved the frozen app's default (beside-the-exe) data
+# root instead of the isolated one.
+foreach ($Artifact in $Artifacts) {
+  $ResidueDir = Join-Path $DistDir "$($Artifact.Name)\agents"
+  if (Test-Path $ResidueDir) {
+    throw "Build qualification left runtime-generated data under $ResidueDir -- smoke tests must run against an isolated BYTEFRAY_ROOT, not the app's default data root."
+  }
 }
 
 Write-Host ""

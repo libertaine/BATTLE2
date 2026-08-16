@@ -746,6 +746,11 @@ source under any circumstance.
 Never writes to `agents/<id>/` implicitly. Default target (no `--to`):
 `<data_root>/agent_revisions_restored/<revision-id>/`. An explicit `--to
 <dir>` that already exists and is non-empty is refused unless `--force`.
+`--force` permits writing/overwriting the manifest's own file paths; it does
+not delete unrelated target files or reconcile the directory to an exact
+snapshot. It creates no backup: if a later I/O error follows a matching-file
+overwrite, best-effort cleanup cannot reconstruct the former bytes and may
+leave the forced target partially changed.
 Every write is resolved through the same contained-path discipline as
 storage writes (§3) — restoring is "trusted store → filesystem," but the
 same discipline applies as insurance against a hand-edited or corrupted
@@ -926,6 +931,43 @@ raise, using only the existing `agent_revision_fingerprint`/
 store; writing to it (restoring a snapshot to a target directory) stays a
 CLI-only operation (`bytefray agents revisions restore`) for this milestone.
 
+**Implemented for v1.3; pending release** (`docs/ROADMAP.md`'s "Designer
+Workflow Completion").
+`RevisionBrowserDialog` gains an explicit **"Restore Files…"** action, opening a
+new `RestoreRevisionDialog` (`app/views/evaluation_history.py`) that shows
+the archived revision's completeness and the same live current-source-drift
+check `RevisionBrowserDialog` already computes, then a target-directory
+field (pre-filled with the identical default `bytefray agents revisions
+restore` uses, `<data_root>/agent_revisions_restored/<revision_id>/`) and an
+unchecked `--force`-equivalent option allowing writes into a non-empty
+target. Confirming calls the authoritative `agent_revisions.restore_revision`
+directly — no Qt-side reimplementation of restore containment or fail-closed
+snapshot verification.
+
+The wording is deliberately **files**, not directory replacement. With the
+non-empty-target option enabled, matching archived paths are overwritten but
+unrelated files already in the target remain; restore does not delete them
+or promise that the resulting tree is an exact snapshot. Without that option
+a non-empty target remains a failure before writes. The separate default
+target is never an existing `agents/<id>/` directory, so an ordinary restore
+cannot overwrite live agent source by accident.
+
+A user may still type a target inside the live `<data_root>/agents/` catalog,
+as with CLI `--to`, but the Designer recognizes the catalog root, an agent
+directory or descendant, and lexical/resolved aliases into that catalog. It
+requires an additional confirmation naming the affected agent where that is
+unambiguous (otherwise treating the whole catalog as affected) and stating
+the overwrite/retain semantics. Restore is disabled while a Designer-owned
+subprocess is active, including for the remainder of a still-open History
+session after it launches an Agent Lab run, although read-only history/revision
+browsing remains available. After a successful live-target restore it
+automatically refreshes discovery, keeps that exact agent id selected, and
+invalidates any displayed validation/test/replay/trace evidence derived from
+the pre-restore source. The user must validate/test the restored files
+again. A restore outside the live catalog does not claim to change the
+catalog. This closes the one deferral this section names above; no revision
+identity or manifest schema changed.
+
 ## 10. Testing and validation criteria
 
 ### 10.1 Phase 2 — done (`engine/tests/test_agent_revisions.py`)
@@ -1076,7 +1118,8 @@ CLI-only operation (`bytefray agents revisions restore`) for this milestone.
   reports `verified: False` (exit 1), still without crashing.
 - `restore` writes to the documented default target when `--to` is
   omitted; refuses a non-empty target without `--force` and writes
-  nothing; `--force` allows overwrite; an incomplete revision's restore
+  nothing; `--force` allows matching-file overwrite while retaining
+  unrelated target files; an incomplete revision's restore
   prints an explicit `WARNING`, never a bare success line; a tampered
   canonical snapshot fails restoration *before* any file is written to the
   target (the target ends up empty/absent, not partially populated); a

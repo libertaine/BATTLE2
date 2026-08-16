@@ -1,6 +1,7 @@
 # agent_package
 
-**Modules (planned):** `engine/src/battle_engine/agent_package.py` (new,
+**Modules (shipped in v1.2; qualification-hardened in v1.3):**
+`engine/src/battle_engine/agent_package.py` (new,
 self-contained domain module: package model, deterministic archive
 writer/reader, integrity verification, safe extraction, export/import
 orchestration); `engine/src/battle_engine/agent_package_cli.py` (new, thin
@@ -10,9 +11,10 @@ non-breaking public export added to `engine/src/battle_engine/agents.py`
 `_spec_from_dir`) and to `engine/src/battle_engine/agent_revisions.py`
 (factoring the manifest-dict shape `_write_snapshot` already builds into a
 reusable, public `revision_manifest_payload()`, used identically by both
-call sites so they cannot drift out of sync). No other existing module is
-modified. `command.py` gains three new dispatch entries (`export`,
-`import`, `package`).
+call sites so they cannot drift out of sync). In the original v1.2 change,
+`command.py` also gained three dispatch entries (`export`, `import`,
+`package`); v1.3 qualification subsequently hardens the existing domain,
+CLI, Designer, documentation, tests, and Windows packaging surfaces.
 
 **Purpose:** let a Bytefray user export an agent from one installation into
 a single portable, inspectable file; transfer it by any ordinary means;
@@ -211,11 +213,23 @@ one genuinely new piece of wire shape):
 Field provenance, since the parent task (§7) explicitly asks that
 compatibility metadata not be claimed without a factual basis:
 
-- `agent_id`/`display_name`/`agent_version`/`entry_point`/`kind` —
-  read directly from the `AgentSpec` the export walk/store read already
-  produced (live path) or reconstructed from the archived manifest's own
-  `agent.yaml`/`agent.py` bytes via the new `agent_spec_from_dir()` public
-  wrapper (`--revision` path, §1) — **factual**, not inferred.
+- `agent_id` — the discovered id on a live export, or the caller's explicit
+  export label on the `--revision` path. A revision is deliberately
+  path/name-independent and its `source_agent_id` is only a breadcrumb, so
+  this field is a transport/default-destination label, not part of revision
+  identity and not something the payload can authoritatively reconstruct.
+  Import may replace it explicitly with `--as` (§8).
+- `display_name`/`agent_version`/`entry_point`/`kind` — read directly from
+  the `AgentSpec` already produced on the live path, or reconstructed by
+  parsing the archived payload's own `agent.yaml` via
+  `agent_spec_from_dir()` on the `--revision` path. Since v1.3,
+  inspection/import perform that same safe manifest parse and reject a
+  disagreeing outer declaration — **factual**, not inferred. The display
+  cross-check applies when `agent.yaml` explicitly declares `display` or
+  `name`; an undeclared display remains a transport label. That exception
+  preserves legitimate v1.2 historical exports, whose old snapshot-directory
+  fallback was the literal `files`, while the v1.3 writer now uses the caller's
+  export agent id for that fallback.
 - `agent_api_version` — the Python agent's own declared API version
   (`null`/absent for `kind="blob"`, which has no Agent API surface at all
   — modeled the same "not applicable, not merely unknown" way
@@ -223,9 +237,10 @@ compatibility metadata not be claimed without a factual basis:
   `ruleset_id: null`, §5 below). **Factual**, read from the manifest, not
   guessed.
 - `agent_revision_id`/`revision_complete`/`revision_omitted_count`/
-  `file_count` — mirror `revision/.../manifest.json`'s own fields exactly
-  (never independently recomputed or allowed to disagree — a single test,
-  §10, pins this).
+  `file_count` — mirror `revision/.../manifest.json`'s own fields. On read,
+  the revision id is recomputed by `verify_revision` and the counts are
+  independently checked against the verified manifest; they are not trusted
+  merely because both JSON documents contain the same-looking value (§10).
 - `exported_at`/`bytefray_version` — **informational timestamp/breadcrumb
   only**, exactly like the revision manifest's own `archived_at`/
   `source_agent_id` (`agent_revision.md` §3) — never treated as an
@@ -303,9 +318,13 @@ This directly answers the parent task's §8 questions:
 Three distinct categories, named explicitly so `package.json`'s fields are
 never read as stronger claims than they are:
 
-1. **Factual identity** — `agent_revision_id`, `kind`, `entry_point`,
-   `agent_api_version`. Read directly from bytes; not a claim, a
-   description.
+1. **Factual identity/metadata** — `agent_revision_id`, `kind`, `entry_point`,
+   `agent_api_version`, `agent_version`, and any explicitly declared display.
+   The revision id is recomputed from packaged bytes;
+   the other values are declared in `package.json` and, since v1.3
+   qualification, cross-checked against the safely parsed packaged
+   `agent.yaml`. A declaration that disagrees with its payload is invalid,
+   not a compatibility loophole.
 2. **Enforced compatibility** — checked by `import`/`package show`, and
    the *only* things that can fail an import on compatibility grounds:
    - `package.json`'s own `schema`/`schema_version` — unsupported version
@@ -354,13 +373,17 @@ Stated plainly, and enforced structurally, not just by convention:
 - **Reading `package.json`, listing the archive's members, or verifying
   integrity never imports, executes, or even syntax-checks a single byte
   of agent Python source.** `package show`/`agents package show` opens the
-  ZIP, reads two small JSON documents, and computes SHA-256 digests over
-  raw bytes — nothing under `revision/.../files/` is ever passed to
-  `compile()`, `exec()`, `importlib`, or any subprocess.
+  ZIP, reads JSON metadata and the packaged `agent.yaml` as data, and
+  computes SHA-256 digests over raw bytes. Nothing under
+  `revision/.../files/` is passed to `compile()`, `exec()`, `importlib`, or
+  any subprocess. Parsing the manifest is necessary to verify that the
+  outer package did not lie about kind/API/entry-point/version/display; it
+  does not load the declared entry point.
 - **A structurally valid, fully-verified package is not a trust
   statement about the code it contains.** A Bytefray package proves
-  package structure/integrity and (via `agent_revision_id`) provenance
-  identity. It does not, and cannot, prove the contained Python agent is
+  package structure/self-consistency and (via `agent_revision_id`) content
+  identity. It does not authenticate who created or distributed it, and it
+  does not, and cannot, prove the contained Python agent is
   safe or non-malicious — it is executable code, and Bytefray's existing
   Agent Lab worker-subprocess timeout (`docs/AGENT_LAB.md`) is
   development-time **hang containment**, not a security sandbox
@@ -382,7 +405,8 @@ Stated plainly, and enforced structurally, not just by convention:
 Two independent layers, not one:
 
 **Layer 1 — untrusted ZIP → trusted temporary revision-store root.** This
-is new code (`_safe_extract_all`, `agent_package.py`), because a ZIP
+uses `_validate_member_metadata` followed by `_extract_validated_members`
+(`agent_package.py`), because a ZIP
 member's filename is attacker-controlled text with no existing containment
 guarantee. Reuses `battle_engine.paths.contained_path` — already proven
 (directly, via a REPL check performed during this spec's own reconnaissance
@@ -394,7 +418,7 @@ rather than pattern-matching strings: `../evil.py`, `../../outside`,
 `foo/../../evil`, and Windows-backslash-style traversal (`foo\..\..\evil`)
 all resolve to `None` (rejected) when checked against a Windows host in
 this same repository. Additional checks `contained_path` alone does not
-cover, added explicitly in `_safe_extract_all`:
+cover, added explicitly in that metadata-first validation pass:
 
 - **Any member name containing a literal backslash, NUL byte, or other
   control character is rejected outright**, before `contained_path` is
@@ -410,6 +434,17 @@ cover, added explicitly in `_safe_extract_all`:
   than merely tolerate. This is the concrete mechanism satisfying the
   parent task's explicit requirement to test "Windows-style paths even
   when running on Linux and vice versa."
+- **Windows-ambiguous path components are rejected on every host**, not
+  only when import happens to run on Windows: a literal colon (including an
+  NTFS alternate-data-stream spelling such as `agent.py:payload`), a
+  component ending in a dot or space, or a case-insensitive reserved device
+  stem (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, including
+  a suffix such as `NUL.txt`) is invalid. These spellings are ordinary
+  filenames on some POSIX filesystems but alias, disappear, or address a
+  different stream/device on Windows. Applying one portable policy at
+  inspect/import time prevents the same archive from materializing
+  differently by host; export applies the identical check and never emits
+  such a member.
 - **Duplicate/case-colliding normalized destination paths are rejected.**
   Every planned destination is casefolded and checked against every other
   planned destination in the same archive *before any file is written* —
@@ -418,8 +453,9 @@ cover, added explicitly in `_safe_extract_all`:
   (case-insensitive by default), and a pair of entries safe to write on
   the machine that built the archive must not silently collide/overwrite
   on the machine that reads it.
-- **A ZIP entry whose external attributes encode a Unix symlink mode
-  (`stat.S_IFLNK`) is rejected outright**, never extracted. Python's
+- **A ZIP entry whose external attributes encode any special Unix type
+  (symlink, FIFO, socket, character device, or block device) is rejected
+  outright**, never extracted. Python's
   `zipfile` does not itself materialize a real OS symlink from such an
   entry (it writes the link-target *text* as ordinary file content), so
   this is not exploitable via this code path today — but relying on that
@@ -428,14 +464,37 @@ cover, added explicitly in `_safe_extract_all`:
   warns against ("do not rely solely on `zipfile.extractall()` safety
   assumptions"). Checked and rejected before extraction, not merely
   tolerated because it happens to be inert.
-- **Resource limits**, checked in a validation pass over every
-  `ZipInfo` *before* any bytes are written: a maximum member count, a
-  maximum single-file uncompressed size, and a maximum total uncompressed
-  size (conservative, generous constants — an agent's own directory is
-  source code plus at most one `model.blob`, not a dataset). A ZIP whose
-  declared sizes exceed these is rejected before decompression begins,
-  closing the ordinary "zip bomb" shape (`extractall`'s well-known risk of
-  trusting compressed-size-to-uncompressed-size ratios blindly).
+- **Resource limits begin before `ZipFile` construction.** Python's ZIP
+  reader eagerly allocates one `ZipInfo` object per central-directory
+  record, so validating only the resulting table would still let a huge
+  central directory stall or exhaust a synchronous inspector first. A raw,
+  bounded scan of the same open file handle therefore checks the real EOCD
+  and every fixed central record before handing it to `ZipFile`: at most
+  585 MiB for the outer archive, 32 MiB for central-directory metadata,
+  5,000 actual records, and 4,096 UTF-8 bytes per member name. The scan
+  counts records rather than trusting forgeable EOCD count fields. Multi-disk
+  and ZIP64 containers are rejected; neither is needed within the much
+  smaller v1 count/size envelope emitted by Bytefray.
+- **Member limits** are then checked over the complete `ZipInfo` table,
+  including `package.json`, *before any member is read or decompressed*: at
+  most 5,000 members, 256 MiB for any one uncompressed member, 512 MiB total
+  uncompressed content, 260 MiB for one compressed member, and 520 MiB total
+  compressed content. `package.json` has narrower 1 MiB uncompressed and
+  1 MiB + 64 KiB compressed caps. The payload-root `agent.yaml`, which is
+  safely parsed as YAML data during factual-metadata cross-checking, has the
+  same 1 MiB / 1 MiB + 64 KiB bounds so an otherwise-allowed 256 MiB source
+  file cannot turn that synchronous parse into a GUI stall. These are
+  conservative, generous constants — an agent's own directory is source
+  code plus at most one `model.blob`, not a dataset. Duplicate `package.json` entries,
+  unsupported compression, malformed reads, or an archive whose declared
+  sizes exceed a limit are rejected as typed package-invalid failures
+  before payload decompression begins. `ZipFile.testzip()` is deliberately
+  not the validation mechanism because it would decompress every member
+  before those metadata limits could protect the caller.
+- **File/directory ancestor collisions are rejected** alongside exact and
+  case-folded duplicates: an archive cannot contain a regular file at
+  `revision/x` and another member below `revision/x/...`, which would fail
+  only after reads/writes began on some filesystems.
 - **Validate-then-write, never interleaved**: every member is resolved,
   classified, and checked (containment, duplicates, size) in one pass
   first; only if every member in the archive passes does a second pass
@@ -444,19 +503,32 @@ cover, added explicitly in `_safe_extract_all`:
   `agent_revision.md`) for exactly the same reason (a failure discovered
   on file five must not leave files one through four already written).
 
+**Export applies the same envelope.** Before it creates or replaces an
+output archive, export accounts for `package.json`, the revision manifest,
+and every payload member against the same archive/name/count/single/total
+limits. The live-source preflight applies the `agent.yaml` cap before
+discovery parses that manifest. An agent too large for this implementation to inspect/import is therefore
+rejected with a typed error and no partial package, rather than producing an
+archive Bytefray itself refuses to consume. This v1.3 qualification fix is
+validation behavior only; it does not alter the schema-v1 member layout.
+
 **Layer 2 — trusted temporary revision-store root → final agent
 placement.** Once Layer 1 has safely materialized
 `<tmp>/revision/agent-revision_<hex>/{manifest.json,files/}` on disk, that
 directory *is* a one-entry revision store, and import treats it as one:
-`verify_revision(tmp_root, revision_id)` (existing, unmodified,
+`verify_revision(<tmp>/revision, revision_id)` (existing, unmodified,
 fail-closed) confirms the extracted bytes actually reconstruct the
-declared identity, and `restore_revision(tmp_root, revision_id,
-final_target_dir)` (existing, unmodified) performs the actual placement,
-inheriting every containment/atomicity/rollback guarantee already
-adversarially tested in `test_agent_revisions.py` — including the
+declared identity. The package layer then cross-checks outer metadata and
+revision counts against the verified manifest/payload. Finally,
+`restore_revision(<tmp>/revision, revision_id, final_target_dir)` (existing,
+unmodified) performs the actual placement, inheriting its pre-write
+verification/containment checks and best-effort cleanup on ordinary I/O
+failure — including the
 pre-existing-destination-symlink defense (`test_restore_rejects_escape_
 through_preexisting_destination_link`) that a Layer-1-only design would
-have to reinvent. Nothing new is trusted here; Layer 2 is 100% reuse.
+have to reinvent. Final placement remains reuse of the revision service;
+the v1.3 package-layer cross-check is a narrow validation bridge, not a
+second restore implementation.
 
 ## 8. Import collision policy
 
@@ -468,8 +540,9 @@ already-established precedent:
 
 - **Default: fail without mutation** if `agents/<agent-id>/` already
   exists, where `<agent-id>` is the package's own declared `agent_id`
-  field. Nothing is written; the existing directory is never touched,
-  inspected beyond an existence check, or opened.
+  field and has different content. Nothing is written or overwritten. The
+  existing directory is read only to recompute its revision fingerprint so
+  the exact-revision no-op below can be distinguished from a real conflict.
 - **`--as <agent-id>`**: import under an explicit, user-chosen id instead
   of the package's declared one. No auto-invented rename (e.g. no silent
   `hunter-2`) — the parent task's §11 explicitly asks not to invent this
@@ -506,10 +579,10 @@ already-established precedent:
   best-effort-parsed.
 - **This (v1.2) Bytefray reading a v1 package**: the only version that
   exists at ship time; trivially supported.
-- **A future Agent API v2 package**: structurally inspectable
-  (`package show` never depends on `AGENT_API_VERSION` — it only prints
-  the declared value), but import's compatibility check (§5) rejects it
-  honestly rather than attempting to run it.
+- **A future Agent API v2 package**: structurally inspectable when its
+  outer declaration agrees with its payload, but reported as incompatible
+  against an Agent API v1 installation; import's compatibility check (§5)
+  rejects it honestly rather than attempting to run it.
 - **A future BFScript-generated package** (`docs/FUTURE_PLANS.md`'s DSL
   item): `package.json` is a plain, additive JSON object; a future schema
   version could add optional `compiler`/`source_language` fields the same
@@ -533,11 +606,24 @@ already-established precedent:
   after export; `package show`/`import` both detect it
   (`PackageIntegrityError`, `package_integrity_failed`) via
   `verify_revision`, before any extraction to a final location.
+- **Metadata/payload agreement**: alter only `package.json`'s kind, API,
+  entry point, version, display, or revision counts; inspection/import must
+  reject the mismatch before final placement even though the archived file
+  bytes still satisfy their original revision id.
+- **Metadata-first resource enforcement**: oversized/duplicate
+  `package.json`, excessive member counts/sizes, and unsupported compression
+  are normalized to typed invalid-package outcomes before payload
+  decompression; inspection remains read-only and import leaves `agents/`
+  unchanged.
+- **Export envelope**: lower each resource limit under test and prove export
+  refuses an over-limit source without creating a partial destination.
 - **Every path from the parent task's §26 adversarial list**, built as a
   hand-crafted `.bytefray-agent` (a real ZIP with a malicious entry
   substituted in place of a legitimate payload path) — proven rejected by
   `import`, with no file written outside the intended temporary
-  extraction root.
+  extraction root. The same host-independent test matrix covers ADS/colon,
+  reserved-device, and trailing-dot/space components and proves export
+  refuses to emit each portable-path violation.
 - **Collision behavior**: import into a data root where `agents/<id>/`
   already exists — with different content (fails, untouched), with
   identical content (reports no-op, exit `0`, untouched), and with
@@ -601,3 +687,41 @@ distributed evaluation. This spec's `package.json` schema is deliberately
 extensible enough that a future ecosystem feature could consume it without
 a breaking change, but implementing any such feature is explicitly out of
 this milestone.
+
+## 13. Designer integration — implemented for v1.3 (pending release)
+
+`docs/ROADMAP.md`'s v1.2.0 section named a GUI wrapper over the authoritative
+`agent_package` functions as a later candidate; v1.3 ("Designer Workflow
+Completion") is that slice. `app/views/agent_package.py` adds
+`PackageDetailsDialog`, a reusable, read-only inspection dialog (identity,
+integrity, compatibility, trust disclosure — the same field selection as
+`bytefray agents package show`). It is used both by **Inspect Agent
+Package…** and as the mandatory review step for **Import Agent Package…**.
+`AgentDesigner` calls `export_agent`/`inspect_package`/`import_package`
+directly: Qt does not invoke argparse and does not reimplement ZIP,
+containment, compatibility, or placement logic.
+
+**Export Agent…** and inspection run synchronously in-process. Resource
+limits in §7 bound what the shared domain accepts, and mutating package
+controls are guarded while the Designer's agent-executing subprocess slot is
+busy (read-only inspection remains available). A
+`QProcess` boundary is not needed for trust because the operations parse
+metadata/read opaque bytes but never load or execute agent code. This is a
+presentation wrapper over shared domain calls, not a claim that the domain
+was left untouched: independent v1.3 qualification found and fixed the
+metadata-first validation, payload-cross-check, and export-envelope defects
+documented in §5–§7.
+
+Import collision handling matches §8: different content fails without
+mutation, and the Designer offers an explicit alternate id (the GUI
+equivalent of `--as`) — never an automatic rename. The retry is iterative,
+so any number of further occupied ids returns to the same prompt without
+recursive stack growth; cancel remains a clean abort. An identical revision
+is reported as a no-op. After success, catalog widgets store discovery ids
+separately from display text, so refresh selects the exact imported id even
+when a manifest's display name differs from its directory or duplicates
+another display name. No restart is required.
+
+All of these changes retain `bytefray.agent_package` schema version 1. The
+additional checks reject packages that were already inconsistent with their
+own verified payload; no JSON member or CLI JSON response gains a field.

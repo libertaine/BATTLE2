@@ -9,14 +9,16 @@ after ``validate_homogeneous`` rejects it. This module is the one shared
 implementation both tabs call, so the two selectors cannot drift apart.
 
 The combo's ``DisplayRole`` is always the decorated label; the real,
-undecorated agent identifier (``AgentRow.name`` -- the same value match
-resolution already keyed on before this change) is stored under
+undecorated discovery identifier (``AgentRow.agent_id``, with a
+``row.name`` fallback for legacy rows) is stored under
 ``Qt.UserRole`` and must always be read back from there via
 ``selected_agent_name`` -- never recovered by stripping the visible
 ``[Python]``/``[VM]`` suffix back off the display text.
 """
 
 from __future__ import annotations
+
+from collections import Counter
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox
@@ -42,10 +44,15 @@ def populate_agent_combo(combo: QComboBox, rows: list[AgentRow]) -> None:
     if not rows:
         combo.addItem("(none found)")
     else:
+        display_counts = Counter(row.name for row in rows)
         for row in rows:
-            combo.addItem(decorate_agent_display(row))
+            agent_id = row.agent_id or row.name
+            label = decorate_agent_display(row)
+            if display_counts[row.name] > 1:
+                label = f"{label} ({agent_id})"
+            combo.addItem(label)
             index = combo.count() - 1
-            combo.setItemData(index, row.name, _NAME_ROLE)
+            combo.setItemData(index, agent_id, _NAME_ROLE)
             combo.setItemData(index, agent_kind(row), _KIND_ROLE)
         if previous is not None:
             index = combo.findData(previous, _NAME_ROLE)

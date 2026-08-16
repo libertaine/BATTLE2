@@ -6,6 +6,17 @@ import os
 import sys
 from pathlib import Path
 
+from battle_engine.agent_evaluation import (
+    ORIENTATION_CANDIDATE_FIRST,
+    ORIENTATION_OPPONENT_FIRST,
+)
+from battle_engine.agent_package import (
+    AgentPackageError,
+    PackageImportConflictError,
+    export_agent,
+    import_package,
+    inspect_package,
+)
 from battle_engine.launchers import (
     build_agents_command,
     build_designer_match_arguments,
@@ -16,7 +27,14 @@ from battle_engine.project_info import get_project_info
 from battle_engine.starters import ensure_starter_agents
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QIcon
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox, QTabWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QInputDialog,
+    QMainWindow,
+    QMessageBox,
+    QTabWidget,
+)
 
 from app.services.agent_catalog import AgentCatalog
 from app.services.agent_workflows import (
@@ -36,6 +54,12 @@ from app.services.designer_workflows import (
 )
 from app.services.engine import open_pygame_client_direct
 from app.views.advanced import AdvancedPanel
+from app.views.agent_package import (
+    PackageDetailsDialog,
+    format_export_result_text,
+    format_import_result_text,
+    format_package_inspection_text,
+)
 from app.views.development import AgentDevelopmentPanel, NewAgentDialog
 from app.views.evaluation import EvaluationDialog, EvaluationResultsDialog
 from app.views.evaluation_history import EvaluationHistoryDialog
@@ -116,6 +140,7 @@ class AgentDesigner(QMainWindow):
             self.development.refreshAgentsRequested.connect(self.refresh_agents)
             self.development.newAgentRequested.connect(self._on_new_agent)
             self.development.openFolderRequested.connect(self._on_open_agent_folder)
+            self.development.exportAgentRequested.connect(self._on_export_agent)
             self.development.validateRequested.connect(self._on_validate_agent)
             self.development.testRequested.connect(self._on_test_agent)
             self.development.openTestReplayRequested.connect(self._on_open_test_replay)
@@ -140,6 +165,10 @@ class AgentDesigner(QMainWindow):
         tools = self.menuBar().addMenu("Tools")
         tools.addAction("Run Tournament…", self._on_tournament)
         tools.addAction("Evaluation History…", self._on_evaluation_history)
+        tools.addSeparator()
+        tools.addAction("Import Agent Package…", self._on_import_agent_package)
+        tools.addAction("Inspect Agent Package…", self._on_inspect_agent_package)
+        tools.addSeparator()
         tools.addAction("Open Last Output Folder", self._on_open_output_folder)
         help_menu = self.menuBar().addMenu("Help")
         help_menu.addAction("About Bytefray", self._on_about)
@@ -661,23 +690,62 @@ class AgentDesigner(QMainWindow):
         return self.battle_root / "runs" / "evaluations" / evaluation_id
 
     def _on_evaluation_history(self) -> None:
-        """Open the read-only Evaluation History browser (v1.1).
+        """Open the Evaluation History browser.
 
-        No agent code executes and no process is spawned to open this
-        dialog -- it only reads already-written ``evaluation.json``/
-        ``agent_revisions`` artifacts through
+        Browsing and comparison execute no agent code and spawn no process;
+        they read already-written ``evaluation.json``/``agent_revisions``
+        artifacts through
         ``battle_engine.evaluation_history``/``battle_engine.agent_revisions``,
         exactly like ``TraceInspectorDialog`` reads an already-written trace.
+        Revision restore is the dialog's sole explicit mutation and uses the
+        engine's authoritative restore workflow.
         Its "Test in Agent Lab"/"Open Replay" cell drill-down reuses the
         identical handlers the fresh-run ``EvaluationResultsDialog`` already
         wires (``_on_evaluation_test_in_agent_lab``/
         ``_on_evaluation_open_replay``) -- one execution/replay-launch path,
         not two.
         """
-        dialog = EvaluationHistoryDialog(self.battle_root, parent=self)
+        process_active = (
+            self._proc is not None
+            and self._proc.state() != QProcess.NotRunning
+        )
+        dialog = EvaluationHistoryDialog(
+            self.battle_root,
+            allow_restore=not process_active,
+            parent=self,
+        )
         dialog.testInAgentLabRequested.connect(self._on_evaluation_test_in_agent_lab)
         dialog.openReplayRequested.connect(self._on_evaluation_open_replay)
+        dialog.agentCatalogChanged.connect(self._on_agent_catalog_changed)
         dialog.exec()
+
+    @Slot(str)
+    def _on_agent_catalog_changed(self, affected_agent_id: str) -> None:
+        """Refresh catalog views and clear evidence invalidated by a live restore.
+
+        A concrete id means the restore changed that live agent, which becomes
+        the Development selection after the refresh.  An empty id is the
+        conservative catalog-wide sentinel (catalog-root restore or an alias
+        whose lexical and resolved identities disagree); in that case retain
+        the prior selection by discovery id and invalidate its cached evidence.
+        """
+
+        if not hasattr(self, "development"):
+            self.refresh_agents()
+            return
+        selected = self.development.selectedAgentRow()
+        previous_id = selected.agent_id if selected is not None else None
+        selection_id = affected_agent_id or previous_id
+        self.refresh_agents(select=selection_id)
+        selected = self.development.selectedAgentRow()
+        selected_id = selected.agent_id if selected is not None else None
+        if selected_id is not None and (
+            not affected_agent_id or selected_id == affected_agent_id
+        ):
+            self.development.invalidateAgentState(
+                selected_id,
+                "Revision files were restored into the live agent catalog.",
+            )
 
     def _on_evaluate(self) -> None:
         """Open the Evaluate dialog and launch ``bytefray agents evaluate`` (v0.6).
@@ -780,8 +848,16 @@ class AgentDesigner(QMainWindow):
         dialog.openReplayRequested.connect(self._on_evaluation_open_replay)
         dialog.exec()
 
-    def _on_evaluation_test_in_agent_lab(self, subject_id: str, opponent_id: str, seed: int) -> None:
-        """Rerun one exact evaluation cell through ``agents test`` and inspect it.
+    def _on_evaluation_test_in_agent_lab(
+        self,
+        subject_id: str,
+        opponent_id: str,
+        seed: int,
+        ticks: int | None = None,
+        orientation: str = ORIENTATION_CANDIDATE_FIRST,
+    ) -> None:
+        """Rerun one evaluation cell's recorded seed/ticks/orientation through
+        ``agents test`` and inspect it.
 
         Reuses the Development tab's own ``agents test``/Trace Inspector
         machinery unmodified -- an evaluation cell's rerun command is
@@ -789,12 +865,37 @@ class AgentDesigner(QMainWindow):
         (docs/specs/agent_evaluation.md Sec 8/Sec 10), so this handler
         launches exactly that, then opens the same ``TraceInspectorDialog``
         Inspect Trace already uses, rather than inventing a second
-        inspection path.
+        inspection path. Historical source is not silently restored here:
+        ``agents test`` resolves the currently installed agent ids, while
+        revision restore remains an explicit separate workflow.
         """
         if self._proc is not None and self._proc.state() != QProcess.NotRunning:
             return
-        ticks = self._evaluation_ticks or 200
-        arguments = [subject_id, "--opponent", opponent_id, "--seed", str(seed), "--ticks", str(ticks)]
+        effective_ticks = ticks if ticks is not None else (self._evaluation_ticks or 200)
+        if orientation == ORIENTATION_CANDIDATE_FIRST:
+            tested_id, against_id = subject_id, opponent_id
+        elif orientation == ORIENTATION_OPPONENT_FIRST:
+            # ``agents test`` always puts its positional agent in physical
+            # slot A.  Swapping the arguments is the canonical way
+            # ``agent_evaluation.rerun_command`` reproduces an
+            # opponent-first cell byte for byte.
+            tested_id, against_id = opponent_id, subject_id
+        else:
+            QMessageBox.critical(
+                self,
+                "Agent Lab Test Failed",
+                f"Cannot reproduce evaluation cell with unknown orientation {orientation!r}.",
+            )
+            return
+        arguments = [
+            tested_id,
+            "--opponent",
+            against_id,
+            "--seed",
+            str(seed),
+            "--ticks",
+            str(effective_ticks),
+        ]
         try:
             command = build_agents_command("test", arguments)
         except FileNotFoundError as exc:
@@ -802,7 +903,7 @@ class AgentDesigner(QMainWindow):
             return
 
         self._active_workflow = "evaluation_agent_lab_test"
-        self._test_agent_id = subject_id
+        self._test_agent_id = tested_id
         self._test_stdout = ""
         self._test_stderr = ""
         self.simple.setBusy(True)
@@ -1033,6 +1134,121 @@ class AgentDesigner(QMainWindow):
             QMessageBox.warning(self, "Open Agent Folder", f"Agent folder not found:\n{path}")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    # ---- Agent package export/import/inspect (v1.3), thin wrapper over the
+    # authoritative v1.2 battle_engine.agent_package engine. None of these
+    # three operations execute agent code (Sec 6 of
+    # docs/specs/agent_package.md: package validity/integrity/inspection is
+    # ZIP/JSON plus safe JSON/YAML data parsing of agent.yaml, never
+    # compile()/exec()/importlib on the packaged agent's own files) -- so,
+    # exactly like New Agent's
+    # in-process scaffold call, all three run synchronously on the GUI
+    # thread with no QProcess involved. ----
+
+    def _on_export_agent(self) -> None:
+        if not hasattr(self, "development"):
+            return
+        row = self.development.selectedAgentRow()
+        if row is None:
+            QMessageBox.information(self, "Export Agent", "Select a Python agent first.")
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Choose destination folder for the exported agent",
+            str(self.battle_root),
+        )
+        if not directory:
+            return
+        try:
+            result = export_agent(row.agent_id, data_root=self.battle_root, output=Path(directory))
+        except AgentPackageError as exc:
+            QMessageBox.critical(self, "Export Failed", f"[{exc.code}] {exc}")
+            return
+        QMessageBox.information(self, "Export Agent", format_export_result_text(result))
+
+    def _on_inspect_agent_package(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Inspect Agent Package",
+            str(self.battle_root),
+            "Bytefray Agent Packages (*.bytefray-agent);;All Files (*.*)",
+        )
+        if not path:
+            return
+        inspection = inspect_package(Path(path))
+        PackageDetailsDialog(inspection, allow_import=False, parent=self).exec()
+
+    def _on_import_agent_package(self) -> None:
+        if self._proc is not None and self._proc.state() != QProcess.NotRunning:
+            QMessageBox.information(
+                self,
+                "Import Agent Package",
+                "Wait for the active operation to finish, or stop it, before importing an agent.",
+            )
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Agent Package",
+            str(self.battle_root),
+            "Bytefray Agent Packages (*.bytefray-agent);;All Files (*.*)",
+        )
+        if not path:
+            return
+        inspection = inspect_package(Path(path))
+        if not inspection.valid:
+            QMessageBox.critical(
+                self, "Import Agent Package", format_package_inspection_text(inspection)
+            )
+            return
+        if not inspection.compatible:
+            QMessageBox.warning(
+                self, "Import Agent Package", format_package_inspection_text(inspection)
+            )
+            return
+        dialog = PackageDetailsDialog(inspection, allow_import=True, parent=self)
+        dialog.exec()
+        if not dialog.import_requested:
+            return
+        self._import_package_with_retry(Path(path))
+
+    def _import_package_with_retry(self, path: Path, as_agent_id: str | None = None) -> None:
+        """Perform the authoritative, fail-closed import (Sec 7/8 of
+        docs/specs/agent_package.md). A destination-id collision with
+        genuinely different content is the one failure this offers an
+        explicit, in-dialog retry for -- entering an alternate id and
+        retrying is exactly the GUI equivalent of the CLI's own
+        ``--as AGENT_ID`` flag; nothing is auto-renamed."""
+
+        candidate_id = as_agent_id
+        while True:
+            try:
+                result = import_package(
+                    path,
+                    data_root=self.battle_root,
+                    as_agent_id=candidate_id,
+                )
+            except PackageImportConflictError as exc:
+                alt_id, ok = QInputDialog.getText(
+                    self,
+                    "Import Agent Package",
+                    f"{exc}\n\nEnter a different agent id to import under, or Cancel to abort:",
+                )
+                if not ok or not alt_id.strip():
+                    return
+                candidate_id = alt_id.strip()
+                continue
+            except AgentPackageError as exc:
+                QMessageBox.critical(self, "Import Failed", f"[{exc.code}] {exc}")
+                return
+
+            # Refresh/select first so every subsequent interaction observes
+            # the newly imported catalog identity, including when display
+            # labels are duplicated or differ from discovery ids.
+            self.refresh_agents(select=result.agent_id)
+            QMessageBox.information(
+                self, "Import Agent Package", format_import_result_text(result)
+            )
+            return
 
     def _on_open_output_folder(self) -> None:
         path = self._tournament_output or (

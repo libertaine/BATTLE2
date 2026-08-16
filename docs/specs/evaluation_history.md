@@ -844,9 +844,11 @@ see the corrected §14.1. An ordinary (non-`--verify`) comparison leaves
 this `False`, and CLI/JSON output for that comparison must say plainly
 that its evidence was not deep-verified rather than implying it was.
 
-Orientation is always `right` (new) relative to `left` (old) — this is
-explicit in every returned/printed structure, never implicit positional
-convention alone.
+Orientation is always `right` relative to `left` — this is explicit in every
+returned/printed structure, never an implicit positional convention alone.
+Those names are caller-selected comparison roles, **not** a chronological
+old/new guarantee: the Designer's initially selected evaluation is Left and
+the picker choice is Right, regardless of their timestamps.
 
 **Strict shared-condition fingerprint** (excludes candidate identity by
 construction — candidate identity is compared and reported *separately* as
@@ -854,12 +856,14 @@ the experimental variable, never folded into the shared-condition key):
 
 ```python
 def condition_key(cell: AdaptedCell, opponent_identity: dict, conditions_fp: str,
-                   rules_id: str | None) -> tuple[Any, ...]:
+                   rules_id: str | None,
+                   arena_alignment_id: str | None) -> tuple[Any, ...]:
     return (
         opponent_identity["agent_id"], opponent_identity["source_sha256"],
         opponent_identity["entry_point"], opponent_identity["api_version"],
         opponent_identity["local_source_fingerprint"],
-        cell.seed, conditions_fp, rules_id, cell.condition_occurrence_index.value,
+        cell.seed, conditions_fp, rules_id, arena_alignment_id,
+        cell.condition_occurrence_index.value, cell.orientation.value,
     )
 ```
 
@@ -881,6 +885,12 @@ value, including another `None` from a different v1 artifact — two v1
 artifacts with no rules ID are never silently treated as rules-compatible;
 they can still be shown side-by-side descriptively (§14.3), just never given
 a direct verdict.
+
+Entrant orientation and arena-alignment methodology joined this strict key
+in v0.9. An `opponent_first` cell never aligns to a `candidate_first` cell,
+even when opponent/seed/occurrence coordinates match; an unknown orientation
+or arena alignment fails closed in the same way as another unknown required
+dimension.
 
 For v1, `condition_occurrence_index` is recovered only when the artifact's
 cell list, in file order, gives unambiguous, consistent per-(subject,
@@ -1214,13 +1224,48 @@ Two-run comparison (`EvaluationComparisonDialog`) and agent-revision
 provenance inspection (`RevisionBrowserDialog`, including a live check of
 whether an archived revision still matches an agent's *current* on-disk
 source — an Area D capability the CLI itself doesn't expose) are also
-implemented. **Still deferred, unchanged from above:** replay/Agent-Lab
-drill-down from a comparison row (as opposed to from the single-evaluation
-cell list, which is implemented) and any evaluation-history indexing (the
-~1.86s-at-1,000-artifacts on-demand-scan profile this section already
-measured was re-confirmed adequate during v1.1 qualification). Revision
-*restore* from the GUI remains out of scope for a different reason — see
-`docs/specs/agent_revision.md` §9's own v1.1 note.
+implemented.
+
+**Implemented for v1.3; pending release** (`docs/ROADMAP.md`'s "Designer
+Workflow Completion"):
+`EvaluationComparisonDialog` gains the comparison-row drill-down this
+section deferred — "Test in Agent Lab"/"Open Replay" from a two-run
+comparison row, reusing the same Designer execution/replay handlers as the
+single-evaluation cell list. The signal now carries the concrete cell's
+ticks and entrant orientation as well as subject/opponent/seed, so an Agent
+Lab rerun reproduces the selected schedule shape: `opponent_first` swaps
+physical CLI roles, while replay opens the selected artifact directly. A
+historical rerun still uses currently installed agent source; the dialog
+states that explicitly rather than implying an archived snapshot will run.
+
+Directly comparable rows retain exact side-scoped schedule ids for this
+in-process resolution. They are defaulted, `compare=False` fields on
+`ComparisonRow` and are deliberately omitted from `to_json()`: this fixes
+the case where candidate-first and opponent-first rows share the same
+opponent/seed/occurrence coordinates without changing comparison JSON or a
+persisted schema. Resolution by coordinate is only a compatibility fallback
+for hand-built/older in-process rows and succeeds only when exactly one cell
+matches; ambiguity fails closed.
+
+The Side control calls the roles **Left (selected)** and **Right
+(comparison)**, not old/new. A direct row offers both and defaults Right; an
+unmatched cell offers its one real side; a changed-condition pair (one or
+more effective conditions, rules/methodology fields, or opponent revision
+differ) requires an explicit side choice because it is not like-for-like.
+An ambiguous duplicate group is never actionable — no code path guesses a
+pairing `align()` could not establish. Its guidance points to concrete Cells
+lists or `bytefray agents evaluations show <id> --json` plus the recorded
+`schedule_id`/`artifact_dir`; it does not claim the CLI accepts a
+schedule-id selector.
+
+Revision *restore* is also implemented for v1.3 — see
+`docs/specs/agent_revision.md`'s corresponding note. The only CLI
+comparison change is human-readable disclosure of the already-existing
+`ambiguous_duplicate_groups` count; the `--json` shape is unchanged.
+**Still deferred, unchanged from above:**
+any evaluation-history indexing (the ~1.86s-at-1,000-artifacts on-demand-
+scan profile this section already measured remains adequate; not re-measured
+in v1.3 since nothing about discovery performance changed).
 
 ## 18. Compatibility
 
@@ -1233,6 +1278,9 @@ measured was re-confirmed adequate during v1.1 qualification). Revision
 - `bytefray agents evaluate`'s existing flags/exit-code contract (§12 of
   `agent_evaluation.md`) is unchanged; only the artifact it writes gains
   `schema_version: 2` and the additive fields above.
+- v1.3's side-scoped `ComparisonRow` schedule references are in-memory only
+  and omitted from `to_json()`. The compare CLI's JSON keys, evaluation
+  artifacts, result/replay schemas, and Agent API are unchanged.
 
 ## 19. Correction to `docs/specs/agent_evaluation.md`
 

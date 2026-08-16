@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from battle_engine.rules import normalize_ruleset_id
@@ -87,12 +87,12 @@ def _contexts_compatible(left: dict[str, Any] | None, right: dict[str, Any] | No
 
     if left is None or right is None:
         return False
-    for field, expected_type in _CONTEXT_REQUIRED_FIELD_TYPES.items():
-        if not _context_field_present(left, field, expected_type):
+    for field_name, expected_type in _CONTEXT_REQUIRED_FIELD_TYPES.items():
+        if not _context_field_present(left, field_name, expected_type):
             return False
-        if not _context_field_present(right, field, expected_type):
+        if not _context_field_present(right, field_name, expected_type):
             return False
-        if left[field] != right[field]:
+        if left[field_name] != right[field_name]:
             return False
     return True
 
@@ -111,6 +111,13 @@ class ComparisonRow:
     left_territory: float | None = None
     right_territory: float | None = None
     reproducibility_anomaly: bool = False
+    # Exact, side-scoped references retained only for in-process consumers
+    # such as the Designer's comparison drill-down.  They are deliberately
+    # omitted from ``to_json`` so the established CLI JSON shape remains
+    # unchanged.  ``compare=False`` also keeps these presentation-only
+    # references out of the row's value semantics.
+    left_schedule_id: str | None = field(default=None, repr=False, compare=False)
+    right_schedule_id: str | None = field(default=None, repr=False, compare=False)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -463,6 +470,8 @@ def _align_cell_sets(
                     right_score=right_cell.score_subject,
                     left_territory=left_cell.territory_subject,
                     right_territory=right_cell.territory_subject,
+                    left_schedule_id=left_cell.schedule_id,
+                    right_schedule_id=right_cell.schedule_id,
                 )
                 rows.append(row)
                 continue
@@ -532,6 +541,8 @@ def _align_cell_sets(
                 left_territory=left_cell.territory_subject,
                 right_territory=right_cell.territory_subject,
                 reproducibility_anomaly=anomaly,
+                left_schedule_id=left_cell.schedule_id,
+                right_schedule_id=right_cell.schedule_id,
             )
             rows.append(row)
             if anomaly:
@@ -547,7 +558,10 @@ def _align_cell_sets(
 def align(
     left: EvaluationSummary, right: EvaluationSummary, *, deep_verified: bool = False
 ) -> AlignedComparison:
-    """Right (new) relative to left (old) -- Sec 14. Orientation is always explicit.
+    """Right (comparison) relative to left (selected) -- Sec 14.
+
+    These are neutral picker roles, not a chronological old/new guarantee.
+    Orientation is always explicit.
 
     ``deep_verified`` must be ``True`` only when the caller has already run
     ``evaluation_history.verification.verify_summary`` on *both* ``left``

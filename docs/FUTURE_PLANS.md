@@ -198,7 +198,14 @@ generalized to gameplay itself.
   evaluation, provenance, and the ruleset itself are expected to mature
   first (see [ROADMAP.md](ROADMAP.md)'s v0.10 product-boundary item).
 - **Improved Designer functionality** (Candidate).
-- **Richer GUI access to evaluation/history/provenance** (Candidate).
+- **Richer GUI access to evaluation/history/provenance** — **status:
+  substantially addressed.** `docs/ROADMAP.md`'s shipped v1.1.0
+  section covers the Evaluation History browser, two-run comparison, and
+  revision/provenance inspection; its v1.3.0 section records comparison-row
+  drill-down and Designer revision restore as implemented pending release.
+  The broad item is not duplicated here. It remains as a pointer because
+  evaluation-history indexing and further comparison/drill-down refinement
+  are still smaller-grained candidates rather than fully closed.
 - **Additional starter/reference agents** (Candidate).
 - **Agent ecosystem/sharing** — see "Agent packaging / sharing" above;
   not duplicated here.

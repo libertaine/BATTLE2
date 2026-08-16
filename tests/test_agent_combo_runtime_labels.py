@@ -62,6 +62,45 @@ def test_combo_shows_runtime_labels_but_stores_undecorated_identifier():
 
 
 @pytest.mark.gui
+def test_combo_and_match_launch_use_discovery_ids_for_duplicate_display_names():
+    _make_app()
+    from app.services.agent_catalog import AgentRow
+    from app.views.simple import SimplePanel
+
+    rows = [
+        AgentRow(
+            "Friendly",
+            "/agents/alpha_id",
+            None,
+            {"display": "Friendly", "kind": "python"},
+            agent_id="alpha_id",
+        ),
+        AgentRow(
+            "Friendly",
+            "/agents/beta_id",
+            None,
+            {"display": "Friendly", "kind": "python"},
+            agent_id="beta_id",
+        ),
+    ]
+    panel = SimplePanel(catalog=None)
+    panel.setAgents(rows)
+
+    assert [panel.agentA.itemText(i) for i in range(2)] == [
+        "Friendly [Python] (alpha_id)",
+        "Friendly [Python] (beta_id)",
+    ]
+    panel.agentA.setCurrentIndex(0)
+    panel.agentB.setCurrentIndex(1)
+    captured = []
+    panel.runRequested.connect(captured.append)
+    panel._emit_run()
+
+    assert captured[0].a_type == "alpha_id"
+    assert captured[0].b_type == "beta_id"
+
+
+@pytest.mark.gui
 def test_selecting_python_a_disables_vm_b_entries():
     _make_app()
     from PySide6.QtWidgets import QComboBox

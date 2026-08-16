@@ -1039,15 +1039,14 @@ def test_restore_partial_write_failure_leaves_no_partial_target(
     ]
 
 
-def test_restore_partial_write_failure_preserves_preexisting_files_under_force(
+def test_restore_partial_write_failure_preserves_unrelated_files_under_force(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The same mid-restore rollback as above, but into a non-empty
-    ``--force`` target: a file that existed before this restore call started
-    must never be touched by the failure-path rollback -- only the files
-    *this call* wrote get removed again, matching ``restore_revision``'s own
-    documented contract ("never anything that was already present in
-    `target_dir`, e.g. from an earlier `--force` restore")."""
+    ``--force`` target: an unrelated file that is not one of the archived
+    paths must never be touched by failure-path cleanup. Matching paths are
+    different: force overwrites them and there is no hidden backup (covered
+    by the characterization below)."""
 
     agent_dir = _make_agent(tmp_path / "agent")
     _write(agent_dir / "aaa.py", "AAA = 1\n")
@@ -1075,6 +1074,45 @@ def test_restore_partial_write_failure_preserves_preexisting_files_under_force(
     remaining = sorted(p.name for p in target.iterdir())
     assert remaining == ["preexisting.txt"]
     assert (target / "preexisting.txt").read_text(encoding="utf-8") == "leave me alone"
+
+
+def test_restore_force_failure_cannot_roll_back_overwritten_matching_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Characterize the deliberately disclosed no-backup force semantics.
+
+    If a matching file is overwritten before a later write fails, cleanup
+    can remove the newly written path but cannot reconstruct its old bytes.
+    This must stay explicit in CLI/GUI wording; it is not an all-or-nothing
+    directory replacement or transactional rollback.
+    """
+
+    agent_dir = _make_agent(tmp_path / "agent")
+    _write(agent_dir / "aaa.py", "ARCHIVED = 1\n")
+    store = tmp_path / "store"
+    result = archive_agent_revision(agent_dir, store_root=store)
+    assert result.agent_revision_id is not None
+
+    target = tmp_path / "restore-target"
+    _write(target / "aaa.py", "LIVE = 1\n")
+    _write(target / "unrelated.txt", "leave me alone")
+
+    original_write_bytes = Path.write_bytes
+    call_count = {"n": 0}
+
+    def flaky_write_bytes(self: Path, data: bytes) -> int:  # type: ignore[override]
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise OSError("simulated disk failure after matching overwrite")
+        return original_write_bytes(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", flaky_write_bytes)
+
+    with pytest.raises(RevisionRestoreError, match="failed partway"):
+        restore_revision(store, result.agent_revision_id, target, force=True)
+
+    assert not (target / "aaa.py").exists()
+    assert (target / "unrelated.txt").read_text(encoding="utf-8") == "leave me alone"
 
 
 # ---------------------------------------------------------------------------

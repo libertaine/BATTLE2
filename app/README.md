@@ -1,55 +1,49 @@
-## README.md
-```markdown
-# Battle Agent Designer (PySide6)
+# Bytefray Agent Designer (PySide6)
 
-A small PySide6 desktop app that lets you pick agents, run the supported **headless engine** workflow, inspect its canonical result/replay artifacts, and open the **Pygame** renderer to view the replay.
+The Agent Designer is Bytefray's desktop workflow for running matches,
+developing Python agents, inspecting canonical artifacts, and opening the
+Pygame replay viewer. It delegates simulation, agent validation/testing,
+evaluation history, revisions, and package operations to the authoritative
+`battle_engine` services.
 
-## Features
-- **Simple / Advanced** modes with a toolbar toggle.
-- Simple mode: quick agent pickers, grid/tick presets, live log, Run/Stop/Open.
-- Advanced mode tabs: Match Setup, Agent Params (per-agent JSON), Replay Browser, Results (shows canonical result status).
-- **File-only workflow**: engine writes `runs/_loose/result.json` and `replay.jsonl`, plus compatibility `summary.json`.
-- VM-vs-VM and Python-vs-Python matches; mixed runtime selections are rejected.
-- Minimal homogeneous round-robin launcher under **Tools → Run Tournament…**.
-- Runtime/API/schema details under **Help → About Bytefray**.
-- Cross‑platform: sets `PYTHONPATH` using `:` (POSIX) / `;` (Windows).
+## Main UI
 
-## Requirements
-- Python 3.10+
-- Existing repo layout at `<BATTLE_ROOT>`:
-  - `engine/src/battle_engine/cli.py`
-  - `client/src/battle_client/cli.py` (module entry `python -m battle_client.cli`)
+- **Simple** tab: choose two homogeneous agents, run/stop a match, inspect the
+  result, and open its replay.
+- **Advanced** tab: configure matches and per-agent parameters, browse replays,
+  and inspect canonical result artifacts.
+- **Agent Development** tab: create, validate, and development-test Agent API v1
+  Python agents; inspect traces/replays; run evaluations; and export
+  `.bytefray-agent` packages.
+- **Tools** menu: run tournaments, browse/compare evaluation history, inspect or
+  import agent packages, and open the latest output directory.
 
-## How to run
+Long-running or agent-code-executing work is launched out of process. Read-only
+history/revision inspection and bounded package/scaffold filesystem operations
+run in process. Canonical result, replay, trace, evaluation, revision, and
+package formats remain owned by `battle_engine`.
+
+## Run from a source checkout
+
 ```bash
-# From <BATTLE_ROOT>
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -e .
-
-# Optional: set BATTLE_ROOT explicitly
-# export BATTLE_ROOT=$(pwd)  # Windows PowerShell: $env:BATTLE_ROOT=(Get-Location).Path
-
+pip install -e ".[replay,designer]"
 battle-agent-designer
 ```
 
-If you prefer running without installing:
+Without installing the console entry point:
+
 ```bash
 python -m app.agent_designer
 ```
 
-### Agent discovery
-Place agents under `<BATTLE_ROOT>/agents/<agent_name>/`. The app will scan `agent.yaml` (JSON allowed) for `name` and `display`. If missing, it falls back to `agents/<name>/agent.py`.
+`BYTEFRAY_ROOT` selects the writable data root. `BATTLE2_ROOT` and
+`BATTLE_ROOT` remain deprecated fallbacks; see `INSTALL.md` for precedence and
+portable-install behavior. Agents are discovered under
+`<data-root>/agents/<agent-id>/` from their `agent.yaml` manifests. The
+directory/discovery id and human-readable display name may differ.
 
-### Notes
-- Engine params are passed via CLI; optional per-agent JSON is exported to env vars `BATTLE_AGENT_A_PARAMS_JSON` and `BATTLE_AGENT_B_PARAMS_JSON` if present.
-- **Open Last Replay** launches: `python -m battle_client.cli --replay <replay.jsonl> --renderer pygame --tick-delay 0.02` with proper `PYTHONPATH`.
-
-## Acceptance tests (manual)
-1. **Mode toggle**: Click toolbar **Simple/Advanced** — panels switch; window size stays stable.
-2. **Run (Simple)**: Use defaults, click **Run Match**. After engine exits, **Results** tab shows `winner` and other fields; **Open Last Replay** becomes enabled and opens Pygame.
-3. **Invalid Agent Params**: In **Advanced → Agent Params**, insert broken JSON and click **Validate JSON** — a clear error dialog is shown and run is blocked unless fixed/cleared.
-4. **Windows/Linux PYTHONPATH**: Verify environment uses `;` on Windows and `:` on Linux/macOS (manual check in code or by printing `PYTHONPATH` in engine).
-```
-
----
+The authoritative interactive release checklist is
+[`docs/MANUAL_SMOKE_TESTS.md`](../docs/MANUAL_SMOKE_TESTS.md); GUI-marked pytest
+coverage complements that checklist but is not a human walkthrough.

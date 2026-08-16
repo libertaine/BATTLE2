@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from battle_engine.agent_evaluation import ORIENTATION_MODE_CANDIDATE_FIRST_ONLY, methodology_lines
 from battle_engine.agent_revisions import (
@@ -158,30 +159,56 @@ def compare_evaluations(
 
 
 def find_candidate_cell(
-    summary: EvaluationSummary, row: ComparisonRow, *, role: str = "candidate"
+    summary: EvaluationSummary,
+    row: ComparisonRow,
+    *,
+    role: str = "candidate",
+    side: Literal["left", "right"] | None = None,
 ) -> AdaptedCell | None:
     """Recover the ``AdaptedCell`` a comparison row was aligned from.
 
-    ``ComparisonRow`` is a flattened, cross-artifact summary row (Sec 14) --
-    it deliberately carries no cell/schedule-id reference back into either
-    side's own ``cells``. A caller that wants to drill down from a
-    comparison row into that specific match (e.g. to open its replay) has
-    to re-locate the cell the same way ``condition_key``/alignment did: by
-    ``(subject_role, opponent_id, seed, condition_occurrence_index)``. This
-    is read-only lookup over already-loaded data, no re-parsing.
+    ``ComparisonRow`` is a flattened, cross-artifact summary row (Sec 14).
+    Alignment retains an internal, non-serialized schedule-id reference for
+    each side.  GUI callers pass ``side`` so lookup uses that exact reference
+    within the corresponding summary.  Hand-built/legacy rows without those
+    references may fall back to the comparison coordinate, but only when it
+    identifies exactly one cell.  Returning the first of multiple matches
+    would be unsafe: current both-orientation evaluations legitimately have
+    candidate-first and opponent-first cells with the same opponent, seed,
+    and occurrence index.
+
+    This is read-only lookup over already-loaded data, with no re-parsing.
     """
 
-    if row.condition_occurrence_index is None:
-        return None
-    for cell in summary.cells:
-        if (
+    if side not in (None, "left", "right"):
+        raise ValueError(f"Unknown comparison side: {side!r}")
+
+    schedule_id = None
+    if side == "left":
+        schedule_id = row.left_schedule_id
+    elif side == "right":
+        schedule_id = row.right_schedule_id
+
+    def _same_coordinate(cell: AdaptedCell) -> bool:
+        return (
             cell.subject_role == role
             and cell.opponent_id == row.opponent_id
             and cell.seed == row.seed
+            and row.condition_occurrence_index is not None
             and cell.condition_occurrence_index.value == row.condition_occurrence_index
-        ):
-            return cell
-    return None
+        )
+
+    if schedule_id is not None:
+        matches = [
+            cell
+            for cell in summary.cells
+            if cell.schedule_id == schedule_id and _same_coordinate(cell)
+        ]
+    else:
+        if row.condition_occurrence_index is None:
+            return None
+        matches = [cell for cell in summary.cells if _same_coordinate(cell)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def distinct_opponent_ids(summary: EvaluationSummary) -> tuple[str, ...]:
@@ -467,16 +494,17 @@ def format_comparison_text(result: EvaluationComparisonResult) -> str:
     lines.append(
         f"unmatched: left={d.unmatched_left} right={d.unmatched_right}  "
         f"changed_condition={d.changed_condition}  "
-        # Found during interactive qualification: a comparison whose cells
-        # all fall into duplicate (opponent, seed) groups that could not be
-        # unambiguously paired (Sec 14 of docs/specs/evaluation_history.md)
-        # otherwise renders as an uninformative wall of zeros with no visible
-        # signal that "Show Unmatched / Changed-Condition / Ambiguous
-        # Details" has anything to show. The CLI's own ``_print_compare``
-        # has this identical omission in its human-readable output (its
-        # ``--json`` mode does carry the full list) -- not fixed here, since
-        # this pass is scoped to the Designer, not the CLI; recorded as a
-        # follow-up.
+        # Found during v1.1 interactive qualification: a comparison whose
+        # cells all fall into duplicate (opponent, seed) groups that could
+        # not be unambiguously paired (Sec 14 of
+        # docs/specs/evaluation_history.md) otherwise renders as an
+        # uninformative wall of zeros with no visible signal that "Show
+        # Unmatched / Changed-Condition / Ambiguous Details" has anything to
+        # show. v1.1 fixed this here; v1.3 closed the matching gap in the
+        # CLI's own ``_print_compare`` human-readable output (its
+        # ``--json`` mode always carried the full list) for CLI/GUI
+        # consistency (docs/specs/evaluation_history.md Sec 16 of the v1.3
+        # task).
         f"ambiguous_duplicate_groups={d.ambiguous_duplicate_groups}  corrupt_or_missing={d.corrupt_or_missing}"
     )
     if comparison.reproducibility_anomalies:
@@ -510,7 +538,8 @@ def format_comparison_gaps_text(comparison: AlignedComparison) -> str:
         for left_cell, right_cell in comparison.changed_condition:
             lines.append(
                 f"  - opponent={left_cell.opponent_id} seed={left_cell.seed}  "
-                "left and right opponent revisions differ (not a like-for-like comparison)"
+                "effective conditions, rules, methodology, or opponent revision differ "
+                "(not a like-for-like comparison)"
             )
     if comparison.ambiguous_duplicate_groups:
         lines.append(

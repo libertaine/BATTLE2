@@ -19,6 +19,7 @@ independent of the Designer's Simple/Advanced "Open Last Replay" state
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from battle_engine.agent_scaffold import (
@@ -61,6 +62,22 @@ _MAX_SPINBOX_INT = 2_147_483_647
 def _is_python_agent(row: AgentRow) -> bool:
     meta = row.meta if isinstance(row.meta, dict) else {}
     return meta.get("kind") == "python"
+
+
+def _agent_row_id(row: AgentRow) -> str:
+    """Return the catalog/discovery id, retaining legacy-row compatibility."""
+
+    return row.agent_id or row.name
+
+
+def _agent_labels(rows: list[AgentRow]) -> list[str]:
+    """Make duplicate display names unambiguous without decorating unique ones."""
+
+    counts = Counter(row.name for row in rows)
+    return [
+        f"{row.name} ({_agent_row_id(row)})" if counts[row.name] > 1 else row.name
+        for row in rows
+    ]
 
 
 class NewAgentDialog(QDialog):
@@ -135,6 +152,7 @@ class AgentDevelopmentPanel(QWidget):
     refreshAgentsRequested = Signal()
     newAgentRequested = Signal()
     openFolderRequested = Signal()
+    exportAgentRequested = Signal()
     validateRequested = Signal()
     testRequested = Signal()
     openTestReplayRequested = Signal()
@@ -145,6 +163,7 @@ class AgentDevelopmentPanel(QWidget):
         super().__init__()
         self._rows: list[AgentRow] = []
         self._busy = False
+        self._current_agent_id: str | None = None
         self._current_agent_name: str | None = None
         self._last_validation: ValidationPresentation | None = None
         self._last_test: DevelopmentTestPresentation | None = None
@@ -162,9 +181,16 @@ class AgentDevelopmentPanel(QWidget):
         self.btnNewAgent = QPushButton("New Agent…")
         self.btnOpenFolder = QPushButton("Open Folder")
         self.btnOpenFolder.setEnabled(False)
+        self.btnExportAgent = QPushButton("Export Agent…")
+        self.btnExportAgent.setEnabled(False)
+        self.btnExportAgent.setToolTip(
+            "Package this agent's current source into a portable .bytefray-agent "
+            "file via the authoritative v1.2 package engine (docs/specs/agent_package.md)."
+        )
         header_row.addWidget(self.btnRefresh)
         header_row.addWidget(self.btnNewAgent)
         header_row.addWidget(self.btnOpenFolder)
+        header_row.addWidget(self.btnExportAgent)
         root.addWidget(header)
 
         validation = QGroupBox("Validation")
@@ -241,12 +267,13 @@ class AgentDevelopmentPanel(QWidget):
         self.btnRefresh.clicked.connect(self.refreshAgentsRequested.emit)
         self.btnNewAgent.clicked.connect(self.newAgentRequested.emit)
         self.btnOpenFolder.clicked.connect(self.openFolderRequested.emit)
+        self.btnExportAgent.clicked.connect(self.exportAgentRequested.emit)
         self.btnValidate.clicked.connect(self.validateRequested.emit)
         self.btnTest.clicked.connect(self.testRequested.emit)
         self.btnOpenTestReplay.clicked.connect(self.openTestReplayRequested.emit)
         self.btnInspectTrace.clicked.connect(self.inspectTraceRequested.emit)
         self.btnEvaluate.clicked.connect(self.evaluateRequested.emit)
-        self.agentCombo.currentTextChanged.connect(self._on_combo_changed)
+        self.agentCombo.currentIndexChanged.connect(self._on_combo_changed)
 
         self.opponentCombo.addItem("Reference", None)
         self._update_enablement()
@@ -254,19 +281,19 @@ class AgentDevelopmentPanel(QWidget):
     # ---- API consumed by AgentDesigner ----
     def setAgents(self, rows: list[AgentRow]) -> None:
         """Repopulate the combo from the full catalog, keeping python agents only."""
+        previous_id = self.agentCombo.currentData()
         self._rows = [row for row in rows if _is_python_agent(row)]
-        names = [row.name for row in self._rows]
-        prev = self.agentCombo.currentText()
         self.agentCombo.blockSignals(True)
         self.agentCombo.clear()
-        self.agentCombo.addItems(names)
-        if prev:
-            idx = self.agentCombo.findText(prev)
+        for label, row in zip(_agent_labels(self._rows), self._rows, strict=True):
+            self.agentCombo.addItem(label, _agent_row_id(row))
+        if previous_id:
+            idx = self.agentCombo.findData(previous_id)
             if idx >= 0:
                 self.agentCombo.setCurrentIndex(idx)
         self.agentCombo.blockSignals(False)
         self._refresh_opponent_combo()
-        self._on_combo_changed(self.agentCombo.currentText())
+        self._on_combo_changed()
 
     def _refresh_opponent_combo(self) -> None:
         """Repopulate the opponent combo: 'Reference' plus every Python agent.
@@ -280,8 +307,8 @@ class AgentDevelopmentPanel(QWidget):
         self.opponentCombo.blockSignals(True)
         self.opponentCombo.clear()
         self.opponentCombo.addItem("Reference", None)
-        for row in self._rows:
-            self.opponentCombo.addItem(row.name, row.name)
+        for label, row in zip(_agent_labels(self._rows), self._rows, strict=True):
+            self.opponentCombo.addItem(label, _agent_row_id(row))
         index = 0
         if prev_data is not None:
             found = self.opponentCombo.findData(prev_data)
@@ -318,17 +345,40 @@ class AgentDevelopmentPanel(QWidget):
         return self._last_test_replay
 
     def selectAgent(self, agent_id: str) -> None:
-        idx = self.agentCombo.findText(agent_id)
+        idx = self.agentCombo.findData(agent_id)
+        if idx < 0:
+            # Compatibility for callers/tests that predate AgentRow.agent_id
+            # and still pass a unique display label.
+            idx = self.agentCombo.findText(agent_id)
         if idx >= 0:
             self.agentCombo.setCurrentIndex(idx)
-        self._on_combo_changed(self.agentCombo.currentText())
+        self._on_combo_changed()
 
     def selectedAgentRow(self) -> AgentRow | None:
-        name = self.agentCombo.currentText()
-        for row in self._rows:
-            if row.name == name:
-                return row
-        return None
+        index = self.agentCombo.currentIndex()
+        return self._rows[index] if 0 <= index < len(self._rows) else None
+
+    def invalidateAgentState(self, agent_id: str, reason: str) -> None:
+        """Clear cached evidence when the selected agent's source changes."""
+
+        row = self.selectedAgentRow()
+        if row is None or _agent_row_id(row) != agent_id:
+            return
+        detail = reason.strip() or "The selected agent's source changed."
+        self._last_validation = None
+        self._last_test = None
+        self._last_test_replay = None
+        self._last_test_trace = None
+        self.btnOpenTestReplay.setEnabled(False)
+        self.btnInspectTrace.setEnabled(False)
+        self.statusLabel.setStyleSheet(_NEUTRAL_STYLE)
+        self.statusLabel.setText(
+            f"Source changed for '{row.name}': {detail} Re-run validation."
+        )
+        self.testStatusLabel.setStyleSheet(_NEUTRAL_STYLE)
+        self.testStatusLabel.setText(
+            f"Source changed for '{row.name}': previous development-test results were cleared."
+        )
 
     def setStatus(self, message: str) -> None:
         """Used by the New Agent creation-success message (Phase 4a)."""
@@ -362,7 +412,7 @@ class AgentDevelopmentPanel(QWidget):
         ``resolve_agent`` looks agents up by discovery id, not display name,
         and the two can differ (docs/specs/evaluation_history.md Sec 17).
         """
-        return [(row.name, row.agent_id) for row in self._rows]
+        return [(row.name, _agent_row_id(row)) for row in self._rows]
 
     def showValidating(self, agent_id: str) -> None:
         self.statusLabel.setStyleSheet(_NEUTRAL_STYLE)
@@ -499,10 +549,10 @@ class AgentDevelopmentPanel(QWidget):
     # ---- Internal ----
     def _update_enablement(self) -> None:
         row = self.selectedAgentRow()
-        name = self.agentCombo.currentText()
-        has_agent = bool(name) and row is not None
+        has_agent = row is not None
         can_open_folder = has_agent and Path(row.path).is_dir() if row else False
         self.btnOpenFolder.setEnabled(can_open_folder and not self._busy)
+        self.btnExportAgent.setEnabled(has_agent and not self._busy)
         self.btnTest.setEnabled(has_agent and not self._busy)
         self.btnValidate.setEnabled(has_agent and not self._busy)
         self.btnEvaluate.setEnabled(has_agent and not self._busy)
@@ -525,10 +575,13 @@ class AgentDevelopmentPanel(QWidget):
             self.testStatusLabel.setStyleSheet(_NEUTRAL_STYLE)
             self.testStatusLabel.setText("No agent selected.")
 
-    def _on_combo_changed(self, name: str) -> None:
+    def _on_combo_changed(self, _index: int | None = None) -> None:
         self._update_enablement()
-        changed = name != self._current_agent_name
-        self._current_agent_name = name or None
+        row = self.selectedAgentRow()
+        agent_id = _agent_row_id(row) if row is not None else None
+        changed = agent_id != self._current_agent_id
+        self._current_agent_id = agent_id
+        self._current_agent_name = row.name if row is not None else None
         if changed:
             self._last_validation = None
             self._render_idle_status()

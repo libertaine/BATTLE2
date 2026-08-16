@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -362,6 +363,9 @@ def test_compare_evaluations_incompatible_conditions_are_not_directly_comparable
 
     gaps_text = format_comparison_gaps_text(result.comparison)
     assert "changed condition" in gaps_text
+    assert (
+        "effective conditions, rules, methodology, or opponent revision differ" in gaps_text
+    )
 
 
 def test_compare_evaluations_ambiguous_groups_are_disclosed_not_silently_zero(tmp_path: Path):
@@ -419,6 +423,69 @@ def test_find_candidate_cell_returns_none_when_no_match(tmp_path: Path):
     cell = find_candidate_cell(summary, real_row)
     assert cell is not None
     assert cell.opponent_id == "opponent" and cell.seed == 1
+
+
+def test_find_candidate_cell_uses_nonserialized_side_refs_for_both_orientations(
+    tmp_path: Path,
+):
+    """A current evaluation has two legitimate cells sharing the legacy
+    fallback coordinate; exact side schedule refs must distinguish them,
+    while an unscoped/duplicate lookup fails closed."""
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    left_path = _run_evaluation(tmp_path, "eval-left", both_orientations=True)
+    right_path = _run_evaluation(tmp_path, "eval-right", both_orientations=True)
+
+    result = compare_evaluations(left_path, right_path)
+    assert len(result.comparison.rows) == 2
+    assert result.left.location.directory != result.right.location.directory
+
+    resolved: dict[str, tuple[str, str]] = {}
+    for row in result.comparison.rows:
+        # Without an explicit side, the old coordinate matches both
+        # orientations and therefore must not return an arbitrary first cell.
+        assert find_candidate_cell(result.left, row) is None
+
+        left_cell = find_candidate_cell(result.left, row, side="left")
+        right_cell = find_candidate_cell(result.right, row, side="right")
+        assert left_cell is not None
+        assert right_cell is not None
+        assert left_cell.schedule_id == row.left_schedule_id
+        assert right_cell.schedule_id == row.right_schedule_id
+        assert left_cell.orientation.value == right_cell.orientation.value
+        resolved[str(left_cell.orientation.value)] = (
+            left_cell.schedule_id,
+            right_cell.schedule_id,
+        )
+
+        # The internal drill-down refs are deliberately absent from the
+        # established comparison/CLI JSON representation.
+        assert set(row.to_json()) == {
+            "opponent_id",
+            "seed",
+            "condition_occurrence_index",
+            "left_outcome",
+            "right_outcome",
+            "verdict",
+            "reason",
+            "left_score",
+            "right_score",
+            "left_territory",
+            "right_territory",
+            "reproducibility_anomaly",
+        }
+
+    assert set(resolved) == {"candidate_first", "opponent_first"}
+
+    first_row = result.comparison.rows[0]
+    first_cell = find_candidate_cell(result.left, first_row, side="left")
+    assert first_cell is not None
+    duplicate_summary = replace(
+        result.left,
+        cells=result.left.cells + (replace(first_cell),),
+    )
+    assert find_candidate_cell(duplicate_summary, first_row, side="left") is None
 
 
 def test_distinct_opponent_ids_dedupes_preserving_first_occurrence_order(tmp_path: Path):

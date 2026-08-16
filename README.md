@@ -71,7 +71,7 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 1.0.0 | Stable Bytefray Platform | Released — a maturity milestone, not a feature checklist: the documented Agent API, ruleset, and schemas are declared stable for the 1.x series and historical artifacts stay intelligible throughout it. Promotes `v1.0.0-rc2` (which closed the required pre-1.0 branding/visual-integration gate and an Agent Designer runtime-kind match-selector correction) to general availability, following full RC-level qualification; no gameplay, Agent API, Ruleset, or evaluation-schema change beyond what the release candidates already shipped. See [docs/ROADMAP.md](docs/ROADMAP.md#v100--stable-bytefray-platform). |
 | 1.0.1 | Post-1.0 Maintenance | Released — patch release. **Fix:** the Agent Designer Advanced tab's per-agent JSON params were silently discarded instead of reaching the agent process. Otherwise repository/build cleanup: removed dead code and ~132MB of committed build output, consolidated packaging/sync tooling, established a Ruff-clean baseline enforced in CI, and refreshed contributor/security documentation. No gameplay, Agent API, Ruleset, or evaluation-schema change. |
 | 1.1.0 | Evaluation Insight & Designer Polish | Released — brings the already-shipped v0.7/v0.8 evaluation-history and agent-revision engine layers into Agent Designer: a Tools → Evaluation History… browser for past `agents evaluate` runs (including legacy artifacts), comparability-first two-run comparison, and agent-revision provenance inspection with a live current-source-drift check the CLI itself doesn't have. No gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
-| 1.2.0 | Portable Agent Packaging & Sharing | Released — extends the existing content-addressed agent-revision store across a machine boundary: `agents export`/`agents package show`/`agents import` package one agent revision into a portable, inspectable-without-execution `.bytefray-agent` file, transfer it by any ordinary means, and import it transactionally into another installation with its `agent_revision_id` and provenance preserved. Adversarially tested against path traversal, tampering, and collision, and qualified with a genuine cross-platform (Windows/Linux) round trip. Introduces exactly one new, independent compatibility axis (`bytefray.agent_package` schema v1); no gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
+| 1.2.0 | Portable Agent Packaging & Sharing | Released — extends the existing content-addressed agent-revision store across a machine boundary: `agents export`/`agents package show`/`agents import` package one agent revision into a portable, inspectable-without-execution `.bytefray-agent` file, transfer it by any ordinary means, and import it through fail-closed validation into another installation with its `agent_revision_id` and provenance metadata preserved. Adversarially tested against path traversal, tampering, and collision, and qualified with a genuine cross-platform (Windows/Linux) round trip. Introduces exactly one new, independent compatibility axis (`bytefray.agent_package` schema v1); no gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
 
 **Future plans (post-1.0):** substantial ideas are deliberately kept out of
 v1.0's required scope so it isn't held hostage to every interesting
@@ -225,11 +225,13 @@ provenance: `export` packages one agent's current source (or an
 already-archived historical revision with `--revision`) into a single
 `<agent>-<revision>.bytefray-agent` file; `package show` reports its
 identity, integrity, and import compatibility without importing or
-executing any of its code; `import` safely, transactionally installs it,
-refusing to overwrite an existing agent of the same id by default (`--as`
-imports under a different one instead). A valid, verified package proves
-its own structure and provenance — it is not, and cannot be, a safety or
-trust statement about the agent's code, which remains ordinary executable
+executing any of its code; `import` applies all validation gates before
+placing files and refuses to overwrite an existing agent of the same id
+by default (`--as` imports under a different one instead). A valid,
+verified package proves
+its own structure, self-consistency, and content identity — it is not, and
+cannot be, an author-authentication, safety, or trust statement about the
+agent's code, which remains ordinary executable
 Python. See `docs/specs/agent_package.md` for the full design.
 
 `validate`/`test` run supervised by default (a `--timeout`-bounded worker
@@ -607,7 +609,7 @@ pyinstaller -y --clean --name battle-agent-designer --windowed ^
 
 > 💡 *Note:* For Windows packaging, use **Inno Setup 6** and compile
 > `tools\installer.iss` to create `Bytefray-Setup-x.y.z.exe`.
-> This installer preserves the five PyInstaller application directories beneath
+> This installer preserves the four PyInstaller application directories beneath
 > `C:\Program Files\Bytefray\bin` and uses `%ProgramData%\BATTLE2` for writable
 > shared data (kept under the legacy name for upgrade continuity). It requires
 > administrative installation and supports Windows AMD64/x64; it does not

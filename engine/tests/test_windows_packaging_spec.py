@@ -1,4 +1,5 @@
-"""Regression coverage for PyInstaller data bundling in the shipped ``.spec`` files.
+"""Regression coverage for PyInstaller data bundling and onedir layout in the
+shipped ``.spec`` files.
 
 ``battle2.exe`` (``tools/battle2.spec``) is the shipped executable that
 reaches ``battle_engine.command._agents`` (``bytefray agents create``/
@@ -23,6 +24,15 @@ re-description of it; the strongest possible verification -- a real frozen
 executable actually running ``agents create`` / "New Agent" -- is a
 manual/CI concern covered by ``tools/build_win.ps1``'s smoke test, not this
 suite (see that script and ``docs/specs/agent_scaffold.md``).
+
+The module also covers a v1.3 finding (docs/specs "Area E" investigation):
+``tools/agent_designer.spec``/``tools/replay_viewer.spec`` previously built
+their ``EXE`` with every binary/data file baked in (no ``exclude_binaries``,
+``COLLECT(exe, name=...)`` with nothing further) instead of the onedir
+"thin launcher + loose files" shape ``tools/battle2.spec``/
+``tools/battle_cli.spec`` already used and ``tools/installer.iss``/the
+portable ZIP layout both assume for all four applications --
+``test_spec_builds_onedir_layout_not_a_fat_exe`` pins the fixed shape.
 """
 
 from __future__ import annotations
@@ -30,63 +40,64 @@ from __future__ import annotations
 import sys
 import types
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 BATTLE2_SPEC = ROOT / "tools" / "battle2.spec"
+BATTLE_CLI_SPEC = ROOT / "tools" / "battle_cli.spec"
 AGENT_DESIGNER_SPEC = ROOT / "tools" / "agent_designer.spec"
+REPLAY_VIEWER_SPEC = ROOT / "tools" / "replay_viewer.spec"
+ALL_SPECS = (BATTLE2_SPEC, BATTLE_CLI_SPEC, AGENT_DESIGNER_SPEC, REPLAY_VIEWER_SPEC)
+BUILD_WIN_SCRIPT = ROOT / "tools" / "build_win.ps1"
 
 
-def _exec_spec_datas(
-    spec_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> list[tuple[str, str]]:
-    """Execute one PyInstaller ``.spec`` file's real source; return its ``datas``.
+class _BuildStub:
+    """Callable stand-in for Analysis/PYZ/EXE/COLLECT.
 
-    Mirrors how PyInstaller itself runs a ``.spec`` file: ``Analysis``,
-    ``PYZ``, ``EXE``, and ``COLLECT`` are bare names PyInstaller injects into
-    the exec namespace with no import statement in most spec files (e.g.
-    ``tools/battle2.spec``); they are stubbed here as harmless no-op
-    recorders instead of the real, heavyweight build classes.
-    ``tools/agent_designer.spec`` instead imports the same four names
-    explicitly (``from PyInstaller.building.build_main import Analysis,
-    PYZ`` / ``from PyInstaller.building.api import EXE, COLLECT``), so those
-    two submodules are faked too, alongside
-    ``PyInstaller.utils.hooks.collect_submodules`` (a real import in every
-    spec file here). Faking all of these lets this test run with no actual
-    ``pyinstaller`` install present (e.g. the headless ``test-linux-core``
-    CI job, which installs only the ``dev`` extra).
+    Calling it or accessing any attribute on the result (e.g. a real
+    `Analysis(...)` instance's `.pure`/`.scripts`/`.binaries`/`.datas`,
+    each read by the later PYZ/EXE/COLLECT calls in a real spec file)
+    always returns the same stub, so the spec's chain of
+    `a = Analysis(...); pyz = PYZ(a.pure); exe = EXE(pyz, a.scripts, ...)`
+    runs to completion without needing real PyInstaller build classes.
     """
 
-    class _BuildStub:
-        """Callable stand-in for Analysis/PYZ/EXE/COLLECT.
+    def __call__(self, *args: object, **kwargs: object) -> _BuildStub:
+        return self
 
-        Calling it or accessing any attribute on the result (e.g. a real
-        `Analysis(...)` instance's `.pure`/`.scripts`/`.binaries`/`.datas`,
-        each read by the later PYZ/EXE/COLLECT calls in a real spec file)
-        always returns the same stub, so the spec's chain of
-        `a = Analysis(...); pyz = PYZ(a.pure); exe = EXE(pyz, a.scripts, ...)`
-        runs to completion without needing real PyInstaller build classes.
-        """
+    def __getattr__(self, name: str) -> _BuildStub:
+        return self
 
-        def __call__(self, *args: object, **kwargs: object) -> _BuildStub:
-            return self
 
-        def __getattr__(self, name: str) -> _BuildStub:
-            return self
+def _install_fake_pyinstaller(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    analysis: object,
+    pyz: object,
+    exe: object,
+    collect: object,
+) -> None:
+    """Install the fake ``PyInstaller`` module tree every spec file imports from.
 
-    stub = _BuildStub()
+    Shared by every test in this module so ``Analysis``/``PYZ``/``EXE``/
+    ``COLLECT`` can each be swapped independently -- some tests only care
+    about ``datas`` (any harmless no-op stub is fine, see ``_BuildStub``),
+    others need to capture the exact arguments a real PyInstaller build
+    would pass to ``EXE``/``COLLECT`` (see ``_exec_spec_calls``).
+    """
 
     fake_hooks = types.ModuleType("PyInstaller.utils.hooks")
     fake_hooks.collect_submodules = lambda name: []  # type: ignore[attr-defined]
     fake_utils = types.ModuleType("PyInstaller.utils")
     fake_utils.hooks = fake_hooks  # type: ignore[attr-defined]
     fake_build_main = types.ModuleType("PyInstaller.building.build_main")
-    fake_build_main.Analysis = stub  # type: ignore[attr-defined]
-    fake_build_main.PYZ = stub  # type: ignore[attr-defined]
+    fake_build_main.Analysis = analysis  # type: ignore[attr-defined]
+    fake_build_main.PYZ = pyz  # type: ignore[attr-defined]
     fake_api = types.ModuleType("PyInstaller.building.api")
-    fake_api.EXE = stub  # type: ignore[attr-defined]
-    fake_api.COLLECT = stub  # type: ignore[attr-defined]
+    fake_api.EXE = exe  # type: ignore[attr-defined]
+    fake_api.COLLECT = collect  # type: ignore[attr-defined]
     fake_building = types.ModuleType("PyInstaller.building")
     fake_building.build_main = fake_build_main  # type: ignore[attr-defined]
     fake_building.api = fake_api  # type: ignore[attr-defined]
@@ -100,13 +111,40 @@ def _exec_spec_datas(
     monkeypatch.setitem(sys.modules, "PyInstaller.building.build_main", fake_build_main)
     monkeypatch.setitem(sys.modules, "PyInstaller.building.api", fake_api)
 
+
+def _exec_spec(
+    spec_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    analysis: object,
+    pyz: object,
+    exe: object,
+    collect: object,
+) -> dict[str, Any]:
+    """Execute one PyInstaller ``.spec`` file's real source; return its namespace.
+
+    Mirrors how PyInstaller itself runs a ``.spec`` file: ``Analysis``,
+    ``PYZ``, ``EXE``, and ``COLLECT`` are bare names PyInstaller injects into
+    the exec namespace with no import statement in most spec files (e.g.
+    ``tools/battle2.spec``); ``tools/agent_designer.spec``/
+    ``tools/replay_viewer.spec`` instead import the same four names
+    explicitly (``from PyInstaller.building.build_main import Analysis,
+    PYZ`` / ``from PyInstaller.building.api import EXE, COLLECT``), so both
+    styles are exercised by installing the fakes both as bare namespace
+    entries and as the real import targets. Faking all of these lets this
+    test run with no actual ``pyinstaller`` install present (e.g. the
+    headless ``test-linux-core`` CI job, which installs only the ``dev``
+    extra).
+    """
+
+    _install_fake_pyinstaller(monkeypatch, analysis=analysis, pyz=pyz, exe=exe, collect=collect)
     namespace: dict[str, object] = {
         "__file__": str(spec_path),
         "__name__": "__pyinstaller_spec__",
-        "Analysis": stub,
-        "PYZ": stub,
-        "EXE": stub,
-        "COLLECT": stub,
+        "Analysis": analysis,
+        "PYZ": pyz,
+        "EXE": exe,
+        "COLLECT": collect,
     }
     # The spec computes `project_root = os.path.abspath(".")`, exactly as
     # PyInstaller itself runs it (cwd is the invocation directory, normally
@@ -114,6 +152,12 @@ def _exec_spec_datas(
     monkeypatch.chdir(ROOT)
     code = compile(spec_path.read_text(encoding="utf-8"), str(spec_path), "exec")
     exec(code, namespace)  # noqa: S102 -- introspecting our own trusted .spec file, test-only
+    return namespace
+
+
+def _exec_spec_datas(spec_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    stub = _BuildStub()
+    namespace = _exec_spec(spec_path, monkeypatch, analysis=stub, pyz=stub, exe=stub, collect=stub)
     return list(namespace["datas"])  # type: ignore[arg-type]
 
 
@@ -196,3 +240,126 @@ def test_agent_designer_spec_still_bundles_starter_agents(monkeypatch):
     datas = _exec_spec_datas(AGENT_DESIGNER_SPEC, monkeypatch)
     entries = {entry[1] for entry in datas}
     assert "battle_engine/data/starter_agents" in entries
+
+
+class _RecordingAnalysis:
+    """Fake ``Analysis`` whose attributes are distinguishable sentinels.
+
+    Lets a test assert *which* attributes a spec's ``EXE``/``COLLECT`` calls
+    actually reference, without needing a real PyInstaller build -- e.g.
+    proving ``COLLECT`` receives ``a.binaries`` (the onedir "loose files
+    beside the launcher" shape) rather than only ``exe`` (the onefile-style
+    "everything baked into one binary" shape a spec falls back to if it
+    omits ``exclude_binaries=True``/``a.binaries`` from its ``EXE``/
+    ``COLLECT`` calls).
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        self.pure = "ANALYSIS.pure"
+        self.scripts = "ANALYSIS.scripts"
+        self.binaries = "ANALYSIS.binaries"
+        self.datas = "ANALYSIS.datas"
+        self.zipped_data = "ANALYSIS.zipped_data"
+        self.zipfiles = "ANALYSIS.zipfiles"
+
+
+def _exec_spec_calls(spec_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Execute a spec file, recording the exact args passed to ``EXE``/``COLLECT``."""
+
+    calls: dict[str, Any] = {}
+
+    def _pyz(*args: object, **kwargs: object) -> str:
+        return "PYZ_RESULT"
+
+    def _exe(*args: object, **kwargs: object) -> str:
+        calls["exe_args"] = args
+        calls["exe_kwargs"] = kwargs
+        return "EXE_RESULT"
+
+    def _collect(*args: object, **kwargs: object) -> str:
+        calls["collect_args"] = args
+        calls["collect_kwargs"] = kwargs
+        return "COLLECT_RESULT"
+
+    _exec_spec(
+        spec_path,
+        monkeypatch,
+        analysis=_RecordingAnalysis,
+        pyz=_pyz,
+        exe=_exe,
+        collect=_collect,
+    )
+    return calls
+
+
+@pytest.mark.parametrize("spec_path", ALL_SPECS, ids=lambda p: p.stem)
+def test_spec_builds_onedir_layout_not_a_fat_exe(spec_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression test for a real, previously-shipped packaging inconsistency (v1.3 Area E).
+
+    ``tools/agent_designer.spec``/``tools/replay_viewer.spec`` used to call
+    ``EXE(pyz, a.scripts, a.binaries, a.zipfiles, a.datas, ...)`` with no
+    ``exclude_binaries=True`` and then ``COLLECT(exe, name=...)`` with no
+    further arguments -- baking every dependency into one large,
+    self-contained ``EXE`` first and only wrapping *that* in a onedir
+    folder, unlike ``tools/battle2.spec``/``tools/battle_cli.spec``, which
+    build a thin launcher ``EXE`` (``exclude_binaries=True``) and let
+    ``COLLECT`` place binaries/data as loose files beside it -- the actual
+    onedir layout ``ARCHITECTURE.md`` and ``tools/installer.iss`` both
+    assume for all four applications. This proves, for every one of the
+    four shipped specs, that ``EXE`` is called with
+    ``exclude_binaries=True`` and that ``COLLECT`` receives the Analysis
+    object's own ``binaries``/``datas`` (not just the bare ``exe`` result),
+    without requiring a real, multi-second PyInstaller build.
+    """
+
+    calls = _exec_spec_calls(spec_path, monkeypatch)
+    assert calls["exe_kwargs"].get("exclude_binaries") is True, (
+        f"{spec_path.name}: EXE(...) must be called with exclude_binaries=True "
+        "for a onedir (thin-launcher) build, matching tools/battle2.spec's "
+        f"pattern; got kwargs={calls['exe_kwargs']}"
+    )
+    collect_args = calls["collect_args"]
+    assert "ANALYSIS.binaries" in collect_args, (
+        f"{spec_path.name}: COLLECT(...) must receive the Analysis object's "
+        "own .binaries so loose DLLs/data sit beside the launcher exe, not "
+        f"baked into it; got args={collect_args}"
+    )
+    assert "ANALYSIS.datas" in collect_args, (
+        f"{spec_path.name}: COLLECT(...) must receive the Analysis object's "
+        f"own .datas; got args={collect_args}"
+    )
+
+
+def test_windows_build_waits_for_gui_smokes_and_requires_temp_cleanup() -> None:
+    """Pin the Windows-only synchronization needed by the frozen GUI smoke.
+
+    A GUI-subsystem executable launched with PowerShell's call operator
+    returns control before the process exits. That made the standalone
+    Designer smoke read a stale ``$LASTEXITCODE`` and race cleanup of its
+    isolated data root. The canonical Windows build is the behavioral test;
+    this cross-platform source check ensures the build script keeps the
+    required wait/exit-code and fail-closed cleanup primitives in place.
+    """
+
+    source = BUILD_WIN_SCRIPT.read_text(encoding="utf-8")
+    gui_start = source.index("$PreviousSmokeExit")
+    gui_end = source.index("# Exercise 'bytefray agents create'", gui_start)
+    gui_block = source[gui_start:gui_end]
+
+    assert "& $Smoke.Path" not in gui_block
+    assert "Start-Process -FilePath $Smoke.Path" in gui_block
+    assert "-Wait -PassThru" in gui_block
+    assert "$SmokeProcess.ExitCode" in gui_block
+    assert "[Guid]::NewGuid()" in gui_block
+    assert "} finally {" in gui_block
+    assert "$env:BYTEFRAY_ROOT = $PreviousGuiSmokeRoot" in gui_block
+    assert "Remove-Item Env:BYTEFRAY_ROOT" in gui_block
+    assert "$env:BATTLE2_ROOT =" not in source
+    assert "Remove-Item -LiteralPath $GuiSmokeRoot -Recurse -Force -ErrorAction Stop" in gui_block
+    assert "if (Test-Path -LiteralPath $GuiSmokeRoot)" in gui_block
+
+    create_start = gui_end
+    create_end = source.index("# Final proof", create_start)
+    create_block = source[create_start:create_end]
+    assert "Remove-Item -LiteralPath $SmokeRoot -Recurse -Force -ErrorAction Stop" in create_block
+    assert "if (Test-Path -LiteralPath $SmokeRoot)" in create_block

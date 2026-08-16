@@ -1,4 +1,6 @@
-"""Evaluation History dialogs (v1.1 "Evaluation Insight & Designer Polish").
+"""Evaluation History dialogs (v1.1 "Evaluation Insight & Designer Polish";
+comparison drill-down and revision restore added in v1.3 "Designer Workflow
+Completion").
 
 Brings the already-shipped, Qt-free ``battle_engine.evaluation_history``/
 ``battle_engine.agent_revisions`` engine layer into the Designer: browse past
@@ -10,26 +12,54 @@ Sec 9 both named but did not implement ("a read-only 'Evaluation History…'
 action reusing ``EvaluationResultsDialog``/``TraceInspectorDialog``/replay-open
 plumbing already built for evaluate").
 
+v1.3 closes the two capabilities both specs explicitly deferred out of that
+slice: ``EvaluationComparisonDialog`` gains "Test in Agent Lab"/"Open
+Replay" drill-down from a comparison row (never guessing when a row does
+not uniquely identify a real cell -- see ``EvaluationComparisonDialog``'s
+own docstring), and ``RevisionBrowserDialog`` gains an explicit "Restore Files…"
+action wrapping the authoritative, unmodified
+``agent_revisions.restore_revision`` (see ``RestoreRevisionDialog``).
+
 No agent code ever executes when any dialog in this module opens -- every
 read is a plain filesystem/JSON read through
 ``app.services.evaluation_history_workflows``, so (like ``TraceInspectorDialog``)
 these dialogs run directly on the GUI thread with no ``QProcess`` involved.
+Restore is the one mutation this module performs; it writes only to an
+explicit target directory the user reviews before confirming, and only
+through the same store/verification/containment code path the CLI's own
+``bytefray agents revisions restore`` already uses -- never a second,
+Qt-side reimplementation of restore safety.
 """
 
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
-from battle_engine.evaluation_history import AdaptedCell, DiscoveredEvaluation
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from battle_engine.agent_evaluation import (
+    ORIENTATION_CANDIDATE_FIRST,
+    ORIENTATION_OPPONENT_FIRST,
+)
+from battle_engine.agent_revisions import (
+    RevisionNotFoundError,
+    RevisionRestoreError,
+    agent_revisions_root,
+    restore_revision,
+)
+from battle_engine.evaluation_history import AdaptedCell, DiscoveredEvaluation, EvaluationSummary
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -45,14 +75,54 @@ from app.services.evaluation_history_workflows import (
     compare_evaluations,
     discover_evaluation_listing,
     distinct_opponent_ids,
+    find_candidate_cell,
     format_agent_revision_text,
-    format_comparison_gaps_text,
     format_comparison_text,
     format_evaluation_summary_text,
     load_agent_revision,
     load_evaluation_summary,
     sorted_listing_entries,
 )
+
+_HISTORICAL_AGENT_LAB_TOOLTIP = (
+    "Reruns the selected seed, ticks, and orientation against the currently "
+    "installed agents. Historical agent source is not restored."
+)
+
+
+def _affected_live_agent_id(data_root: Path, target: Path) -> str | None:
+    """Return the live catalog agent affected by ``target``, if any.
+
+    ``""`` means the catalog root itself or conservative catalog-wide impact
+    when lexical and resolved aliases name different agents. Check both the
+    lexical absolute path and the resolved path: the former catches a catalog
+    child that is a symlink/junction to elsewhere, while the latter catches
+    an outside path that aliases back into the live catalog. This is
+    warning/refresh logic, never a replacement for ``restore_revision``'s
+    containment checks.
+    """
+
+    lexical_root = Path(os.path.abspath(data_root.expanduser() / "agents"))
+    lexical_target = Path(os.path.abspath(target.expanduser()))
+    pairs = [(lexical_root, lexical_target)]
+    try:
+        pairs.append((lexical_root.resolve(strict=False), lexical_target.resolve(strict=False)))
+    except (OSError, RuntimeError):
+        pass
+
+    affected: set[str] = set()
+    for agents_root, candidate in pairs:
+        try:
+            relative = candidate.relative_to(agents_root)
+        except ValueError:
+            continue
+        affected.add(relative.parts[0] if relative.parts else "")
+    if not affected:
+        return None
+    # A lexical in-catalog alias may resolve onto a different live agent.
+    # One string signal cannot faithfully name both, so invalidate/refresh
+    # the whole catalog rather than under-reporting either affected source.
+    return next(iter(affected)) if len(affected) == 1 else ""
 
 _VERDICT_COLORS = {
     "improved": QColor("#1a7f37"),
@@ -99,7 +169,7 @@ class EvaluationPickerDialog(QDialog):
         self.setWindowTitle(title)
         self.resize(640, 420)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("This will be compared against as the newer (right-hand) run."))
+        layout.addWidget(QLabel("The selected evaluation will be the right-hand comparison side."))
 
         self.list = QListWidget()
         for entry in entries:
@@ -136,16 +206,29 @@ class EvaluationPickerDialog(QDialog):
 
 
 class RevisionBrowserDialog(QDialog):
-    """Read-only agent-revision inspector: pick a role, see its manifest
-    (files, omissions, completeness) and a live verification result --
-    mirrors ``bytefray agents revisions show`` exactly (Sec 7.1 of
-    ``docs/specs/agent_revision.md``)."""
+    """Agent-revision inspector: browsing is read-only; restoring files is
+    a separate, explicit action.  Pick a role to see its manifest (files,
+    omissions, completeness) and live verification result, mirroring
+    ``bytefray agents revisions show`` (Sec 7.1 of
+    ``docs/specs/agent_revision.md``).
+
+    v1.3 adds an explicit "Restore Files…" action (Sec 12/13 of the v1.3 task),
+    the one deliberately-still-unimplemented capability
+    ``docs/specs/agent_revision.md`` Sec 9's v1.1 note named: "the Designer
+    only ever reads the store; writing to it ... stays a CLI-only
+    operation." Restore itself is performed entirely by the authoritative,
+    unmodified ``agent_revisions.restore_revision`` -- this dialog only
+    collects the same two inputs the CLI's ``restore`` subcommand already
+    takes (target directory, ``--force``) and presents its confirmation."""
+
+    liveAgentFilesChanged = Signal(str)
 
     def __init__(
         self,
-        roles: list[tuple[str, str]],
+        roles: list[tuple[str, str, str]],
         *,
         data_root: Path,
+        allow_restore: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         """``roles`` is ``(label, agent_id, revision_id)`` triples -- only
@@ -157,8 +240,11 @@ class RevisionBrowserDialog(QDialog):
 
         super().__init__(parent)
         self.setWindowTitle("Agent Revision")
-        self.resize(560, 480)
+        self.resize(560, 520)
         self._data_root = data_root
+        self._allow_restore = allow_restore
+        self._current_agent_id: str | None = None
+        self._current_revision: object | None = None  # AgentRevisionPresentation | None
 
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
@@ -175,17 +261,37 @@ class RevisionBrowserDialog(QDialog):
         self.detailText.setReadOnly(True)
         layout.addWidget(self.detailText, 1)
 
+        self.restoreButton = QPushButton("Restore Files…")
+        self.restoreButton.setEnabled(False)
+        self.restoreButton.setToolTip(
+            "Copy this archived revision's files to an explicit target directory. "
+            "The safe default is a separate restored-files directory; live agent source "
+            "is touched only if you explicitly choose a path inside agents/."
+        )
+        if not allow_restore:
+            self.restoreButton.setToolTip(
+                "Restore Files is disabled because a Designer-owned match, validation, "
+                "test, tournament, or evaluation was already active when this History "
+                "session opened, or an Agent Lab run was launched from it. Close and "
+                "reopen History after the operation finishes; browsing remains available."
+            )
+        layout.addWidget(self.restoreButton)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
 
         showButton.clicked.connect(self._on_show)
+        self.restoreButton.clicked.connect(self._on_restore)
         if roles:
             self._on_show()
 
     def _on_show(self) -> None:
         data = self.roleCombo.currentData()
+        self._current_agent_id = None
+        self._current_revision = None
+        self.restoreButton.setEnabled(False)
         if not data or not data[1]:
             self.detailText.setPlainText("No revision id recorded for this role.")
             return
@@ -196,21 +302,251 @@ class RevisionBrowserDialog(QDialog):
             self.detailText.setPlainText(str(exc))
             return
         self.detailText.setPlainText(format_agent_revision_text(revision))
+        self._current_agent_id = agent_id
+        self._current_revision = revision
+        self.restoreButton.setEnabled(revision.verified and self._allow_restore)
+
+    def _on_restore(self) -> None:
+        if (
+            not self._allow_restore
+            or self._current_revision is None
+            or self._current_agent_id is None
+        ):
+            return
+        restored_revision_id = self._current_revision.revision_id
+        dialog = RestoreRevisionDialog(
+            self._current_revision,
+            agent_id=self._current_agent_id,
+            data_root=self._data_root,
+            parent=self,
+        )
+        if dialog.exec() and dialog.restored_target is not None:
+            affected = dialog.affected_live_agent_id
+            if affected is not None:
+                self.liveAgentFilesChanged.emit(affected)
+                # Recompute the browser's own current-source status after
+                # the successful write instead of leaving stale drift text.
+                self._on_show()
+            box = QMessageBox(self)
+            box.setWindowTitle("Restore Revision Files")
+            box.setIcon(QMessageBox.Information)
+            message = (
+                f"Copied archived files from {restored_revision_id} "
+                f"to {dialog.restored_target}.\n\n"
+                "Files already present at unrelated paths were not removed."
+            )
+            if affected is not None:
+                message += (
+                    "\n\nLive agent files changed. The Designer was notified to refresh "
+                    "the catalog and clear stale validation/test state."
+                )
+            box.setText(message)
+            open_button = box.addButton("Open Folder", QMessageBox.ActionRole)
+            box.addButton(QMessageBox.Ok)
+            box.exec()
+            if box.clickedButton() is open_button:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(dialog.restored_target)))
+
+
+class RestoreRevisionDialog(QDialog):
+    """Explicit confirmation + target/force controls for one revision restore.
+
+    Mirrors ``bytefray agents revisions restore``'s own default target
+    (``<data_root>/agent_revisions_restored/<revision_id>/``) and
+    ``--force`` semantics exactly -- the Designer must not make restore any
+    less safe than the CLI (Sec 13 of the v1.3 task): the default target is
+    always a separate staging directory, never an existing
+    ``agents/<id>/`` directory, so an ordinary restore can never overwrite
+    live agent source by accident. A user who wants to restore directly
+    over ``agents/<id>/`` can still type that path into the target field
+    explicitly -- exactly as capable, and exactly as deliberate, as running
+    the CLI with an explicit ``--to``.  ``--force`` overwrites only archived
+    file paths; it does not delete unrelated files and does not provide an
+    all-or-nothing rollback or hidden backup for an I/O failure.
+    """
+
+    _LIVE_SOURCE_LABELS: ClassVar[dict[str, str]] = {
+        "unknown": "Current source: not checked.",
+        "agent_missing": "Current source: this agent id no longer exists in this installation's catalog.",
+        "matches_current_source": "Current source: matches this archived revision (unchanged since it was archived).",
+        "changed_since_evaluation": "Current source: has CHANGED since this revision was archived.",
+    }
+
+    def __init__(self, presentation, *, agent_id: str, data_root: Path, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Restore Revision Files — {presentation.revision_id}")
+        self._data_root = data_root
+        self._revision_id = presentation.revision_id
+        self.restored_target: Path | None = None
+        self.affected_live_agent_id: str | None = None
+
+        layout = QVBoxLayout(self)
+
+        completeness = (
+            "complete"
+            if presentation.complete
+            else f"INCOMPLETE ({len(presentation.omitted)} omission(s))"
+        )
+        info_lines = [
+            f"Archived revision: {presentation.revision_id}",
+            f"Recorded for agent id: {agent_id}",
+            f"Completeness: {completeness}",
+            self._LIVE_SOURCE_LABELS.get(presentation.live_source_status, presentation.live_source_status),
+            "",
+            (
+                "Restore Files copies the archived files above to the target directory "
+                "below. The default is a separate restored-files directory; live source "
+                "is modified only if you explicitly target a path inside agents/."
+            ),
+            (
+                "Allowing a non-empty target overwrites matching file paths only. "
+                "Unrelated files remain, no backup is created, and an ordinary I/O "
+                "failure can leave a partially updated target."
+            ),
+        ]
+        if not presentation.complete:
+            info_lines.append(
+                "WARNING: this revision is INCOMPLETE -- restoring it reproduces less "
+                "than the original tree (see Show Revision's omitted-files list)."
+            )
+        infoLabel = QLabel("\n".join(info_lines))
+        infoLabel.setWordWrap(True)
+        layout.addWidget(infoLabel)
+
+        targetRow = QHBoxLayout()
+        targetRow.addWidget(QLabel("Target directory"))
+        self.targetEdit = QLineEdit(
+            str(data_root / "agent_revisions_restored" / presentation.revision_id)
+        )
+        targetRow.addWidget(self.targetEdit, 1)
+        browseButton = QPushButton("Browse…")
+        targetRow.addWidget(browseButton)
+        layout.addLayout(targetRow)
+
+        self.forceCheck = QCheckBox(
+            "Allow a non-empty target (matching files overwritten; unrelated files remain)"
+        )
+        layout.addWidget(self.forceCheck)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        okButton = buttons.button(QDialogButtonBox.Ok)
+        okButton.setText("Restore Files")
+        buttons.accepted.connect(self._on_restore_clicked)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        browseButton.clicked.connect(self._on_browse)
+        self.resize(680, 400)
+
+    def _on_browse(self) -> None:
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose restore target directory", self.targetEdit.text()
+        )
+        if directory:
+            self.targetEdit.setText(directory)
+
+    def _on_restore_clicked(self) -> None:
+        self.restored_target = None
+        self.affected_live_agent_id = None
+        target_text = self.targetEdit.text().strip()
+        if not target_text:
+            QMessageBox.warning(
+                self, "Restore Revision Files", "Target directory must not be empty."
+            )
+            return
+        try:
+            target_dir = Path(target_text).expanduser()
+            affected = _affected_live_agent_id(self._data_root, target_dir)
+        except (OSError, RuntimeError) as exc:
+            QMessageBox.critical(
+                self,
+                "Restore Revision Files",
+                f"Could not resolve the restore target: {exc}",
+            )
+            return
+        if affected is not None:
+            live_label = (
+                "the live agents catalog root"
+                if not affected
+                else f"live agent {affected!r} (including one of its subdirectories)"
+            )
+            answer = QMessageBox.question(
+                self,
+                "Write Archived Files into Live Agent Source?",
+                f"The selected target is inside {live_label}.\n\n"
+                "Continuing can immediately change the code Bytefray runs. Matching "
+                "archived file paths may be overwritten; unrelated files are NOT "
+                "removed; no backup is created; and an I/O failure may leave partial "
+                "changes.\n\nContinue with Restore Files?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        store_root = agent_revisions_root(self._data_root)
+        try:
+            restore_revision(store_root, self._revision_id, target_dir, force=self.forceCheck.isChecked())
+        except (RevisionNotFoundError, RevisionRestoreError, OSError) as exc:
+            QMessageBox.critical(self, "Restore Revision Files", str(exc))
+            return
+        self.restored_target = target_dir
+        self.affected_live_agent_id = affected
+        self.accept()
+
+
+@dataclass(frozen=True)
+class _GapEntry:
+    """One selectable "could not be directly compared" item (Sec 11 of the
+    v1.3 task): an unmatched cell (one real side), a changed-condition pair
+    (two real sides, deliberately not aligned as one row), or an ambiguous
+    duplicate group (no reliable cell reference on either side -- never
+    actionable, per the task's explicit "do not guess" instruction)."""
+
+    label: str
+    left_cell: AdaptedCell | None
+    right_cell: AdaptedCell | None
+    actionable: bool
 
 
 class EvaluationComparisonDialog(QDialog):
     """Read-only right-relative-to-left comparison view (Sec 5/6 of the
     v1.1 task): comparability disclosure first, then a verdict-highlighted
     per-opponent table -- never a bare performance delta without the
-    conditions that produced it."""
+    conditions that produced it.
+
+    v1.3 adds comparison-row drill-down ("Test in Agent Lab"/"Open Replay"),
+    reusing the exact same two signals and Designer handlers
+    ``EvaluationHistoryDialog``'s own per-cell drill-down already uses --
+    no second execution/replay-launch path. Actions are only ever enabled
+    for a selection that uniquely identifies a real underlying
+    ``AdaptedCell`` on the chosen side:
+
+    - a directly-comparable row (``comparison.rows``) always resolves both
+      a left and a right cell (``find_candidate_cell``), so both sides are
+      selectable via the Side control (the right side is the default);
+    - an unmatched cell (``unmatched_left``/``unmatched_right``) resolves
+      exactly one side -- the Side control offers only that one;
+    - a changed-condition pair (``changed_condition``) resolves both sides,
+      but they are explicitly *not* the same match (effective conditions,
+      rules, methodology, or opponent revision differ), so choosing a side is
+      required, never defaulted silently the way a directly-comparable row's
+      default is;
+    - an ambiguous duplicate group (``ambiguous_duplicate_groups``) never
+      resolves a cell at all -- no action is ever enabled for one.
+    """
+
+    testInAgentLabRequested = Signal(str, str, int, int, str)
+    openReplayRequested = Signal(Path)
 
     def __init__(self, result, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._result = result
+        self._active_left_cell: AdaptedCell | None = None
+        self._active_right_cell: AdaptedCell | None = None
         self.setWindowTitle(
             f"Compare Evaluations — {result.left.candidate_id} → {result.right.candidate_id}"
         )
-        self.resize(760, 600)
+        self.resize(820, 700)
 
         layout = QVBoxLayout(self)
 
@@ -220,14 +556,23 @@ class EvaluationComparisonDialog(QDialog):
         summaryText.setMaximumHeight(220)
         layout.addWidget(summaryText)
 
-        layout.addWidget(QLabel("Per-opponent rows (right relative to left)"))
+        layout.addWidget(QLabel("Per-opponent rows (right relative to left) — select to inspect"))
         self.rowsList = QListWidget()
         for row in result.comparison.rows:
+            left_cell = find_candidate_cell(result.left, row, side="left")
+            right_cell = find_candidate_cell(result.right, row, side="right")
+            if right_cell is not None:
+                orientation = right_cell.orientation.value
+            elif left_cell is not None:
+                orientation = left_cell.orientation.value
+            else:
+                orientation = "unknown"
             delta = ""
             if row.left_score is not None and row.right_score is not None:
                 delta = f"  score: {row.left_score:g} -> {row.right_score:g} ({row.right_score - row.left_score:+g})"
             label = (
                 f"{row.verdict.upper():<11} opponent={row.opponent_id} seed={row.seed}  "
+                f"orientation={orientation or 'unknown'}  "
                 f"left={row.left_outcome} right={row.right_outcome}{delta}"
             )
             if row.reproducibility_anomaly:
@@ -242,18 +587,39 @@ class EvaluationComparisonDialog(QDialog):
             self.rowsList.addItem(item)
         layout.addWidget(self.rowsList, 1)
 
+        gapsButton = QPushButton("Show Unmatched / Changed-Condition / Ambiguous Details")
+        gapsButton.setCheckable(True)
+        layout.addWidget(gapsButton)
+
+        self._gap_entries = self._build_gap_entries()
+        self.gapsList = QListWidget()
+        self.gapsList.setVisible(False)
+        for entry in self._gap_entries:
+            item = QListWidgetItem(entry.label)
+            item.setData(Qt.UserRole, entry)
+            if not entry.actionable:
+                item.setForeground(QColor("#6e7781"))
+            self.gapsList.addItem(item)
+        layout.addWidget(self.gapsList)
+
         self.detailText = QPlainTextEdit()
         self.detailText.setReadOnly(True)
         self.detailText.setMaximumHeight(120)
         layout.addWidget(self.detailText)
 
-        gapsButton = QPushButton("Show Unmatched / Changed-Condition / Ambiguous Details")
-        gapsButton.setCheckable(True)
-        self.gapsText = QPlainTextEdit()
-        self.gapsText.setReadOnly(True)
-        self.gapsText.setVisible(False)
-        layout.addWidget(gapsButton)
-        layout.addWidget(self.gapsText)
+        actionsRow = QHBoxLayout()
+        actionsRow.addWidget(QLabel("Side"))
+        self.sideCombo = QComboBox()
+        actionsRow.addWidget(self.sideCombo)
+        self.testAgentLabButton = QPushButton("Test in Agent Lab")
+        self.testAgentLabButton.setToolTip(_HISTORICAL_AGENT_LAB_TOOLTIP)
+        self.testAgentLabButton.setEnabled(False)
+        self.openReplayButton = QPushButton("Open Replay")
+        self.openReplayButton.setEnabled(False)
+        actionsRow.addWidget(self.testAgentLabButton)
+        actionsRow.addWidget(self.openReplayButton)
+        actionsRow.addStretch(1)
+        layout.addLayout(actionsRow)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)
@@ -261,44 +627,224 @@ class EvaluationComparisonDialog(QDialog):
         layout.addWidget(buttons)
 
         self.rowsList.currentItemChanged.connect(self._on_row_selected)
-        gapsButton.toggled.connect(self._on_toggle_gaps)
+        self.gapsList.currentItemChanged.connect(self._on_gap_selected)
+        self.sideCombo.currentIndexChanged.connect(self._update_action_enablement)
+        gapsButton.toggled.connect(self.gapsList.setVisible)
+        self.testAgentLabButton.clicked.connect(self._on_test_agent_lab)
+        self.openReplayButton.clicked.connect(self._on_open_replay)
 
+    # ---- Gap entry construction ----
+    def _build_gap_entries(self) -> list[_GapEntry]:
+        comparison = self._result.comparison
+        entries: list[_GapEntry] = []
+        for cell in comparison.unmatched_left:
+            entries.append(
+                _GapEntry(
+                    label=(
+                        f"UNMATCHED (left only)   opponent={cell.opponent_id} "
+                        f"seed={cell.seed} orientation={cell.orientation.value or 'unknown'}  "
+                        f"status={cell.status}"
+                    ),
+                    left_cell=cell,
+                    right_cell=None,
+                    actionable=True,
+                )
+            )
+        for cell in comparison.unmatched_right:
+            entries.append(
+                _GapEntry(
+                    label=(
+                        f"UNMATCHED (right only)  opponent={cell.opponent_id} "
+                        f"seed={cell.seed} orientation={cell.orientation.value or 'unknown'}  "
+                        f"status={cell.status}"
+                    ),
+                    left_cell=None,
+                    right_cell=cell,
+                    actionable=True,
+                )
+            )
+        for left_cell, right_cell in comparison.changed_condition:
+            entries.append(
+                _GapEntry(
+                    label=(
+                        f"CHANGED CONDITION       opponent={left_cell.opponent_id} "
+                        f"seed={left_cell.seed}  "
+                        f"left ticks={self._result.left.ticks} "
+                        f"orientation={left_cell.orientation.value or 'unknown'} "
+                        f"status={left_cell.status}; "
+                        f"right ticks={self._result.right.ticks} "
+                        f"orientation={right_cell.orientation.value or 'unknown'} "
+                        f"status={right_cell.status}  "
+                        "(effective conditions, rules, methodology, or opponent revision differ -- "
+                        "not a like-for-like match)"
+                    ),
+                    left_cell=left_cell,
+                    right_cell=right_cell,
+                    actionable=True,
+                )
+            )
+        for opponent_id, seed, left_ids, right_ids in comparison.ambiguous_duplicate_groups:
+            entries.append(
+                _GapEntry(
+                    label=(
+                        f"AMBIGUOUS GROUP         opponent={opponent_id} seed={seed}  "
+                        f"left_schedule_ids={list(left_ids)} right_schedule_ids={list(right_ids)}"
+                    ),
+                    left_cell=None,
+                    right_cell=None,
+                    actionable=False,
+                )
+            )
+        return entries
+
+    # ---- Selection handling ----
     def _on_row_selected(self) -> None:
         item = self.rowsList.currentItem()
+        self.gapsList.blockSignals(True)
+        self.gapsList.setCurrentRow(-1)
+        self.gapsList.blockSignals(False)
         if item is None:
             self.detailText.setPlainText("")
+            self._set_active_cells(None, None)
             return
         row = item.data(Qt.UserRole)
+        left_cell = find_candidate_cell(self._result.left, row, side="left")
+        right_cell = find_candidate_cell(self._result.right, row, side="right")
         lines = [
             f"opponent: {row.opponent_id}",
             f"seed: {row.seed}",
+            (
+                "orientation: "
+                f"left={left_cell.orientation.value if left_cell is not None else 'unresolved'}  "
+                f"right={right_cell.orientation.value if right_cell is not None else 'unresolved'}"
+            ),
             f"verdict: {row.verdict}" + (f"  ({row.reason})" if row.reason else ""),
             f"left outcome: {row.left_outcome}   right outcome: {row.right_outcome}",
         ]
         if row.left_territory is not None or row.right_territory is not None:
             lines.append(f"territory: left={row.left_territory}  right={row.right_territory}")
         self.detailText.setPlainText("\n".join(lines))
+        self._set_active_cells(left_cell, right_cell)
 
-    def _on_toggle_gaps(self, checked: bool) -> None:
-        if checked and not self.gapsText.toPlainText():
-            self.gapsText.setPlainText(format_comparison_gaps_text(self._result.comparison))
-        self.gapsText.setVisible(checked)
+    def _on_gap_selected(self) -> None:
+        item = self.gapsList.currentItem()
+        self.rowsList.blockSignals(True)
+        self.rowsList.setCurrentRow(-1)
+        self.rowsList.blockSignals(False)
+        if item is None:
+            self.detailText.setPlainText("")
+            self._set_active_cells(None, None)
+            return
+        entry: _GapEntry = item.data(Qt.UserRole)
+        if not entry.actionable:
+            self.detailText.setPlainText(
+                "Ambiguous duplicate group: more than one match on each/either side shares "
+                "this (opponent, seed) pair with no reliable evidence for which one "
+                "corresponds to which. Bytefray does not guess a pairing here. Close this "
+                "comparison and select a concrete cell from each evaluation's Cells list, "
+                "or run 'bytefray agents evaluations show <id> --json' and locate its "
+                "schedule_id/artifact_dir."
+            )
+            self._set_active_cells(None, None)
+            return
+        self.detailText.setPlainText(entry.label)
+        self._set_active_cells(
+            entry.left_cell,
+            entry.right_cell,
+            require_explicit_side=entry.left_cell is not None and entry.right_cell is not None,
+        )
+
+    def _set_active_cells(
+        self,
+        left_cell: AdaptedCell | None,
+        right_cell: AdaptedCell | None,
+        *,
+        require_explicit_side: bool = False,
+    ) -> None:
+        self._active_left_cell = left_cell
+        self._active_right_cell = right_cell
+        self.sideCombo.blockSignals(True)
+        self.sideCombo.clear()
+        if require_explicit_side:
+            self.sideCombo.addItem("Choose side…", None)
+        if left_cell is not None:
+            self.sideCombo.addItem("Left (selected)", "left")
+        if right_cell is not None:
+            self.sideCombo.addItem("Right (comparison)", "right")
+        if not require_explicit_side:
+            preferred = "right" if right_cell is not None else "left"
+            self.sideCombo.setCurrentIndex(self.sideCombo.findData(preferred))
+        self.sideCombo.blockSignals(False)
+        self._update_action_enablement()
+
+    def _selected_side_cell(self) -> tuple[EvaluationSummary, AdaptedCell] | tuple[None, None]:
+        side = self.sideCombo.currentData()
+        if side == "left" and self._active_left_cell is not None:
+            return self._result.left, self._active_left_cell
+        if side == "right" and self._active_right_cell is not None:
+            return self._result.right, self._active_right_cell
+        return None, None
+
+    def _update_action_enablement(self) -> None:
+        summary, cell = self._selected_side_cell()
+        if summary is None or cell is None:
+            self.testAgentLabButton.setEnabled(False)
+            self.openReplayButton.setEnabled(False)
+            return
+        orientation = cell.orientation.value
+        self.testAgentLabButton.setEnabled(
+            orientation in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST)
+        )
+        self.openReplayButton.setEnabled(
+            (summary.location.directory / cell.artifact_dir / "replay.jsonl").is_file()
+        )
+
+    # ---- Drill-down (reuses the exact signals/handlers EvaluationHistoryDialog uses) ----
+    def _on_test_agent_lab(self) -> None:
+        summary, cell = self._selected_side_cell()
+        if cell is None or summary is None:
+            return
+        orientation = cell.orientation.value
+        if orientation not in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST):
+            return
+        self.testInAgentLabRequested.emit(
+            cell.subject_id,
+            cell.opponent_id,
+            cell.seed,
+            summary.ticks,
+            orientation,
+        )
+
+    def _on_open_replay(self) -> None:
+        summary, cell = self._selected_side_cell()
+        if cell is None:
+            return
+        self.openReplayRequested.emit(summary.location.directory / cell.artifact_dir / "replay.jsonl")
 
 
 class EvaluationHistoryDialog(QDialog):
     """Main entry point: browse discovered evaluations, inspect one in
     detail (with optional deep verification), drill into a cell's replay or
     rerun it in Agent Lab, inspect agent-revision provenance, and open a
-    two-run comparison. Deliberately read-only and process-free -- see the
-    module docstring.
+    two-run comparison. Browsing and comparison are read-only and
+    process-free; revision restore is the sole explicit nested mutation --
+    see the module docstring.
     """
 
-    testInAgentLabRequested = Signal(str, str, int)
+    testInAgentLabRequested = Signal(str, str, int, int, str)
     openReplayRequested = Signal(Path)
+    agentCatalogChanged = Signal(str)
 
-    def __init__(self, battle_root: Path, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        battle_root: Path,
+        *,
+        allow_restore: bool = True,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._battle_root = battle_root
+        self._allow_restore = allow_restore
         self._entries: tuple[DiscoveredEvaluation, ...] = ()
         self._current_summary = None
         self._current_verify_error: str | None = None
@@ -341,6 +887,7 @@ class EvaluationHistoryDialog(QDialog):
 
         cellActions = QHBoxLayout()
         self.testAgentLabButton = QPushButton("Test in Agent Lab")
+        self.testAgentLabButton.setToolTip(_HISTORICAL_AGENT_LAB_TOOLTIP)
         self.testAgentLabButton.setEnabled(False)
         self.openReplayButton = QPushButton("Open Replay")
         self.openReplayButton.setEnabled(False)
@@ -488,16 +1035,35 @@ class EvaluationHistoryDialog(QDialog):
 
     def _on_cell_selection_changed(self) -> None:
         cell = self._selected_cell()
-        self.testAgentLabButton.setEnabled(cell is not None)
+        orientation = cell.orientation.value if cell is not None else None
+        self.testAgentLabButton.setEnabled(
+            cell is not None
+            and orientation in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST)
+        )
         self.openReplayButton.setEnabled(
             cell is not None and (self._current_summary.location.directory / cell.artifact_dir / "replay.jsonl").is_file()
         )
 
     def _on_test_agent_lab(self) -> None:
         cell = self._selected_cell()
-        if cell is None:
+        if cell is None or self._current_summary is None:
             return
-        self.testInAgentLabRequested.emit(cell.subject_id, cell.opponent_id, cell.seed)
+        orientation = cell.orientation.value
+        if orientation not in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST):
+            return
+        # This signal starts a Designer-owned QProcess while the modal
+        # History dialog itself remains open. Conservatively disable restore
+        # for the rest of this dialog session so the user cannot subsequently
+        # overwrite live source underneath that process. Reopening History
+        # after the process finishes restores the normal availability check.
+        self._allow_restore = False
+        self.testInAgentLabRequested.emit(
+            cell.subject_id,
+            cell.opponent_id,
+            cell.seed,
+            self._current_summary.ticks,
+            orientation,
+        )
 
     def _on_open_replay(self) -> None:
         cell = self._selected_cell()
@@ -537,7 +1103,13 @@ class EvaluationHistoryDialog(QDialog):
             )
             return
 
-        dialog = RevisionBrowserDialog(roles, data_root=self._battle_root, parent=self)
+        dialog = RevisionBrowserDialog(
+            roles,
+            data_root=self._battle_root,
+            allow_restore=self._allow_restore,
+            parent=self,
+        )
+        dialog.liveAgentFilesChanged.connect(self.agentCatalogChanged.emit)
         dialog.exec()
 
     # ---- Comparison ----
@@ -569,12 +1141,40 @@ class EvaluationHistoryDialog(QDialog):
             return
 
         dialog = EvaluationComparisonDialog(result, parent=self)
+        # Forward the comparison dialog's own drill-down signals through
+        # this dialog's identical, already-connected signals (Sec 10/11 of
+        # the v1.3 task) -- AgentDesigner._on_evaluation_history already
+        # wires testInAgentLabRequested/openReplayRequested to the exact
+        # shared handlers every other drill-down path uses, so no new
+        # AgentDesigner-level wiring is needed for comparison rows either.
+        dialog.testInAgentLabRequested.connect(self._forward_comparison_agent_lab)
+        dialog.openReplayRequested.connect(self.openReplayRequested.emit)
         dialog.exec()
+
+    def _forward_comparison_agent_lab(
+        self,
+        subject_id: str,
+        opponent_id: str,
+        seed: int,
+        ticks: int,
+        orientation: str,
+    ) -> None:
+        """Forward through the shared handler and lock out restore this session."""
+
+        self._allow_restore = False
+        self.testInAgentLabRequested.emit(
+            subject_id,
+            opponent_id,
+            seed,
+            ticks,
+            orientation,
+        )
 
 
 __all__ = [
     "EvaluationComparisonDialog",
     "EvaluationHistoryDialog",
     "EvaluationPickerDialog",
+    "RestoreRevisionDialog",
     "RevisionBrowserDialog",
 ]

@@ -829,9 +829,13 @@ def restore_revision(
     # locked file, a permissions error) must not surface as an uncaught
     # exception that leaves a silent, unflagged partial tree in
     # `target_dir` looking like nothing ran -- best-effort remove exactly
-    # the files *this call* wrote (never anything that was already present
-    # in `target_dir`, e.g. from an earlier `--force` restore) and raise a
-    # typed, explicit error instead.
+    # the files *this call* wrote and raise a typed, explicit error instead.
+    # Under ``force=True`` an existing file at a matching archived path has
+    # already been overwritten by the time it enters ``written``; without a
+    # backup its former bytes cannot be restored, and cleanup removes that
+    # overwritten path. Unrelated pre-existing paths are never added here
+    # and remain untouched. Callers must not mistake this best-effort cleanup
+    # for transactional rollback of a forced merge.
     written: list[Path] = []
     try:
         for source, dest in pairs:

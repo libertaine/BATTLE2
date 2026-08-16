@@ -357,7 +357,9 @@ def _print_compare(
     )
     print(
         f"unmatched: left={d.unmatched_left} right={d.unmatched_right}  "
-        f"changed_condition={d.changed_condition}  corrupt_or_missing={d.corrupt_or_missing}"
+        f"changed_condition={d.changed_condition}  "
+        f"ambiguous_duplicate_groups={d.ambiguous_duplicate_groups}  "
+        f"corrupt_or_missing={d.corrupt_or_missing}"
     )
     if result.reproducibility_anomalies:
         print("REPRODUCIBILITY ANOMALIES (deep-verified identical candidate, differing outcome):")

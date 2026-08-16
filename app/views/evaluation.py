@@ -20,7 +20,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from battle_engine.agent_evaluation import ORIENTATION_MODE_BOTH, methodology_lines
+from battle_engine.agent_evaluation import (
+    ORIENTATION_CANDIDATE_FIRST,
+    ORIENTATION_MODE_BOTH,
+    ORIENTATION_OPPONENT_FIRST,
+    methodology_lines,
+)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -206,7 +211,8 @@ class EvaluationResultsDialog(QDialog):
     code executes when this dialog opens, exactly like ``TraceInspectorDialog``.
     """
 
-    testInAgentLabRequested = Signal(str, str, int)  # subject_id, opponent_id, seed
+    # subject_id, opponent_id, seed, ticks, orientation
+    testInAgentLabRequested = Signal(str, str, int, int, str)
     openReplayRequested = Signal(Path)
 
     def __init__(self, presentation: EvaluationPresentation, parent: QWidget | None = None) -> None:
@@ -271,7 +277,7 @@ class EvaluationResultsDialog(QDialog):
         layout.addWidget(self.detailText, 1)
 
         actions = QHBoxLayout()
-        self.btnTestAgentLab = QPushButton("Test Candidate in Agent Lab")
+        self.btnTestAgentLab = QPushButton("Test in Agent Lab")
         self.btnTestAgentLab.setEnabled(False)
         self.btnOpenReplay = QPushButton("Open Replay")
         self.btnOpenReplay.setEnabled(False)
@@ -328,7 +334,10 @@ class EvaluationResultsDialog(QDialog):
             ]
         self.detailText.setPlainText("\n".join(lines))
         cell = self._candidate_cell(payload)
-        self.btnTestAgentLab.setEnabled(cell is not None)
+        self.btnTestAgentLab.setEnabled(
+            cell is not None
+            and cell.orientation in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST)
+        )
         self.btnOpenReplay.setEnabled(
             cell is not None and (cell.artifact_dir / "replay.jsonl").is_file()
         )
@@ -347,9 +356,18 @@ class EvaluationResultsDialog(QDialog):
         if payload is None:
             return
         cell = self._candidate_cell(payload)
-        if cell is None:
+        if cell is None or cell.orientation not in (
+            ORIENTATION_CANDIDATE_FIRST,
+            ORIENTATION_OPPONENT_FIRST,
+        ):
             return
-        self.testInAgentLabRequested.emit(cell.subject_id, cell.opponent_id, cell.seed)
+        self.testInAgentLabRequested.emit(
+            cell.subject_id,
+            cell.opponent_id,
+            cell.seed,
+            self._presentation.ticks,
+            cell.orientation,
+        )
 
     def _on_open_replay(self) -> None:
         payload = self._selected_payload()
