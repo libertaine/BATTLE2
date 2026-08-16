@@ -281,14 +281,59 @@ indexing (the existing on-demand-scan performance profile, ~1.86s at 1,000
 artifacts, was re-confirmed adequate and is not blocking). See
 `CHANGELOG.md`'s Unreleased entry for the file-level summary.
 
+## v1.2.0 — Portable Agent Packaging & Sharing
+
+**Status: implemented on `main`, pending release qualification/tag.**
+`docs/FUTURE_PLANS.md`'s "Agent packaging / sharing" (Candidate) promoted
+to this milestone: a Bytefray user can export an agent from one
+installation into a self-describing portable `.bytefray-agent` file,
+transfer it by any ordinary means, inspect it on the receiving end without
+executing any of its code, and import it into another installation
+without losing the provenance/compatibility information Bytefray already
+knows about that agent. Not a centralized registry — the foundational
+package format and local import/export workflow a future ecosystem could
+build on.
+
+Built entirely as a transport wrapper around one already-archived
+`battle_engine.agent_revisions` revision (the content-addressed store
+introduced in v0.8, `docs/specs/agent_revision.md`) rather than a second,
+parallel packaging-specific content model — see
+`docs/specs/agent_package.md` for the full design, including why this was
+the right foundation and what packaging exposed that had previously only
+ever mattered on one machine (the manifest-only `kind=builtin` starter
+agents, whose "source" is actually supplied by the installation itself,
+not their own directory — cleanly excluded from export rather than
+producing a package that lies about being self-describing).
+
+- `bytefray agents export`/`agents package show`/`agents import` — see
+  `CHANGELOG.md`'s Unreleased entry for the full command reference.
+- Introduces exactly one new, independent compatibility axis
+  (`bytefray.agent_package` schema/version, currently 1) — no Ruleset,
+  Agent API, or artifact-schema change; see `docs/COMPATIBILITY.md`.
+- Adversarially tested against path traversal, absolute/UNC/Windows-
+  drive-qualified paths, duplicate/case-colliding paths, symlink-mode ZIP
+  entries, tampering, truncated/extra payload files, and oversized
+  archives (`engine/tests/test_agent_package.py`), and qualified with a
+  genuine (not simulated) cross-platform round trip: a package exported on
+  Windows was imported, loaded, validated, and re-exported on real Linux,
+  and the reverse, producing byte-identical `agent_revision_id` at every
+  step.
+- Deliberately out of scope for this milestone, per
+  `docs/specs/agent_package.md`: an online registry, package signing/PKI,
+  dependency installation from PyPI, arbitrary Python environment capture,
+  container packaging, and any Designer/GUI integration (the engine/CLI
+  workflow is this milestone's release-defining capability; a thin GUI
+  wrapper over the same authoritative `agent_package` functions remains a
+  well-justified, low-risk candidate for a later slice, following the same
+  precedent v1.1 set for evaluation history/revision provenance).
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:
 accessible agent-authoring (a small, deterministic DSL compiling to the
-Agent API), agent packaging/sharing, richer evaluation and statistical
-analysis, evaluation performance/scaling, and deeper simulation/combat
-research (arena-size effects, multipronged/multi-process entrants,
-replication, and any future ruleset that would require its own
-compatibility identity separate from 1.0's). None of it is lost — see
-[FUTURE_PLANS.md](FUTURE_PLANS.md) for the organized, maturity-labeled
-catalogue.
+Agent API), richer evaluation and statistical analysis, evaluation
+performance/scaling, and deeper simulation/combat research (arena-size
+effects, multipronged/multi-process entrants, replication, and any future
+ruleset that would require its own compatibility identity separate from
+1.0's). None of it is lost — see [FUTURE_PLANS.md](FUTURE_PLANS.md) for
+the organized, maturity-labeled catalogue.

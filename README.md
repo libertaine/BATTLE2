@@ -213,7 +213,23 @@ bytefray agents evaluations list    # every past evaluation this data root has r
 bytefray agents evaluations show <evaluation-id-or-path>
 bytefray agents evaluations compare <left> <right>
                                      # honest right-vs-left comparison across two evaluations
+bytefray agents export my_agent     # package an agent into a portable .bytefray-agent file
+bytefray agents package show <file> # inspect a package's provenance/integrity -- never executes it
+bytefray agents import <file>       # import a package into this installation
 ```
+
+`export`/`package show`/`import` are a portable **agent package** format
+for handing an agent to another Bytefray installation without losing its
+provenance: `export` packages one agent's current source (or an
+already-archived historical revision with `--revision`) into a single
+`<agent>-<revision>.bytefray-agent` file; `package show` reports its
+identity, integrity, and import compatibility without importing or
+executing any of its code; `import` safely, transactionally installs it,
+refusing to overwrite an existing agent of the same id by default (`--as`
+imports under a different one instead). A valid, verified package proves
+its own structure and provenance — it is not, and cannot be, a safety or
+trust statement about the agent's code, which remains ordinary executable
+Python. See `docs/specs/agent_package.md` for the full design.
 
 `validate`/`test` run supervised by default (a `--timeout`-bounded worker
 process, 5s default) so a genuinely non-returning `reset()`/`act()` is

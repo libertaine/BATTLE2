@@ -3,6 +3,71 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
+## [Unreleased]
+
+Implementation for the proposed v1.2 theme, **Portable Agent Packaging &
+Sharing** (see `docs/ROADMAP.md`/`docs/FUTURE_PLANS.md`'s "Agent packaging
+/ sharing"). Extends Bytefray's existing content-addressed agent-revision
+provenance (`docs/specs/agent_revision.md`, v0.8) across a machine
+boundary rather than inventing a parallel provenance system: an agent
+package is a transport wrapper around one already-archived revision. No
+gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change;
+this introduces exactly one new, independent compatibility axis
+(`bytefray.agent_package` schema, currently version 1) — see
+`docs/COMPATIBILITY.md`.
+
+### Agent CLI
+
+- Added `bytefray agents export <agent-id> [--output PATH] [--revision ID]
+  [--json]`: packages one Python (`kind=python`) or blob (`kind=blob`)
+  agent into a single, portable `<agent>-<revision>.bytefray-agent` ZIP
+  file. With no `--revision`, freezes the agent's current on-disk source
+  into a revision first (reusing `agent_revisions.archive_agent_revision_
+  from_walk`, one read for both identity and packaged payload); with
+  `--revision`, packages an already-archived historical revision instead.
+  Manifest-only `kind=builtin` starter agents (the four native VM
+  starters) are rejected with a typed `package_unsupported_kind` error —
+  their behavior is supplied by the Bytefray installation itself, not by
+  anything in their own directory, so there is nothing portable to export.
+- Added `bytefray agents package show <package-file> [--json]`: reports a
+  package's structure, declared identity, wrapped revision provenance,
+  live-recomputed integrity, and import compatibility on this
+  installation, **without importing or executing a single byte of the
+  packaged agent's code** — package validity, integrity, and agent trust
+  are three explicitly distinct things (see the module docstring and
+  `docs/specs/agent_package.md` Sec 6).
+- Added `bytefray agents import <package-file> [--as AGENT_ID] [--json]`:
+  safely, transactionally imports a package — full structural/schema/
+  integrity/compatibility validation and safe extraction to a private
+  temporary directory happen before anything is written to `agents/`.
+  Fails without mutation if the destination agent id already exists with
+  different content; reports a non-mutating no-op if it already exists
+  with the exact same revision; `--as` imports under an explicit
+  different id. An imported agent becomes an ordinary Bytefray agent —
+  its revision is also seeded into the importing installation's own
+  `agent_revisions` store, so `agents revisions show`/`agents evaluate`
+  work on it immediately, and provenance verification continues to work
+  identically to a never-transferred agent.
+- New modules: `engine/src/battle_engine/agent_package.py` (package
+  model, deterministic archive writer/reader, safe extraction, export/
+  import orchestration — presentation-neutral, Qt-free, no execution of
+  packaged code) and `engine/src/battle_engine/agent_package_cli.py`
+  (thin argparse wrapper). Two small, additive, non-breaking exports on
+  existing modules: `battle_engine.agents.agent_spec_from_dir` and
+  `battle_engine.agent_revisions.revision_manifest_payload`.
+- Archive extraction is defended against path traversal (`../`, absolute
+  and Windows drive-qualified paths, UNC paths, Windows-backslash-style
+  traversal checked even on non-Windows hosts), duplicate/case-colliding
+  paths, symlink-mode ZIP entries, and oversized/excessive archives —
+  reusing `battle_engine.paths.contained_path` rather than trusting
+  `zipfile.extractall()`'s own safety assumptions. See
+  `docs/specs/agent_package.md` Sec 7 and its adversarial test suite
+  (`engine/tests/test_agent_package.py`).
+- Genuinely cross-platform, not merely path-independent within one host:
+  a package exported on Windows was imported, loaded, validated, and
+  re-exported on real Linux (and the reverse), producing byte-identical
+  `agent_revision_id` at every step.
+
 ## [1.1.0] - 2026-08-14
 
 Implementation and release qualification for the proposed v1.1 theme,

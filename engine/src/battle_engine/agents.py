@@ -11,6 +11,7 @@ from battle_engine.agent_api import AgentManifestError
 
 __all__ = [
     "AgentSpec",
+    "agent_spec_from_dir",
     "discover_agents",
     "discover_agents_in",
     "resolve_agent",
@@ -169,6 +170,21 @@ def _spec_from_dir(agent_dir: Path) -> AgentSpec | None:
         entry_point=entry_point,
         manifest=dict(meta),
     )
+
+
+def agent_spec_from_dir(agent_dir: Path) -> AgentSpec | None:
+    """Public entry point for parsing one agent directory's manifest in isolation.
+
+    Identical to the discovery-internal ``_spec_from_dir``, exposed for
+    callers that have an agent directory that did not come from
+    :func:`discover_agents_in` -- e.g. an already-extracted/archived
+    revision snapshot's ``files/`` directory (``agent_package.py``), which
+    is not itself listed under any catalog's ``agents/`` root and so has
+    no other way to recover ``kind``/``entry_point``/``api_version`` from
+    its manifest without re-implementing this parsing a second time.
+    """
+
+    return _spec_from_dir(agent_dir)
 
 
 def discover_agents(root: Path) -> dict[str, AgentSpec]:

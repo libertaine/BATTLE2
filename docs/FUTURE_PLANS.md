@@ -59,21 +59,26 @@ shift under it.
 
 ## Agent packaging / sharing
 
-**Status: Candidate.**
+**Status: implemented (v1.2.0, pending release qualification/tag)** — see
+`docs/ROADMAP.md`'s v1.2.0 section and `docs/specs/agent_package.md` for
+the full design. `bytefray agents export`/`agents package show`/`agents
+import` package one agent revision into a portable `.bytefray-agent` file,
+built as a transport wrapper around the content-addressed agent-revision
+store this section originally anticipated using. The `package.json`
+manifest carries factual identity (revision id, kind, entry point, Agent
+API version) and enforced compatibility (schema version, Agent API
+version), deliberately never a claimed Ruleset-compatibility field — an
+Agent API v1 Python agent is not bound to one Ruleset the way a match/
+evaluation artifact is.
 
-A portable agent package/export format. Bytefray already has substantial
-provenance machinery (content-addressed agent revisions, source
-fingerprinting, freeze-time archival) that agent sharing is a natural,
-consumer-facing extension of. Potential concepts:
-
-- `bytefray agents export` / `bytefray agents import`
-- A manifest describing source, revision/provenance identity, and
-  compatibility requirements (Agent API version, rules compatibility
-  identity)
-- Compiler metadata for DSL-generated agents (see above), if that ships
-  first
-
-No specific package format is committed to yet.
+Retained here as a pointer, not duplicated: this status update exists so
+this document doesn't go stale the way a similar entry under "Richer GUI
+access to evaluation/history/provenance" below did after v1.1 shipped it.
+Deferred, ecosystem-facing follow-ups this milestone deliberately did not
+attempt (see `docs/specs/agent_package.md`'s own deferred-work section)
+remain open Candidate/Exploratory ideas: package signing/PKI, an online
+registry/discovery service, and DSL-compiler provenance metadata once a
+DSL (see above) actually ships.
 
 ---
 

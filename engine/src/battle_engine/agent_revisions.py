@@ -48,6 +48,7 @@ __all__ = [
     "local_python_subset_fingerprint",
     "read_manifest",
     "restore_revision",
+    "revision_manifest_payload",
     "verify_revision",
     "walk_agent_files",
 ]
@@ -521,6 +522,33 @@ def archive_agent_revision_from_walk(
     return RevisionArchivalResult(revision_id, walk.complete, walk.omitted, archived, error)
 
 
+def revision_manifest_payload(
+    revision_id: str, walk: AgentFileWalkResult, source_agent_id: str | None
+) -> dict[str, Any]:
+    """The exact ``bytefray.agent_revision`` manifest dict for ``walk``.
+
+    Factored out of ``_write_snapshot`` so every writer of this shape --
+    the local content-addressed store here, and ``agent_package.py``'s
+    packaged ``revision/<id>/manifest.json`` (docs/specs/agent_package.md
+    Sec 3) -- builds it from one shared function rather than two
+    hand-synchronized copies that could silently drift apart. Callers
+    besides ``_write_snapshot`` should treat this as read-only descriptive
+    data; it does not itself write anything.
+    """
+
+    return {
+        "schema": _MANIFEST_SCHEMA,
+        "schema_version": _MANIFEST_SCHEMA_VERSION,
+        "agent_revision_id": revision_id,
+        "fingerprint_version": AGENT_REVISION_FINGERPRINT_VERSION,
+        "archived_at": _utc_now_iso(),
+        "source_agent_id": source_agent_id,
+        "complete": walk.complete,
+        "omitted": [o.to_dict() for o in walk.omitted],
+        "files": [e.relative_path for e in walk.entries],
+    }
+
+
 def _write_snapshot(
     store_root: Path, revision_id: str, walk: AgentFileWalkResult, source_agent_id: str | None
 ) -> None:
@@ -556,17 +584,7 @@ def _write_snapshot(
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(entry.content)
 
-        manifest: dict[str, Any] = {
-            "schema": _MANIFEST_SCHEMA,
-            "schema_version": _MANIFEST_SCHEMA_VERSION,
-            "agent_revision_id": revision_id,
-            "fingerprint_version": AGENT_REVISION_FINGERPRINT_VERSION,
-            "archived_at": _utc_now_iso(),
-            "source_agent_id": source_agent_id,
-            "complete": walk.complete,
-            "omitted": [o.to_dict() for o in walk.omitted],
-            "files": [e.relative_path for e in walk.entries],
-        }
+        manifest: dict[str, Any] = revision_manifest_payload(revision_id, walk, source_agent_id)
         (temp_dir / "manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
         )

@@ -26,11 +26,20 @@ see `docs/ROADMAP.md` for the release criterion this feeds into:
   described in `docs/specs/evaluation_history.md`.
 - **Agent revision identity/verification behavior** — the content-
   addressed revision store described in `docs/specs/agent_revision.md`.
+- **Agent package format** (new in v1.2, pending release qualification) —
+  `bytefray.agent_package` schema version 1, a transport wrapper around
+  one agent revision, described in `docs/specs/agent_package.md`. Newer
+  than the other entries in this list, called out explicitly rather than
+  silently folded in: package validity/integrity is a stable, versioned
+  contract, but it deliberately makes no Ruleset-compatibility claim (an
+  Agent API v1 agent isn't bound to one Ruleset the way a match/evaluation
+  artifact is) and no code-trust claim (a valid package proves structure/
+  integrity/provenance, never that the contained agent code is safe).
 - **Canonical CLI surfaces where explicitly supported** — `bytefray run`,
   `bytefray tournament`, `bytefray replay`, `bytefray agents
-  create/validate/test/evaluate/inspect/diverge/revisions/evaluations`,
-  and their documented flags (README.md, `docs/AGENT_LAB.md`,
-  `docs/TOURNAMENTS.md`).
+  create/validate/test/evaluate/inspect/diverge/revisions/evaluations/
+  export/import/package`, and their documented flags (README.md,
+  `docs/AGENT_LAB.md`, `docs/TOURNAMENTS.md`).
 
 ## Separate compatibility axes
 
@@ -46,6 +55,7 @@ does not imply, and should not silently piggyback on, a change to another:
 | Evaluation methodology fields | How `agents evaluate` measures agents (orientation coverage, arena-alignment disclosure), not gameplay itself. | `bytefray.evaluation`'s `orientation_mode`/`arena_alignment_mode` fields. |
 | Agent revision identity | Content-addressed identity of one archived copy of an agent's source. | `battle_engine.agent_revisions`. |
 | Source fingerprint versions | Deterministic hash-scope versioning for drift detection. | `battle_engine.agent_api.LOCAL_SOURCE_FINGERPRINT_VERSION`, `battle_engine.agent_revisions`' own fingerprint version. |
+| Agent package format | Wire shape/versioning of the portable `.bytefray-agent` transport container itself — independent of the agent revision identity it wraps. | `battle_engine.agent_package.PACKAGE_SCHEMA_VERSION` (`bytefray.agent_package`). |
 
 A gameplay-semantic change bumps exactly the Ruleset identity. A Python
 programming-contract change (including an incompatible RNG-derivation
@@ -273,6 +283,7 @@ regardless of how mature adjacent functionality is:
 | Fixed alignment → translation suite | normally no | only if API semantics change | maybe, only if wire shape changes | yes |
 | Replay optional telemetry field | no | no | normally no (additive) | no |
 | Revision-store sharding | no | no | no | no |
+| Agent package (`bytefray.agent_package`) wire-shape change | no | no | no (bumps `PACKAGE_SCHEMA_VERSION`, its own independent axis) | no |
 
 Use this table as a starting heuristic, not a substitute for judgment —
 verify a specific change's actual effect against [RULES.md](RULES.md),

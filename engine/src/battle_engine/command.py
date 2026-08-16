@@ -118,6 +118,18 @@ def _agents(argv: list[str]) -> int:
         from battle_engine.agent_revisions_cli import main as revisions_main
 
         return revisions_main(argv[1:])
+    if argv and argv[0] == "export":
+        from battle_engine.agent_package_cli import export_main
+
+        return export_main(argv[1:])
+    if argv and argv[0] == "import":
+        from battle_engine.agent_package_cli import import_main
+
+        return import_main(argv[1:])
+    if argv and argv[0] == "package":
+        from battle_engine.agent_package_cli import package_main
+
+        return package_main(argv[1:])
     if argv and argv[0] == "inspect":
         from battle_engine.agent_inspect import inspect_main
 
@@ -147,8 +159,11 @@ def _agents(argv: list[str]) -> int:
             "traces disagree, 'agents evaluate <candidate-id>' to run a "
             "deterministic candidate/baseline evaluation matrix, "
             "'agents evaluations list|show|compare' to inspect past evaluation "
-            "runs, or 'agents revisions list|show|restore' to inspect/restore "
-            "durably preserved agent source revisions.",
+            "runs, 'agents revisions list|show|restore' to inspect/restore "
+            "durably preserved agent source revisions, 'agents export <agent-id>' "
+            "to package an agent into a portable .bytefray-agent file, 'agents "
+            "package show <file>' to inspect one without executing it, or "
+            "'agents import <file>' to import one into this installation.",
         )
     if argv:
         parser = argparse.ArgumentParser(prog="bytefray agents", add_help=False)
