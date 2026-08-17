@@ -23,6 +23,10 @@ class VM:
     def __init__(self, arena_size: int):
         self.arena = bytearray([NOP] * arena_size)
         self.writer: list[str | None] = [None] * arena_size
+        # Authoritative aggregate of ``writer``. Every ownership mutation,
+        # including wrapped/overlapping initial loads and Python Agent API
+        # writes, converges through ``_wr8`` and updates this map in O(1).
+        self.ownership_counts: dict[str, int] = {}
         # (start_address, length, owner, values) -- ``values`` holds the
         # actual byte written at each address in the run, in order, so a
         # replay consumer can reconstruct arena content, not just ownership.
@@ -45,6 +49,16 @@ class VM:
         m = len(self.arena)
         i = pos % m
         byte_value = val & 0xFF
+        previous_owner = self.writer[i]
+        if previous_owner != owner:
+            if previous_owner is not None:
+                previous_count = self.ownership_counts[previous_owner] - 1
+                if previous_count:
+                    self.ownership_counts[previous_owner] = previous_count
+                else:
+                    del self.ownership_counts[previous_owner]
+            if owner is not None:
+                self.ownership_counts[owner] = self.ownership_counts.get(owner, 0) + 1
         self.arena[i] = byte_value
         self.writer[i] = owner
         if (

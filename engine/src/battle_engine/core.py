@@ -118,7 +118,9 @@ class Kernel:
         return build_snapshot(self.tick, self.agents, self.score, self.vm, events)
 
     def _apply_territory_scoring(self) -> None:
-        self.scoring.score_territory(self.score, self.agents, self.vm.writer)
+        self.scoring.score_territory(
+            self.score, self.agents, self.vm.ownership_counts
+        )
 
     def run(self, max_ticks: int = 10000, verbose: bool = True) -> str:
         renderer = LegacyRendererObserver(self.renderer, self)

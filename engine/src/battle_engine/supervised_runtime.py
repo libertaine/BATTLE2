@@ -368,11 +368,15 @@ class SupervisedPythonEntrantController:
                         self._run_one_action(handle, state, tick, action_slot, events)
 
                 self.statistics_collector.record_tick(
-                    self.statistics, self.states, self.vm.writer  # type: ignore[arg-type]
+                    self.statistics,
+                    self.states,  # type: ignore[arg-type]
+                    self.vm.ownership_counts,
                 )
                 self.scoring.score_alive(self.score, self.states)  # type: ignore[arg-type]
                 self.scoring.score_territory(
-                    self.score, self.states, self.vm.writer  # type: ignore[arg-type]
+                    self.score,
+                    self.states,  # type: ignore[arg-type]
+                    self.vm.ownership_counts,
                 )
                 replay.publish_tick(
                     tick, self.states, self.score, self.vm, events  # type: ignore[arg-type]

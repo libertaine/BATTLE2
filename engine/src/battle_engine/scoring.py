@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import Counter
+from collections.abc import Mapping
 from typing import TypeAlias
 
 from battle_engine.agent_state import Agent
@@ -24,13 +24,12 @@ class ScoringPolicy:
         self,
         score: ScoreMap,
         agents: list[Agent],
-        ownership: list[str | None],
+        ownership_counts: Mapping[str, int],
     ) -> None:
         if self.weights.territory <= 0:
             return
-        own_counts = Counter(ownership)
         for agent in agents:
-            cells = own_counts.get(agent.agent_id, 0)
+            cells = ownership_counts.get(agent.agent_id, 0)
             buckets = cells // max(1, self.weights.territory_bucket)
             if buckets:
                 score[agent.agent_id] = (

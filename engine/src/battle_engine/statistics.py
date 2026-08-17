@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import Counter
+from collections.abc import Mapping
 from typing import TypeAlias
 
 from battle_engine.agent_state import Agent
@@ -28,7 +28,7 @@ class StatisticsCollector:
         self,
         statistics: StatisticsMap,
         agents: list[Agent],
-        ownership: list[str | None],
+        ownership_counts: Mapping[str, int],
     ) -> None:
         for agent in agents:
             state = statistics[agent.agent_id]
@@ -37,9 +37,8 @@ class StatisticsCollector:
             state["total_cpu"] += agent.cpu_used
             state["total_mem_writes"] = agent.mem_writes
 
-        own_counts = Counter(ownership)
         for agent in agents:
-            cells = own_counts.get(agent.agent_id, 0)
+            cells = ownership_counts.get(agent.agent_id, 0)
             state = statistics[agent.agent_id]
             state["territory_last"] = cells
             state["territory_sum"] += cells

@@ -31,7 +31,10 @@ Low-level layers remain acyclic and mostly standard-library-only, as before:
 - `battle_engine.instructions` owns byte-oriented ISA constants and `enc`.
 - `battle_engine.agent_state` owns the mutable execution-time `Agent` state.
 - `battle_engine.vm` owns circular arena memory, ownership, instruction
-  decoding, wrapping behavior, and per-tick memory differences. The VM
+  decoding, wrapping behavior, and per-tick memory differences. Its write
+  boundary maintains both the per-cell last-writer array and an authoritative
+  aggregate ownership-count map, so scoring and statistics do not rescan the
+  arena each tick. The VM
   executes instructions only; it does not calculate scores or statistics.
 - `battle_engine.core` re-exports `VM`, `Config`, `Weights`, `Agent`, `enc`,
   and the `Kernel` facade from their extracted modules, so

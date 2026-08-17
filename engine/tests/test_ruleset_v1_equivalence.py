@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from battle_engine.config import Config, Weights
 from battle_engine.instructions import HALT, JMP, MOV, STORE, enc
 from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
 from battle_engine.replay import ReplayHeader, TickSnapshot, iter_replay
+from battle_engine.starters import ensure_starter_agents
 
 RANDOM_WRITER = b"""from battle_engine.agent_api import ActionKind, AgentAction
 
@@ -182,6 +184,19 @@ def _vm_three_way_request(root: Path) -> MatchRequest:
     )
 
 
+def _vm_default_two_way_request(root: Path) -> MatchRequest:
+    return MatchRequest(
+        Config(),
+        (
+            MatchEntrant("A", "writer", 0, build_agent("writer", 0, offset=3072)),
+            MatchEntrant("B", "runner", 2048, build_agent("runner", 2048)),
+        ),
+        max_ticks=9,
+        replay_path=root / "vm-default-two-way" / "replay.jsonl",
+        verbose=False,
+    )
+
+
 def _python_two_way_request(root: Path) -> MatchRequest:
     agent_root = root / "python-two-way"
     return MatchRequest(
@@ -216,6 +231,27 @@ def _python_three_way_request(root: Path) -> MatchRequest:
     )
 
 
+def _python_starter_request(root: Path) -> MatchRequest:
+    agent_root = root / "python-starters"
+    ensure_starter_agents(data_root=agent_root)
+    entrants = tuple(
+        MatchEntrant.python(
+            chr(ord("A") + slot),
+            name,
+            slot * 2048,
+            resolve_agent(agent_root, name),
+        )
+        for slot, name in enumerate(("claimer", "hunter"))
+    )
+    return MatchRequest(
+        Config(seed=1337),
+        entrants,
+        max_ticks=8,
+        replay_path=agent_root / "run" / "replay.jsonl",
+        verbose=False,
+    )
+
+
 EXPECTED: dict[str, dict[str, object]] = {
     "vm_overlap": {
         "snapshot_sha256": "e9b32ce0b585130df3eb6a7e2bb44f192309a2bd5eb5ad1dc8646ababbf1de8e",
@@ -224,6 +260,14 @@ EXPECTED: dict[str, dict[str, object]] = {
         "winner": "B",
         "termination_reason": "tick_limit",
         "ticks_run": 7,
+    },
+    "vm_default_two_way": {
+        "snapshot_sha256": "ac1db5069bd5c1962ca35ff73f2c3a00c2e47028ff10dce12c5f4c02f53ee3f7",
+        "match_id": "match_d67dd5c3801ed0c674347945",
+        "result_id": "result_74b47f5417ff26f0d33bc0f1",
+        "winner": "tie",
+        "termination_reason": "tick_limit",
+        "ticks_run": 9,
     },
     "vm_three_way": {
         "snapshot_sha256": "d556596fe6edc35248cd4961926f1301dff9a7c784ec5cb4b9906f1a52929bbe",
@@ -241,6 +285,14 @@ EXPECTED: dict[str, dict[str, object]] = {
         "termination_reason": "all_agents_dead",
         "ticks_run": 2,
     },
+    "python_starters": {
+        "snapshot_sha256": "26cf95ce240dc379482e3e66acc2c3df4abbec91b59c8555bc4dacf77d6a333c",
+        "match_id": "match_9a50c606dd9e3c80bf13d94c",
+        "result_id": "result_0093cb1a3e698205eba4c51a",
+        "winner": "B",
+        "termination_reason": "tick_limit",
+        "ticks_run": 8,
+    },
     "python_three_way": {
         "snapshot_sha256": "7766804e9a412a75fd5f674309ed9b572ac60d4727c16b528a172b0847a313f4",
         "match_id": "match_f6680bb4d957b3965f6ce3b8",
@@ -249,6 +301,15 @@ EXPECTED: dict[str, dict[str, object]] = {
         "termination_reason": "last_agent_standing",
         "ticks_run": 2,
     },
+}
+
+EXPECTED_AGENT_IDS = {
+    "vm_overlap": ["A", "B"],
+    "vm_default_two_way": ["A", "B"],
+    "vm_three_way": ["A", "B", "C"],
+    "python_starters": ["A", "B"],
+    "python_two_way": ["ALPHA", "BETA"],
+    "python_three_way": ["ALPHA", "BETA", "GAMMA"],
 }
 
 
@@ -261,7 +322,9 @@ def _snapshot_digest(snapshot: dict[str, object]) -> str:
     ("name", "request_factory"),
     [
         ("vm_overlap", _vm_overlap_request),
+        ("vm_default_two_way", _vm_default_two_way_request),
         ("vm_three_way", _vm_three_way_request),
+        ("python_starters", _python_starter_request),
         ("python_two_way", _python_two_way_request),
         ("python_three_way", _python_three_way_request),
     ],
@@ -272,3 +335,52 @@ def test_ruleset_v1_golden_equivalence(name, request_factory, tmp_path):
     assert _snapshot_digest(snapshot) == expected["snapshot_sha256"]
     for key in ("match_id", "result_id", "winner", "termination_reason", "ticks_run"):
         assert snapshot[key] == expected[key]
+    assert [agent["agent_id"] for agent in snapshot["agents"]] == EXPECTED_AGENT_IDS[name]
+    assert list(snapshot["score"]) == EXPECTED_AGENT_IDS[name]
+
+    if name == "vm_overlap":
+        assert snapshot["score"] == {"A": 35, "B": 77}
+        assert [agent["territory_last"] for agent in snapshot["agents"]] == [6, 17]
+    elif name == "vm_three_way":
+        assert snapshot["score"] == {"A": 16.0, "B": 11.0, "C": 1.0}
+        assert snapshot["agents"][0]["kills"] == 1
+        assert snapshot["agents"][2]["deaths"] == 1
+    elif name == "python_two_way":
+        assert {agent["termination_reason"] for agent in snapshot["agents"]} == {
+            "normal_halt"
+        }
+    elif name == "python_three_way":
+        assert snapshot["agents"][1]["alive"] is True
+        assert snapshot["agents"][2]["diagnostic_code"] == "agent_action_failed"
+        assert snapshot["agents"][2]["termination_reason"] == "forfeit"
+
+
+@pytest.mark.parametrize(
+    "request_factory",
+    [_vm_three_way_request, _python_three_way_request],
+    ids=["vm", "python"],
+)
+def test_existing_three_way_execution_is_deterministic_and_ordered(
+    request_factory, tmp_path
+):
+    first_request = request_factory(tmp_path / "first")
+    first = _snapshot(first_request)
+    second_request = request_factory(tmp_path / "second")
+    second = _snapshot(second_request)
+    assert first == second
+
+    reversed_request = replace(
+        request_factory(tmp_path / "reversed"),
+        entrants=tuple(reversed(first_request.entrants)),
+    )
+    reversed_result = NativeMatchService().run(reversed_request)
+    assert reversed_result.match_id != first["match_id"]
+
+    artifact = json.loads(reversed_result.result_path.read_text(encoding="utf-8"))
+    expected_order = [entrant.agent_id for entrant in reversed_request.entrants]
+    assert [entrant["agent_id"] for entrant in artifact["entrants"]] == expected_order
+    # Canonical JSON sorts mapping keys; ordered entrant arrays carry schedule order.
+    assert set(artifact["score"]) == set(expected_order)
+    for record in iter_replay(reversed_result.replay_path):
+        if isinstance(record, TickSnapshot):
+            assert [agent.agent_id for agent in record.agents] == expected_order

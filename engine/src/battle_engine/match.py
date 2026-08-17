@@ -59,9 +59,13 @@ class MatchRunner:
                 events: list[dict[str, Any]] = []
 
                 self._execute_agents()
-                self.statistics.record_tick(state.stats, state.agents, state.vm.writer)
+                self.statistics.record_tick(
+                    state.stats, state.agents, state.vm.ownership_counts
+                )
                 self.scoring.score_alive(state.score, state.agents)
-                self.scoring.score_territory(state.score, state.agents, state.vm.writer)
+                self.scoring.score_territory(
+                    state.score, state.agents, state.vm.ownership_counts
+                )
                 self._attribute_deaths(events)
 
                 snapshot = self.replay.publish_tick(

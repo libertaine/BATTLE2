@@ -55,7 +55,7 @@ def test_scoring_policy_preserves_alive_and_territory_buckets():
     score: dict[str, int | float] = {"A": 0, "B": 0}
     policy = ScoringPolicy(Weights(alive=1.5, kill=7, territory=2, territory_bucket=3))
     policy.score_alive(score, agents)
-    policy.score_territory(score, agents, ["A"] * 7 + ["B"] * 2)
+    policy.score_territory(score, agents, {"A": 7, "B": 2})
     assert score == {"A": 5.5, "B": 0}
     policy.score_kill(score, "A")
     assert score["A"] == 12.5
