@@ -688,7 +688,7 @@ extensible enough that a future ecosystem feature could consume it without
 a breaking change, but implementing any such feature is explicitly out of
 this milestone.
 
-## 13. Designer integration — implemented for v1.3 (pending release)
+## 13. Designer integration — implemented and release-prepared for v1.3.0
 
 `docs/ROADMAP.md`'s v1.2.0 section named a GUI wrapper over the authoritative
 `agent_package` functions as a later candidate; v1.3 ("Designer Workflow

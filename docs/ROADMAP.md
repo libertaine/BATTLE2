@@ -329,8 +329,10 @@ producing a package that lies about being self-describing).
 
 ## v1.3.0 — Designer Workflow Completion
 
-**Status: implemented in the current v1.3 candidate tree, pending release
-qualification/tag.** Where
+**Status: release-prepared.** Implementation, independent technical
+qualification, and the user-completed manual GUI qualification passed;
+v1.3.0 version identity is finalized for tagging, with final artifact
+qualification, tag, and publication pending. Where
 v1.1 surfaced evaluation history/revision provenance into Agent Designer and
 v1.2 shipped a CLI-only portable agent-package format, v1.3 finishes
 connecting Agent Designer to those already-shipped 1.x engine capabilities
@@ -405,7 +407,7 @@ thin layer would therefore be inaccurate.
 
 No Ruleset, Agent API, evaluation/result/replay-schema, agent-package-schema,
 or agent-revision-identity change — see `docs/COMPATIBILITY.md`. See
-`CHANGELOG.md`'s `[Unreleased]` entry for the full file-level summary.
+`CHANGELOG.md`'s `[1.3.0]` entry for the full file-level summary.
 
 ## After v1.0
 

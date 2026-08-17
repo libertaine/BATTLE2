@@ -1226,8 +1226,8 @@ whether an archived revision still matches an agent's *current* on-disk
 source — an Area D capability the CLI itself doesn't expose) are also
 implemented.
 
-**Implemented for v1.3; pending release** (`docs/ROADMAP.md`'s "Designer
-Workflow Completion"):
+**Implemented and release-prepared for v1.3.0** (`docs/ROADMAP.md`'s
+"Designer Workflow Completion"):
 `EvaluationComparisonDialog` gains the comparison-row drill-down this
 section deferred — "Test in Agent Lab"/"Open Replay" from a two-run
 comparison row, reusing the same Designer execution/replay handlers as the

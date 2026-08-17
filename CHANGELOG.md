@@ -3,13 +3,14 @@
 This changelog records notable user- and developer-visible changes to Bytefray
 (formerly BATTLE2).
 
-## [Unreleased]
+## [1.3.0] - 2026-08-16
 
-Implementation (not yet released/tagged) for the proposed v1.3 theme,
-**Designer Workflow Completion**: connects Agent Designer to mature v1.1/v1.2
-engine capabilities that were previously CLI-only, plus the narrow domain
-and Windows-build correctness fixes found by independent qualification. No
-gameplay, Agent API, Ruleset, evaluation/result/replay-schema,
+Implementation and release qualification for Bytefray v1.3.0's **Designer
+Workflow Completion** theme: connects Agent Designer to mature v1.1/v1.2 engine
+capabilities that were previously CLI-only, plus the narrow domain and
+Windows-build correctness fixes found by independent qualification. Manual GUI
+qualification was completed by the user after the technical audit and passed.
+No gameplay, Agent API, Ruleset, evaluation/result/replay-schema,
 agent-package-schema, or agent-revision-identity change. See
 `docs/ROADMAP.md`'s v1.3.0 section for full scope disposition.
 
