@@ -89,7 +89,7 @@ def load_evaluation_summary(
     ``data_root`` scopes the agent-revision-store cross-check (Sec 7.2 of
     ``docs/specs/agent_revision.md``) -- it defaults to the live
     ``get_data_root()`` (matching ``verify_summary``'s own default) but the
-    Designer always passes its own resolved ``battle_root`` explicitly, the
+    Designer always passes its own resolved ``data_root`` explicitly, the
     same "make the dependency visible at the call site" practice
     ``docs/specs/agent_designer_workflow.md`` Sec 3 already establishes for
     every other Designer-to-engine call.

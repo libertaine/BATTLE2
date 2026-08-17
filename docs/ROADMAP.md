@@ -1,8 +1,7 @@
 # Bytefray Roadmap
 
-This document describes where Bytefray is headed after v0.10.0: the
-criteria for declaring v1.0.0, the required pre-1.0 branding/visual-
-integration gate, and how the project decides what belongs in each. It
+This document records Bytefray's shipped milestones and the current boundary
+from v1.4 through future 2.x gameplay research. It
 complements, rather than replaces,
 [CHANGELOG.md](../CHANGELOG.md) (what actually shipped, release by release)
 and the compact version table in [README.md](../README.md#roadmap). Ideas
@@ -413,6 +412,57 @@ thin layer would therefore be inaccurate.
 No Ruleset, Agent API, evaluation/result/replay-schema, agent-package-schema,
 or agent-revision-identity change — see `docs/COMPATIBILITY.md`. See
 `CHANGELOG.md`'s `[1.3.0]` entry for the full file-level summary.
+
+## v1.4.0 — Platform Integrity & Scaling
+
+**Status: in development on `v1.4-development`.** This milestone cleans and
+measures the stable 1.x platform without changing `bytefray-rules-1`:
+
+- retire obsolete predecessor product/command/executable/data-root naming
+  while preserving stable protocol identifiers and genuine history;
+- remove only evidence-backed dead implementation and retain useful historical
+  fixtures;
+- establish a compact VM/Python Ruleset-v1 golden equivalence corpus before
+  engine optimization;
+- maintain authoritative ownership counts at the existing VM write boundary,
+  eliminating duplicate full-arena territory scans in scoring/statistics;
+- publish reproducible, non-CI scaling measurements and make replay-index work
+  evidence-driven;
+- qualify the already-existing homogeneous three-entrant VM/Python path without
+  expanding pairwise tournament/evaluation methodology.
+
+No Ruleset, Agent API, RNG, scheduler semantics, evaluation methodology,
+artifact interpretation, package/revision identity, or gameplay change belongs
+in v1.4. See [the audit](V1_4_PLATFORM_INTEGRITY.md) and
+[scaling report](performance/V1_4_SCALING.md).
+
+## v1.5.0 — Architecture Evolution Readiness
+
+**Status: planned direction only.** v1.5 may rearrange implementation behind
+the frozen Ruleset-v1 behavior: a Ruleset dispatch/policy seam, clearer entrant
+identity versus execution-state separation, and a scheduler abstraction. Under
+Ruleset v1 there must still be exactly one execution state per entrant, and the
+v1.4 equivalence corpus remains the acceptance boundary. No new gameplay,
+Agent API v2, multiprocess entrant, replication, or resource semantics.
+
+## v1.6.0 — Evaluation Scale & Analysis
+
+**Status: planned direction only.** Evidence may justify deterministic parallel
+evaluation, presets/suites, richer aggregate and statistical analysis,
+behavioral comparison/profiling, larger experimental matrices, and local replay
+indexing if real workloads still warrant it. Evaluation methodology and
+artifact compatibility must remain explicit; parallelism may change throughput,
+never cell identity or results.
+
+## v2.x — Gameplay and Rules Research
+
+**Status: research boundary, not a Ruleset-v2 design commitment.** New gameplay
+semantics begin no earlier than 2.x. Candidate research includes multi-unit or
+multiprocess entrants, replication/deployment, unit communication, explicit
+destructibility or richer attack mechanics, larger-field gameplay, new
+scheduler/resource semantics, Agent API v2, and a separately identified
+Ruleset v2. Which ideas belong in 2.0 versus later 2.x releases will be decided
+only when evidence and an explicit compatibility design exist.
 
 ## After v1.0
 

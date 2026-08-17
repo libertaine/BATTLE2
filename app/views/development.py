@@ -91,10 +91,10 @@ class NewAgentDialog(QDialog):
     can correct the id and retry.
     """
 
-    def __init__(self, battle_root: Path, parent: QWidget | None = None) -> None:
+    def __init__(self, data_root: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("New Agent")
-        self._battle_root = battle_root
+        self._data_root = data_root
         self.result: ScaffoldResult | None = None
 
         layout = QVBoxLayout(self)
@@ -127,7 +127,7 @@ class NewAgentDialog(QDialog):
             self._show_error("Agent ID is required.")
             return
         try:
-            self.result = create_agent(agent_id, data_root=self._battle_root)
+            self.result = create_agent(agent_id, data_root=self._data_root)
         except (AgentScaffoldError, OSError) as exc:
             self._show_error(str(exc))
             return

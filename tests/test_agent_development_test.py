@@ -1131,15 +1131,15 @@ def test_development_test_child_env_forces_designers_own_data_root(monkeypatch, 
         # Simulate the portable/no-env-var scenario this bug depended on:
         # the OS environment the child would otherwise inherit no longer
         # carries any explicit root, even though this Designer instance's
-        # own battle_root is still the one resolved above.
+        # own data_root is still the one resolved above.
         monkeypatch.delenv("BYTEFRAY_ROOT", raising=False)
 
         designer._on_test_agent()
         assert designer._proc is not None
         child_env = designer._proc.processEnvironment()
         assert child_env.contains("BYTEFRAY_ROOT")
-        assert child_env.value("BYTEFRAY_ROOT") == str(designer.battle_root)
-        assert designer.battle_root == data_root
+        assert child_env.value("BYTEFRAY_ROOT") == str(designer.data_root)
+        assert designer.data_root == data_root
 
         designer._dispose_process()
     finally:
@@ -1196,7 +1196,7 @@ def test_open_test_replay_uses_existing_replay_launcher(monkeypatch, tmp_path):
 
         designer._on_open_test_replay()
 
-        assert captured == [(designer.battle_root, replay_path)]
+        assert captured == [(designer.data_root, replay_path)]
         # Independent of Simple/Advanced "Open Last Replay" (Sec 13).
         assert designer._last_replay is None
     finally:

@@ -66,14 +66,17 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 1.1.0 | Evaluation Insight & Designer Polish | Released — brings the already-shipped v0.7/v0.8 evaluation-history and agent-revision engine layers into Agent Designer: a Tools → Evaluation History… browser for past `agents evaluate` runs (including legacy artifacts), comparability-first two-run comparison, and agent-revision provenance inspection with a live current-source-drift check the CLI itself doesn't have. No gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
 | 1.2.0 | Portable Agent Packaging & Sharing | Released — extends the existing content-addressed agent-revision store across a machine boundary: `agents export`/`agents package show`/`agents import` package one agent revision into a portable, inspectable-without-execution `.bytefray-agent` file, transfer it by any ordinary means, and import it through fail-closed validation into another installation with its `agent_revision_id` and provenance metadata preserved. Adversarially tested against path traversal, tampering, and collision, and qualified with a genuine cross-platform (Windows/Linux) round trip. Introduces exactly one new, independent compatibility axis (`bytefray.agent_package` schema v1); no gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
 | 1.3.0 | Designer Workflow Completion | Released — adds Agent Designer package export/inspection/import with integrity and trust disclosure, exact comparison-row Replay/Agent Lab drill-down with side/orientation/tick preservation, and revision **Restore Files…** with live-catalog refresh and stale-state invalidation. Independent qualification hardened package/archive validation, corrected all four Windows PyInstaller layouts to the intended onedir shape, made GUI build smokes isolated and synchronous, and added CLI disclosure of ambiguous duplicate comparison groups. Technical and manual GUI qualification passed; the installer, portable applications, wheel, source archive, and published SHA-256 values were verified for the final release. No gameplay, Agent API, Ruleset, package/revision/evaluation/result/replay-schema, evaluation-methodology, or data-root-semantics change. |
+| 1.4.0 | Platform Integrity & Scaling | In development — retires obsolete predecessor product surfaces, removes evidence-backed dead code, freezes a compact Ruleset-v1 VM/Python equivalence corpus, replaces duplicate per-tick ownership scans with authoritative incremental counts, records scaling/replay evidence, and qualifies existing three-entrant execution. No gameplay or stable-contract change. |
+| 1.5.0 | Architecture Evolution Readiness | Planned direction — Ruleset/policy dispatch, entrant identity versus execution-state separation, and scheduler abstraction behind unchanged Ruleset-v1 behavior; still one execution state per entrant and no new gameplay. |
+| 1.6.0 | Evaluation Scale & Analysis | Planned direction — evidence-gated deterministic parallel evaluation, presets/suites, richer analysis and behavioral comparison, larger matrices, and replay indexing only if still warranted. |
+| 2.x | Gameplay / Rules Research | Research boundary — possible multi-unit entrants, replication, communication, richer attack/resource semantics, Agent API v2, and a separately identified Ruleset v2; no detailed design commitment yet. |
 
-**Future plans (post-1.0):** substantial ideas are deliberately kept out of
-v1.0's required scope so it isn't held hostage to every interesting
-feature — accessible agent-authoring (a small, deterministic DSL), richer
-evaluation/statistical analysis, evaluation performance/scaling, and
-deeper simulation/combat research (arena-size effects, multipronged/
-multi-process entrants, replication, future rulesets). None of it is
-lost; see the organized, maturity-labeled
+**Future plans:** substantial ideas are deliberately kept behind explicit
+compatibility boundaries. Architecture preparation remains 1.x work; new
+gameplay and Agent API v2 are 2.x research. The proposed deterministic DSL is
+deferred until its Agent API v2 target is understood, online registry/PKI work
+requires ecosystem demand, and pMARS remains maintained interoperability rather
+than release-filling expansion. See the organized, maturity-labeled
 catalogue in [docs/FUTURE_PLANS.md](docs/FUTURE_PLANS.md). Post-v0.9
 development may also explore deeper optional local-AI developer tooling
 (see [tools/local_ai/README.md](tools/local_ai/README.md)) — standardized

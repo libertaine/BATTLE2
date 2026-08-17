@@ -7,7 +7,7 @@ signals), ``RevisionBrowserDialog`` (role-scoped manifest/verification/
 current-source-drift text), the "Compare With…" flow
 (``EvaluationPickerDialog`` + ``EvaluationComparisonDialog``), and
 ``AgentDesigner`` wiring (the Tools-menu action opens the dialog against the
-Designer's own ``battle_root`` and reuses the exact same "Test in Agent
+Designer's own ``data_root`` and reuses the exact same "Test in Agent
 Lab"/"Open Replay" handlers ``EvaluationResultsDialog`` already uses).
 
 Marked ``gui`` like the existing Designer tests: excluded from the default
@@ -1161,7 +1161,7 @@ def test_revision_browser_emits_live_catalog_change_after_success(monkeypatch, t
 
 
 @pytest.mark.gui
-def test_designer_evaluation_history_action_opens_dialog_against_battle_root(monkeypatch, tmp_path):
+def test_designer_evaluation_history_action_opens_dialog_against_data_root(monkeypatch, tmp_path):
     _make_app()
     from app.agent_designer import AgentDesigner
 
@@ -1171,8 +1171,8 @@ def test_designer_evaluation_history_action_opens_dialog_against_battle_root(mon
         received = {}
 
         class _RecordingHistoryDialog:
-            def __init__(self, battle_root, *, allow_restore=True, parent=None):
-                received["battle_root"] = battle_root
+            def __init__(self, data_root, *, allow_restore=True, parent=None):
+                received["data_root"] = data_root
                 received["allow_restore"] = allow_restore
                 received["parent"] = parent
                 self.testInAgentLabRequested = _NullSignal()
@@ -1186,7 +1186,7 @@ def test_designer_evaluation_history_action_opens_dialog_against_battle_root(mon
 
         designer._on_evaluation_history()
 
-        assert received["battle_root"] == designer.battle_root
+        assert received["data_root"] == designer.data_root
         assert received["allow_restore"] is True
         assert received["parent"] is designer
     finally:
@@ -1215,7 +1215,7 @@ def test_designer_evaluation_history_reuses_existing_drilldown_handlers(monkeypa
                 connected[self._key] = handler
 
         class _RecordingHistoryDialog:
-            def __init__(self, battle_root, *, allow_restore=True, parent=None):
+            def __init__(self, data_root, *, allow_restore=True, parent=None):
                 self.testInAgentLabRequested = _RecordingSignal("lab")
                 self.openReplayRequested = _RecordingSignal("replay")
                 self.agentCatalogChanged = _RecordingSignal("catalog")
@@ -1252,7 +1252,7 @@ def test_designer_history_disables_restore_while_process_is_active(monkeypatch, 
                 return QProcess.Running
 
         class _RecordingHistoryDialog:
-            def __init__(self, battle_root, *, allow_restore=True, parent=None):
+            def __init__(self, data_root, *, allow_restore=True, parent=None):
                 received["allow_restore"] = allow_restore
                 self.testInAgentLabRequested = _NullSignal()
                 self.openReplayRequested = _NullSignal()

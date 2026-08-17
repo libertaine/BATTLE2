@@ -891,7 +891,7 @@ def test_new_agent_and_open_folder_still_work_alongside_validate(monkeypatch, tm
 
     designer = AgentDesigner()
     try:
-        dialog = NewAgentDialog(designer.battle_root)
+        dialog = NewAgentDialog(designer.data_root)
         dialog.agentId.setText("post_validate_agent")
         dialog._on_ok()
         assert dialog.result is not None

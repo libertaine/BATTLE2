@@ -20,7 +20,7 @@ Status words, used consistently throughout this document:
 
 ## Accessible agent-authoring language / DSL
 
-**Status: Exploratory.**
+**Status: deferred to the Agent API v2 era.**
 
 A small, Bytefray-specific strategy language for users who don't want to
 begin by writing Agent API Python directly. The intent is a **deterministic
@@ -50,10 +50,10 @@ Principles this would need to hold to, if pursued:
   revision store already established for hand-written agents.
 - Possible future `compile`/`explain` commands.
 
-This should not be designed until v1.0's target contracts (Agent API,
-schemas, rules compatibility identity) are stable — a DSL backend targeting
-a still-moving Agent API would be designing against a target that could
-shift under it.
+Do not begin this DSL against Agent API v1 when its long-term target may change
+materially under Agent API v2. Reconsider it only with the v2 API/rules work,
+so the language does not freeze accidental 1.x constraints or require an
+immediate compatibility migration.
 
 ---
 
@@ -76,9 +76,10 @@ this document doesn't go stale the way a similar entry under "Richer GUI
 access to evaluation/history/provenance" below did after v1.1 shipped it.
 Deferred, ecosystem-facing follow-ups this milestone deliberately did not
 attempt (see `docs/specs/agent_package.md`'s own deferred-work section)
-remain open Candidate/Exploratory ideas: package signing/PKI, an online
-registry/discovery service, and DSL-compiler provenance metadata once a
-DSL (see above) actually ships.
+remain open only if ecosystem demand appears: package signing/PKI, an online
+registry/discovery service, and DSL-compiler provenance metadata once a DSL
+(see above) actually ships. Do not build registry or PKI infrastructure to
+fill a release milestone without users/packages that require it.
 
 ---
 
@@ -104,7 +105,7 @@ would be a decision made with evidence in hand, not assumed here.
 
 ## Evaluation performance and scaling
 
-**Status: Unscheduled.**
+**Status: planned direction for v1.6, evidence-gated.**
 
 Scaling features, not prerequisites for platform stability:
 
@@ -193,7 +194,8 @@ generalized to gameplay itself.
 
 **Status: mixed — see each item.**
 
-- **Redcode/pMARS authoring and evaluation improvements** (Unscheduled).
+- **Redcode/pMARS authoring and evaluation improvements** (maintenance-only
+  in 1.x unless concrete demand justifies more).
   Redcode/pMARS interoperability is not cancelled; Python-side authoring,
   evaluation, provenance, and the ruleset itself are expected to mature
   first (see [ROADMAP.md](ROADMAP.md)'s v0.10 product-boundary item).

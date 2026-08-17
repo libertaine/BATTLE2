@@ -837,13 +837,13 @@ class EvaluationHistoryDialog(QDialog):
 
     def __init__(
         self,
-        battle_root: Path,
+        data_root: Path,
         *,
         allow_restore: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._battle_root = battle_root
+        self._data_root = data_root
         self._allow_restore = allow_restore
         self._entries: tuple[DiscoveredEvaluation, ...] = ()
         self._current_summary = None
@@ -935,15 +935,15 @@ class EvaluationHistoryDialog(QDialog):
 
     # ---- Discovery / selection ----
     def refresh(self) -> None:
-        # Scoped to this Designer's own resolved battle_root, never the
+        # Scoped to this Designer's own resolved data_root, never the
         # ambient default -- the same "make the dependency visible at the
         # call site" practice used throughout app/agent_designer.py (Sec 3
         # of docs/specs/agent_designer_workflow.md), and required here in
         # particular since ``discover()``'s own default silently resolves
         # against whatever ``get_data_root()`` returns in the *current*
-        # process, which is not guaranteed to equal ``battle_root`` (e.g. a
+        # process, which is not guaranteed to equal ``data_root`` (e.g. a
         # test constructing this dialog against an isolated data root).
-        listing = discover_evaluation_listing(roots=(self._battle_root / "runs" / "evaluations",))
+        listing = discover_evaluation_listing(roots=(self._data_root / "runs" / "evaluations",))
         self._entries = sorted_listing_entries(listing)
         self.list.clear()
         for entry in self._entries:
@@ -992,7 +992,7 @@ class EvaluationHistoryDialog(QDialog):
             summary, verify_error = load_evaluation_summary(
                 entry.location.evaluation_json_path,
                 verify=self.verifyCheck.isChecked(),
-                data_root=self._battle_root,
+                data_root=self._data_root,
             )
         except DesignerValidationError as exc:
             self.detailText.setPlainText(f"Could not read this evaluation: {exc}")
@@ -1105,7 +1105,7 @@ class EvaluationHistoryDialog(QDialog):
 
         dialog = RevisionBrowserDialog(
             roles,
-            data_root=self._battle_root,
+            data_root=self._data_root,
             allow_restore=self._allow_restore,
             parent=self,
         )
@@ -1134,7 +1134,7 @@ class EvaluationHistoryDialog(QDialog):
                 entry.location.evaluation_json_path,
                 right_path,
                 verify=self.verifyCheck.isChecked(),
-                data_root=self._battle_root,
+                data_root=self._data_root,
             )
         except DesignerValidationError as exc:
             QMessageBox.warning(self, "Compare Evaluations", str(exc))

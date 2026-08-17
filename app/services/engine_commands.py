@@ -70,7 +70,7 @@ def build_engine_command(
     return build_match_command(arguments), env
 
 
-def open_pygame_client_direct(battle_root: Path, replay_path: Path) -> None:
+def open_pygame_client_direct(data_root: Path, replay_path: Path) -> None:
     """Launch the source or packaged replay application without a shell."""
     if not replay_path.exists():
         raise FileNotFoundError(f"Replay not found: {replay_path}")
@@ -78,6 +78,6 @@ def open_pygame_client_direct(battle_root: Path, replay_path: Path) -> None:
         replay_path, ("--renderer", "pygame", "--tick-delay", "0.02")
     )
     try:
-        Popen(command, cwd=str(battle_root), env=_source_environment(battle_root))
+        Popen(command, cwd=str(data_root), env=_source_environment(data_root))
     except OSError as exc:
         raise OSError(f"Failed to start replay command '{command[0]}': {exc}") from exc

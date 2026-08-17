@@ -67,7 +67,7 @@ from app.views.simple import SimplePanel
 from app.views.tournament import TournamentDialog
 
 
-def _resolve_battle_root() -> Path:
+def _resolve_data_root() -> Path:
     """Compatibility wrapper for the shared writable data-root resolver."""
     return get_data_root()
 
@@ -78,17 +78,17 @@ class AgentDesigner(QMainWindow):
         super().__init__()
         self.setWindowTitle("Bytefray – Agent Designer")
 
-        # Build battle_root and shared catalog
-        battle_root = _resolve_battle_root()
+        # Build data_root and shared catalog
+        data_root = _resolve_data_root()
         try:
-            ensure_starter_agents(data_root=battle_root)
+            ensure_starter_agents(data_root=data_root)
         except (FileNotFoundError, OSError, ValueError) as exc:
             QMessageBox.critical(
                 self,
                 "Starter Agents Unavailable",
                 f"Bytefray could not initialize its starter agents.\n\n{exc}",
             )
-        self.battle_root = battle_root            # <-- keep for later
+        self.data_root = data_root            # <-- keep for later
         self._proc = None                         # <-- init process handle
         self._last_replay = None                  # <-- init replay capture
         self._result_path = None
@@ -102,7 +102,7 @@ class AgentDesigner(QMainWindow):
         self._test_agent_id = None
         self._test_stdout = ""
         self._test_stderr = ""
-        self.catalog = AgentCatalog(battle_root)
+        self.catalog = AgentCatalog(data_root)
 
         # Tabs + panels
         self.tabs = QTabWidget(self)
@@ -121,7 +121,7 @@ class AgentDesigner(QMainWindow):
             QMessageBox.critical(self, "Simple Panel Error", str(e))
 
         try:
-            self.advanced = AdvancedPanel(catalog=self.catalog, battle_root=battle_root)
+            self.advanced = AdvancedPanel(catalog=self.catalog, data_root=data_root)
             # reacts to 'Refresh Agents' in Advanced tab
             self.advanced.refreshAgentsRequested.connect(self.refresh_agents)
             self.advanced.runRequested.connect(self._on_advanced_run)
@@ -132,7 +132,7 @@ class AgentDesigner(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Advanced Panel Unavailable",
-                f"Failed to initialize Advanced panel with battle_root={battle_root}\n\n{e}",
+                f"Failed to initialize Advanced panel with data_root={data_root}\n\n{e}",
             )
 
         try:
@@ -151,7 +151,7 @@ class AgentDesigner(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Agent Development Panel Unavailable",
-                f"Failed to initialize Agent Development panel with battle_root={battle_root}\n\n{e}",
+                f"Failed to initialize Agent Development panel with data_root={data_root}\n\n{e}",
             )
 
         self.setCentralWidget(self.tabs)
@@ -308,7 +308,7 @@ class AgentDesigner(QMainWindow):
         a_type = (rowA.meta.get("name") if isinstance(getattr(rowA, "meta", None), dict) else None) or Path(rowA.path).name or a_name
         b_type = (rowB.meta.get("name") if isinstance(getattr(rowB, "meta", None), dict) else None) or Path(rowB.path).name or b_name
 
-        run_directory = new_match_run_directory(self.battle_root)
+        run_directory = new_match_run_directory(self.data_root)
         result_path, replay_path = match_artifact_paths(run_directory / "replay.jsonl")
         match_arguments = build_designer_match_arguments(
             ticks=ticks,
@@ -341,7 +341,7 @@ class AgentDesigner(QMainWindow):
 
         # child env
         env = QProcessEnvironment.systemEnvironment()
-        root = self.battle_root
+        root = self.data_root
         eng = str(root / "engine" / "src")
         cli = str(root / "client" / "src")
         sep = ";" if sys.platform == "win32" else ":"
@@ -435,7 +435,7 @@ class AgentDesigner(QMainWindow):
         b_type = (rowB.meta.get("name") if hasattr(rowB, "meta") and isinstance(rowB.meta, dict) else None) or Path(rowB.path).name or cfg.b_type
 
         # Build CLI args with the correct flags
-        run_directory = new_match_run_directory(self.battle_root)
+        run_directory = new_match_run_directory(self.data_root)
         result_path, replay_path = match_artifact_paths(run_directory / "replay.jsonl")
         match_arguments = build_designer_match_arguments(
             ticks=cfg.ticks,
@@ -461,7 +461,7 @@ class AgentDesigner(QMainWindow):
 
         # child env (so imports/agents work)
         env = QProcessEnvironment.systemEnvironment()
-        root = self.battle_root
+        root = self.data_root
         eng = str(root / "engine" / "src")
         cli = str(root / "client" / "src")
         sep = ";" if sys.platform == "win32" else ":"
@@ -582,16 +582,16 @@ class AgentDesigner(QMainWindow):
         if self._last_replay and Path(self._last_replay).exists():
             path = self._last_replay
         if not path:
-            path, _ = QFileDialog.getOpenFileName(self, "Open Replay", str(self.battle_root), "All Files (*.*)")
+            path, _ = QFileDialog.getOpenFileName(self, "Open Replay", str(self.data_root), "All Files (*.*)")
         if path:
             try:
-                open_pygame_client_direct(self.battle_root, Path(path))
+                open_pygame_client_direct(self.data_root, Path(path))
             except (FileNotFoundError, OSError) as exc:
                 QMessageBox.critical(self, "Replay Launch Failed", str(exc))
 
     def _on_tournament(self) -> None:
         rows = self.catalog.list_agents()
-        default = self.battle_root / "runs" / "tournaments" / "designer-tournament"
+        default = self.data_root / "runs" / "tournaments" / "designer-tournament"
         dialog = TournamentDialog(rows, default, self)
         if not dialog.exec():
             return
@@ -615,17 +615,17 @@ class AgentDesigner(QMainWindow):
         env = QProcessEnvironment.systemEnvironment()
         sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
-        source = [str(self.battle_root), str(self.battle_root / "engine" / "src")]
+        source = [str(self.data_root), str(self.data_root / "engine" / "src")]
         env.insert("PYTHONPATH", sep.join(source + ([existing] if existing else [])))
-        env.insert("BYTEFRAY_AGENTS_DIR", str(self.battle_root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(self.data_root / "agents"))
         # See the identical override in _on_validate_agent/_on_test_agent:
         # forces the child to resolve the same data root as this process
         # instead of relying on inheritance alone, which only reproduces it
         # in an installed (env-var-configured) deployment, not a portable,
         # no-installer checkout.
-        env.insert("BYTEFRAY_ROOT", str(self.battle_root))
+        env.insert("BYTEFRAY_ROOT", str(self.data_root))
 
-        proc = self._start_process(command, env, self.battle_root, label="Tournament")
+        proc = self._start_process(command, env, self.data_root, label="Tournament")
 
         self._log_target.appendLog(f"[Tournament] output: {self._tournament_output}\n")
         proc.start()
@@ -683,11 +683,11 @@ class AgentDesigner(QMainWindow):
                 seeds=seeds,
                 baseline_id=dialog.baseline_id(),
                 ticks=dialog.ticks(),
-                data_root=self.battle_root,
+                data_root=self.data_root,
             )
         except EvaluationConfigurationError as exc:
             raise DesignerValidationError(str(exc)) from exc
-        return self.battle_root / "runs" / "evaluations" / evaluation_id
+        return self.data_root / "runs" / "evaluations" / evaluation_id
 
     def _on_evaluation_history(self) -> None:
         """Open the Evaluation History browser.
@@ -710,7 +710,7 @@ class AgentDesigner(QMainWindow):
             and self._proc.state() != QProcess.NotRunning
         )
         dialog = EvaluationHistoryDialog(
-            self.battle_root,
+            self.data_root,
             allow_restore=not process_active,
             parent=self,
         )
@@ -775,7 +775,7 @@ class AgentDesigner(QMainWindow):
         # has typed something else into the field themselves
         # (docs/specs/evaluation_history.md Sec 17 -- avoids forcing every
         # evaluation into one fixed, colliding "designer-evaluation" path).
-        placeholder_output = self.battle_root / "runs" / "evaluations"
+        placeholder_output = self.data_root / "runs" / "evaluations"
         dialog = EvaluationDialog(
             agents, default_candidate=default_candidate, default_output=placeholder_output, parent=self
         )
@@ -816,13 +816,13 @@ class AgentDesigner(QMainWindow):
         env = QProcessEnvironment.systemEnvironment()
         sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
-        source = [str(self.battle_root), str(self.battle_root / "engine" / "src")]
+        source = [str(self.data_root), str(self.data_root / "engine" / "src")]
         env.insert("PYTHONPATH", sep.join(source + ([existing] if existing else [])))
-        env.insert("BYTEFRAY_AGENTS_DIR", str(self.battle_root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(self.data_root / "agents"))
         # Same forced-root override as _on_tournament/_on_validate_agent/_on_test_agent.
-        env.insert("BYTEFRAY_ROOT", str(self.battle_root))
+        env.insert("BYTEFRAY_ROOT", str(self.data_root))
 
-        proc = self._start_process(command, env, self.battle_root, label="Evaluate")
+        proc = self._start_process(command, env, self.data_root, label="Evaluate")
         self._log_target.appendLog(f"[Evaluate] output: {self._evaluation_output}\n")
         proc.start()
 
@@ -912,7 +912,7 @@ class AgentDesigner(QMainWindow):
             self.development.setBusy(True)
 
         env = QProcessEnvironment.systemEnvironment()
-        root = self.battle_root
+        root = self.data_root
         eng = str(root / "engine" / "src")
         cli = str(root / "client" / "src")
         sep = ";" if sys.platform == "win32" else ":"
@@ -940,12 +940,12 @@ class AgentDesigner(QMainWindow):
 
     def _on_evaluation_open_replay(self, replay_path: Path) -> None:
         try:
-            open_pygame_client_direct(self.battle_root, Path(replay_path))
+            open_pygame_client_direct(self.data_root, Path(replay_path))
         except (FileNotFoundError, OSError) as exc:
             QMessageBox.critical(self, "Replay Launch Failed", str(exc))
 
     def _on_new_agent(self) -> None:
-        dialog = NewAgentDialog(self.battle_root, parent=self)
+        dialog = NewAgentDialog(self.data_root, parent=self)
         if not dialog.exec() or dialog.result is None:
             return
         result = dialog.result
@@ -996,7 +996,7 @@ class AgentDesigner(QMainWindow):
         # launch (see _on_advanced_run), plus a PYTHONPATH extension for a
         # source checkout.
         env = QProcessEnvironment.systemEnvironment()
-        root = self.battle_root
+        root = self.data_root
         eng = str(root / "engine" / "src")
         cli = str(root / "client" / "src")
         sep = ";" if sys.platform == "win32" else ":"
@@ -1065,7 +1065,7 @@ class AgentDesigner(QMainWindow):
         # launch/validate (see _on_advanced_run), plus a PYTHONPATH
         # extension for a source checkout.
         env = QProcessEnvironment.systemEnvironment()
-        root = self.battle_root
+        root = self.data_root
         eng = str(root / "engine" / "src")
         cli = str(root / "client" / "src")
         sep = ";" if sys.platform == "win32" else ":"
@@ -1100,7 +1100,7 @@ class AgentDesigner(QMainWindow):
         if not path:
             return
         try:
-            open_pygame_client_direct(self.battle_root, Path(path))
+            open_pygame_client_direct(self.data_root, Path(path))
         except (FileNotFoundError, OSError) as exc:
             QMessageBox.critical(self, "Replay Launch Failed", str(exc))
 
@@ -1155,12 +1155,12 @@ class AgentDesigner(QMainWindow):
         directory = QFileDialog.getExistingDirectory(
             self,
             "Choose destination folder for the exported agent",
-            str(self.battle_root),
+            str(self.data_root),
         )
         if not directory:
             return
         try:
-            result = export_agent(row.agent_id, data_root=self.battle_root, output=Path(directory))
+            result = export_agent(row.agent_id, data_root=self.data_root, output=Path(directory))
         except AgentPackageError as exc:
             QMessageBox.critical(self, "Export Failed", f"[{exc.code}] {exc}")
             return
@@ -1170,7 +1170,7 @@ class AgentDesigner(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Inspect Agent Package",
-            str(self.battle_root),
+            str(self.data_root),
             "Bytefray Agent Packages (*.bytefray-agent);;All Files (*.*)",
         )
         if not path:
@@ -1189,7 +1189,7 @@ class AgentDesigner(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Import Agent Package",
-            str(self.battle_root),
+            str(self.data_root),
             "Bytefray Agent Packages (*.bytefray-agent);;All Files (*.*)",
         )
         if not path:
@@ -1224,7 +1224,7 @@ class AgentDesigner(QMainWindow):
             try:
                 result = import_package(
                     path,
-                    data_root=self.battle_root,
+                    data_root=self.data_root,
                     as_agent_id=candidate_id,
                 )
             except PackageImportConflictError as exc:
@@ -1252,7 +1252,7 @@ class AgentDesigner(QMainWindow):
 
     def _on_open_output_folder(self) -> None:
         path = self._tournament_output or (
-            self._result_path.parent if self._result_path else self.battle_root / "runs"
+            self._result_path.parent if self._result_path else self.data_root / "runs"
         )
         if not path.exists():
             QMessageBox.information(self, "Output Folder", f"Output does not exist yet:\n{path}")

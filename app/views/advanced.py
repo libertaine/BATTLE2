@@ -40,10 +40,10 @@ class AdvancedPanel(QWidget):
     openReplayRequested = Signal()
     refreshAgentsRequested = Signal()
 
-    def __init__(self, catalog, battle_root: Path) -> None:
+    def __init__(self, catalog, data_root: Path) -> None:
         super().__init__()
         self._catalog = catalog
-        self._paths = get_default_paths(battle_root)
+        self._paths = get_default_paths(data_root)
 
         root = QVBoxLayout(self)
         self.tabs = QTabWidget()

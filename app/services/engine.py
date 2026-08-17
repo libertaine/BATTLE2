@@ -24,9 +24,9 @@ class EngineRunner(QObject):
     finished = Signal(int)
     error = Signal(str)
 
-    def __init__(self, battle_root: Path) -> None:
+    def __init__(self, data_root: Path) -> None:
         super().__init__()
-        self.paths = get_default_paths(battle_root)
+        self.paths = get_default_paths(data_root)
         ensure_dirs(self.paths.replay_path.parent)
         self._proc: Popen[str] | None = None
         self._reader: threading.Thread | None = None

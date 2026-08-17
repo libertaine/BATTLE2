@@ -98,7 +98,7 @@ def match_artifact_paths(replay_path: Path) -> tuple[Path, Path]:
     return replay.with_name("result.json"), replay
 
 
-def new_match_run_directory(battle_root: Path) -> Path:
+def new_match_run_directory(data_root: Path) -> Path:
     """A fresh, collision-free artifact directory for one Designer match run.
 
     Each call returns a distinct path (UTC timestamp plus a short random
@@ -112,7 +112,7 @@ def new_match_run_directory(battle_root: Path) -> Path:
 
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     label = f"{stamp}-{uuid.uuid4().hex[:8]}"
-    return battle_root.expanduser().resolve() / "runs" / "_designer" / label
+    return data_root.expanduser().resolve() / "runs" / "_designer" / label
 
 
 def read_match_presentation(result_path: Path) -> MatchPresentation:

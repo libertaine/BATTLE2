@@ -885,6 +885,6 @@ def test_designer_evaluation_open_replay_delegates_to_launcher(monkeypatch, tmp_
         )
         replay_path = tmp_path / "replay.jsonl"
         designer._on_evaluation_open_replay(replay_path)
-        assert launched == [(designer.battle_root, replay_path)]
+        assert launched == [(designer.data_root, replay_path)]
     finally:
         designer.deleteLater()

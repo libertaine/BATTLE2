@@ -255,7 +255,7 @@ def test_advanced_panel_matches_simple_panel_behavior(tmp_path):
     _make_app()
     from app.views.advanced import AdvancedPanel
 
-    panel = AdvancedPanel(catalog=None, battle_root=tmp_path)
+    panel = AdvancedPanel(catalog=None, data_root=tmp_path)
     panel.setAgents(_rows())
     panel.agentA.setCurrentIndex(1)  # runner [VM]
 
@@ -289,7 +289,7 @@ def test_regression_claimer_runner_hunter_scenario_matches_both_tabs(tmp_path):
 
     rows = _rows()  # claimer [Python], runner [VM], hunter [Python]
     simple = SimplePanel(catalog=None)
-    advanced = AdvancedPanel(catalog=None, battle_root=tmp_path)
+    advanced = AdvancedPanel(catalog=None, data_root=tmp_path)
 
     for panel in (simple, advanced):
         panel.setAgents(rows)

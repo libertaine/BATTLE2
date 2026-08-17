@@ -80,7 +80,7 @@ def test_new_agent_dialog_success_refreshes_and_selects(monkeypatch, tmp_path):
 
     designer = AgentDesigner()
     try:
-        dialog = NewAgentDialog(designer.battle_root)
+        dialog = NewAgentDialog(designer.data_root)
         dialog.agentId.setText("shiny_agent")
         dialog._on_ok()
 

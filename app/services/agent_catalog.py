@@ -26,13 +26,13 @@ class AgentRow:
 class AgentCatalog:
     """Designer adapter over the canonical engine-side agent discovery model."""
 
-    def __init__(self, battle_root: Path):
-        self.battle_root = Path(battle_root)
+    def __init__(self, data_root: Path):
+        self.data_root = Path(data_root)
 
     def agents_dir(self) -> Path:
         # Allow override via env (useful in tests), else <root>/agents
         override = os.getenv("BYTEFRAY_AGENTS_DIR")
-        return Path(override) if override else (self.battle_root / "agents")
+        return Path(override) if override else (self.data_root / "agents")
 
     def list_agents(self) -> list[AgentRow]:
         base = self.agents_dir()

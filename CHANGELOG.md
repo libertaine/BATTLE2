@@ -1,7 +1,31 @@
 # Changelog
 
-This changelog records notable user- and developer-visible changes to Bytefray
-(formerly BATTLE2).
+This changelog records notable user- and developer-visible changes to Bytefray.
+
+## [Unreleased]
+
+### v1.4 Platform Integrity & Scaling development
+
+- Retired obsolete predecessor command aliases, executable/build names,
+  environment-variable fallbacks, filesystem defaults, and active branding;
+  stable `battle2.result`/`battle2.replay`/`battle2.tournament` wire names and
+  deterministic identity salts remain intentionally unchanged.
+- Removed four individually verified unreachable modules while retaining the
+  tested top-level `_legacy/` migration fixture.
+- Added a compact Ruleset-v1 golden corpus for default/non-default, VM/Python,
+  two-/three-entrant, starter, overlap/wrap, RNG, halt, forfeit, territory, and
+  kill/death behavior.
+- Replaced duplicate full-arena territory recounts with authoritative counts at
+  the existing VM write boundary. Golden match/result IDs, outcomes, state,
+  statistics, ownership/memory fingerprints, and normalized canonical replay
+  content remain unchanged.
+- Added a reproducible non-CI scaling benchmark and recorded before/after and
+  replay measurements in `docs/performance/V1_4_SCALING.md`. Current backward
+  seek performance did not justify checkpoint/index complexity.
+- Qualified existing homogeneous three-entrant VM/Python execution without
+  changing pairwise tournament/evaluation methodology or gameplay semantics.
+- Defined the v1.4 integrity/scaling, v1.5 architecture-readiness, v1.6
+  evaluation-scale, and v2.x gameplay-research boundaries.
 
 ## [1.3.0] - 2026-08-16
 

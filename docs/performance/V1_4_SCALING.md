@@ -65,4 +65,3 @@ implementation and defers checkpoints/indexes. Territory history is the
 heavier operation, but the UI derives it once per loaded session; it is not a
 per-frame path. v1.6 may revisit local replay indexes if larger real workloads
 show user-visible delay.
-
