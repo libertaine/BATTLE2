@@ -475,6 +475,19 @@ unsupervised Python equivalence test) and is the acceptance boundary Phase 2's
 Ruleset/policy dispatch work should qualify against, alongside the existing
 v1.4 equivalence corpus.
 
+**Phase 2 (scheduler abstraction) is complete** on `v1.5-development`: the
+three duplicated Ruleset-v1 entrant scheduling loops (VM, unsupervised Python,
+supervised Python) now share one implementation,
+`battle_engine.scheduler.run_sequential_quota` — see
+[the Phase 2 record](V1_5_PHASE2_SCHEDULER_ABSTRACTION.md). Tick lifecycle,
+scoring, statistics, replay, VM-only kill attribution, termination resolution,
+and every deterministic identity are unchanged; the v1.4/v1.5 Ruleset-v1
+equivalence corpus shows zero golden differences. No Ruleset dispatch/registry
+was introduced. This narrows what remains for a future Ruleset/policy-dispatch
+phase to the dispatch seam and entrant-identity/execution-state separation
+themselves, now sitting behind one shared scheduling implementation instead of
+three.
+
 ## v1.6.0 — Evaluation Scale & Analysis
 
 **Status: planned direction only.** Evidence may justify deterministic parallel

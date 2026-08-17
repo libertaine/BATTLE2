@@ -33,6 +33,7 @@ from battle_engine.agent_trace import (
 )
 from battle_engine.config import Config
 from battle_engine.results import resolve_winner
+from battle_engine.scheduler import run_sequential_quota
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import ReplayPublisher, ReplaySink
@@ -594,6 +595,59 @@ class PythonEntrantController:
     ) -> dict[str, Any]:
         return forfeit_entrant(state, diagnostic)
 
+    def _execute_action_slot(
+        self,
+        state: PythonEntrantState,
+        action_slot: int,
+        tick: int,
+        events: list[dict[str, Any]],
+    ) -> None:
+        observation = _observation(tick, state)
+        act_start = time.perf_counter()
+        try:
+            action = state.loaded.instance.act(observation)
+            state.cpu_used += 1
+            state.total_actions += 1
+            self._trace_decision(
+                state, tick, action_slot, act_start, observation, action, None
+            )
+            apply_action(action, state, self.vm)
+            if action.kind is ActionKind.HALT:
+                state.entrant_termination = "normal_halt"
+                events.append({"type": "death", "victim": state.agent_id})
+        except InvalidPythonActionError as exc:
+            diagnostic = diagnose_invalid_action(
+                exc,
+                agent_id=state.agent_id,
+                slot=state.slot,
+                tick=tick,
+                action_slot=action_slot,
+            )
+            self._trace_decision(
+                state, tick, action_slot, act_start, observation, None, diagnostic
+            )
+            events.append(self._forfeit(state, diagnostic))
+        except Exception as exc:
+            # Exception, not BaseException: an operator's Ctrl-C
+            # (KeyboardInterrupt) or an agent's own sys.exit() (SystemExit)
+            # must propagate and actually stop the match, not be silently
+            # absorbed as a routine agent forfeit -- that was previously
+            # the only way to abort a hung or runaway Python match short
+            # of SIGKILL.
+            state.cpu_used += 1
+            state.total_actions += 1
+            diagnostic = diagnose_action_exception(
+                exc,
+                agent_id=state.agent_id,
+                slot=state.slot,
+                tick=tick,
+                action_slot=action_slot,
+            )
+            self._trace_decision(
+                state, tick, action_slot, act_start, observation, None, diagnostic
+            )
+            events.append(self._forfeit(state, diagnostic))
+
     def run(self, sink: ReplaySink, *, verbose: bool) -> PythonRuntimeResult:
         replay = ReplayPublisher(sink)
         ticks_run = 0
@@ -613,58 +667,17 @@ class PythonEntrantController:
                 events: list[dict[str, Any]] = []
                 for state in self.states:
                     state.cpu_used = 0
-                for state in self.states:
-                    if not state.alive:
-                        continue
-                    for action_slot in range(self.config.instr_per_tick):
-                        if not state.alive:
-                            break
-                        observation = _observation(tick, state)
-                        act_start = time.perf_counter()
-                        try:
-                            action = state.loaded.instance.act(observation)
-                            state.cpu_used += 1
-                            state.total_actions += 1
-                            self._trace_decision(
-                                state, tick, action_slot, act_start, observation, action, None
-                            )
-                            apply_action(action, state, self.vm)
-                            if action.kind is ActionKind.HALT:
-                                state.entrant_termination = "normal_halt"
-                                events.append({"type": "death", "victim": state.agent_id})
-                        except InvalidPythonActionError as exc:
-                            diagnostic = diagnose_invalid_action(
-                                exc,
-                                agent_id=state.agent_id,
-                                slot=state.slot,
-                                tick=tick,
-                                action_slot=action_slot,
-                            )
-                            self._trace_decision(
-                                state, tick, action_slot, act_start, observation, None, diagnostic
-                            )
-                            events.append(self._forfeit(state, diagnostic))
-                        except Exception as exc:
-                            # Exception, not BaseException: an operator's
-                            # Ctrl-C (KeyboardInterrupt) or an agent's own
-                            # sys.exit() (SystemExit) must propagate and
-                            # actually stop the match, not be silently
-                            # absorbed as a routine agent forfeit -- that
-                            # was previously the only way to abort a hung
-                            # or runaway Python match short of SIGKILL.
-                            state.cpu_used += 1
-                            state.total_actions += 1
-                            diagnostic = diagnose_action_exception(
-                                exc,
-                                agent_id=state.agent_id,
-                                slot=state.slot,
-                                tick=tick,
-                                action_slot=action_slot,
-                            )
-                            self._trace_decision(
-                                state, tick, action_slot, act_start, observation, None, diagnostic
-                            )
-                            events.append(self._forfeit(state, diagnostic))
+
+                def execute_slot(
+                    state: PythonEntrantState,
+                    action_slot: int,
+                    *,
+                    _tick: int = tick,
+                    _events: list[dict[str, Any]] = events,
+                ) -> None:
+                    self._execute_action_slot(state, action_slot, _tick, _events)
+
+                run_sequential_quota(self.states, self.config.instr_per_tick, execute_slot)
 
                 self.statistics_collector.record_tick(
                     self.statistics,

@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from battle_engine.agent_state import Agent
 from battle_engine.config import Config
+from battle_engine.scheduler import run_sequential_quota
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import LegacyRendererObserver, ReplayPublisher
@@ -91,14 +92,13 @@ class MatchRunner:
         state = self.state
         for agent in state.agents:
             agent.cpu_used = 0
-        for agent in state.agents:
-            if not agent.alive:
-                continue
-            for _ in range(state.instr_per_tick):
-                if not agent.alive:
-                    break
-                state.vm.step(agent)
-                agent.cpu_used += 1
+
+        def execute_slot(agent: Agent, slot: int) -> None:
+            del slot
+            state.vm.step(agent)
+            agent.cpu_used += 1
+
+        run_sequential_quota(state.agents, state.instr_per_tick, execute_slot)
 
     def _attribute_deaths(self, events: list[dict[str, Any]]) -> None:
         state = self.state

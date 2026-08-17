@@ -70,6 +70,7 @@ from battle_engine.python_runtime import (
     forfeit_entrant,
 )
 from battle_engine.results import resolve_winner
+from battle_engine.scheduler import run_sequential_quota
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import ReplayPublisher, ReplaySink
@@ -358,14 +359,19 @@ class SupervisedPythonEntrantController:
                 events: list[dict[str, Any]] = []
                 for state in self.states:
                     state.cpu_used = 0
-                for state in self.states:
-                    if not state.alive:
-                        continue
-                    handle = self.handles[state.agent_id]
-                    for action_slot in range(self.config.instr_per_tick):
-                        if not state.alive:
-                            break
-                        self._run_one_action(handle, state, tick, action_slot, events)
+
+                def execute_slot(
+                    state: PythonEntrantState,
+                    action_slot: int,
+                    *,
+                    _tick: int = tick,
+                    _events: list[dict[str, Any]] = events,
+                ) -> None:
+                    self._run_one_action(
+                        self.handles[state.agent_id], state, _tick, action_slot, _events
+                    )
+
+                run_sequential_quota(self.states, self.config.instr_per_tick, execute_slot)
 
                 self.statistics_collector.record_tick(
                     self.statistics,
