@@ -18,6 +18,105 @@ import os
 import pytest
 
 
+def _capture_match_launch(monkeypatch, designer):
+    captured = {"started": False}
+
+    class _FakeProc:
+        def start(self):
+            captured["started"] = True
+
+    def _fake_start_process(command, env, working_directory, *, label):
+        captured.update(
+            command=command,
+            env=env,
+            working_directory=working_directory,
+            label=label,
+        )
+        return _FakeProc()
+
+    monkeypatch.setattr(designer, "_start_process", _fake_start_process)
+    return captured
+
+
+def _argument_value(command: list[str], flag: str) -> str:
+    return command[command.index(flag) + 1]
+
+
+@pytest.mark.gui
+@pytest.mark.parametrize(
+    ("panel_name", "agent_a", "agent_b"),
+    [
+        ("simple", "adaptive", "hunter"),
+        ("advanced", "runner", "writer"),
+    ],
+)
+def test_designer_panels_launch_starter_agents_by_discovery_id(
+    monkeypatch, tmp_path, panel_name, agent_a, agent_b
+):
+    """The combo's canonical discovery ids must cross the Designer boundary."""
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app.agent_designer import AgentDesigner
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
+    QApplication.instance() or QApplication([])
+    designer = AgentDesigner()
+    captured = _capture_match_launch(monkeypatch, designer)
+    panel = getattr(designer, panel_name)
+
+    panel.agentA.setCurrentIndex(panel.agentA.findData(agent_a))
+    panel.agentB.setCurrentIndex(panel.agentB.findData(agent_b))
+    panel._emit_run()
+
+    assert captured["started"] is True
+    assert captured["label"] == "RunMatch"
+    assert _argument_value(captured["command"], "--a-type") == agent_a
+    assert _argument_value(captured["command"], "--b-type") == agent_b
+    assert "could not resolve agents" not in panel.log.toPlainText()
+    designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_resolves_duplicate_displays_by_id_and_allows_self_match(monkeypatch, tmp_path):
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app.agent_designer import AgentDesigner
+    from app.services.agent_catalog import AgentRow
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
+    QApplication.instance() or QApplication([])
+    designer = AgentDesigner()
+    rows = [
+        AgentRow(
+            name="Friendly",
+            path=str(tmp_path / "agents" / agent_id),
+            blob_path=None,
+            meta={"name": agent_id, "display": "Friendly", "kind": "python"},
+            agent_id=agent_id,
+        )
+        for agent_id in ("alpha_id", "beta_id")
+    ]
+    monkeypatch.setattr(designer.catalog, "list_agents", lambda: rows)
+    designer.refresh_agents()
+    captured = _capture_match_launch(monkeypatch, designer)
+
+    assert designer._resolve_agent_row(rows, "Friendly") is None
+    assert designer._resolve_agent_row(rows[:1], "Friendly") is rows[0]
+
+    designer.simple.agentA.setCurrentIndex(designer.simple.agentA.findData("beta_id"))
+    designer.simple.agentB.setCurrentIndex(designer.simple.agentB.findData("beta_id"))
+    designer.simple._emit_run()
+
+    assert captured["started"] is True
+    assert _argument_value(captured["command"], "--a-type") == "beta_id"
+    assert _argument_value(captured["command"], "--b-type") == "beta_id"
+    designer.deleteLater()
+
+
 @pytest.mark.gui
 def test_stale_process_signals_do_not_mutate_current_run_state(monkeypatch, tmp_path):
     pytest.importorskip("PySide6")

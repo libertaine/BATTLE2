@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from battle_engine.agent_evaluation import (
@@ -36,7 +37,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
-from app.services.agent_catalog import AgentCatalog
+from app.services.agent_catalog import AgentCatalog, AgentRow
 from app.services.agent_workflows import (
     build_development_test_presentation,
     build_validation_presentation,
@@ -204,17 +205,29 @@ class AgentDesigner(QMainWindow):
                 return obj[n]
         return default
 
-    def _resolve_agent_path_by_name(self, display_name: str) -> str | None:
-        for row in self.catalog.list_agents():
-            if row.name == display_name:
-                return row.path
-        return None
+    @staticmethod
+    def _resolve_agent_row(
+        rows: Sequence[AgentRow], identifier: str | None
+    ) -> AgentRow | None:
+        """Resolve a combo value by canonical discovery id.
 
-    def _resolve_agent_row_by_name(self, display_name):
-        for row in self.catalog.list_agents():   # AgentCatalog rows have .name, .path, .blob_path, .meta
-            if row.name == display_name:
-                return row
-        return None
+        Agent selectors store ``AgentRow.agent_id`` under ``Qt.UserRole``;
+        ``row.name`` is only the human-facing display label.  Legacy rows
+        without an explicit id still use their name as the canonical value.
+        A unique display-name fallback preserves older direct callers, but
+        ambiguous duplicate displays deliberately fail closed.
+        """
+        if not identifier:
+            return None
+        canonical_matches = [
+            row for row in rows if (row.agent_id or row.name) == identifier
+        ]
+        if len(canonical_matches) == 1:
+            return canonical_matches[0]
+        if canonical_matches:
+            return None
+        display_matches = [row for row in rows if row.name == identifier]
+        return display_matches[0] if len(display_matches) == 1 else None
 
     # ------------------------------------------------------------------
     # QProcess lifecycle
@@ -292,9 +305,10 @@ class AgentDesigner(QMainWindow):
         bucket  = self._cfgget(cfg, "territory_bucket", "territoryBucket")
         seed    = self._cfgget(cfg, "seed", "rng_seed")
 
-        # resolve catalog rows
-        rowA = self._resolve_agent_row_by_name(a_name)
-        rowB = self._resolve_agent_row_by_name(b_name)
+        # Resolve the exact discovery ids emitted by the shared agent combos.
+        rows = self.catalog.list_agents()
+        rowA = self._resolve_agent_row(rows, a_name)
+        rowB = self._resolve_agent_row(rows, b_name)
         if not rowA or not rowB:
             self.advanced.appendLog(f"[RunMatch] could not resolve agents: A='{a_name}' B='{b_name}'\n")
             return
@@ -305,8 +319,8 @@ class AgentDesigner(QMainWindow):
             QMessageBox.warning(self, "Unsupported Match", str(exc))
             return
 
-        a_type = (rowA.meta.get("name") if isinstance(getattr(rowA, "meta", None), dict) else None) or Path(rowA.path).name or a_name
-        b_type = (rowB.meta.get("name") if isinstance(getattr(rowB, "meta", None), dict) else None) or Path(rowB.path).name or b_name
+        a_type = rowA.agent_id or (rowA.meta.get("name") if isinstance(getattr(rowA, "meta", None), dict) else None) or Path(rowA.path).name or a_name
+        b_type = rowB.agent_id or (rowB.meta.get("name") if isinstance(getattr(rowB, "meta", None), dict) else None) or Path(rowB.path).name or b_name
 
         run_directory = new_match_run_directory(self.data_root)
         result_path, replay_path = match_artifact_paths(run_directory / "replay.jsonl")
@@ -417,8 +431,9 @@ class AgentDesigner(QMainWindow):
                 self.simple.appendLog(text)  # fallback
 
     def _on_simple_run(self, cfg):
-        rowA = self._resolve_agent_row_by_name(cfg.a_type)
-        rowB = self._resolve_agent_row_by_name(cfg.b_type)
+        rows = self.catalog.list_agents()
+        rowA = self._resolve_agent_row(rows, cfg.a_type)
+        rowB = self._resolve_agent_row(rows, cfg.b_type)
         if not rowA or not rowB:
             self.simple.appendLog(f"[RunMatch] could not resolve agents: A='{cfg.a_type}' B='{cfg.b_type}'\n")
             self.simple.setBusy(False)
@@ -430,9 +445,10 @@ class AgentDesigner(QMainWindow):
             QMessageBox.warning(self, "Unsupported Match", str(exc))
             return
 
-        # Prefer explicit name from YAML, else folder, else UI text
-        a_type = (rowA.meta.get("name") if hasattr(rowA, "meta") and isinstance(rowA.meta, dict) else None) or Path(rowA.path).name or cfg.a_type
-        b_type = (rowB.meta.get("name") if hasattr(rowB, "meta") and isinstance(rowB.meta, dict) else None) or Path(rowB.path).name or cfg.b_type
+        # Prefer the canonical discovery id; retain legacy fallbacks for rows
+        # constructed before AgentRow.agent_id existed.
+        a_type = rowA.agent_id or (rowA.meta.get("name") if hasattr(rowA, "meta") and isinstance(rowA.meta, dict) else None) or Path(rowA.path).name or cfg.a_type
+        b_type = rowB.agent_id or (rowB.meta.get("name") if hasattr(rowB, "meta") and isinstance(rowB.meta, dict) else None) or Path(rowB.path).name or cfg.b_type
 
         # Build CLI args with the correct flags
         run_directory = new_match_run_directory(self.data_root)
