@@ -331,8 +331,9 @@ producing a package that lies about being self-describing).
 
 **Status: release-prepared.** Implementation, independent technical
 qualification, and the user-completed manual GUI qualification passed;
-v1.3.0 version identity is finalized for tagging, with final artifact
-qualification, tag, and publication pending. Where
+v1.3.0 version identity is finalized and the four-application Windows build
+is qualified, with installer/remaining artifact qualification, tag, and
+publication pending. Where
 v1.1 surfaced evaluation history/revision provenance into Agent Designer and
 v1.2 shipped a CLI-only portable agent-package format, v1.3 finishes
 connecting Agent Designer to those already-shipped 1.x engine capabilities
