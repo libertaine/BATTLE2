@@ -1165,7 +1165,7 @@ def test_designer_evaluation_history_action_opens_dialog_against_battle_root(mon
     _make_app()
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "designer-data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "designer-data"))
     designer = AgentDesigner()
     try:
         received = {}
@@ -1202,7 +1202,7 @@ def test_designer_evaluation_history_reuses_existing_drilldown_handlers(monkeypa
     _make_app()
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "designer-data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "designer-data"))
     designer = AgentDesigner()
     try:
         connected = {}
@@ -1241,7 +1241,7 @@ def test_designer_history_disables_restore_while_process_is_active(monkeypatch, 
 
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "designer-data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "designer-data"))
     designer = AgentDesigner()
     try:
         received = {}
@@ -1282,7 +1282,7 @@ def test_designer_live_restore_refreshes_all_panels_and_invalidates_evidence(
 
     data_root = tmp_path / "designer-data"
     _write_python_agent(data_root, "candidate")
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     designer = AgentDesigner()
     try:
         designer.development.selectAgent("candidate")

@@ -29,10 +29,8 @@ treated as headless-first.
 
 ## Writable data and starter agents
 
-`BYTEFRAY_ROOT` selects the writable data root. The legacy `BATTLE2_ROOT` and
-`BATTLE_ROOT` variables are honored, in that order, only when `BYTEFRAY_ROOT`
-is unset. With none of these variables set, an installed Linux wheel
-uses `$XDG_DATA_HOME/battle2`, or `~/.local/share/battle2` when
+`BYTEFRAY_ROOT` selects the writable data root. When it is unset, an installed
+Linux wheel uses `$XDG_DATA_HOME/bytefray`, or `~/.local/share/bytefray` when
 `XDG_DATA_HOME` is unset. Recognized source and editable checkouts continue to
 use the repository root.
 
@@ -55,12 +53,9 @@ always beside the selected replay.
 ```bash
 bytefray --help
 bytefray run --ticks 500 --quota 2 --a-type writer --b-type runner
-bytefray replay --replay ~/.local/share/battle2/runs/_loose/replay.jsonl \
+bytefray replay --replay ~/.local/share/bytefray/runs/_loose/replay.jsonl \
   --renderer headless
 ```
-
-The `battle2` command remains a deprecated compatibility alias for `bytefray`,
-dispatching to the identical implementation.
 
 The wheel does not bundle a Linux pMARS executable or select the repository's
 Windows PE executables on Linux. `PMARS_CMD` remains authoritative and an

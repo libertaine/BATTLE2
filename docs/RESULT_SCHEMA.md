@@ -183,7 +183,7 @@ the v0.2 `summary.json` adapter). `"tie"` is a **reserved entrant identifier**:
 `TournamentService` rejects any entrant whose ID case-insensitively equals
 `"tie"` before scheduling a single match, so it can never collide with a real
 winner value (see `tournament_service._validate`). The native single-match
-CLI path (`battle2 run`) has no equivalent exposure, because its entrant IDs
+CLI path (`bytefray run`) has no equivalent exposure, because its entrant IDs
 are always the fixed slots `"A"`/`"B"`/`"C"`, never a user- or manifest-supplied
 name.
 

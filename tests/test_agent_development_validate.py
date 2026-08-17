@@ -241,7 +241,7 @@ def test_validate_disabled_with_no_agents():
 def test_validate_enabled_after_creation_and_selection(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -261,7 +261,7 @@ def test_validate_enabled_after_creation_and_selection(monkeypatch, tmp_path):
 def test_selection_change_clears_prior_validation_result(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -292,7 +292,7 @@ def test_refresh_with_same_selection_preserves_validation_result(monkeypatch, tm
     """A plain Refresh (same agent still selected) must not wipe a shown result."""
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -316,7 +316,7 @@ def test_refresh_with_same_selection_preserves_validation_result(monkeypatch, tm
 def test_setBusy_disables_validate_and_agent_combo(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -349,7 +349,7 @@ def test_setBusy_disables_validate_and_agent_combo(monkeypatch, tmp_path):
 def test_validate_success_via_real_qprocess_updates_ui_and_recovers(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -388,7 +388,7 @@ def test_validate_success_via_real_qprocess_updates_ui_and_recovers(monkeypatch,
 def test_validate_agent_failure_via_real_qprocess_is_not_a_tool_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -435,7 +435,7 @@ def test_validate_uses_discovery_id_not_display_name_when_they_differ(monkeypatc
 
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -478,7 +478,7 @@ def test_validate_uses_discovery_id_not_display_name_when_they_differ(monkeypatc
 def test_malformed_output_from_real_qprocess_is_a_tool_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -509,7 +509,7 @@ def test_malformed_output_from_real_qprocess_is_a_tool_failure(monkeypatch, tmp_
 def test_no_output_and_unexpected_crash_is_a_tool_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -538,7 +538,7 @@ def test_no_output_and_unexpected_crash_is_a_tool_failure(monkeypatch, tmp_path)
 def test_process_failed_to_start_shows_tool_failure_and_recovers(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -580,7 +580,7 @@ def test_process_failed_to_start_shows_tool_failure_and_recovers(monkeypatch, tm
 def test_build_agents_command_missing_frozen_executable_shows_tool_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -592,7 +592,7 @@ def test_build_agents_command_missing_frozen_executable_shows_tool_failure(monke
         designer.refresh_agents(select="frozen_missing_agent")
 
         def _raise(*a, **k):
-            raise FileNotFoundError("Packaged executable not found: battle2.exe")
+            raise FileNotFoundError("Packaged executable not found: bytefray.exe")
 
         monkeypatch.setattr(agent_designer_module, "build_agents_command", _raise)
 
@@ -609,7 +609,7 @@ def test_build_agents_command_missing_frozen_executable_shows_tool_failure(monke
 def test_duplicate_validate_click_does_not_start_second_process(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -645,7 +645,7 @@ def test_match_run_disables_validate_and_validate_disables_match(monkeypatch, tm
     """Cross-panel exclusivity: Sec 14.1 -- Validate and Match/Tournament share one process slot."""
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -676,7 +676,7 @@ def test_match_run_disables_validate_and_validate_disables_match(monkeypatch, tm
 def test_stop_while_validating_shows_stopped_and_recovers_controls(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -727,7 +727,7 @@ def test_validate_runs_out_of_process_not_a_direct_call(monkeypatch, tmp_path):
     """A direct-call monkeypatch that would raise if invoked in-process stays inert."""
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     import battle_engine.agent_validation as agent_validation_module
     from battle_engine.agent_scaffold import create_agent
 
@@ -809,7 +809,7 @@ def test_hanging_validation_does_not_block_gui_event_loop(monkeypatch, tmp_path)
 def test_end_to_end_real_cli_validates_a_scaffolded_agent(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -834,7 +834,7 @@ def test_end_to_end_real_cli_validates_a_scaffolded_agent(monkeypatch, tmp_path)
 def test_end_to_end_real_cli_respects_custom_data_root_with_spaces(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "Custom Data Root With Spaces"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -856,7 +856,7 @@ def test_end_to_end_real_cli_respects_custom_data_root_with_spaces(monkeypatch, 
 def test_end_to_end_real_cli_reports_agent_reset_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from app.agent_designer import AgentDesigner
 
     designer = AgentDesigner()
@@ -885,7 +885,7 @@ def test_end_to_end_real_cli_reports_agent_reset_failure(monkeypatch, tmp_path):
 def test_new_agent_and_open_folder_still_work_alongside_validate(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from app.agent_designer import AgentDesigner
     from app.views.development import NewAgentDialog
 
@@ -908,7 +908,7 @@ def test_new_agent_and_open_folder_still_work_alongside_validate(monkeypatch, tm
 def test_simple_and_advanced_run_buttons_unaffected_when_idle(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from app.agent_designer import AgentDesigner
 
     designer = AgentDesigner()

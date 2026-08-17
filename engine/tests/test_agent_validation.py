@@ -653,8 +653,6 @@ def test_cli_missing_positional_argument_exits_two():
 def test_end_to_end_create_then_validate_subprocess(tmp_path):
     data_root = tmp_path / "data-root"
     env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
-    env.pop("BATTLE2_ROOT", None)
-    env.pop("BATTLE_ROOT", None)
 
     created = _run("agents", "create", "example", cwd=tmp_path, env=env)
     assert created.returncode == 0, created.stderr
@@ -663,41 +661,6 @@ def test_end_to_end_create_then_validate_subprocess(tmp_path):
     assert validated.returncode == 0, validated.stderr
     assert "status: valid" in validated.stdout
     assert validated.stderr == ""
-
-
-def test_battle2_alias_dispatches_validate(tmp_path):
-    data_root = tmp_path / "data-root"
-    env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
-    env.pop("BATTLE2_ROOT", None)
-    env.pop("BATTLE_ROOT", None)
-    env["PYTHONPATH"] = os.pathsep.join(
-        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
-    )
-
-    created = subprocess.run(
-        [sys.executable, "-c", "from battle_engine.command import main; raise SystemExit(main(['agents', 'create', 'example']))"],
-        cwd=tmp_path,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert created.returncode == 0, created.stderr
-
-    validate_snippet = (
-        "from battle_engine.command import battle2_main; "
-        "raise SystemExit(battle2_main(['agents', 'validate', 'example']))"
-    )
-    validated = subprocess.run(
-        [sys.executable, "-c", validate_snippet],
-        cwd=tmp_path,
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert validated.returncode == 0, validated.stderr
-    assert "status: valid" in validated.stdout
 
 
 def test_agents_help_mentions_validate():
@@ -712,8 +675,6 @@ def test_bare_agents_and_agents_create_are_unchanged(tmp_path):
 
     data_root = tmp_path / "data-root"
     env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
-    env.pop("BATTLE2_ROOT", None)
-    env.pop("BATTLE_ROOT", None)
 
     listed = _run("agents", cwd=tmp_path, env=env)
     assert listed.returncode == 0

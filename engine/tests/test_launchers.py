@@ -100,12 +100,12 @@ def test_source_tournament_uses_primary_dispatcher(monkeypatch, tmp_path):
 
 
 def test_frozen_commands_use_packaged_sibling_executables(monkeypatch, tmp_path):
-    app_dir = tmp_path / "BATTLE2 Portable"
-    designer = app_dir / "battle-agent-designer.exe"
-    battle2 = app_dir / "battle2.exe"
-    viewer = app_dir / "battle-replay-viewer.exe"
+    app_dir = tmp_path / "Bytefray Portable"
+    designer = app_dir / "bytefray-agent-designer.exe"
+    bytefray = app_dir / "bytefray.exe"
+    viewer = app_dir / "bytefray-replay-viewer.exe"
     app_dir.mkdir()
-    battle2.touch()
+    bytefray.touch()
     viewer.touch()
     _set_frozen(monkeypatch, designer)
 
@@ -114,9 +114,9 @@ def test_frozen_commands_use_packaged_sibling_executables(monkeypatch, tmp_path)
     agents_command = launchers.build_agents_command("validate", ["my_agent"])
     replay_command = launchers.build_replay_command(tmp_path / "Replay One.jsonl")
 
-    assert match_command == [str(battle2.resolve()), "run", "--ticks", "5"]
-    assert tournament_command == [str(battle2.resolve()), "tournament", "alpha", "beta"]
-    assert agents_command == [str(battle2.resolve()), "agents", "validate", "my_agent"]
+    assert match_command == [str(bytefray.resolve()), "run", "--ticks", "5"]
+    assert tournament_command == [str(bytefray.resolve()), "tournament", "alpha", "beta"]
+    assert agents_command == [str(bytefray.resolve()), "agents", "validate", "my_agent"]
     assert replay_command[:3] == [
         str(viewer.resolve()),
         "--replay",
@@ -126,48 +126,48 @@ def test_frozen_commands_use_packaged_sibling_executables(monkeypatch, tmp_path)
 
 
 def test_frozen_commands_support_current_onedir_sibling_layout(monkeypatch, tmp_path):
-    bin_dir = tmp_path / "Program Files" / "BATTLE2" / "bin"
-    designer = bin_dir / "battle-agent-designer" / "battle-agent-designer.exe"
-    battle2 = bin_dir / "battle2" / "battle2.exe"
-    viewer = bin_dir / "battle-replay-viewer" / "battle-replay-viewer.exe"
+    bin_dir = tmp_path / "Program Files" / "Bytefray" / "bin"
+    designer = bin_dir / "bytefray-agent-designer" / "bytefray-agent-designer.exe"
+    bytefray = bin_dir / "bytefray" / "bytefray.exe"
+    viewer = bin_dir / "bytefray-replay-viewer" / "bytefray-replay-viewer.exe"
     designer.parent.mkdir(parents=True)
-    battle2.parent.mkdir()
+    bytefray.parent.mkdir()
     viewer.parent.mkdir()
-    battle2.touch()
+    bytefray.touch()
     viewer.touch()
     _set_frozen(monkeypatch, designer)
 
-    assert launchers.build_match_command([])[0] == str(battle2.resolve())
+    assert launchers.build_match_command([])[0] == str(bytefray.resolve())
     assert launchers.build_replay_command(tmp_path / "replay.jsonl")[0] == str(
         viewer.resolve()
     )
 
 
 @pytest.mark.parametrize("builder, executable_name", [
-    (lambda: launchers.build_match_command([]), "battle2.exe"),
-    (lambda: launchers.build_agents_command("validate", ["x"]), "battle2.exe"),
-    (lambda: launchers.build_replay_command(Path("replay.jsonl")), "battle-replay-viewer.exe"),
+    (lambda: launchers.build_match_command([]), "bytefray.exe"),
+    (lambda: launchers.build_agents_command("validate", ["x"]), "bytefray.exe"),
+    (lambda: launchers.build_replay_command(Path("replay.jsonl")), "bytefray-replay-viewer.exe"),
 ])
 def test_missing_packaged_executable_has_clear_error(
     monkeypatch, tmp_path, builder, executable_name
 ):
-    designer = tmp_path / "designer" / "battle-agent-designer.exe"
+    designer = tmp_path / "designer" / "bytefray-agent-designer.exe"
     _set_frozen(monkeypatch, designer)
 
     with pytest.raises(FileNotFoundError, match=executable_name):
         builder()
 
 
-def test_battle2_root_does_not_redirect_executable_discovery(monkeypatch, tmp_path):
+def test_data_root_does_not_redirect_executable_discovery(monkeypatch, tmp_path):
     app_dir = tmp_path / "Application Bin"
-    designer = app_dir / "battle-agent-designer.exe"
-    battle2 = app_dir / "battle2.exe"
+    designer = app_dir / "bytefray-agent-designer.exe"
+    bytefray = app_dir / "bytefray.exe"
     app_dir.mkdir()
-    battle2.touch()
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "Writable Data"))
+    bytefray.touch()
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "Writable Data"))
     _set_frozen(monkeypatch, designer)
 
-    assert launchers.build_match_command([])[0] == str(battle2.resolve())
+    assert launchers.build_match_command([])[0] == str(bytefray.resolve())
 
 
 def test_designer_match_arguments_preserve_simple_and_advanced_options(tmp_path):

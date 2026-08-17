@@ -64,9 +64,9 @@ def build_engine_command(
 
     env = _source_environment(paths.root)
     if cfg.a_params is not None:
-        env["BATTLE_AGENT_A_PARAMS_JSON"] = json.dumps(cfg.a_params)
+        env["BYTEFRAY_AGENT_A_PARAMS_JSON"] = json.dumps(cfg.a_params)
     if cfg.b_params is not None:
-        env["BATTLE_AGENT_B_PARAMS_JSON"] = json.dumps(cfg.b_params)
+        env["BYTEFRAY_AGENT_B_PARAMS_JSON"] = json.dumps(cfg.b_params)
     return build_match_command(arguments), env
 
 

@@ -21,7 +21,7 @@ def _match_arguments(replay: str | Path | None = None) -> list[str]:
 
 
 def test_default_replay_and_summary_use_the_data_root(monkeypatch, tmp_path):
-    data_root = tmp_path / "xdg data" / "battle2"
+    data_root = tmp_path / "xdg data" / "bytefray"
     working = tmp_path / "unrelated working directory"
     working.mkdir()
     monkeypatch.chdir(working)

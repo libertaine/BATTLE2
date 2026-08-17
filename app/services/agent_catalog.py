@@ -31,7 +31,7 @@ class AgentCatalog:
 
     def agents_dir(self) -> Path:
         # Allow override via env (useful in tests), else <root>/agents
-        override = os.getenv("BATTLE_AGENTS_DIR")
+        override = os.getenv("BYTEFRAY_AGENTS_DIR")
         return Path(override) if override else (self.battle_root / "agents")
 
     def list_agents(self) -> list[AgentRow]:

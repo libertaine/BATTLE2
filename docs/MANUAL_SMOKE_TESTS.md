@@ -64,7 +64,7 @@ or in the PR/issue tracking the Phase 7a closeout when performed.
 ## PySide6 agent designer
 
 1. Run `python -m app.agent_designer` (and, where applicable,
-   `battle-agent-designer`).
+   `bytefray-agent-designer`).
 2. Confirm the catalog loads existing agent directories and manifests.
 3. Select two agents, launch a match, locate its replay/summary, and open the
    replay viewer.
@@ -86,11 +86,11 @@ The automated `gui`-marked suite (`tests/test_agent_development_*.py`)
 exercises this tab's Qt plumbing against stubbed and real subprocesses
 under `QT_QPA_PLATFORM=offscreen`; the sequence below is the interactive,
 packaged-application confirmation that automation cannot substitute for
-(real window focus, real `battle2.exe` sibling-executable resolution from
-the standalone `battle-agent-designer.exe`, and human judgment of the
+(real window focus, real `bytefray.exe` sibling-executable resolution from
+the standalone `bytefray-agent-designer.exe`, and human judgment of the
 rendered text).
 
-1. Launch `battle-agent-designer.exe`; open the **Agent Development** tab.
+1. Launch `bytefray-agent-designer.exe`; open the **Agent Development** tab.
 2. **New Agent** with a fresh id; confirm it appears, selected, in all
    three tabs' agent combos (Simple, Advanced, Agent Development).
 3. **Validate** the new agent (its unmodified template): confirm "Last
@@ -134,7 +134,7 @@ under `QT_QPA_PLATFORM=offscreen`; this sequence is the interactive,
 two-data-root confirmation automation cannot substitute for.
 
 1. Set two isolated data roots, e.g. `BYTEFRAY_ROOT=C:\temp\root-a` and
-   `BYTEFRAY_ROOT=C:\temp\root-b` for two separate `battle-agent-designer.exe`
+   `BYTEFRAY_ROOT=C:\temp\root-b` for two separate `bytefray-agent-designer.exe`
    launches (or two portable extractions).
 2. In Data Root A's Designer, select an existing Python agent (e.g.
    `hunter`) in Agent Development and click **Export Agent…**; choose a
@@ -302,9 +302,9 @@ packaged-application confirmation.
    `agents inspect <run-dir> --failures` shows the same diagnostic.
 10. Immediately after step 9, confirm no orphaned worker process remains
     (Task Manager / `tasklist` on Windows, `ps` on Linux) -- there should
-    be no lingering `battle2`/`bytefray`/Python process beyond the
+    be no lingering Bytefray/Python process beyond the
     terminal itself.
-11. Launch `battle-agent-designer.exe`, open **Agent Development**,
+11. Launch `bytefray-agent-designer.exe`, open **Agent Development**,
     select `smoke_agent` (still hanging from step 9); run **Development
     Test** with the default Timeout (5s); confirm the Designer stays
     responsive (window remains movable/resizable, other tabs still
@@ -331,7 +331,7 @@ or in the PR/issue tracking the release this checklist gates.
 
 1. Optionally set `PMARS_CMD` to one pMARS executable path. Windows packaged
    CLI artifacts otherwise use their bundled `pmars/windows/pmars.exe`.
-2. Run `battle-cli --mode redcode94 --red-a <warrior-a> --red-b <warrior-b>`.
+2. Run `bytefray-cli --mode redcode94 --red-a <warrior-a> --red-b <warrior-b>`.
 3. Confirm pMARS launches, the reported winner agrees with its output, and the
    version 2 `summary.json` records parameters and return code.
 
@@ -347,9 +347,9 @@ uses the bundled executable to cover its real output and platform behavior.
    `bytefray-agents-create-smoke-*` directory remains under the system temp
    directory, and no `agents/` directory exists under any `dist/windows/<app>/`
    tree. Confirm pre-existing `BYTEFRAY_ROOT` and
-   `BATTLE2_GUI_SMOKE_EXIT_MS` values are restored exactly (or remain
+   `BYTEFRAY_GUI_SMOKE_EXIT_MS` values are restored exactly (or remain
    unset). Cleanup failure is a build failure, not a warning.
-3. Launch every produced executable and exercise `battle-cli --help`, one native
+3. Launch every produced executable and exercise `bytefray-cli --help`, one native
    match, agent discovery, and replay viewing.
 4. Build/run the Inno Setup installer where release validation requires it.
 5. Confirm Start Menu/PATH choices, `%ProgramData%` locations, bundled resources,
@@ -381,4 +381,4 @@ require a Windows host and are not reasonably asserted by the unit suite.
 
 Open representative archived v0.1 replay files and agent packs from a clean
 installed environment, not only a source checkout. Confirm missing optional GUI
-dependencies do not prevent `battle-cli --help` or native headless matches.
+dependencies do not prevent `bytefray-cli --help` or native headless matches.

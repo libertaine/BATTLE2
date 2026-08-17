@@ -28,5 +28,5 @@ a = Analysis(
     noarchive=False,
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="battle-cli", console=True, icon=icon_path)
-coll = COLLECT(exe, a.binaries, a.datas, name="battle-cli")
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="bytefray-cli", console=True, icon=icon_path)
+coll = COLLECT(exe, a.binaries, a.datas, name="bytefray-cli")

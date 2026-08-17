@@ -1,9 +1,4 @@
-"""Primary ``bytefray`` command dispatcher.
-
-``battle2`` is retained as a deprecated compatibility alias for the project's
-former name (see :func:`battle2_main`); both names dispatch to :func:`main`
-and behave identically apart from the alias printing a deprecation notice.
-"""
+"""Primary ``bytefray`` command dispatcher."""
 
 from __future__ import annotations
 
@@ -14,18 +9,12 @@ from collections.abc import Sequence
 
 COMMANDS = ("run", "tournament", "replay", "design", "agents")
 
-BATTLE2_DEPRECATION_NOTICE = (
-    "BATTLE2 has been renamed Bytefray. The 'battle2' command is deprecated; "
-    "use 'bytefray' instead."
-)
-
-
 def _version_string() -> str:
     from battle_engine.project_info import get_project_info
 
     info = get_project_info()
     return (
-        f"{info.project_name} {info.version} (formerly {info.former_project_name}), "
+        f"{info.project_name} {info.version}, "
         f"Agent API v{info.agent_api_version}, "
         f"result schema v{info.result_schema_version}, "
         f"replay schema v{info.replay_schema_version}, "
@@ -205,14 +194,3 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _agents(remainder)
     parser.error(f"unknown command: {namespace.command}")
     return 2
-
-
-def battle2_main(argv: Sequence[str] | None = None) -> int:
-    """Deprecated ``battle2`` alias; dispatches to :func:`main` unchanged.
-
-    Prints a one-line deprecation notice to stderr and otherwise produces
-    identical behavior, output, and exit codes to invoking ``bytefray``
-    directly with the same arguments.
-    """
-    print(BATTLE2_DEPRECATION_NOTICE, file=sys.stderr)
-    return main(argv)

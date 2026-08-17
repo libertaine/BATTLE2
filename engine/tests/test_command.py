@@ -6,10 +6,9 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-from battle_engine import cli, command, legacy
+from battle_engine import command
 from battle_engine.starters import STARTER_AGENT_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,26 +40,6 @@ def test_version_flag_reports_installed_version_and_api_versions():
     assert "Agent API v" in normalized
     assert "result schema v" in normalized
     assert "replay schema v" in normalized
-
-
-def test_battle2_version_flag_matches_bytefray():
-    bytefray_result = _run("--version")
-    battle2_result = subprocess.run(
-        [sys.executable, "-c", "from battle_engine.command import battle2_main; raise SystemExit(battle2_main(['--version']))"],
-        cwd=ROOT,
-        env=dict(
-            os.environ,
-            PYTHONPATH=os.pathsep.join(
-                [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
-            ),
-        ),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert battle2_result.returncode == bytefray_result.returncode == 0
-    assert battle2_result.stdout == bytefray_result.stdout
-    assert "BATTLE2 has been renamed Bytefray" in battle2_result.stderr
 
 
 def test_unrecognized_top_level_flag_is_a_controlled_error_not_a_silent_help_dump():
@@ -96,42 +75,6 @@ def test_every_subcommand_help_uses_bytefray_prog(subcommand):
     result = _run(subcommand, "--help")
     assert result.returncode == 0, result.stderr
     assert f"usage: bytefray {subcommand}" in result.stdout
-
-
-def test_battle2_alias_dispatches_identically_to_bytefray_with_deprecation_notice(capsys):
-    with pytest.raises(SystemExit) as main_exit_info:
-        command.main(["--help"])
-    main_captured = capsys.readouterr()
-
-    with pytest.raises(SystemExit) as battle2_exit_info:
-        command.battle2_main(["--help"])
-    battle2_captured = capsys.readouterr()
-
-    assert battle2_exit_info.value.code == main_exit_info.value.code
-    assert battle2_captured.out == main_captured.out
-    assert main_captured.err == ""
-    assert battle2_captured.err.strip() == command.BATTLE2_DEPRECATION_NOTICE
-    assert "Bytefray" in command.BATTLE2_DEPRECATION_NOTICE
-    assert "battle2" in command.BATTLE2_DEPRECATION_NOTICE
-
-
-def test_battle2_command_console_script_prints_deprecation_notice_and_matches_bytefray():
-    bytefray_result = _run("--help")
-    battle2_env = dict(os.environ)
-    battle2_env["PYTHONPATH"] = os.pathsep.join(
-        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
-    )
-    battle2_result = subprocess.run(
-        [sys.executable, "-c", "from battle_engine.command import battle2_main; raise SystemExit(battle2_main(['--help']))"],
-        cwd=ROOT,
-        env=battle2_env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert battle2_result.returncode == bytefray_result.returncode
-    assert battle2_result.stdout == bytefray_result.stdout
-    assert "BATTLE2 has been renamed Bytefray" in battle2_result.stderr
 
 
 def test_invalid_run_arguments_use_standard_exit_code_two():
@@ -176,7 +119,7 @@ def test_successful_headless_match_invocation(tmp_path):
 
 
 def _run_with_root(data_root: Path, cwd: Path, *arguments: str):
-    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
     env["PYTHONPATH"] = os.pathsep.join(
         [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
     )
@@ -342,7 +285,7 @@ def test_cli_runs_python_vs_python_match(tmp_path):
     _write_cli_python_agent(
         data_root, "py_passive", "AgentAction(ActionKind.NOP)"
     )
-    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
     env["PYTHONPATH"] = os.pathsep.join(
         [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
     )
@@ -387,7 +330,7 @@ def test_cli_rejects_mixed_vm_python_without_traceback(tmp_path):
     _write_cli_python_agent(
         data_root, "py_passive", "AgentAction(ActionKind.NOP)"
     )
-    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
     env["PYTHONPATH"] = os.pathsep.join(
         [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
     )
@@ -428,7 +371,7 @@ def test_cli_python_act_failure_is_structured_without_traceback(tmp_path):
     _write_cli_python_agent(
         data_root, "py_passive", "AgentAction(ActionKind.NOP)"
     )
-    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
+    env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
     env["PYTHONPATH"] = os.pathsep.join(
         [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
     )
@@ -465,8 +408,7 @@ def test_cli_python_act_failure_is_structured_without_traceback(tmp_path):
 
 def test_agents_command_initializes_starters_idempotently(tmp_path):
     data_root = tmp_path / "empty-data-root"
-    env = dict(os.environ, BATTLE2_ROOT=str(data_root))
-    env.pop("BATTLE_ROOT", None)
+    env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
     env["PYTHONPATH"] = os.pathsep.join(
         [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
     )
@@ -554,21 +496,6 @@ def test_invalid_agent_does_not_create_or_truncate_replay(tmp_path):
     assert replay.read_text(encoding="utf-8") == "keep me\n"
 
 
-def test_battle2_root_precedes_legacy_battle_root(monkeypatch, tmp_path):
-    preferred = tmp_path / "preferred"
-    legacy_root = tmp_path / "legacy"
-    monkeypatch.setenv("BATTLE2_ROOT", str(preferred))
-    monkeypatch.setenv("BATTLE_ROOT", str(legacy_root))
-    assert cli._battle_root() == preferred.resolve()
-
-
-def test_legacy_battle_root_remains_a_fallback(monkeypatch, tmp_path):
-    legacy_root = tmp_path / "legacy"
-    monkeypatch.delenv("BATTLE2_ROOT", raising=False)
-    monkeypatch.setenv("BATTLE_ROOT", str(legacy_root))
-    assert cli._battle_root() == legacy_root.resolve()
-
-
 def test_missing_designer_dependency_has_actionable_error(monkeypatch, capsys):
     real_import = importlib.import_module
 
@@ -582,28 +509,3 @@ def test_missing_designer_dependency_has_actionable_error(monkeypatch, capsys):
     monkeypatch.setattr(command.importlib, "import_module", missing_designer)
     assert command.main(["design"]) == 2
     assert "bytefray[designer]" in capsys.readouterr().err
-
-
-def test_legacy_battle_cli_wrapper_preserves_help():
-    with pytest.raises(SystemExit) as exit_info:
-        legacy.battle_cli(["--help"])
-    assert exit_info.value.code == 0
-
-
-def test_legacy_gui_wrappers_delegate_lazily(monkeypatch):
-    monkeypatch.setattr(
-        legacy.importlib,
-        "import_module",
-        lambda name: SimpleNamespace(main=lambda: 8),
-    )
-    assert legacy.agent_designer([]) == 8
-
-
-def test_legacy_gui_help_does_not_import_optional_apps(monkeypatch, capsys):
-    def unexpected_import(name, package=None):
-        raise AssertionError(f"optional app imported for help: {name}")
-
-    monkeypatch.setattr(legacy.importlib, "import_module", unexpected_import)
-    assert legacy.agent_designer(["--help"]) == 0
-    output = capsys.readouterr().out
-    assert "usage: battle-agent-designer" in output

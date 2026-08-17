@@ -64,9 +64,8 @@ Bytefray uses a multi-root source layout:
 Read [AGENTS.md](AGENTS.md) and [ARCHITECTURE.md](ARCHITECTURE.md) before
 making non-trivial changes — they describe the dependency-direction rules
 between packages and the compatibility surfaces (`battle_engine.core`
-re-exports, the `battle2` CLI alias, `BATTLE2_ROOT`/`BATTLE_ROOT` fallbacks,
-etc.) that must not be broken without an explicit, separate decision to do
-so.
+re-exports and stable protocol identifiers, for example) that must not be
+broken without an explicit, separate decision to do so.
 
 ## Running tests
 
@@ -111,10 +110,10 @@ must not break without a deliberate, separately-called-out decision:
   [docs/AGENT_API_V1.md](docs/AGENT_API_V1.md),
   [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md), and
   [docs/REPLAY_SCHEMA.md](docs/REPLAY_SCHEMA.md).
-- `battle2`, `battle-cli`, and `battle-agent-designer` are supported
-  compatibility command aliases, not accidental leftovers.
-- `BYTEFRAY_ROOT` is the preferred data-root variable; `BATTLE2_ROOT` and
-  `BATTLE_ROOT` remain supported deprecated fallbacks, in that order.
+- `bytefray`, `bytefray-cli`, `bytefray-agent-designer`, and
+  `bytefray-replay-viewer` are the current command names. Obsolete predecessor
+  command names are not compatibility surfaces.
+- `BYTEFRAY_ROOT` is the sole supported data-root variable.
 
 See [AGENTS.md](AGENTS.md)'s "Compatibility requirements" section and
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the full reference.

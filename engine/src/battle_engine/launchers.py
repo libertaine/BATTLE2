@@ -44,7 +44,7 @@ def build_match_command(arguments: Sequence[str]) -> list[str]:
     """Build a non-shell command for the primary Bytefray match interface."""
     options = list(arguments)
     if is_frozen_application():
-        return [str(_packaged_executable("battle2")), "run", *options]
+        return [str(_packaged_executable("bytefray")), "run", *options]
     return [_current_executable(), "-m", "battle_engine", "run", *options]
 
 
@@ -52,7 +52,7 @@ def build_tournament_command(arguments: Sequence[str]) -> list[str]:
     """Build a non-shell command for the supported tournament interface."""
     options = list(arguments)
     if is_frozen_application():
-        return [str(_packaged_executable("battle2")), "tournament", *options]
+        return [str(_packaged_executable("bytefray")), "tournament", *options]
     return [
         _current_executable(),
         "-m",
@@ -73,7 +73,7 @@ def build_agents_command(subcommand: str, arguments: Sequence[str]) -> list[str]
     """
     options = list(arguments)
     if is_frozen_application():
-        return [str(_packaged_executable("battle2")), "agents", subcommand, *options]
+        return [str(_packaged_executable("bytefray")), "agents", subcommand, *options]
     return [
         _current_executable(),
         "-m",
@@ -129,7 +129,7 @@ def build_replay_command(
     options = list(arguments)
     if is_frozen_application():
         return [
-            str(_packaged_executable("battle-replay-viewer")),
+            str(_packaged_executable("bytefray-replay-viewer")),
             "--replay",
             replay,
             *options,

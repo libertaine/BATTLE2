@@ -1,16 +1,16 @@
 """Regression coverage for PyInstaller data bundling and onedir layout in the
 shipped ``.spec`` files.
 
-``battle2.exe`` (``tools/battle2.spec``) is the shipped executable that
+``bytefray.exe`` (``tools/bytefray.spec``) is the shipped executable that
 reaches ``battle_engine.command._agents`` (``bytefray agents create``/
-``validate``/``test``) via the CLI -- ``battle-cli``/``battle-replay-viewer``
+``validate``/``test``) via the CLI -- ``bytefray-cli``/``bytefray-replay-viewer``
 dispatch elsewhere and have no dependency on
-``battle_engine/data/agent_template``. ``battle-agent-designer.exe``
+``battle_engine/data/agent_template``. ``bytefray-agent-designer.exe``
 (``tools/agent_designer.spec``) also depends on this same resource directory
 because Phase 4a of ``docs/specs/agent_designer_workflow.md`` calls
 ``battle_engine.agent_scaffold.create_agent`` directly, in-process, from the
 Designer's own "New Agent" workflow -- so the frozen Designer executable
-needs the identical bundled resource ``battle2.exe`` already needed, not
+needs the identical bundled resource ``bytefray.exe`` already needed, not
 just the CLI-facing one. This module directly executes each spec file's
 real source (the same file PyInstaller itself ``exec``s to build the
 executable) with PyInstaller's build-time globals (``Analysis``/``PYZ``/
@@ -29,8 +29,8 @@ The module also covers a v1.3 finding (docs/specs "Area E" investigation):
 ``tools/agent_designer.spec``/``tools/replay_viewer.spec`` previously built
 their ``EXE`` with every binary/data file baked in (no ``exclude_binaries``,
 ``COLLECT(exe, name=...)`` with nothing further) instead of the onedir
-"thin launcher + loose files" shape ``tools/battle2.spec``/
-``tools/battle_cli.spec`` already used and ``tools/installer.iss``/the
+"thin launcher + loose files" shape ``tools/bytefray.spec``/
+``tools/bytefray_cli.spec`` already used and ``tools/installer.iss``/the
 portable ZIP layout both assume for all four applications --
 ``test_spec_builds_onedir_layout_not_a_fat_exe`` pins the fixed shape.
 """
@@ -45,11 +45,11 @@ from typing import Any
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-BATTLE2_SPEC = ROOT / "tools" / "battle2.spec"
-BATTLE_CLI_SPEC = ROOT / "tools" / "battle_cli.spec"
+BYTEFRAY_SPEC = ROOT / "tools" / "bytefray.spec"
+BYTEFRAY_CLI_SPEC = ROOT / "tools" / "bytefray_cli.spec"
 AGENT_DESIGNER_SPEC = ROOT / "tools" / "agent_designer.spec"
 REPLAY_VIEWER_SPEC = ROOT / "tools" / "replay_viewer.spec"
-ALL_SPECS = (BATTLE2_SPEC, BATTLE_CLI_SPEC, AGENT_DESIGNER_SPEC, REPLAY_VIEWER_SPEC)
+ALL_SPECS = (BYTEFRAY_SPEC, BYTEFRAY_CLI_SPEC, AGENT_DESIGNER_SPEC, REPLAY_VIEWER_SPEC)
 BUILD_WIN_SCRIPT = ROOT / "tools" / "build_win.ps1"
 
 
@@ -126,7 +126,7 @@ def _exec_spec(
     Mirrors how PyInstaller itself runs a ``.spec`` file: ``Analysis``,
     ``PYZ``, ``EXE``, and ``COLLECT`` are bare names PyInstaller injects into
     the exec namespace with no import statement in most spec files (e.g.
-    ``tools/battle2.spec``); ``tools/agent_designer.spec``/
+    ``tools/bytefray.spec``); ``tools/agent_designer.spec``/
     ``tools/replay_viewer.spec`` instead import the same four names
     explicitly (``from PyInstaller.building.build_main import Analysis,
     PYZ`` / ``from PyInstaller.building.api import EXE, COLLECT``), so both
@@ -161,26 +161,26 @@ def _exec_spec_datas(spec_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[t
     return list(namespace["datas"])  # type: ignore[arg-type]
 
 
-def test_battle2_spec_bundles_the_agent_template_directory(monkeypatch):
+def test_bytefray_spec_bundles_the_agent_template_directory(monkeypatch):
     """Regression test for a real, previously-shipped packaging defect.
 
-    ``tools/battle2.spec`` bundled ``battle_engine/data/starter_agents`` but
+    ``tools/bytefray.spec`` bundled ``battle_engine/data/starter_agents`` but
     had no equivalent entry for the sibling ``battle_engine/data/
     agent_template`` directory ``bytefray agents create`` depends on, so the
-    resource was silently absent from ``battle2.exe``'s frozen ``_MEIPASS``
+    resource was silently absent from ``bytefray.exe``'s frozen ``_MEIPASS``
     extraction directory even though source checkouts and installed wheels
     both already had it -- confirmed by an actual PyInstaller build of
-    ``battle2.exe`` before this fix, which reproduced
+    ``bytefray.exe`` before this fix, which reproduced
     ``agent_scaffold.template_resource_dir``'s "Agent template resource
     directory not found" error end to end against the real frozen exe.
     """
 
-    datas = _exec_spec_datas(BATTLE2_SPEC, monkeypatch)
+    datas = _exec_spec_datas(BYTEFRAY_SPEC, monkeypatch)
     template_entries = [
         entry for entry in datas if entry[1] == "battle_engine/data/agent_template"
     ]
     assert template_entries, (
-        "tools/battle2.spec's `datas` must bundle "
+        "tools/bytefray.spec's `datas` must bundle "
         "battle_engine/data/agent_template (needed by `bytefray agents "
         "create` in the frozen build); found only: "
         f"{[entry[1] for entry in datas]}"
@@ -190,10 +190,10 @@ def test_battle2_spec_bundles_the_agent_template_directory(monkeypatch):
     assert {"agent.yaml", "agent.py"} <= {path.name for path in source_dir.iterdir()}
 
 
-def test_battle2_spec_still_bundles_starter_agents(monkeypatch):
+def test_bytefray_spec_still_bundles_starter_agents(monkeypatch):
     """Confirms adding the agent_template entry did not disturb starter_agents."""
 
-    datas = _exec_spec_datas(BATTLE2_SPEC, monkeypatch)
+    datas = _exec_spec_datas(BYTEFRAY_SPEC, monkeypatch)
     assert any(entry[1] == "battle_engine/data/starter_agents" for entry in datas)
 
 
@@ -207,9 +207,9 @@ def test_agent_designer_spec_bundles_the_agent_template_directory(monkeypatch):
     ``tools/agent_designer.spec`` bundled ``battle_engine/data/
     starter_agents`` but had no equivalent entry for the sibling
     ``battle_engine/data/agent_template`` directory, so a frozen
-    ``battle-agent-designer.exe`` would fail "New Agent" with a
+    ``bytefray-agent-designer.exe`` would fail "New Agent" with a
     ``FileNotFoundError`` from ``template_resource_dir`` -- the identical
-    class of bug already fixed for ``battle2.exe`` above.
+    class of bug already fixed for ``bytefray.exe`` above.
     """
 
     datas = _exec_spec_datas(AGENT_DESIGNER_SPEC, monkeypatch)
@@ -301,7 +301,7 @@ def test_spec_builds_onedir_layout_not_a_fat_exe(spec_path: Path, monkeypatch: p
     ``exclude_binaries=True`` and then ``COLLECT(exe, name=...)`` with no
     further arguments -- baking every dependency into one large,
     self-contained ``EXE`` first and only wrapping *that* in a onedir
-    folder, unlike ``tools/battle2.spec``/``tools/battle_cli.spec``, which
+    folder, unlike ``tools/bytefray.spec``/``tools/bytefray_cli.spec``, which
     build a thin launcher ``EXE`` (``exclude_binaries=True``) and let
     ``COLLECT`` place binaries/data as loose files beside it -- the actual
     onedir layout ``ARCHITECTURE.md`` and ``tools/installer.iss`` both
@@ -315,7 +315,7 @@ def test_spec_builds_onedir_layout_not_a_fat_exe(spec_path: Path, monkeypatch: p
     calls = _exec_spec_calls(spec_path, monkeypatch)
     assert calls["exe_kwargs"].get("exclude_binaries") is True, (
         f"{spec_path.name}: EXE(...) must be called with exclude_binaries=True "
-        "for a onedir (thin-launcher) build, matching tools/battle2.spec's "
+        "for a onedir (thin-launcher) build, matching tools/bytefray.spec's "
         f"pattern; got kwargs={calls['exe_kwargs']}"
     )
     collect_args = calls["collect_args"]
@@ -354,7 +354,8 @@ def test_windows_build_waits_for_gui_smokes_and_requires_temp_cleanup() -> None:
     assert "} finally {" in gui_block
     assert "$env:BYTEFRAY_ROOT = $PreviousGuiSmokeRoot" in gui_block
     assert "Remove-Item Env:BYTEFRAY_ROOT" in gui_block
-    assert "$env:BATTLE2_ROOT =" not in source
+    assert "BATTLE2_ROOT" not in source
+    assert "BATTLE_ROOT" not in source
     assert "Remove-Item -LiteralPath $GuiSmokeRoot -Recurse -Force -ErrorAction Stop" in gui_block
     assert "if (Test-Path -LiteralPath $GuiSmokeRoot)" in gui_block
 

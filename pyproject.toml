@@ -1,4 +1,4 @@
-# pyproject.toml — Bytefray (formerly BATTLE2)
+# pyproject.toml — Bytefray
 # Uses setuptools backend; supports src-style layout in BOTH engine/src and client/src.
 
 [build-system]
@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bytefray"
 version = "1.3.0"
-description = "Bytefray: a programmable-agent arena, inspired by Core War, with deterministic VM and Python agents. Formerly BATTLE2."
+description = "Bytefray: a programmable-agent arena, inspired by Core War, with deterministic VM and Python agents."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -55,9 +55,9 @@ windows-build = [
 
 [project.scripts]
 bytefray              = "battle_engine.command:main"
-battle2               = "battle_engine.command:battle2_main"
-battle-agent-designer = "battle_engine.legacy:agent_designer"
-battle-cli            = "battle_engine.legacy:battle_cli"
+bytefray-cli          = "battle_engine.cli:main"
+bytefray-agent-designer = "app.agent_designer:main"
+bytefray-replay-viewer = "app.replay_viewer:main"
 
 
 [project.urls]
@@ -95,28 +95,24 @@ battle_engine = [
 
 # If you prefer installing external, non-package files to a known location, you can
 # instead use data-files (commented out here; enable if you want to place files
-# outside the package, e.g., share/battle2). Many projects stick to package-data.
+# outside the package, e.g., share/bytefray). Many projects stick to package-data.
 # [tool.setuptools.data-files]
-# "share/battle2/warriors" = ["warriors/*"]
-# "share/battle2/licenses" = ["third_party_licenses/*"]
+# "share/bytefray/warriors" = ["warriors/*"]
+# "share/bytefray/licenses" = ["third_party_licenses/*"]
 
 # -------------------- Ruff --------------------
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 # _legacy/core.py, agents.py, main.py, renderers.py, agents_tooling/, and
-# app/match_runner.py are documented frozen/dead code (AGENTS.md's
-# "Architecture boundaries": kept for compatibility/historical reasons, not
-# actively maintained) -- excluded from lint enforcement rather than edited
-# to satisfy rules. _legacy/tests/ is NOT excluded: it's an active suite
-# (pytest.ini's testpaths runs it against the packaged engine).
+# Historical pre-v0.3 implementation fixtures remain outside the active
+# package and are excluded from lint; their characterization tests stay active.
 extend-exclude = [
   "_legacy/core.py",
   "_legacy/agents.py",
   "_legacy/main.py",
   "_legacy/renderers.py",
   "_legacy/agents_tooling",
-  "app/match_runner.py",
 ]
 
 [tool.ruff.lint]

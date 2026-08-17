@@ -68,9 +68,9 @@ def _read_json_like(path: Path) -> dict[str, Any]:
         # a dynamic importlib lookup -- a dynamic import is invisible to
         # PyInstaller's static analysis and previously left `yaml` out of
         # frozen builds whose entry point didn't happen to reach it through
-        # another path (battle-cli.exe, battle-agent-designer.exe,
-        # battle-replay-viewer.exe all failed to parse any agent.yaml as a
-        # result; only battle2.exe worked, and only by accident).
+        # another frozen application path (the standalone applications all
+        # failed to parse any agent.yaml; only the unified executable worked,
+        # and only by accident).
         data = yaml.safe_load(cleansed) or {}
 
     if not isinstance(data, dict):

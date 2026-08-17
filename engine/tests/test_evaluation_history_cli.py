@@ -596,10 +596,9 @@ def test_cli_invalid_verb_exits_2():
     assert excinfo.value.code == 2
 
 
-def test_bytefray_and_battle2_dispatch_reach_evaluations(tmp_path: Path, capsys):
-    """Same dispatch code path via battle_engine.command, both aliases."""
+def test_bytefray_dispatch_reaches_evaluations(tmp_path: Path, capsys):
+    """The canonical dispatcher reaches evaluation history."""
 
-    from battle_engine.command import battle2_main
     from battle_engine.command import main as bytefray_main
 
     root = tmp_path / "runs" / "evaluations"
@@ -609,8 +608,3 @@ def test_bytefray_and_battle2_dispatch_reach_evaluations(tmp_path: Path, capsys)
     out1 = capsys.readouterr().out
     assert code == 0
     assert json.loads(out1)["entries"]
-
-    code = battle2_main(["agents", "evaluations", "list", "--root", str(root), "--json"])
-    out2 = capsys.readouterr().out
-    assert code == 0
-    assert json.loads(out2)["entries"]

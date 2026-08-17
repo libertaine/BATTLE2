@@ -651,37 +651,6 @@ def test_no_trace_flag_omits_trace_artifact(tmp_path):
     assert not (run_dir / "trace.jsonl").exists()
 
 
-def test_battle2_alias_behaves_identically(tmp_path):
-    data_root = tmp_path / "data-root"
-    env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
-    env.pop("BATTLE2_ROOT", None)
-    env.pop("BATTLE_ROOT", None)
-
-    created = _run("agents", "create", "example", cwd=tmp_path, env=env)
-    assert created.returncode == 0, created.stderr
-
-    snippet = (
-        "from battle_engine.command import battle2_main; "
-        "raise SystemExit(battle2_main(['agents', 'test', 'example', '--ticks', '5']))"
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", snippet],
-        cwd=tmp_path,
-        env=dict(
-            env,
-            PYTHONPATH=os.pathsep.join(
-                [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
-            ),
-        ),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "BATTLE2 has been renamed Bytefray" in result.stderr
-    assert "agent: example" in result.stdout
-
-
 def test_agents_help_mentions_test():
     result = _run("agents", "--help")
     assert result.returncode == 0
@@ -691,8 +660,6 @@ def test_agents_help_mentions_test():
 def test_bare_agents_create_and_validate_are_unaffected(tmp_path):
     data_root = tmp_path / "data-root"
     env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
-    env.pop("BATTLE2_ROOT", None)
-    env.pop("BATTLE_ROOT", None)
 
     listed = _run("agents", cwd=tmp_path, env=env)
     assert listed.returncode == 0
@@ -756,21 +723,7 @@ def test_uses_native_match_service_not_a_private_loop(tmp_path, monkeypatch):
 
 
 def test_custom_bytefray_root_is_honored(monkeypatch, tmp_path):
-    monkeypatch.delenv("BATTLE2_ROOT", raising=False)
-    monkeypatch.delenv("BATTLE_ROOT", raising=False)
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
-    scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
-
-    exit_code = main(["example", "--ticks", "3"])
-
-    assert exit_code == 0
-    assert (tmp_path / "runs" / "agents_test" / "example").exists()
-
-
-def test_battle2_root_fallback_is_honored_when_bytefray_root_unset(monkeypatch, tmp_path):
-    monkeypatch.delenv("BYTEFRAY_ROOT", raising=False)
-    monkeypatch.delenv("BATTLE_ROOT", raising=False)
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path))
     scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
 
     exit_code = main(["example", "--ticks", "3"])

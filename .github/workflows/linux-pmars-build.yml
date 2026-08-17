@@ -61,7 +61,7 @@ jobs:
           gcc --version | head -n 1
           make --version | head -n 1
           getconf GNU_LIBC_VERSION
-          echo "BATTLE2 commit: $(git rev-parse HEAD)"
+          echo "Bytefray commit: $(git rev-parse HEAD)"
           echo "Build script SHA-256: $(sha256sum tools/build_pmars_linux.sh | awk '{print $1}')"
           echo "Expected archive SHA-256: $PMARS_SHA256"
 
@@ -165,17 +165,17 @@ jobs:
           highest="$(printf '%s\n%s\n' "$maximum" "$baseline" | sort -V | tail -n 1)"
           test "$highest" = "$baseline"
 
-      - name: Install current BATTLE2 checkout in a clean environment
+      - name: Install current Bytefray checkout in a clean environment
         run: |
-          python -m venv "$RUNNER_TEMP/battle2-venv"
-          "$RUNNER_TEMP/battle2-venv/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/battle2-venv/bin/python" -m pip install .
+          python -m venv "$RUNNER_TEMP/bytefray-venv"
+          "$RUNNER_TEMP/bytefray-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/bytefray-venv/bin/python" -m pip install .
 
       - name: Validate pMARS runtime integration and cleanup
         run: |
           set -euo pipefail
           binary="$RUNNER_TEMP/pmars-output-one/pmars"
-          battle2="$RUNNER_TEMP/battle2-venv/bin/battle2"
+          bytefray="$RUNNER_TEMP/bytefray-venv/bin/bytefray"
           warrior="$RUNNER_TEMP/pmars-source-one/warriors/validate.red"
           unrelated="$RUNNER_TEMP/unrelated-working-directory"
           runtime="$RUNNER_TEMP/pmars-runtime"
@@ -186,7 +186,7 @@ jobs:
           "$binary" -b -r 2 "$warrior" "$warrior"
 
           absolute_root="$runtime/absolute"
-          PMARS_CMD="$binary" BATTLE2_ROOT="$absolute_root" "$battle2" run \
+          PMARS_CMD="$binary" BYTEFRAY_ROOT="$absolute_root" "$bytefray" run \
             --mode redcode94 \
             --red-a "$warrior" \
             --red-b "$warrior" \
@@ -197,7 +197,7 @@ jobs:
           test ! -e "$absolute_root/replay.jsonl"
 
           quota_root="$runtime/quota"
-          PMARS_CMD="$binary" BATTLE2_ROOT="$quota_root" "$battle2" run \
+          PMARS_CMD="$binary" BYTEFRAY_ROOT="$quota_root" "$bytefray" run \
             --mode redcode94 \
             --red-a "$warrior" \
             --red-b "$warrior" \
@@ -207,7 +207,7 @@ jobs:
             --quiet
           test -f "$quota_root/summary.json"
           test ! -e "$quota_root/replay.jsonl"
-          "$RUNNER_TEMP/battle2-venv/bin/python" - "$quota_root/summary.json" <<'PY'
+          "$RUNNER_TEMP/bytefray-venv/bin/python" - "$quota_root/summary.json" <<'PY'
           import json
           import sys
           from pathlib import Path
@@ -227,7 +227,7 @@ jobs:
           printf 'stale summary\n' > "$failure_root/summary.json"
 
           set +e
-          PMARS_CMD="$binary" BATTLE2_ROOT="$failure_root" "$battle2" run \
+          PMARS_CMD="$binary" BYTEFRAY_ROOT="$failure_root" "$bytefray" run \
             --mode redcode94 \
             --red-a "$invalid" \
             --red-b "$warrior" \

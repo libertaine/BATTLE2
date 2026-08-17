@@ -53,7 +53,7 @@ verify_file "$EXPECTED_CHANGELOG_SHA256" "$source_dir/ChangeLog"
 verify_file "$EXPECTED_PMARS_C_SHA256" "$source_dir/src/pmars.c"
 verify_file "$EXPECTED_MAKEFILE_SHA256" "$source_dir/src/Makefile"
 
-build_dir="$(mktemp -d "${TMPDIR:-/tmp}/battle2-pmars-build.XXXXXXXX")"
+build_dir="$(mktemp -d "${TMPDIR:-/tmp}/bytefray-pmars-build.XXXXXXXX")"
 trap 'rm -rf -- "$build_dir"' EXIT
 cp -a "$source_dir/." "$build_dir/source"
 

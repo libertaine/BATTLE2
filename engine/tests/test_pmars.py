@@ -59,7 +59,7 @@ def test_frozen_meipass_bundled_executable_discovery(monkeypatch, tmp_path):
     executable = _executable(extraction / "pmars" / "windows")
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(extraction), raising=False)
-    monkeypatch.setattr(sys, "executable", str(tmp_path / "portable" / "battle2.exe"))
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "portable" / "bytefray.exe"))
     monkeypatch.setattr(pmars, "_is_windows", lambda: True)
     assert pmars.resolve_pmars_command(environ={}) == [str(executable)]
     assert not (extraction / "agents").exists()

@@ -27,7 +27,7 @@ def test_stale_process_signals_do_not_mutate_current_run_state(monkeypatch, tmp_
 
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     QApplication.instance() or QApplication([])
     designer = AgentDesigner()
 
@@ -50,7 +50,7 @@ def test_stale_process_signals_do_not_mutate_current_run_state(monkeypatch, tmp_
     assert designer.advanced.btnStop.isEnabled() is True
 
     # Same guard for the error-signal handler.
-    designer._on_proc_error(stale_proc, "RunMatch", "battle2", QProcess.ProcessError.Crashed)
+    designer._on_proc_error(stale_proc, "RunMatch", "bytefray", QProcess.ProcessError.Crashed)
     assert designer.simple.btnStop.isEnabled() is True
 
     # And for output piping -- a stale process's buffered output must not
@@ -72,7 +72,7 @@ def test_current_process_finished_clears_busy_state(monkeypatch, tmp_path):
 
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     QApplication.instance() or QApplication([])
     designer = AgentDesigner()
 
@@ -101,7 +101,7 @@ def test_dispose_process_disconnect_prevents_stale_finished_from_firing(monkeypa
 
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     QApplication.instance() or QApplication([])
     designer = AgentDesigner()
 
@@ -140,7 +140,7 @@ def test_start_process_disposes_any_prior_process_first(monkeypatch, tmp_path):
 
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     QApplication.instance() or QApplication([])
     designer = AgentDesigner()
 
@@ -174,7 +174,7 @@ def test_close_event_disposes_active_process_without_raising(monkeypatch, tmp_pa
 
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     application = QApplication.instance() or QApplication([])
     designer = AgentDesigner()
 
@@ -196,8 +196,8 @@ def test_close_event_disposes_active_process_without_raising(monkeypatch, tmp_pa
 @pytest.mark.gui
 def test_advanced_run_exports_agent_params_json_to_child_env(monkeypatch, tmp_path):
     """Advanced tab's per-agent "Agent Params" JSON editors (RunConfig.a_params/
-    b_params) must reach the launched match process as BATTLE_AGENT_A_PARAMS_JSON/
-    BATTLE_AGENT_B_PARAMS_JSON -- previously the JSON was validated locally and
+    b_params) must reach the launched match process as BYTEFRAY_AGENT_A_PARAMS_JSON/
+    BYTEFRAY_AGENT_B_PARAMS_JSON -- previously the JSON was validated locally and
     then silently discarded (docs/specs/agent_designer_workflow.md Sec 2.8), never
     reaching the child process for either agent.
     """
@@ -208,7 +208,7 @@ def test_advanced_run_exports_agent_params_json_to_child_env(monkeypatch, tmp_pa
     from app.agent_designer import AgentDesigner
     from app.services.engine import RunConfig
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     QApplication.instance() or QApplication([])
     designer = AgentDesigner()
 
@@ -235,7 +235,7 @@ def test_advanced_run_exports_agent_params_json_to_child_env(monkeypatch, tmp_pa
     designer._on_advanced_run(cfg)
 
     env = captured["env"]
-    assert env.value("BATTLE_AGENT_A_PARAMS_JSON") == json.dumps({"byte": 7, "stride": 3})
-    assert env.contains("BATTLE_AGENT_B_PARAMS_JSON") is False
+    assert env.value("BYTEFRAY_AGENT_A_PARAMS_JSON") == json.dumps({"byte": 7, "stride": 3})
+    assert env.contains("BYTEFRAY_AGENT_B_PARAMS_JSON") is False
 
     designer.deleteLater()

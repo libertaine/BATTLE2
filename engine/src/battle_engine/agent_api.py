@@ -162,7 +162,7 @@ def parse_entry_point(value: str, *, agent_dir: Path) -> tuple[Path, str]:
 
 def _module_name(source_path: Path) -> str:
     digest = hashlib.sha256(str(source_path).encode("utf-8")).hexdigest()[:24]
-    return f"_battle2_agent_{digest}"
+    return f"_bytefray_agent_{digest}"
 
 
 def _import_source(source_path: Path) -> ModuleType:

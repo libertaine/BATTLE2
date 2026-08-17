@@ -319,7 +319,7 @@ def test_designer_inspect_trace_opens_dialog_for_last_test(monkeypatch, tmp_path
     from app.agent_designer import AgentDesigner
 
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     designer = AgentDesigner()
     try:
@@ -351,7 +351,7 @@ def test_designer_inspect_trace_is_a_noop_without_a_trace(monkeypatch, tmp_path)
     from app.agent_designer import AgentDesigner
 
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     designer = AgentDesigner()
     try:

@@ -26,8 +26,7 @@ bytefray agents create my_agent
 ```
 
 This writes `agents/my_agent/agent.yaml` and `agents/my_agent/agent.py`
-under the configured writable data root (`battle2 agents create` works
-identically). The command refuses to touch an existing directory or file at
+under the configured writable data root. The command refuses to touch an existing directory or file at
 that path — there is no `--force` — and prints the paths it wrote plus a
 suggested next command:
 
@@ -47,8 +46,7 @@ bytefray agents validate my_agent
 
 ## Validate before running
 
-`bytefray agents validate <agent-id>` (`battle2 agents validate` works
-identically) discovers, loads, resets, and dry-runs one Python agent for a
+`bytefray agents validate <agent-id>` discovers, loads, resets, and dry-runs one Python agent for a
 single deterministic tick, without running a full match:
 
 ```text
@@ -143,8 +141,7 @@ different questions:
 | Artifacts | None -- a dry run produces no replay/result. | Canonical `replay.jsonl`/`result.json`/`summary.json`, identical in shape to `bytefray run`'s. |
 | A forfeit/exception in the checked callback | The one validation failure reported -- validation itself failed. | One entrant's outcome within an otherwise successfully executed match -- the *test* still succeeded. |
 
-`bytefray agents test <agent-id>` (`battle2 agents test` works
-identically) runs the agent under test against either an internal
+`bytefray agents test <agent-id>` runs the agent under test against either an internal
 reference Python opponent or, with `--opponent <agent-id>`, another
 discovered Python agent, through the exact production match machinery
 (`NativeMatchService`) that `bytefray run` uses -- there is no separate
@@ -287,7 +284,7 @@ and tells you which phase stalled. Pass `--no-trace` to skip writing
 ## Using the Agent Designer (GUI)
 
 The same create → validate → test → replay loop is also available from the
-PySide6 Agent Designer's **Agent Development** tab (`battle-agent-designer`
+PySide6 Agent Designer's **Agent Development** tab (`bytefray-agent-designer`
 or `bytefray design`), without touching a terminal:
 
 1. **New Agent…** prompts for an agent id and calls the identical scaffold
@@ -441,5 +438,5 @@ security boundary. Run only agents you trust.
 
 The native built-ins are `runner`, `writer`, `bomber`, `flooder`, `spiral`, and
 `seeker`; their exact VM behavior is documented in [RULES.md](RULES.md). A blob
-agent supplies `model.blob`. Redcode uses `battle2 run --mode redcode94` and does
+agent supplies `model.blob`. Redcode uses `bytefray run --mode redcode94` and does
 not participate in Agent API scheduling.

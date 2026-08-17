@@ -109,13 +109,12 @@ def test_frozen_lookup_reads_meipass_and_writes_beside_executable(monkeypatch, t
         target.joinpath("agent.yaml").write_bytes(
             source_resources.joinpath(name, "agent.yaml").read_bytes()
         )
-    executable = tmp_path / "Portable Build With Spaces" / "battle-agent-designer.exe"
+    executable = tmp_path / "Portable Build With Spaces" / "bytefray-agent-designer.exe"
     executable.parent.mkdir()
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(extraction), raising=False)
     monkeypatch.setattr(sys, "executable", str(executable))
-    monkeypatch.delenv("BATTLE2_ROOT", raising=False)
-    monkeypatch.delenv("BATTLE_ROOT", raising=False)
+    monkeypatch.delenv("BYTEFRAY_ROOT", raising=False)
 
     created = ensure_starter_agents()
 
@@ -156,7 +155,7 @@ def test_manifest_only_starters_run_with_existing_builtin_implementations(
     monkeypatch, tmp_path
 ):
     ensure_starter_agents(resource_root=_resource_root(), data_root=tmp_path)
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     monkeypatch.chdir(tmp_path)
 
     result = cli.main(

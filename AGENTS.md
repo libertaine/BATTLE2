@@ -7,7 +7,7 @@ duplicating it.
 
 ## What this project is
 
-Bytefray (formerly BATTLE2) is a programmable-agent arena inspired by Core
+Bytefray is a programmable-agent arena inspired by Core
 War: deterministic VM and Python agents compete in a shared memory arena,
 with canonical replay/result recording and a headless tournament service.
 See [README.md](README.md) for the user-facing overview and
@@ -39,12 +39,10 @@ abbreviated.
   new extracted modules so existing imports keep working. `Kernel` remains
   the public mutable match-state object. Don't collapse these re-exports or
   "clean up" the facade without checking who still imports through it.
-- **`_legacy/` and `app/match_runner.py` are known dead/frozen code**, kept
-  for compatibility or historical reasons (see
-  [docs/WINDOWS_DEV_NOTES.md](docs/WINDOWS_DEV_NOTES.md) for why
-  `match_runner.py` is dead source). Don't assume something is unused just
-  because it looks legacy — check whether it's still imported or wired to a
-  console script before deleting it.
+- **`_legacy/` is frozen historical code**, retained as a characterized
+  migration fixture. Don't assume something is unused just because it looks
+  legacy — check whether it is imported, tested, or wired to an entry point
+  before deleting it.
 
 ## Testing expectations
 
@@ -64,8 +62,8 @@ abbreviated.
   because they conflict with a deliberate, documented `except Exception:
   pass` pattern used in several compatibility/optional-feature code paths;
   see [docs/RUFF_DEBT.md](docs/RUFF_DEBT.md) before changing that ignore
-  list or adding a new one. `_legacy/`'s frozen source files and
-  `app/match_runner.py` are excluded from linting entirely (same doc).
+  list or adding a new one. `_legacy/`'s frozen source files are excluded from
+  linting entirely (same doc).
 - If `pytest` fails with a Windows `PermissionError` on a temp/cache path,
   that's a known stale-directory/ACL class of problem documented in
   WINDOWS_DEV_NOTES.md, not a project bug — don't "fix" it by changing
@@ -94,7 +92,7 @@ abbreviated.
 
 - Windows builds are produced by the PowerShell scripts and PyInstaller spec
   files under `tools/` (`tools/build_win.ps1` is invoked by CI). The unified
-  `battle2.exe` explicitly collects the `app` package and Qt dependencies so
+  `bytefray.exe` explicitly collects the `app` package and Qt dependencies so
   all four dispatcher commands work from one build.
 - Wheels contain **Python packages and package-local assets only**. Repo-level
   `agents/` directories are runtime/user data, not package data. pMARS
@@ -109,21 +107,17 @@ abbreviated.
 
 ## Compatibility requirements
 
-- The project was renamed BATTLE2 → Bytefray. `bytefray` is the canonical
-  CLI; `battle2` is a deprecated but still-functional compatibility alias
-  (identical implementation, prints a deprecation notice). Don't remove the
-  `battle2` alias, `battle-cli`, or `battle-agent-designer` without an
-  explicit decision to do so — they are documented, supported compatibility
-  wrappers, not accidental leftovers.
+- Bytefray is the only current product and command name. The obsolete
+  `battle2`, `battle-cli`, and `battle-*` command wrappers and Windows
+  executable names were retired for v1.4. Do not reintroduce them as active
+  compatibility surfaces.
 - Internal package names (`battle_engine`, `battle_client`) and the
   `battle2.*` schema identifiers (`battle2.result`, `battle2.replay`) are
   **stable protocol identifiers** and are retained unchanged even though the
   product is now branded Bytefray. Do not rename these to match the new
   branding.
-- `BYTEFRAY_ROOT` is the preferred data-root environment variable;
-  `BATTLE2_ROOT` and `BATTLE_ROOT` remain supported deprecated fallbacks, in
-  that precedence order. Preserve this fallback chain in any code that
-  resolves the writable data root (`battle_engine.paths`).
+- `BYTEFRAY_ROOT` is the sole supported data-root environment variable.
+  Obsolete predecessor variables are intentionally ignored.
 - Schema/version changes (replay, result, Agent API) are versioned
   explicitly — see [docs/REPLAY_SCHEMA.md](docs/REPLAY_SCHEMA.md),
   [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md), and

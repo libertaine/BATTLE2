@@ -5,8 +5,6 @@
   <img src="assets/branding/bytefray-logo-horizontal.png" alt="Bytefray logo" width="420">
 </p>
 
-*(formerly BATTLE2)*
-
 **Bytefray** is a programmable-agent arena, inspired by Core War, where deterministic VM and Python agents compete in a shared memory arena. It supports:
 
 - Python agent discovery, Agent API v1 validation, and homogeneous Python-vs-Python matches
@@ -26,14 +24,9 @@ This project is released under the **MIT License**. See the [LICENSE](LICENSE) f
   <img src="docs/screenshots/replay-viewer.png" alt="Bytefray replay viewer showing a paused, territory-split match" width="560">
 </p>
 
-## Project rename: BATTLE2 → Bytefray
-
-This project was previously named **BATTLE2**. The public CLI is now
-`bytefray`; the legacy `battle2` command remains available as a deprecated
-compatibility alias. See [docs/PROJECT_HISTORY.md](docs/PROJECT_HISTORY.md)
-for the full rename story and compatibility details, including the
-`BYTEFRAY_ROOT` / `BATTLE2_ROOT` / `BATTLE_ROOT` environment variable
-precedence.
+The project history, including its earlier name, is preserved in
+[docs/PROJECT_HISTORY.md](docs/PROJECT_HISTORY.md). Current commands,
+executables, paths, and environment variables use the Bytefray name only.
 
 ## AI-Assisted Development
 
@@ -148,26 +141,24 @@ Choose one of the options below:
 | Component | Location |
 |------------|-----------|
 | Binaries | `C:\Program Files\Bytefray\bin\<application>\` |
-| Data root | `%ProgramData%\BATTLE2\` |
-| Replays | `%ProgramData%\BATTLE2\runs\_loose\` |
-| Agents | `%ProgramData%\BATTLE2\agents\` |
+| Data root | `%ProgramData%\Bytefray\` |
+| Replays | `%ProgramData%\Bytefray\runs\_loose\` |
+| Agents | `%ProgramData%\Bytefray\agents\` |
 
 A regular Windows wheel installation instead defaults to
-`%LOCALAPPDATA%\BATTLE2`. Explicit `BYTEFRAY_ROOT`, then legacy `BATTLE2_ROOT`,
-then legacy `BATTLE_ROOT`, take precedence in that order. Frozen
+`%LOCALAPPDATA%\Bytefray`. Explicit `BYTEFRAY_ROOT` takes precedence. Frozen
 installer/portable behavior and recognized source or editable checkouts retain
 their documented roots before the installed-platform default is considered.
 
-Environment variable `BATTLE2_ROOT` is automatically set to the data root during installation.
-`BYTEFRAY_ROOT` is the preferred variable going forward and, if set, takes
-precedence over it. The legacy `BATTLE_ROOT` name remains supported when
-neither `BYTEFRAY_ROOT` nor `BATTLE2_ROOT` is set.
+The installer sets `BYTEFRAY_ROOT` to the shared data root.
 This writable data root is separate from bundled read-only application
 resources; PyInstaller's temporary `_MEIPASS` directory is never used for
 replays, logs, generated files, or user configuration.
 The installer deliberately does not modify `PATH`; console applications remain
-available at `bin\battle2\battle2.exe` and `bin\battle-cli\battle-cli.exe`.
-Uninstall removes installed programs and shortcuts but retains `%ProgramData%\BATTLE2`.
+available at `bin\bytefray\bytefray.exe` and
+`bin\bytefray-cli\bytefray-cli.exe`.
+Uninstall removes installed programs and shortcuts but retains
+`%ProgramData%\Bytefray`.
 Remove that directory manually only when its agents, replays, logs, and settings
 are no longer needed.
 
@@ -255,12 +246,7 @@ without a terminal from the Agent Designer's **Agent Development** tab.
 See the [Agent Authoring Guide](docs/AGENT_AUTHORING.md) for the full
 workflow.
 
-`battle2` remains a deprecated compatibility alias for `bytefray` — it
-dispatches to the exact same implementation with identical behavior and exit
-codes, but prints a one-line deprecation notice. The v0.1 command names
-`battle-cli` and `battle-agent-designer` also remain compatibility wrappers.
-The v0.1 `match-runner` command was removed in v0.3;
-`bytefray replay --renderer pygame` (or `battle-replay-viewer.exe`) is the
+`bytefray replay --renderer pygame` (or `bytefray-replay-viewer.exe`) is the
 maintained interactive Pygame viewer. Module
 execution is also available:
 
@@ -380,8 +366,8 @@ missing files and never overwrites custom or edited agent files.
 
 | Executable | Role | Tech |
 |-----------|------|------|
-| battle-agent-designer.exe | Configure & run matches, author agents (Simple/Advanced/**Agent Development** tabs), open replays | PySide6 (Qt) |
-| battle-replay-viewer.exe  | View and analyze match replays         | Pygame |
+| bytefray-agent-designer.exe | Configure & run matches, author agents (Simple/Advanced/**Agent Development** tabs), open replays | PySide6 (Qt) |
+| bytefray-replay-viewer.exe  | View and analyze match replays         | Pygame |
 
 The Agent Designer's **Agent Development** tab brings the CLI's
 create → validate → test → inspect → replay agent-authoring loop into the
@@ -424,7 +410,7 @@ bytefray run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red --tick
   nonzero exits, and unparseable results are failures and do not write a success
   summary.
 * The output includes a `summary.json` indicating winner, return code, and parameters.
-* The `battle2` and `battle-cli` Windows frozen applications bundle
+* The `bytefray` and `bytefray-cli` Windows frozen applications bundle
   `pmars/windows/pmars.exe` with its `COPYING` file. The pure Python wheel never
   contains pMARS. pMARS source
   is GPL-2.0-or-later; see `third_party_licenses/` for the verified GNU GPL
@@ -526,19 +512,18 @@ already see and read is the whole mechanism.
 
 ## 🚀 Packaging for Windows
 
-The root package exposes the primary `bytefray` dispatcher (with `battle2`
-retained as a deprecated compatibility alias) and retains legacy commands
-through `battle_engine.legacy` compatibility wrappers.
+The root package exposes the primary `bytefray` dispatcher and dedicated
+Bytefray-named console and desktop entry points.
 For Windows packaging, two approaches are viable:
 
 * **PyInstaller + Inno Setup**
 
-  * Build four onedir applications: `battle2`, `battle-cli`,
-    `battle-agent-designer`, and `battle-replay-viewer`.
+  * Build four onedir applications: `bytefray`, `bytefray-cli`,
+    `bytefray-agent-designer`, and `bytefray-replay-viewer`.
   * Use the Inno Setup script to install those applications. Bundled pMARS is
     present only inside the two CLI application resource trees; starter agents
     are initialized into writable user data from packaged manifests.
-  * The unified `battle2.exe design` and standalone Designer are exercised by
+  * The unified `bytefray.exe design` and standalone Designer are exercised by
     deterministic frozen startup smoke during the Windows build.
   * Add Start Menu shortcuts without modifying `PATH`.
 
@@ -602,18 +587,18 @@ python -m battle_engine --help
 # 5️⃣ (Optional) Build executables — requires the windows-build extra
 pip install -e ".[windows-build]"   # pyinstaller, pefile
 
-pyinstaller -y --clean --name battle-cli --console ^
+pyinstaller -y --clean --name bytefray-cli --console ^
   --paths engine\src --collect-all battle_engine -m battle_engine.cli
 
-pyinstaller -y --clean --name battle-agent-designer --windowed ^
+pyinstaller -y --clean --name bytefray-agent-designer --windowed ^
   app\agent_designer.py
 ```
 
 > 💡 *Note:* For Windows packaging, use **Inno Setup 6** and compile
 > `tools\installer.iss` to create `Bytefray-Setup-x.y.z.exe`.
 > This installer preserves the four PyInstaller application directories beneath
-> `C:\Program Files\Bytefray\bin` and uses `%ProgramData%\BATTLE2` for writable
-> shared data (kept under the legacy name for upgrade continuity). It requires
+> `C:\Program Files\Bytefray\bin` and uses `%ProgramData%\Bytefray` for writable
+> shared data. It requires
 > administrative installation and supports Windows AMD64/x64; it does not
 > claim ARM64 support.
 
@@ -629,7 +614,7 @@ Python 3.10 or newer; CI validates the minimum version on Python 3.10.
 Bytefray/
 ├── app/
 │   ├── agent_designer.py      # PySide6 GUI (the Agent Designer entry point)
-│   └── replay_viewer.py       # battle-replay-viewer entry point
+│   └── replay_viewer.py       # bytefray-replay-viewer entry point
 ├── engine/
 │   └── src/battle_engine/     # Simulation core & CLI
 ├── client/
@@ -659,9 +644,9 @@ powershell -ExecutionPolicy Bypass -File tools\smoke_after_install.ps1 -AppDir "
 
 This runs a minimal smoke test of all installed executables to ensure:
 
-* `battle-cli.exe` runs headless matches
-* `battle-replay-viewer.exe` opens the Pygame replay window
-* `battle-agent-designer.exe` opens the Qt interface
+* `bytefray-cli.exe` runs headless matches
+* `bytefray-replay-viewer.exe` opens the Pygame replay window
+* `bytefray-agent-designer.exe` opens the Qt interface
 
 ---
 

@@ -291,7 +291,7 @@ def test_show_test_stopped_is_distinct_from_other_outcomes():
 def test_opponent_combo_defaults_to_reference_and_lists_python_agents(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -321,7 +321,7 @@ def test_seed_and_ticks_default_to_canonical_phase3_defaults(monkeypatch, tmp_pa
     from battle_engine.config import Config
 
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from app.agent_designer import AgentDesigner
 
     designer = AgentDesigner()
@@ -362,7 +362,7 @@ def test_test_disabled_with_no_agents():
 def test_test_enabled_after_creation_and_selection(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -382,7 +382,7 @@ def test_test_enabled_after_creation_and_selection(monkeypatch, tmp_path):
 def test_selection_change_clears_prior_test_result(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -411,7 +411,7 @@ def test_selection_change_clears_prior_test_result(monkeypatch, tmp_path):
 def test_setBusy_disables_test_opponent_and_options(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -439,7 +439,7 @@ def test_setBusy_disables_test_opponent_and_options(monkeypatch, tmp_path):
 def test_validating_disables_test_and_testing_disables_validate(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -490,7 +490,7 @@ def test_validating_disables_test_and_testing_disables_validate(monkeypatch, tmp
 def test_default_test_success_shows_completed_result_and_enables_replay(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -555,7 +555,7 @@ def test_test_uses_discovery_id_not_display_name_when_they_differ(monkeypatch, t
 
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -595,7 +595,7 @@ def test_test_uses_discovery_id_not_display_name_when_they_differ(monkeypatch, t
 def test_seed_and_ticks_overrides_are_passed_through(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -649,7 +649,7 @@ def test_seed_and_ticks_overrides_are_passed_through(monkeypatch, tmp_path):
 def test_explicit_python_opponent_is_passed_through(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -702,7 +702,7 @@ def test_explicit_python_opponent_is_passed_through(monkeypatch, tmp_path):
 def test_runtime_forfeit_is_displayed_neutrally_not_as_a_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -749,7 +749,7 @@ def test_runtime_forfeit_is_displayed_neutrally_not_as_a_failure(monkeypatch, tm
 def test_tested_agent_initialization_failure_shows_no_replay(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -787,7 +787,7 @@ def test_tested_agent_initialization_failure_shows_no_replay(monkeypatch, tmp_pa
 def test_explicit_opponent_initialization_failure_shows_opponent_and_no_replay(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -825,7 +825,7 @@ def test_explicit_opponent_initialization_failure_shows_opponent_and_no_replay(m
 def test_internal_reference_opponent_failure_is_a_tool_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -865,7 +865,7 @@ def test_internal_reference_opponent_failure_is_a_tool_failure(monkeypatch, tmp_
 def test_malformed_output_is_a_tool_failure(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -895,7 +895,7 @@ def test_malformed_output_is_a_tool_failure(monkeypatch, tmp_path):
 def test_process_failed_to_start_shows_tool_failure_and_recovers(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -935,7 +935,7 @@ def test_process_failed_to_start_shows_tool_failure_and_recovers(monkeypatch, tm
 def test_duplicate_test_click_does_not_start_second_process(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -970,7 +970,7 @@ def test_duplicate_test_click_does_not_start_second_process(monkeypatch, tmp_pat
 def test_stop_while_testing_shows_stopped_and_recovers_controls(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -1006,7 +1006,7 @@ def test_stop_while_testing_shows_stopped_and_recovers_controls(monkeypatch, tmp
 def test_refresh_after_new_agent_keeps_opponent_selector_coherent(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     from app.agent_designer import AgentDesigner
@@ -1107,12 +1107,12 @@ def test_development_test_child_env_forces_designers_own_data_root(monkeypatch, 
 
     Regression test for a real bug found during v0.5.0 manual release
     verification: the child environment relied on inheriting
-    BYTEFRAY_ROOT/BATTLE2_ROOT/BATTLE_ROOT from the OS environment, which
+    BYTEFRAY_ROOT from the OS environment, which
     only reproduces the same root when it was itself set from an explicit
     env var (true after a normal install). In a portable, no-installer
     checkout, get_data_root() falls back to "the directory containing the
     running executable" -- a *different* directory for the Designer's own
-    onedir folder than for a sibling battle2.exe child -- so the child
+    onedir folder than for a sibling bytefray.exe child -- so the child
     could not find an agent this process had just written
     ("Unknown agent ...").
     """
@@ -1133,8 +1133,6 @@ def test_development_test_child_env_forces_designers_own_data_root(monkeypatch, 
         # carries any explicit root, even though this Designer instance's
         # own battle_root is still the one resolved above.
         monkeypatch.delenv("BYTEFRAY_ROOT", raising=False)
-        monkeypatch.delenv("BATTLE2_ROOT", raising=False)
-        monkeypatch.delenv("BATTLE_ROOT", raising=False)
 
         designer._on_test_agent()
         assert designer._proc is not None
@@ -1157,7 +1155,7 @@ def test_development_test_child_env_forces_designers_own_data_root(monkeypatch, 
 def test_open_test_replay_uses_existing_replay_launcher(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module
@@ -1209,7 +1207,7 @@ def test_open_test_replay_uses_existing_replay_launcher(monkeypatch, tmp_path):
 def test_open_test_replay_noop_when_no_replay_available(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     import app.agent_designer as agent_designer_module
     from app.agent_designer import AgentDesigner
 
@@ -1236,7 +1234,7 @@ def test_open_test_replay_noop_when_no_replay_available(monkeypatch, tmp_path):
 def test_validate_still_works_alongside_test(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     from battle_engine.agent_scaffold import create_agent
 
     import app.agent_designer as agent_designer_module

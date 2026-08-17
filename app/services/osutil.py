@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from battle_engine.paths import get_data_root, get_resource_root
+from battle_engine.paths import get_resource_root
 
 
 @dataclass
@@ -14,10 +14,6 @@ class DefaultPaths:
     replay_path: Path
     summary_path: Path
 
-
-def get_battle_root() -> Path:
-    """Return the writable data root (legacy public name)."""
-    return get_data_root()
 
 def pythonpath_separator() -> str:
     return ";" if os.name == "nt" else ":"

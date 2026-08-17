@@ -149,8 +149,6 @@ def test_created_agent_is_immediately_discoverable_in_process(tmp_path):
 
 def _subprocess_env(data_root: Path) -> dict[str, str]:
     env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
-    env.pop("BATTLE2_ROOT", None)
-    env.pop("BATTLE_ROOT", None)
     env["PYTHONPATH"] = os.pathsep.join(
         [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
     )
@@ -296,23 +294,12 @@ def test_cli_invalid_id_reports_error_without_traceback(tmp_path, capsys):
 
 
 # --------------------------------------------------------------------------
-# Custom BYTEFRAY_ROOT / deprecated fallback
+# Custom BYTEFRAY_ROOT
 # --------------------------------------------------------------------------
 
 
 def test_custom_bytefray_root_is_honored(monkeypatch, tmp_path):
-    monkeypatch.delenv("BATTLE2_ROOT", raising=False)
-    monkeypatch.delenv("BATTLE_ROOT", raising=False)
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
-
-    assert main(["rooted"]) == 0
-    assert (tmp_path / "agents" / "rooted" / "agent.py").is_file()
-
-
-def test_battle2_root_fallback_is_honored_when_bytefray_root_unset(monkeypatch, tmp_path):
-    monkeypatch.delenv("BYTEFRAY_ROOT", raising=False)
-    monkeypatch.delenv("BATTLE_ROOT", raising=False)
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path))
 
     assert main(["rooted"]) == 0
     assert (tmp_path / "agents" / "rooted" / "agent.py").is_file()

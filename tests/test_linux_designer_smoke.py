@@ -11,7 +11,7 @@ def test_agent_designer_window_starts_and_closes(monkeypatch, tmp_path):
 
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     application = QApplication.instance() or QApplication([])
     window = AgentDesigner()
     window.show()

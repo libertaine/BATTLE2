@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-  BATTLE2 smoke_test.ps1
+  Bytefray smoke_test.ps1
   Purpose: Quick, deterministic checks to ensure the repo runs from source on Windows.
   - Activates venv python (if available)
   - Sets PYTHONPATH for engine/src and client/src
@@ -51,13 +51,13 @@ function Ensure-Env {
   $engine = (Resolve-Path (Join-Path $RepoRoot 'engine\src')).Path
   $client = (Resolve-Path (Join-Path $RepoRoot 'client\src')).Path
   $env:PYTHONPATH = "$engine;$client"
-  if (-not $env:BATTLE_AGENTS_DIR) {
+  if (-not $env:BYTEFRAY_AGENTS_DIR) {
     $agents = Join-Path $RepoRoot 'agents'
-    if (Test-Path $agents) { $env:BATTLE_AGENTS_DIR = (Resolve-Path $agents).Path }
+    if (Test-Path $agents) { $env:BYTEFRAY_AGENTS_DIR = (Resolve-Path $agents).Path }
   }
   Write-Info "Repo root: $RepoRoot"
   Write-Info "PYTHONPATH = $($env:PYTHONPATH)"
-  if ($env:BATTLE_AGENTS_DIR) { Write-Info "BATTLE_AGENTS_DIR = $($env:BATTLE_AGENTS_DIR)" }
+  if ($env:BYTEFRAY_AGENTS_DIR) { Write-Info "BYTEFRAY_AGENTS_DIR = $($env:BYTEFRAY_AGENTS_DIR)" }
 }
 
 function Invoke-PyCode {
@@ -100,9 +100,9 @@ Write-Info "Check: agent discovery"
 Invoke-PyCode -PythonExe $PY -What "agent discovery" -Code @'
 import sys, pathlib
 sys.path[:0] = [r"engine/src", r"client/src"]
-from app.services.osutil import get_battle_root
+from battle_engine.paths import get_data_root
 from battle_engine.agents import discover_agents
-root = pathlib.Path(get_battle_root())
+root = pathlib.Path(get_data_root())
 items = discover_agents(root)
 names = [getattr(x, "display", None) or getattr(x, "name", None) or getattr(x, "id", None) for x in items]
 print("agents count:", len(items))

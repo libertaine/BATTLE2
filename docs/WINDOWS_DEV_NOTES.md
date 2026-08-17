@@ -55,12 +55,8 @@ checking a `client/` file standalone failed with
 `Cannot find implementation or library stub for module named
 "battle_engine.replay"` even though the package imports fine at runtime.
 
-`app/match_runner.py` is dead source: it calls `PygameRenderer.setup()`/
-`.update()`/`.on_complete()`/`.teardown()`, methods that no longer exist
-since Phase 7a Slice 3 stopped `PygameRenderer` being an `AbstractRenderer`
-subclass. Its `match-runner` console-script entry point was removed in v0.3
-(the maintained interactive viewer is `bytefray replay --renderer pygame` /
-`battle-replay-viewer.exe`), which also removed the only import of the
-module from `battle_engine.legacy` -- so `mypy engine/src/battle_engine` no
-longer traverses into it and its dead-API errors do not need tracking
-against the engine's mypy baseline.
+The obsolete `app/match_runner.py`, `battle_engine.legacy`, and unused legacy
+Pygame canvas adapter were removed during the v1.4 dead-code audit. The
+maintained interactive viewer is `bytefray replay --renderer pygame` or
+`bytefray-replay-viewer.exe`. The top-level `_legacy/` tree is different: it
+remains an explicitly retained, characterized historical migration fixture.

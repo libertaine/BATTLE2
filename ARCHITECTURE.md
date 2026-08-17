@@ -1,7 +1,7 @@
 # Bytefray Architecture
 
-This document describes Bytefray's architecture as of the v0.7 evaluation
-history work (NativeMatchService, Agent API v1 Python-vs-Python matches,
+This document describes Bytefray's architecture on the v1.4 development
+line (NativeMatchService, Agent API v1 Python-vs-Python matches,
 canonical `battle2.replay` schema v3, the headless tournament service, the
 `bytefray agents create/validate/test` authoring commands plus the
 Designer's Agent Development tab added in v0.4, the Agent Lab
@@ -107,10 +107,8 @@ missing files into the writable `get_data_root()/agents` catalog.
 
 The `bytefray` command (`battle_engine.command:main`) and
 `python -m battle_engine` dispatch to five lazy subcommands: `run`,
-`tournament`, `replay`, `design`, and `agents`. `battle2`
-(`battle_engine.command:battle2_main`) is a deprecated compatibility
-alias that prints a one-line deprecation notice and otherwise dispatches
-to the identical implementation.
+`tournament`, `replay`, `design`, and `agents`. Dedicated Bytefray-named
+entry points call the same underlying command implementations.
 
 - **`run`** reuses `battle_engine.cli.main(argv)` directly. It resolves
   configuration and agent slots from flags/environment, then branches on
@@ -138,12 +136,9 @@ to the identical implementation.
   `--help` and other non-GUI paths never import PySide6.
 - **`agents`** reuses `battle_engine.cli.main(["--list-agents"])`.
 
-The legacy `battle-cli` command and `python -m battle_engine.cli`
-(`battle_engine.legacy:battle_cli`) continue to use the same engine
-argparse entry point as `bytefray run`. `battle-agent-designer`
-(`battle_engine.legacy:agent_designer`) is a compatibility wrapper that
-lazily imports `app.agent_designer` — see "Desktop application" below.
-The v0.1 `match-runner` console-script entry point was removed in v0.3.
+The dedicated `bytefray-cli` command and `python -m battle_engine.cli` use
+the same engine argparse entry point as `bytefray run`. See "Desktop
+application" below for the dedicated GUI entry points.
 
 ### Replay client (`client/src/battle_client`)
 
@@ -227,29 +222,19 @@ engine, not part of `battle_engine.core`.
   through the existing `open_pygame_client_direct` launcher but is
   deliberately kept independent of Simple/Advanced's "Open Last Replay"
   target, so switching tabs never repoints that button at a development
-  test's replay. It is reached two ways: the `battle-agent-designer`
-  console script (`battle_engine.legacy:agent_designer`, which lazily
-  imports `app.agent_designer` and calls its `main()`) and `bytefray design`
+  test's replay. It is reached two ways: the `bytefray-agent-designer`
+  console script (`app.agent_designer:main`) and `bytefray design`
   (`battle_engine.command._design`, same lazy import). Both reject stray
   arguments and print a usage message for `--help` without importing
   PySide6.
-- **`app/replay_viewer.py` is the actual `battle-replay-viewer` entry
+- **`app/replay_viewer.py` is the `bytefray-replay-viewer` entry
   point.** Its `main()` normalizes viewer-friendly arguments (a bare path
   becomes `--replay <path>`, `--renderer pygame` is the default unless
   overridden) and delegates to `battle_client.cli.main`. It is built by
-  `tools/replay_viewer.spec` into the `battle-replay-viewer` executable.
-- **`app/main.py` is not the active entry point for anything.** Its own
-  docstring states that `app/agent_designer.py` and `app/replay_viewer.py`
-  "should import" `from app.main import main`, but neither file does —
-  both are self-contained and use their own `main()`. `app/main.py` is not
-  referenced by any PyInstaller spec, console script, or the
-  `battle_engine.command`/`legacy` dispatchers; running it directly opens
-  a generic blank Pygame window with no relationship to the Designer or
-  replay viewer. It is stale/orphaned source, not an active entry point;
-  this task does not delete it (see "Packaging" below for the one
-  documentation reference that did incorrectly point at it).
-- **`app/match_runner.py` is dead source**, not part of any supported
-  entry point or the shipped Windows build (see "Packaging" below).
+  `tools/replay_viewer.spec` into the `bytefray-replay-viewer` executable.
+  The v1.4 dead-code audit removed the unused `app/main.py` and
+  `app/match_runner.py` modules after proving that no command, package entry
+  point, build specification, or import referenced them.
 
 ## Configuration and artifacts
 
@@ -278,35 +263,24 @@ commands:
 | Command | Target |
 |---|---|
 | `bytefray` | `battle_engine.command:main` |
-| `battle2` (deprecated alias) | `battle_engine.command:battle2_main` |
-| `battle-cli` (compatibility) | `battle_engine.legacy:battle_cli` |
-| `battle-agent-designer` (compatibility) | `battle_engine.legacy:agent_designer` → `app.agent_designer.main()` |
+| `bytefray-cli` | `battle_engine.cli:main` |
+| `bytefray-agent-designer` | `app.agent_designer:main` |
+| `bytefray-replay-viewer` | `app.replay_viewer:main` |
 
 Windows executables are built by **`tools/build_win.ps1`**, the script CI
 actually invokes (`.github/workflows/ci.yml`'s `build-windows-exe` job).
 It builds exactly four onedir applications from four PyInstaller specs —
-`tools/battle2.spec`, `tools/battle_cli.spec`,
+`tools/bytefray.spec`, `tools/bytefray_cli.spec`,
 `tools/agent_designer.spec` (→ `app/agent_designer.py`), and
 `tools/replay_viewer.spec` (→ `app/replay_viewer.py`) — then runs a
-deterministic frozen GUI-import smoke test against `battle2.exe design`
+deterministic frozen GUI-import smoke test against `bytefray.exe design`
 and the standalone Designer. `tools/installer.iss` (Inno Setup) packages
 the same four onedir trees beneath `{app}\bin\`.
 
-**`app/match_runner.py` is not shipped.** There is no PyInstaller spec
-invoked by `tools/build_win.ps1` or `tools/installer.iss` for it, and its
-console-script entry point was removed in v0.3 (see CHANGELOG). Two older
-helper scripts, `tools/build_executables.ps1` and
-`tools/build_executables_windows.ps1`, and their matching PyInstaller spec
-`tools/match_runner.spec`, once could have built it into an executable —
-they predated the current four-executable build, were not invoked by CI or
-any documented workflow, and would have failed if run because
-`app/match_runner.py` calls
-`PygameRenderer.setup()`/`.update()`/`.on_complete()`/`.teardown()`,
-methods that no longer exist on `PygameRenderer` (see
-[`docs/WINDOWS_DEV_NOTES.md`](docs/WINDOWS_DEV_NOTES.md)). All three were
-removed in a post-1.0 maintenance pass as confirmed-unreachable leftovers;
-`app/match_runner.py` itself is unchanged and remains intentionally
-retained dead source (see AGENTS.md's "Architecture boundaries").
+The obsolete `app/main.py`, `app/match_runner.py`,
+`battle_engine.legacy`, and unused legacy Pygame canvas adapter are not
+shipped and were removed in the v1.4 dead-code audit. The `_legacy/` tree is
+retained separately as a tested historical migration fixture.
 
 Wheels contain Python packages and package-local assets only (see
 `[tool.setuptools.package-data]`). Repository-level `agents/` directories
@@ -381,18 +355,16 @@ config                 instructions     agent_state
 ## Application roots
 
 `battle_engine.paths` is the shared root-resolution boundary.
-`BYTEFRAY_ROOT` is the preferred writable-data-root environment variable;
-`BATTLE2_ROOT` and then `BATTLE_ROOT` are checked, in that order, as
-deprecated fallbacks. The application *resource* root is separate: source
+`BYTEFRAY_ROOT` is the writable-data-root environment variable. The
+application *resource* root is separate: source
 checkouts use the repository root, installed packages use package-local
 resources, and frozen applications use PyInstaller's `_MEIPASS` extraction
 directory for read-only bundled files — `_MEIPASS` is never a writable
 data root. Without an explicit root, a frozen portable application writes
-beside its executable; the Windows installer sets both `BYTEFRAY_ROOT` and
-`BATTLE2_ROOT` to `%ProgramData%\BATTLE2` (kept under the legacy name for
-upgrade continuity with existing installs). A regular installed Windows
-wheel defaults to `%LOCALAPPDATA%\BATTLE2`; a regular installed Linux
-wheel uses `$XDG_DATA_HOME/battle2` or `~/.local/share/battle2`.
+beside its executable; the Windows installer sets `BYTEFRAY_ROOT` to
+`%ProgramData%\Bytefray`. A regular installed Windows wheel defaults to
+`%LOCALAPPDATA%\Bytefray`; a regular installed Linux wheel uses
+`$XDG_DATA_HOME/bytefray` or `~/.local/share/bytefray`.
 
 `battle_engine.launchers` owns child command construction for both the
 Designer and any other launcher of a match/replay subprocess. Frozen
@@ -801,8 +773,8 @@ outcomes is flagged as a `reproducibility_anomaly` rather than silently
 labeled improved/regressed.
 
 `bytefray agents evaluations list|show|compare` (`evaluation_history.cli`)
-is wired into `command.py`'s existing `_agents` dispatch (reached
-identically through the `battle2` alias) alongside `evaluate`/`test`/
+is wired into `command.py`'s existing `_agents` dispatch alongside
+`evaluate`/`test`/
 `validate`/`inspect`/`diverge`. `show --verify`/`compare --verify` perform
 canonical `verify_result_replay` digest checks only for the selected
 artifact(s), never during default `list`, keeping on-demand scanning fast

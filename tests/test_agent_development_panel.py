@@ -34,7 +34,7 @@ def test_agent_development_tab_present_and_catalog_filters_to_python_agents(monk
     from battle_engine.agent_scaffold import create_agent
 
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     from app.agent_designer import AgentDesigner
 
@@ -73,7 +73,7 @@ def test_agent_development_tab_present_and_catalog_filters_to_python_agents(monk
 def test_new_agent_dialog_success_refreshes_and_selects(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     from app.agent_designer import AgentDesigner
     from app.views.development import NewAgentDialog
@@ -249,7 +249,7 @@ def test_development_selection_and_state_invalidation_use_exact_agent_id(tmp_pat
 def test_open_folder_enabled_after_creation_and_selection(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     from app.agent_designer import AgentDesigner
 
@@ -274,7 +274,7 @@ def test_open_folder_enabled_after_creation_and_selection(monkeypatch, tmp_path)
 def test_open_agent_folder_calls_qdesktopservices_with_correct_path(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     import app.agent_designer as agent_designer_module
     from app.agent_designer import AgentDesigner
@@ -305,7 +305,7 @@ def test_open_agent_folder_calls_qdesktopservices_with_correct_path(monkeypatch,
 def test_open_agent_folder_noop_when_nothing_selected(monkeypatch, tmp_path):
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     import app.agent_designer as agent_designer_module
     from app.agent_designer import AgentDesigner
@@ -347,7 +347,7 @@ def test_existing_simple_and_advanced_selectors_still_populate(monkeypatch, tmp_
     """Regression: starters (kind != python) must still appear in Simple/Advanced."""
     _make_app()
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     from app.agent_designer import AgentDesigner
 

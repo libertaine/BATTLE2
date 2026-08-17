@@ -347,16 +347,16 @@ class AgentDesigner(QMainWindow):
         sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
-        env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(root / "agents"))
         # Force the child to resolve the identical data root this process
         # did, rather than relying on inheritance alone: inheritance only
         # reproduces the same root when it was itself set from an explicit
-        # BYTEFRAY_ROOT/BATTLE2_ROOT/BATTLE_ROOT env var (true after a
+        # BYTEFRAY_ROOT env var (true after an
         # normal install, which sets one system-wide). In a portable,
         # no-installer, no-env-var checkout, get_data_root() falls back to
         # "the directory containing the running executable" -- a
         # *different* directory for this Designer process (its own onedir
-        # folder) than for a sibling battle2.exe/battle-cli.exe child, so
+        # folder) than for a sibling bytefray.exe/bytefray-cli.exe child, so
         # the child would silently look for agents this process just wrote
         # in the wrong place ("Unknown agent") without this override.
         env.insert("BYTEFRAY_ROOT", str(root))
@@ -368,9 +368,9 @@ class AgentDesigner(QMainWindow):
         a_params = self._cfgget(cfg, "a_params", "aParams")
         b_params = self._cfgget(cfg, "b_params", "bParams")
         if a_params is not None:
-            env.insert("BATTLE_AGENT_A_PARAMS_JSON", json.dumps(a_params))
+            env.insert("BYTEFRAY_AGENT_A_PARAMS_JSON", json.dumps(a_params))
         if b_params is not None:
-            env.insert("BATTLE_AGENT_B_PARAMS_JSON", json.dumps(b_params))
+            env.insert("BYTEFRAY_AGENT_B_PARAMS_JSON", json.dumps(b_params))
 
         proc = self._start_process(command, env, root, label="RunMatch")
 
@@ -467,7 +467,7 @@ class AgentDesigner(QMainWindow):
         sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
-        env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(root / "agents"))
         # See _on_advanced_run: forces the child onto this process's exact
         # data root instead of relying on inheritance alone.
         env.insert("BYTEFRAY_ROOT", str(root))
@@ -617,7 +617,7 @@ class AgentDesigner(QMainWindow):
         existing = env.value("PYTHONPATH") or ""
         source = [str(self.battle_root), str(self.battle_root / "engine" / "src")]
         env.insert("PYTHONPATH", sep.join(source + ([existing] if existing else [])))
-        env.insert("BATTLE_AGENTS_DIR", str(self.battle_root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(self.battle_root / "agents"))
         # See the identical override in _on_validate_agent/_on_test_agent:
         # forces the child to resolve the same data root as this process
         # instead of relying on inheritance alone, which only reproduces it
@@ -818,7 +818,7 @@ class AgentDesigner(QMainWindow):
         existing = env.value("PYTHONPATH") or ""
         source = [str(self.battle_root), str(self.battle_root / "engine" / "src")]
         env.insert("PYTHONPATH", sep.join(source + ([existing] if existing else [])))
-        env.insert("BATTLE_AGENTS_DIR", str(self.battle_root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(self.battle_root / "agents"))
         # Same forced-root override as _on_tournament/_on_validate_agent/_on_test_agent.
         env.insert("BYTEFRAY_ROOT", str(self.battle_root))
 
@@ -918,7 +918,7 @@ class AgentDesigner(QMainWindow):
         sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
-        env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(root / "agents"))
         env.insert("BYTEFRAY_ROOT", str(root))
 
         proc = self._start_process(command, env, root, label="AgentLabTest")
@@ -1002,7 +1002,7 @@ class AgentDesigner(QMainWindow):
         sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
-        env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(root / "agents"))
         env.insert("BYTEFRAY_ROOT", str(root))
 
         proc = self._start_process(command, env, root, label="Validate")
@@ -1071,7 +1071,7 @@ class AgentDesigner(QMainWindow):
         sep = ";" if sys.platform == "win32" else ":"
         existing = env.value("PYTHONPATH") or ""
         env.insert("PYTHONPATH", eng + sep + cli + (sep + existing if existing else ""))
-        env.insert("BATTLE_AGENTS_DIR", str(root / "agents"))
+        env.insert("BYTEFRAY_AGENTS_DIR", str(root / "agents"))
         env.insert("BYTEFRAY_ROOT", str(root))
 
         proc = self._start_process(command, env, root, label="AgentTest")
@@ -1264,7 +1264,7 @@ class AgentDesigner(QMainWindow):
         QMessageBox.about(
             self,
             "About Bytefray",
-            f"{info.project_name} {info.version} (formerly {info.former_project_name})\n"
+            f"{info.project_name} {info.version}\n"
             f"Agent API v{info.agent_api_version}\n"
             f"Result schema v{info.result_schema_version}; replay schema v{info.replay_schema_version}\n"
             f"Python {info.python_version}\n"
@@ -1287,7 +1287,7 @@ def main() -> int:
         app.setWindowIcon(QIcon(str(icon_path)))
     win = AgentDesigner()
     win.show()
-    smoke_exit_ms = os.environ.get("BATTLE2_GUI_SMOKE_EXIT_MS", "").strip()
+    smoke_exit_ms = os.environ.get("BYTEFRAY_GUI_SMOKE_EXIT_MS", "").strip()
     if smoke_exit_ms:
         QTimer.singleShot(max(0, int(smoke_exit_ms)), app.quit)
     return app.exec()

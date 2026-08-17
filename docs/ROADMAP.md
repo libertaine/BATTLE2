@@ -167,8 +167,8 @@ work in its scope. It is recorded here so the roadmap cannot be read as
 The gate covers, narrowly:
 
 - production application/executable icons (the four PyInstaller
-  applications: `battle2`, `battle-cli`, `battle-agent-designer`,
-  `battle-replay-viewer`) — **done**;
+  applications (now `bytefray`, `bytefray-cli`, `bytefray-agent-designer`,
+  and `bytefray-replay-viewer`) — **done**;
 - Windows executable icon resources (`tools/*.spec`) — **done**;
 - installer icon/branding (`tools/installer.iss`) — **done**
   (`SetupIconFile`/`UninstallDisplayIcon`; live installer-lifecycle smoke
@@ -401,7 +401,7 @@ thin layer would therefore be inaccurate.
   unchanged.
 - **Windows packaging fixes**: `tools/agent_designer.spec`/`tools/
   replay_viewer.spec` now build the same onedir (thin-launcher-plus-loose-files)
-  shape as `tools/battle2.spec`/`tools/battle_cli.spec`, correcting a real,
+  shape as `tools/bytefray.spec`/`tools/bytefray_cli.spec`, correcting a real,
   previously-shipped inconsistency (both specs previously baked every
   dependency into one fat `EXE` first). `tools/build_win.ps1`'s GUI smoke
   test now isolates its own `BYTEFRAY_ROOT`, waits for GUI-subsystem

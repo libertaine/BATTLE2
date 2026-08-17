@@ -11,9 +11,7 @@ Full isolated lifecycle validation:
 [CmdletBinding()]
 param(
   [string]$AppDir = "$Env:ProgramFiles\Bytefray",
-  # Installer keeps the writable data directory at ProgramData\BATTLE2 for
-  # upgrade continuity; see the comment in tools/installer.iss GetDataRoot.
-  [string]$DataRoot = "$Env:ProgramData\BATTLE2",
+  [string]$DataRoot = "$Env:ProgramData\Bytefray",
   [string]$InstallerPath,
   [int]$GuiHoldSeconds = 5,
   [switch]$SkipGui,
@@ -24,10 +22,10 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $ArtifactNames = @(
-  "battle2",
-  "battle-cli",
-  "battle-agent-designer",
-  "battle-replay-viewer"
+  "bytefray",
+  "bytefray-cli",
+  "bytefray-agent-designer",
+  "bytefray-replay-viewer"
 )
 $AppDir = [IO.Path]::GetFullPath($AppDir)
 $DataRoot = [IO.Path]::GetFullPath($DataRoot)
@@ -117,7 +115,7 @@ function Test-GuiStartup(
   Stop-SmokeApplication $Executable $Description
 }
 
-function Install-Battle2([string]$Description) {
+function Install-Bytefray([string]$Description) {
   if (-not $InstallerPath) { throw "-InstallerPath is required with -Lifecycle." }
   $ResolvedInstaller = (Resolve-Path -LiteralPath $InstallerPath).Path
   $Result = Invoke-ProcessChecked -Executable $ResolvedInstaller -Description $Description -Arguments @(
@@ -125,14 +123,13 @@ function Install-Battle2([string]$Description) {
     "/SUPPRESSMSGBOXES",
     "/NORESTART",
     "/DIR=$AppDir",
-    "/BATTLE2DATAROOT=$DataRoot"
+    "/BYTEFRAYDATAROOT=$DataRoot"
   ) -CaptureOutput
   if ($Result.ExitCode -ne 0) { throw "$Description failed." }
 }
 
 function Invoke-InstalledSmoke {
   $env:BYTEFRAY_ROOT = $DataRoot
-  Remove-Item Env:BATTLE_ROOT -ErrorAction SilentlyContinue
   Write-SmokeLog "Application root: $AppDir"
   Write-SmokeLog "Writable data root: $DataRoot"
 
@@ -143,7 +140,7 @@ function Invoke-InstalledSmoke {
     $_.FullName.Substring($AppDir.Length).TrimStart([IO.Path]::DirectorySeparatorChar)
   } | Set-Content -LiteralPath $StructureLog
 
-  foreach ($CliArtifact in @("battle2", "battle-cli")) {
+  foreach ($CliArtifact in @("bytefray", "bytefray-cli")) {
     $ArtifactDir = Split-Path -Parent $Executables[$CliArtifact]
     foreach ($Resource in @("pmars.exe", "COPYING")) {
       $ResourcePath = Join-Path $ArtifactDir "_internal\pmars\windows\$Resource"
@@ -168,18 +165,18 @@ function Invoke-InstalledSmoke {
     }
   }
 
-  $DesignerParent = Split-Path -Parent (Split-Path -Parent $Executables["battle-agent-designer"])
-  $ExpectedBattle2 = Join-Path $DesignerParent "battle2\battle2.exe"
-  $ExpectedViewer = Join-Path $DesignerParent "battle-replay-viewer\battle-replay-viewer.exe"
-  if (-not (Test-Path -LiteralPath $ExpectedBattle2)) { throw "Designer sibling match executable missing: $ExpectedBattle2" }
+  $DesignerParent = Split-Path -Parent (Split-Path -Parent $Executables["bytefray-agent-designer"])
+  $ExpectedBytefray = Join-Path $DesignerParent "bytefray\bytefray.exe"
+  $ExpectedViewer = Join-Path $DesignerParent "bytefray-replay-viewer\bytefray-replay-viewer.exe"
+  if (-not (Test-Path -LiteralPath $ExpectedBytefray)) { throw "Designer sibling match executable missing: $ExpectedBytefray" }
   if (-not (Test-Path -LiteralPath $ExpectedViewer)) { throw "Designer sibling replay executable missing: $ExpectedViewer" }
 
-  Invoke-ProcessChecked $Executables["battle2"] @("--help") "battle2 help" -CaptureOutput | Out-Null
-  Invoke-ProcessChecked $Executables["battle-cli"] @("--help") "battle-cli help" -CaptureOutput | Out-Null
-  Invoke-ProcessChecked $Executables["battle-replay-viewer"] @("--help") "replay viewer help" -CaptureOutput | Out-Null
+  Invoke-ProcessChecked $Executables["bytefray"] @("--help") "bytefray help" -CaptureOutput | Out-Null
+  Invoke-ProcessChecked $Executables["bytefray-cli"] @("--help") "bytefray-cli help" -CaptureOutput | Out-Null
+  Invoke-ProcessChecked $Executables["bytefray-replay-viewer"] @("--help") "replay viewer help" -CaptureOutput | Out-Null
 
   if (-not $SkipGui) {
-    Test-GuiStartup $Executables["battle-agent-designer"] @() "Agent Designer"
+    Test-GuiStartup $Executables["bytefray-agent-designer"] @() "Agent Designer"
   }
 
   $ExpectedAgents = @("runner", "writer", "seeker", "spiral")
@@ -191,14 +188,14 @@ function Invoke-InstalledSmoke {
   $Runs = Join-Path $DataRoot "runs\installer-smoke"
   New-Item -ItemType Directory -Force -Path $Runs | Out-Null
   $Replay = Join-Path $Runs "starter replay.jsonl"
-  Invoke-ProcessChecked $Executables["battle2"] @(
+  Invoke-ProcessChecked $Executables["bytefray"] @(
     "run", "--ticks", "200", "--arena", "128", "--a-type", "seeker",
     "--b-type", "writer", "--b-start", "64", "--replay", $Replay, "--quiet"
   ) "starter-agent match" -CaptureOutput | Out-Null
   if ((Get-Item -LiteralPath $Replay).Length -le 0) { throw "Starter replay is missing or empty: $Replay" }
 
   if (-not $SkipGui) {
-    Test-GuiStartup $Executables["battle-replay-viewer"] @(
+    Test-GuiStartup $Executables["bytefray-replay-viewer"] @(
       "--replay", $Replay, "--renderer", "pygame", "--tick-delay", "0.05"
     ) "Replay Viewer"
   }
@@ -210,14 +207,14 @@ function Invoke-InstalledSmoke {
   Set-Content -LiteralPath $WarriorA -Encoding ascii -Value ";redcode`n;name Imp One`nmov 0, 1`nend"
   Set-Content -LiteralPath $WarriorB -Encoding ascii -Value ";redcode`n;name Imp Two`nmov 0, 1`nend"
   Remove-Item Env:PMARS_CMD -ErrorAction SilentlyContinue
-  Invoke-ProcessChecked $Executables["battle2"] @(
+  Invoke-ProcessChecked $Executables["bytefray"] @(
     "run", "--mode", "redcode94", "--red-a", $WarriorA, "--red-b", $WarriorB,
     "--rounds", "1", "--replay", (Join-Path $Runs "pmars replay.jsonl"), "--quiet"
   ) "bundled pMARS match" -CaptureOutput | Out-Null
 
   $InvalidDir = Join-Path $Runs "invalid-pmars"
   $env:PMARS_CMD = Join-Path $DataRoot "missing pMARS\pmars.exe"
-  $Invalid = Invoke-ProcessChecked $Executables["battle2"] @(
+  $Invalid = Invoke-ProcessChecked $Executables["bytefray"] @(
     "run", "--mode", "redcode94", "--red-a", $WarriorA, "--red-b", $WarriorB,
     "--replay", (Join-Path $InvalidDir "replay.jsonl"), "--quiet"
   ) "invalid PMARS_CMD" -ExpectedExitCodes @(2) -CaptureOutput
@@ -248,14 +245,9 @@ $Principal = [Security.Principal.WindowsPrincipal]::new($Identity)
 if (-not $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
   throw "-Lifecycle must run from an elevated PowerShell because the installer sets a machine environment variable."
 }
-$PreviousMachineRoot = [Environment]::GetEnvironmentVariable("BATTLE2_ROOT", "Machine")
 $PreviousMachineBytefrayRoot = [Environment]::GetEnvironmentVariable("BYTEFRAY_ROOT", "Machine")
 try {
-  Install-Battle2 "initial silent install"
-  $MachineRoot = [Environment]::GetEnvironmentVariable("BATTLE2_ROOT", "Machine")
-  if ([IO.Path]::GetFullPath($MachineRoot) -ne $DataRoot) {
-    throw "Machine BATTLE2_ROOT mismatch: expected '$DataRoot', found '$MachineRoot'."
-  }
+  Install-Bytefray "initial silent install"
   $MachineBytefrayRoot = [Environment]::GetEnvironmentVariable("BYTEFRAY_ROOT", "Machine")
   if ([IO.Path]::GetFullPath($MachineBytefrayRoot) -ne $DataRoot) {
     throw "Machine BYTEFRAY_ROOT mismatch: expected '$DataRoot', found '$MachineBytefrayRoot'."
@@ -269,7 +261,7 @@ try {
   $UserFile = Join-Path $DataRoot "agents\user-upgrade-sentinel.txt"
   Set-Content -LiteralPath $UserFile -Value "preserve across upgrade and uninstall"
 
-  Install-Battle2 "upgrade silent install"
+  Install-Bytefray "upgrade silent install"
   Invoke-InstalledSmoke
   if ((Get-FileHash -LiteralPath $RunnerManifest -Algorithm SHA256).Hash -ne $ModifiedHash) {
     throw "Upgrade or second startup overwrote the user-modified runner manifest."
@@ -290,10 +282,6 @@ try {
       throw "Installed Start Menu shortcut remains after uninstall: $Shortcut"
     }
   }
-  $MachineRootAfterUninstall = [Environment]::GetEnvironmentVariable("BATTLE2_ROOT", "Machine")
-  if ($null -ne $MachineRootAfterUninstall) {
-    throw "Machine BATTLE2_ROOT remains after uninstall: $MachineRootAfterUninstall"
-  }
   $MachineBytefrayRootAfterUninstall = [Environment]::GetEnvironmentVariable("BYTEFRAY_ROOT", "Machine")
   if ($null -ne $MachineBytefrayRootAfterUninstall) {
     throw "Machine BYTEFRAY_ROOT remains after uninstall: $MachineBytefrayRootAfterUninstall"
@@ -303,7 +291,6 @@ try {
   Write-SmokeLog "Upgrade preserved modified agents; uninstall removed programs and retained data."
   Write-SmokeLog "=== SUCCESS: full installer lifecycle passed ==="
 } finally {
-  [Environment]::SetEnvironmentVariable("BATTLE2_ROOT", $PreviousMachineRoot, "Machine")
   [Environment]::SetEnvironmentVariable("BYTEFRAY_ROOT", $PreviousMachineBytefrayRoot, "Machine")
-  Write-SmokeLog "Restored previous machine BATTLE2_ROOT and BYTEFRAY_ROOT values."
+  Write-SmokeLog "Restored the previous machine BYTEFRAY_ROOT value."
 }

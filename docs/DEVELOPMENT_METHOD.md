@@ -6,7 +6,7 @@ built — it is not a Bytefray feature, and nothing described here is required
 to build, install, or run Bytefray, create or run agents, execute tests, use
 Agent Designer, run CI, or produce a release.
 
-Bytefray (formerly BATTLE2) began partly as an experiment in whether large
+Bytefray began partly as an experiment in whether large
 language models could contribute meaningfully to the creation of a real
 software project. It has evolved into an exploration of AI-assisted,
 human-directed software development. AI tools are used for implementation,

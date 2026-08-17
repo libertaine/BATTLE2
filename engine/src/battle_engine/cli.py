@@ -63,15 +63,15 @@ def _pmars_arguments(
 
 
 
-def _battle_root() -> Path:
-    """Compatibility wrapper for the shared writable data-root resolver."""
+def _data_root() -> Path:
+    """Return the shared writable data root."""
     return get_data_root()
 
 
 def _resolve_replay_path(value: str | None) -> Path:
     """Resolve the default under the data root or an explicit path from the CWD."""
     if value is None:
-        return (_battle_root() / DEFAULT_REPLAY_RELATIVE_PATH).resolve()
+        return (_data_root() / DEFAULT_REPLAY_RELATIVE_PATH).resolve()
     return Path(value).expanduser().resolve()
 
 
@@ -117,22 +117,22 @@ def read_blob(path: str | os.PathLike[str]) -> bytes:
 def _load_agents_spec_from_env() -> tuple[dict[str, Any], Path | None]:
     """
     Back-compat:
-      BATTLE_AGENTS_JSON='{"A":{"type":"blob","path":"agents/x/model.blob"}}'
+      BYTEFRAY_AGENTS_JSON='{"A":{"type":"blob","path":"agents/x/model.blob"}}'
     """
-    raw = os.environ.get("BATTLE_AGENTS_JSON", "").strip()
+    raw = os.environ.get("BYTEFRAY_AGENTS_JSON", "").strip()
     if not raw:
         return {}, None
 
     try:
         spec = json.loads(raw)
     except Exception as exc:
-        raise SystemExit(f"Malformed JSON in $BATTLE_AGENTS_JSON: {exc}")
+        raise SystemExit(f"Malformed JSON in $BYTEFRAY_AGENTS_JSON: {exc}")
 
     if not isinstance(spec, dict):
-        raise SystemExit("$BATTLE_AGENTS_JSON must be a JSON object.")
+        raise SystemExit("$BYTEFRAY_AGENTS_JSON must be a JSON object.")
 
-    base = os.environ.get("BATTLE_AGENTS_DIR", "").strip()
-    base_dir = Path(base).expanduser().resolve() if base else _battle_root()
+    base = os.environ.get("BYTEFRAY_AGENTS_DIR", "").strip()
+    base_dir = Path(base).expanduser().resolve() if base else _data_root()
     return spec, base_dir
 
 
@@ -170,7 +170,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--pygame",
         action="store_true",
-        help="(deprecated/no-op) rendering moved to the client; use battle-client",
+        help="(deprecated/no-op) rendering moved to `bytefray replay`",
     )
 
     # Config overrides
@@ -258,9 +258,9 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     # ICWS'94 / pMARS backend flags
     p.add_argument(
         "--mode",
-        choices=["b2", "redcode94"],
-        default="b2",
-        help="Engine mode: 'b2' for the native engine (default) or 'redcode94' to run pMARS.",
+        choices=["native", "redcode94"],
+        default="native",
+        help="Engine mode: 'native' for Bytefray (default) or 'redcode94' to run pMARS.",
     )
     p.add_argument(
         "--red-a", type=str, help="Warrior A file (.red or .load) for redcode94 mode"
@@ -303,7 +303,7 @@ def _resolve_agent(
     Resolve an agent for slot A/B/C.
 
     Precedence:
-      1) BATTLE_AGENTS_JSON
+      1) BYTEFRAY_AGENTS_JSON
       2) --a-blob / --b-blob / --c-blob
       3) discovered agent under /agents
       4) built-in by name
@@ -343,7 +343,7 @@ def _resolve_agent(
     if not agent_name:
         return None, "", start, None
 
-    root = _battle_root()
+    root = _data_root()
 
     try:
         spec_obj = resolve_agent(root, agent_name)
@@ -353,7 +353,7 @@ def _resolve_agent(
         spec_obj = None
 
     if spec_obj is not None:
-        side_env = _parse_env_json(f"BATTLE_AGENT_{letter}_PARAMS_JSON")
+        side_env = _parse_env_json(f"BYTEFRAY_AGENT_{letter}_PARAMS_JSON")
 
         if spec_obj.kind == "python":
             return None, agent_name, start, spec_obj
@@ -379,7 +379,7 @@ def _resolve_agent(
             raise SystemExit(
                 f"No blob specified for agent '{agent_name}'. "
                 f"Provide model.blob in agents/{agent_name}/ or pass via env JSON "
-                f"key 'blob_path' in $BATTLE_AGENT_{letter}_PARAMS_JSON or use "
+                f"key 'blob_path' in $BYTEFRAY_AGENT_{letter}_PARAMS_JSON or use "
                 f"--{letter.lower()}-blob."
             )
 
@@ -389,7 +389,7 @@ def _resolve_agent(
 
     # 4) built-in fallback
     if agent_name in SUPPORTED:
-        side_env = _parse_env_json(f"BATTLE_AGENT_{letter}_PARAMS_JSON")
+        side_env = _parse_env_json(f"BYTEFRAY_AGENT_{letter}_PARAMS_JSON")
         code = build_agent(agent_name, start, **_merge_params(common_kwargs, side_env))
         return code, agent_name, start, None
 
@@ -411,7 +411,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
 
     if getattr(args, "list_agents", False):
-        root = _battle_root()
+        root = _data_root()
         try:
             ensure_starter_agents(data_root=root)
         except (FileNotFoundError, OSError, ValueError) as exc:
@@ -596,10 +596,10 @@ def main(argv: Iterable[str] | None = None) -> int:
     )
 
     try:
-        root = _battle_root()
-        a_env = _parse_env_json("BATTLE_AGENT_A_PARAMS_JSON")
-        b_env = _parse_env_json("BATTLE_AGENT_B_PARAMS_JSON")
-        c_env = _parse_env_json("BATTLE_AGENT_C_PARAMS_JSON")
+        root = _data_root()
+        a_env = _parse_env_json("BYTEFRAY_AGENT_A_PARAMS_JSON")
+        b_env = _parse_env_json("BYTEFRAY_AGENT_B_PARAMS_JSON")
+        c_env = _parse_env_json("BYTEFRAY_AGENT_C_PARAMS_JSON")
 
         def _try_resolve(name: str | None):
             if not name:

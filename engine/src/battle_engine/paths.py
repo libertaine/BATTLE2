@@ -14,19 +14,10 @@ def normalize_root(value: str | os.PathLike[str]) -> Path:
 
 
 def configured_data_root(environ: Mapping[str, str] | None = None) -> Path | None:
-    """Resolve the explicit writable root.
-
-    ``BYTEFRAY_ROOT`` is the preferred, current variable. ``BATTLE2_ROOT`` and
-    ``BATTLE_ROOT`` remain supported, deprecated compatibility aliases from
-    the project's prior name, checked in that order when ``BYTEFRAY_ROOT`` is
-    unset.
-    """
+    """Resolve the explicit writable root from ``BYTEFRAY_ROOT``."""
     values = os.environ if environ is None else environ
-    for name in ("BYTEFRAY_ROOT", "BATTLE2_ROOT", "BATTLE_ROOT"):
-        value = values.get(name, "").strip()
-        if value:
-            return normalize_root(value)
-    return None
+    value = values.get("BYTEFRAY_ROOT", "").strip()
+    return normalize_root(value) if value else None
 
 
 def _source_checkout_root() -> Path | None:
@@ -67,22 +58,22 @@ def _linux_data_root(environ: Mapping[str, str]) -> Path:
     """Return the XDG data directory used by a regular Linux installation."""
     xdg_data_home = environ.get("XDG_DATA_HOME", "").strip()
     if xdg_data_home:
-        return normalize_root(Path(xdg_data_home) / "battle2")
+        return normalize_root(Path(xdg_data_home) / "bytefray")
 
     configured_home = environ.get("HOME", "").strip()
     home = normalize_root(configured_home) if configured_home else Path.home().resolve()
-    return home / ".local" / "share" / "battle2"
+    return home / ".local" / "share" / "bytefray"
 
 
 def _windows_data_root(environ: Mapping[str, str]) -> Path:
     """Return the per-user data directory used by a regular Windows installation."""
     local_app_data = environ.get("LOCALAPPDATA", "").strip()
     if local_app_data:
-        return normalize_root(Path(local_app_data) / "BATTLE2")
+        return normalize_root(Path(local_app_data) / "Bytefray")
 
     configured_home = environ.get("USERPROFILE", "").strip()
     home = normalize_root(configured_home) if configured_home else Path.home().resolve()
-    return home / "AppData" / "Local" / "BATTLE2"
+    return home / "AppData" / "Local" / "Bytefray"
 
 
 def installed_data_root(
@@ -152,7 +143,7 @@ def get_data_root(environ: Mapping[str, str] | None = None) -> Path:
 
     if is_frozen_application():
         # Portable builds remain self-contained. Installed builds set
-        # BATTLE2_ROOT to their writable ProgramData location.
+        # BYTEFRAY_ROOT to their writable ProgramData location.
         return normalize_root(Path(sys.executable).parent)
 
     checkout_root = _source_checkout_root()
@@ -160,13 +151,6 @@ def get_data_root(environ: Mapping[str, str] | None = None) -> Path:
         return checkout_root
 
     return installed_data_root(values)
-
-
-# Compatibility name retained for v0.1 callers that treated "battle root" as
-# the writable agent/run root.
-def get_battle_root() -> Path:
-    return get_data_root()
-
 
 def contained_path(base_dir: Path, relative: str | os.PathLike[str]) -> Path | None:
     """Resolve ``relative`` beneath ``base_dir``, or ``None`` if it escapes.

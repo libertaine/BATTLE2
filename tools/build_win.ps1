@@ -54,13 +54,13 @@ Remove-Item -Recurse -Force $DistDir  -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $DistDir  | Out-Null
 
-# Required v0.2 artifacts. Keep each app in its own onedir folder so the same
+# Keep each app in its own onedir folder so the same
 # layout can be copied beneath an installer's bin directory without renaming.
 $Artifacts = @(
-  @{ Name = "battle2";                 Spec = "tools\battle2.spec" },
-  @{ Name = "battle-cli";              Spec = "tools\battle_cli.spec" },
-  @{ Name = "battle-agent-designer";   Spec = "tools\agent_designer.spec" },
-  @{ Name = "battle-replay-viewer";    Spec = "tools\replay_viewer.spec" }
+  @{ Name = "bytefray";                 Spec = "tools\bytefray.spec" },
+  @{ Name = "bytefray-cli";             Spec = "tools\bytefray_cli.spec" },
+  @{ Name = "bytefray-agent-designer";  Spec = "tools\agent_designer.spec" },
+  @{ Name = "bytefray-replay-viewer";   Spec = "tools\replay_viewer.spec" }
 )
 
 foreach ($Artifact in $Artifacts) {
@@ -82,22 +82,22 @@ foreach ($Artifact in $Artifacts) {
 # whatever data root get_data_root() resolves; a portable/frozen app with no
 # BYTEFRAY_ROOT set defaults to writing beside its own executable
 # (battle_engine.paths), so without isolation this smoke test previously
-# left a runtime-generated agents/ directory inside dist\windows\battle2\
-# and dist\windows\battle-agent-designer\ -- contaminating the exact tree
+# left a runtime-generated agents/ directory inside the distributable trees,
+# contaminating the exact tree
 # tools/installer.iss and the portable ZIP both package verbatim. Isolated
 # the same way the 'agents create' smoke block below already isolates
 # BYTEFRAY_ROOT, so build qualification cannot pollute the distributable
 # tree regardless of what a smoked GUI happens to initialize on startup.
-$PreviousSmokeExit = $env:BATTLE2_GUI_SMOKE_EXIT_MS
+$PreviousSmokeExit = $env:BYTEFRAY_GUI_SMOKE_EXIT_MS
 $PreviousGuiSmokeRoot = $env:BYTEFRAY_ROOT
 $GuiSmokeRoot = Join-Path ([IO.Path]::GetTempPath()) ("bytefray-gui-smoke-" + [Guid]::NewGuid().ToString("N"))
 try {
   New-Item -ItemType Directory -Force -Path $GuiSmokeRoot | Out-Null
-  $env:BATTLE2_GUI_SMOKE_EXIT_MS = "750"
+  $env:BYTEFRAY_GUI_SMOKE_EXIT_MS = "750"
   $env:BYTEFRAY_ROOT = $GuiSmokeRoot
   foreach ($Smoke in @(
-    @{ Path = (Join-Path $DistDir "battle2\battle2.exe"); Args = @("design") },
-    @{ Path = (Join-Path $DistDir "battle-agent-designer\battle-agent-designer.exe"); Args = @() }
+    @{ Path = (Join-Path $DistDir "bytefray\bytefray.exe"); Args = @("design") },
+    @{ Path = (Join-Path $DistDir "bytefray-agent-designer\bytefray-agent-designer.exe"); Args = @() }
   )) {
     Write-Host ("[build] GUI import/startup smoke: {0}" -f $Smoke.Path)
     # PowerShell does not wait for a Windows GUI-subsystem executable when
@@ -111,9 +111,9 @@ try {
   }
 } finally {
   if ($null -eq $PreviousSmokeExit) {
-    Remove-Item Env:BATTLE2_GUI_SMOKE_EXIT_MS -ErrorAction SilentlyContinue
+    Remove-Item Env:BYTEFRAY_GUI_SMOKE_EXIT_MS -ErrorAction SilentlyContinue
   } else {
-    $env:BATTLE2_GUI_SMOKE_EXIT_MS = $PreviousSmokeExit
+    $env:BYTEFRAY_GUI_SMOKE_EXIT_MS = $PreviousSmokeExit
   }
   if ($null -eq $PreviousGuiSmokeRoot) {
     Remove-Item Env:BYTEFRAY_ROOT -ErrorAction SilentlyContinue
@@ -128,9 +128,9 @@ try {
   }
 }
 
-# Exercise 'bytefray agents create' against the actual frozen battle2.exe in
+# Exercise 'bytefray agents create' against the actual frozen bytefray.exe in
 # an isolated, throwaway BYTEFRAY_ROOT. This is a regression check for a
-# real, previously-shipped defect: tools/battle2.spec bundled
+# real, previously-shipped defect: the unified executable spec bundled
 # battle_engine/data/starter_agents but not the sibling
 # battle_engine/data/agent_template directory 'agents create' depends on, so
 # the resource was silently absent from the frozen build's _MEIPASS
@@ -143,16 +143,16 @@ $PreviousBytefrayRoot = $env:BYTEFRAY_ROOT
 try {
   New-Item -ItemType Directory -Force -Path $SmokeRoot | Out-Null
   $env:BYTEFRAY_ROOT = $SmokeRoot
-  $Battle2Exe = Join-Path $DistDir "battle2\battle2.exe"
-  Write-Host "[build] 'agents create' smoke test against $Battle2Exe (BYTEFRAY_ROOT=$SmokeRoot)"
-  & $Battle2Exe agents create smoke_agent
+  $BytefrayExe = Join-Path $DistDir "bytefray\bytefray.exe"
+  Write-Host "[build] 'agents create' smoke test against $BytefrayExe (BYTEFRAY_ROOT=$SmokeRoot)"
+  & $BytefrayExe agents create smoke_agent
   if ($LASTEXITCODE -ne 0) {
-    throw "'battle2.exe agents create smoke_agent' failed with exit code $LASTEXITCODE"
+    throw "'bytefray.exe agents create smoke_agent' failed with exit code $LASTEXITCODE"
   }
   $ManifestPath = Join-Path $SmokeRoot "agents\smoke_agent\agent.yaml"
   $SourcePath = Join-Path $SmokeRoot "agents\smoke_agent\agent.py"
   if (-not (Test-Path $ManifestPath) -or -not (Test-Path $SourcePath)) {
-    throw "'battle2.exe agents create smoke_agent' did not write the expected agent.yaml/agent.py under $SmokeRoot"
+    throw "'bytefray.exe agents create smoke_agent' did not write the expected agent.yaml/agent.py under $SmokeRoot"
   }
   Write-Host "[build] 'agents create' smoke test passed."
 } finally {

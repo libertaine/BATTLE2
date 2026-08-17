@@ -34,9 +34,9 @@ EXPECTED_FILES = {
 }
 EXPECTED_SCRIPTS = {
     "bytefray",
-    "battle2",
-    "battle-agent-designer",
-    "battle-cli",
+    "bytefray-cli",
+    "bytefray-agent-designer",
+    "bytefray-replay-viewer",
 }
 ALLOWED_PMARS_PATHS = {"battle_engine/pmars.py"}
 

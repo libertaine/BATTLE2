@@ -34,7 +34,7 @@ def test_engine_cli_starts_and_displays_help():
     assert result.returncode == 0
     assert "usage: bytefray run" in result.stdout
     assert "--list-agents" in result.stdout
-    assert "--mode {b2,redcode94}" in result.stdout
+    assert "--mode {native,redcode94}" in result.stdout
 
 
 def test_cli_creates_replay_and_summary_json(tmp_path):
@@ -81,7 +81,7 @@ def test_cli_creates_replay_and_summary_json(tmp_path):
 def test_resolve_agent_applies_per_agent_env_json_to_builtin_construction(
     monkeypatch, tmp_path
 ):
-    """BATTLE_AGENT_A_PARAMS_JSON/BATTLE_AGENT_B_PARAMS_JSON must actually
+    """BYTEFRAY_AGENT_A_PARAMS_JSON/BYTEFRAY_AGENT_B_PARAMS_JSON must actually
     override a built-in agent's construction kwargs, not just be parsed and
     discarded. This is the engine-side half of the previously-confirmed
     "Agent Params silently discarded" bug: the Designer's Advanced tab
@@ -92,7 +92,7 @@ def test_resolve_agent_applies_per_agent_env_json_to_builtin_construction(
     from battle_engine.cli import _resolve_agent, parse_args
 
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
-    monkeypatch.delenv("BATTLE_AGENT_A_PARAMS_JSON", raising=False)
+    monkeypatch.delenv("BYTEFRAY_AGENT_A_PARAMS_JSON", raising=False)
 
     args = parse_args(["--a-type", "writer", "--b-type", "writer"])
     common_kwargs = {"offset": 1, "byte": 1}
@@ -105,7 +105,7 @@ def test_resolve_agent_applies_per_agent_env_json_to_builtin_construction(
     assert baseline_code == build_agent("writer", start, **common_kwargs)
 
     monkeypatch.setenv(
-        "BATTLE_AGENT_A_PARAMS_JSON", json.dumps({"offset": 99, "byte": 66})
+        "BYTEFRAY_AGENT_A_PARAMS_JSON", json.dumps({"offset": 99, "byte": 66})
     )
     overridden_code, _, _, _ = _resolve_agent(
         "A", {}, None, args, None, common_kwargs

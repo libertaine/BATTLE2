@@ -219,7 +219,7 @@ def test_designer_evaluate_command_includes_single_orientation_flag_only_when_un
     from app.agent_designer import AgentDesigner
     from app.services.agent_catalog import AgentRow
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     designer = AgentDesigner()
     try:
         designer.development.setAgents(
@@ -518,7 +518,7 @@ def test_designer_evaluate_is_noop_without_python_agents(monkeypatch, tmp_path):
     import app.agent_designer as agent_designer_module
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     designer = AgentDesigner()
     try:
         # Force an empty Python-agent catalog, even though Bytefray now
@@ -554,7 +554,7 @@ def test_designer_evaluate_launches_process_on_accept(monkeypatch, tmp_path):
     from app.services.agent_catalog import AgentRow
 
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
     designer = AgentDesigner()
     try:
         designer.development.setAgents(
@@ -630,7 +630,7 @@ def test_designer_evaluate_shows_warning_on_invalid_request(monkeypatch, tmp_pat
     from app.agent_designer import AgentDesigner
     from app.services.agent_catalog import AgentRow
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     designer = AgentDesigner()
     try:
         designer.development.setAgents(
@@ -692,7 +692,7 @@ def test_designer_present_evaluation_result_opens_results_dialog(monkeypatch, tm
     _make_app()
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "designer-data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "designer-data"))
     designer = AgentDesigner()
     try:
         state_path = _run_real_evaluation(tmp_path, baseline=True)
@@ -732,7 +732,7 @@ def test_designer_evaluation_test_in_agent_lab_reproduces_ticks_and_orientation(
     _make_app()
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     designer = AgentDesigner()
     try:
         designer._evaluation_ticks = 999  # selected-cell ticks must win over stale state
@@ -782,7 +782,7 @@ def test_designer_evaluate_uses_discovery_id_not_display_name_when_they_differ(m
     from app.agent_designer import AgentDesigner
 
     data_root = tmp_path / "data"
-    monkeypatch.setenv("BATTLE2_ROOT", str(data_root))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
 
     def _write_agent(directory_name: str, display_name: str) -> None:
         directory = data_root / "agents" / directory_name
@@ -875,7 +875,7 @@ def test_designer_evaluation_open_replay_delegates_to_launcher(monkeypatch, tmp_
     _make_app()
     from app.agent_designer import AgentDesigner
 
-    monkeypatch.setenv("BATTLE2_ROOT", str(tmp_path / "data"))
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
     designer = AgentDesigner()
     try:
         launched = []

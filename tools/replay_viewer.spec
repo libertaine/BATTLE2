@@ -33,8 +33,8 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz, a.scripts, [],
     exclude_binaries=True,
-    name='battle-replay-viewer',
+    name='bytefray-replay-viewer',
     console=False,
     icon=icon_path,
 )
-coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, name='battle-replay-viewer')
+coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, name='bytefray-replay-viewer')

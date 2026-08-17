@@ -20,8 +20,8 @@ Claude Code.
 ## Repo-specific things to double-check before editing
 
 - Check whether a name that looks unused is actually a retained compatibility
-  surface (`battle2` alias, `battle_engine.core` re-exports, `BATTLE2_ROOT`
-  fallback, etc.) before removing it — AGENTS.md's "Compatibility
+  surface (`battle_engine.core` re-exports and stable protocol identifiers,
+  for example) before removing it — AGENTS.md's "Compatibility
   requirements" section lists the ones that come up most.
 - `docs/specs/` holds the specs that are meant to be written *before*
   implementation for function-level tasks (see CONTRIBUTING.md's

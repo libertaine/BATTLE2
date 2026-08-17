@@ -29,7 +29,7 @@ package formats remain owned by `battle_engine`.
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -e ".[replay,designer]"
-battle-agent-designer
+bytefray-agent-designer
 ```
 
 Without installing the console entry point:
@@ -38,9 +38,8 @@ Without installing the console entry point:
 python -m app.agent_designer
 ```
 
-`BYTEFRAY_ROOT` selects the writable data root. `BATTLE2_ROOT` and
-`BATTLE_ROOT` remain deprecated fallbacks; see `INSTALL.md` for precedence and
-portable-install behavior. Agents are discovered under
+`BYTEFRAY_ROOT` selects the writable data root; see `INSTALL.md` for default
+and portable-install behavior. Agents are discovered under
 `<data-root>/agents/<agent-id>/` from their `agent.yaml` manifests. The
 directory/discovery id and human-readable display name may differ.
 
