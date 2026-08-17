@@ -11,7 +11,7 @@ Create an isolated environment and install the wheel:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install ./bytefray-1.3.0-py3-none-any.whl
+python -m pip install ./bytefray-1.4.0-py3-none-any.whl
 ```
 
 The core install supports native matches and headless replay. Optional desktop

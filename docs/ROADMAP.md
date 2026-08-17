@@ -415,8 +415,8 @@ or agent-revision-identity change — see `docs/COMPATIBILITY.md`. See
 
 ## v1.4.0 — Platform Integrity & Scaling
 
-**Status: in development on `v1.4-development`.** This milestone cleans and
-measures the stable 1.x platform without changing `bytefray-rules-1`:
+**Status: shipped.** `v1.4.0` is tagged and published. This milestone cleans
+and measures the stable 1.x platform without changing `bytefray-rules-1`:
 
 - retire obsolete predecessor product/command/executable/data-root naming
   while preserving stable protocol identifiers and genuine history;
@@ -435,6 +435,13 @@ No Ruleset, Agent API, RNG, scheduler semantics, evaluation methodology,
 artifact interpretation, package/revision identity, or gameplay change belongs
 in v1.4. See [the audit](V1_4_PLATFORM_INTEGRITY.md) and
 [scaling report](performance/V1_4_SCALING.md).
+
+The headless-suite total changed from 1241 to 1240 because 13 retired
+predecessor-compatibility tests were removed while 12 new integrity and
+Ruleset-v1 equivalence tests were added: a deliberate net reduction of one,
+not a coverage regression. Release qualification re-ran the golden corpus
+after the 1.4.0 identity bump and confirmed unchanged gameplay, identity,
+state, statistics, and normalized replay content.
 
 ## v1.5.0 — Architecture Evolution Readiness
 

@@ -2,9 +2,9 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
-## [Unreleased]
+## [1.4.0] - 2026-08-16
 
-### v1.4 Platform Integrity & Scaling development
+### Platform Integrity & Scaling
 
 - Retired obsolete predecessor command aliases, executable/build names,
   environment-variable fallbacks, filesystem defaults, and active branding;
@@ -26,6 +26,13 @@ This changelog records notable user- and developer-visible changes to Bytefray.
   changing pairwise tournament/evaluation methodology or gameplay semantics.
 - Defined the v1.4 integrity/scaling, v1.5 architecture-readiness, v1.6
   evaluation-scale, and v2.x gameplay-research boundaries.
+- Reconciled the headless-suite count change: 13 retired predecessor-
+  compatibility tests were removed and 12 new integrity/equivalence tests
+  were added, producing the expected net reduction of one test (1241 to
+  1240), not a coverage regression.
+- Release qualification re-ran the Ruleset-v1 golden corpus after the 1.4.0
+  identity bump and confirmed unchanged gameplay, match/result identity,
+  final state, statistics, and normalized canonical replay content.
 
 ## [1.3.0] - 2026-08-16
 
