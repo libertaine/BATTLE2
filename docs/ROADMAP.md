@@ -488,6 +488,21 @@ phase to the dispatch seam and entrant-identity/execution-state separation
 themselves, now sitting behind one shared scheduling implementation instead of
 three.
 
+**Phase 3 (Ruleset policy/dispatch seam) is complete** on `v1.5-development`:
+a new `battle_engine.ruleset_policy` module pairs the frozen Ruleset-v1
+identity with the Phase 2 shared scheduler behind one fail-closed resolver,
+`resolve_ruleset_policy` — see
+[the Phase 3 record](V1_5_PHASE3_RULESET_POLICY_DISPATCH.md). VM, unsupervised
+Python, and supervised Python entrant scheduling now obtain
+`run_sequential_quota` through that resolved policy instead of importing the
+scheduler directly; runtime-kind (VM/Python) selection remains entirely
+outside Ruleset policy. Only `bytefray-rules-1` resolves — any other Ruleset
+ID, including the historical `evaluation-rules-1` artifact-provenance alias,
+fails closed rather than silently executing as Ruleset v1. Scoring,
+statistics, termination resolution, and winner resolution remain outside the
+policy seam; the v1.4/v1.5 Ruleset-v1 equivalence corpus shows zero golden
+differences.
+
 ## v1.6.0 — Evaluation Scale & Analysis
 
 **Status: planned direction only.** Evidence may justify deterministic parallel

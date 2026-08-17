@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 from battle_engine.agent_state import Agent
 from battle_engine.config import Config
-from battle_engine.scheduler import run_sequential_quota
+from battle_engine.ruleset_policy import RulesetPolicy
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import LegacyRendererObserver, ReplayPublisher
@@ -32,12 +32,14 @@ class MatchRunner:
         renderer: LegacyRendererObserver,
         scoring: ScoringPolicy,
         statistics: StatisticsCollector,
+        ruleset_policy: RulesetPolicy,
     ):
         self.state = state
         self.replay = replay
         self.renderer = renderer
         self.scoring = scoring
         self.statistics = statistics
+        self.ruleset_policy = ruleset_policy
 
     def run(self, max_ticks: int, verbose: bool) -> None:
         state = self.state
@@ -98,7 +100,7 @@ class MatchRunner:
             state.vm.step(agent)
             agent.cpu_used += 1
 
-        run_sequential_quota(state.agents, state.instr_per_tick, execute_slot)
+        self.ruleset_policy.run_scheduler(state.agents, state.instr_per_tick, execute_slot)
 
     def _attribute_deaths(self, events: list[dict[str, Any]]) -> None:
         state = self.state

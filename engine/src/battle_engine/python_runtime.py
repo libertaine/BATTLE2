@@ -33,7 +33,7 @@ from battle_engine.agent_trace import (
 )
 from battle_engine.config import Config
 from battle_engine.results import resolve_winner
-from battle_engine.scheduler import run_sequential_quota
+from battle_engine.ruleset_policy import RULESET_V1, RulesetPolicy
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import ReplayPublisher, ReplaySink
@@ -465,9 +465,11 @@ class PythonEntrantController:
         max_ticks: int,
         *,
         trace_writer: TraceWriter | None = None,
+        ruleset_policy: RulesetPolicy = RULESET_V1,
     ):
         self.config = config
         self.trace_writer = trace_writer
+        self.ruleset_policy = ruleset_policy
         if config.arena_size <= 0 or config.instr_per_tick <= 0 or max_ticks <= 0:
             diagnostic = RuntimeDiagnostic(
                 code="match_configuration_invalid",
@@ -677,7 +679,9 @@ class PythonEntrantController:
                 ) -> None:
                     self._execute_action_slot(state, action_slot, _tick, _events)
 
-                run_sequential_quota(self.states, self.config.instr_per_tick, execute_slot)
+                self.ruleset_policy.run_scheduler(
+                    self.states, self.config.instr_per_tick, execute_slot
+                )
 
                 self.statistics_collector.record_tick(
                     self.statistics,

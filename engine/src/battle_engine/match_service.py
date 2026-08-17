@@ -44,6 +44,7 @@ from battle_engine.result_model import (
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
 from battle_engine.rules import BYTEFRAY_RULESET_ID
+from battle_engine.ruleset_policy import RulesetPolicy, resolve_ruleset_policy
 from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
@@ -379,12 +380,17 @@ def _open_trace_writer(request: MatchRequest) -> TraceWriter | None:
 
 
 def _run_python_match(
-    request: MatchRequest, replay_path: Path, summary_path: Path
+    request: MatchRequest,
+    replay_path: Path,
+    summary_path: Path,
+    ruleset_policy: RulesetPolicy,
 ) -> NativeMatchResult:
     _remove_python_artifacts(replay_path, summary_path)
     trace_writer = _open_trace_writer(request)
     try:
-        return _run_python_match_traced(request, replay_path, summary_path, trace_writer)
+        return _run_python_match_traced(
+            request, replay_path, summary_path, trace_writer, ruleset_policy
+        )
     finally:
         # The trace writer must stay open across both controller
         # construction (reset records) and controller.run() (decision
@@ -399,6 +405,7 @@ def _run_python_match_traced(
     replay_path: Path,
     summary_path: Path,
     trace_writer: TraceWriter | None,
+    ruleset_policy: RulesetPolicy,
 ) -> NativeMatchResult:
     try:
         if request.agent_call_timeout is not None:
@@ -409,11 +416,16 @@ def _run_python_match_traced(
                     request.max_ticks,
                     agent_call_timeout=request.agent_call_timeout,
                     trace_writer=trace_writer,
+                    ruleset_policy=ruleset_policy,
                 )
             )
         else:
             controller = PythonEntrantController(
-                request.config, request.entrants, request.max_ticks, trace_writer=trace_writer
+                request.config,
+                request.entrants,
+                request.max_ticks,
+                trace_writer=trace_writer,
+                ruleset_policy=ruleset_policy,
             )
     except PythonEntrantInitializationError:
         _remove_python_artifacts(replay_path, summary_path)
@@ -726,7 +738,10 @@ def _finalize_native_artifacts(
 
 
 def _run_vm_match(
-    request: MatchRequest, replay_path: Path, summary_path: Path
+    request: MatchRequest,
+    replay_path: Path,
+    summary_path: Path,
+    ruleset_policy: RulesetPolicy,
 ) -> NativeMatchResult:
     """Run a VM match, publishing its replay atomically.
 
@@ -754,7 +769,12 @@ def _run_vm_match(
         os.close(descriptor)
         temporary_path = Path(temporary_name)
         sink = JSONLSink(str(temporary_path))
-        kernel = Kernel(request.config, sink, summary_sink=NullSummarySink())
+        kernel = Kernel(
+            request.config,
+            sink,
+            summary_sink=NullSummarySink(),
+            ruleset_policy=ruleset_policy,
+        )
         for entrant in request.entrants:
             assert entrant.code is not None
             kernel.spawn(
@@ -806,17 +826,26 @@ class NativeMatchService:
                 f"Entrant IDs must be unique; received: {ids}."
             )
 
+        # Resolved once here -- the one boundary where a homogeneous native
+        # match's Ruleset-v1 execution semantics (currently: entrant
+        # scheduling) are dispatched -- and threaded through to whichever
+        # runtime executes, rather than each runtime resolving it itself.
+        # Every native match currently runs under the one frozen Ruleset
+        # identity; ``resolve_ruleset_policy`` fails closed if that ever
+        # stops being true instead of silently executing as Ruleset v1.
+        ruleset_policy = resolve_ruleset_policy(BYTEFRAY_RULESET_ID)
+
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
         if "python" in kinds:
-            recorded = _run_python_match(request, replay_path, summary_path)
+            recorded = _run_python_match(request, replay_path, summary_path, ruleset_policy)
             try:
                 return _finalize_native_artifacts(
                     request, recorded, final_replay_path=replay_path
                 )
             finally:
                 recorded.replay_path.unlink(missing_ok=True)
-        recorded = _run_vm_match(request, replay_path, summary_path)
+        recorded = _run_vm_match(request, replay_path, summary_path, ruleset_policy)
         try:
             return _finalize_native_artifacts(
                 request, recorded, final_replay_path=replay_path

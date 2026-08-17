@@ -14,6 +14,7 @@ from battle_engine.match_service import (
 )
 from battle_engine.replay import TickSnapshot, iter_replay, record_to_dict
 from battle_engine.results import build_summary
+from battle_engine.ruleset_policy import UnknownRulesetError
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
 
@@ -275,6 +276,35 @@ def test_vm_replay_publication_is_atomic_on_success(tmp_path):
     # No leftover temporary file from the write-then-rename sequence.
     assert not list(tmp_path.glob(".replay.jsonl.*.tmp"))
     assert not list(tmp_path.glob(".replay.jsonl.*.canonical.tmp"))
+
+
+def test_unknown_ruleset_id_fails_closed_before_any_runtime_executes(tmp_path, monkeypatch):
+    """A Ruleset that fails to resolve must abort before any gameplay runs.
+
+    Simulates a future ``resolve_ruleset_policy`` rejecting the currently
+    frozen ID (the resolver itself is fail-closed by construction -- see
+    ``test_ruleset_policy.py``); this proves the *call site* on the native
+    match boundary is on the critical path before ``Kernel``/entrant
+    construction, not merely available and unused. No replay/result
+    artifact is written, matching every other pre-execution rejection in
+    this file.
+    """
+
+    replay = tmp_path / "replay.jsonl"
+
+    def _fail_resolution(ruleset_id: str) -> None:
+        raise UnknownRulesetError(ruleset_id)
+
+    monkeypatch.setattr("battle_engine.match_service.resolve_ruleset_policy", _fail_resolution)
+
+    with pytest.raises(UnknownRulesetError):
+        NativeMatchService().run(
+            MatchRequest(_config(), _entrants(), 5, replay, False)
+        )
+
+    assert not replay.exists()
+    assert not replay.with_name("result.json").exists()
+    assert not replay.with_name("summary.json").exists()
 
 
 def test_vm_canonicalization_failure_leaves_no_artifacts(tmp_path, monkeypatch):

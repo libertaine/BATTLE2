@@ -23,6 +23,7 @@ from battle_engine.instructions import (
 )
 from battle_engine.match import MatchRunner
 from battle_engine.results import build_summary, resolve_winner
+from battle_engine.ruleset_policy import RULESET_V1, RulesetPolicy
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import (
@@ -88,6 +89,8 @@ class Kernel:
         sink: ReplaySink | None = None,
         renderer: object | None = None,
         summary_sink: SummarySink | None = None,
+        *,
+        ruleset_policy: RulesetPolicy = RULESET_V1,
     ):
         self.cfg = cfg
         self.vm = VM(cfg.arena_size)
@@ -105,6 +108,7 @@ class Kernel:
         self.rng = random.Random(cfg.seed)
         self.statistics = StatisticsCollector()
         self.scoring = ScoringPolicy(cfg.weights)
+        self.ruleset_policy = ruleset_policy
 
     def spawn(self, agent_id: str, entry: int, code: bytes) -> None:
         s, e = self.vm.load_code(entry, code, owner=agent_id)
@@ -130,6 +134,7 @@ class Kernel:
             renderer,
             self.scoring,
             self.statistics,
+            self.ruleset_policy,
         )
         runner.run(max_ticks, verbose)
 
