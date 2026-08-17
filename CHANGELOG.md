@@ -2,6 +2,24 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [1.4.1] - 2026-08-17
+
+### Fixed
+
+- Fixed Agent Designer Simple and Advanced match launch when an agent's
+  display name differs from its canonical discovery ID. Real starter agents
+  such as `adaptive` / `Adaptive (Starter)` could be selected correctly in
+  the combo box but fail during Designer-side catalog resolution before the
+  existing match engine was launched.
+- Added end-to-end GUI regression coverage across the combo, `RunConfig`,
+  Designer handler, catalog-row resolution, and generated match command using
+  realistic starter identity shapes, duplicate display names, and self-match.
+  Discovery IDs are authoritative; a legacy display-name fallback is accepted
+  only when it identifies exactly one row.
+
+This patch changes no Ruleset, Agent API, replay/result/evaluation schema,
+package schema, evaluation methodology, or gameplay behavior.
+
 ## [1.4.0] - 2026-08-16
 
 ### Platform Integrity & Scaling

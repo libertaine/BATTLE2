@@ -443,6 +443,17 @@ not a coverage regression. Release qualification re-ran the golden corpus
 after the 1.4.0 identity bump and confirmed unchanged gameplay, identity,
 state, statistics, and normalized replay content.
 
+## v1.4.1 — Designer Agent-Selection Fix
+
+**Status: shipped.** `v1.4.1` is tagged and published. This narrow patch fixes Simple and Advanced Designer
+match launch when a selected agent's canonical discovery ID differs from its
+display name. The shared combo contract remains ID-authoritative; Designer now
+resolves that ID to the exact catalog row and accepts a display-name fallback
+only when it is unambiguous. Realistic GUI coverage protects starter-shaped
+IDs/displays, duplicate display names, and self-match through match-command
+construction. No Ruleset, Agent API, replay/result/evaluation schema, package
+schema, evaluation methodology, or gameplay behavior changed.
+
 ## v1.5.0 — Architecture Evolution Readiness
 
 **Status: planned direction only.** v1.5 may rearrange implementation behind

@@ -92,9 +92,9 @@ Traced end to end for both panels (`_on_simple_run`/`_on_advanced_run`,
 SimplePanel/AdvancedPanel "Run Match" click
   → panel emits runRequested(RunConfig)
   → AgentDesigner._on_simple_run / _on_advanced_run
-      → resolve AgentRow for each side via _resolve_agent_row_by_name
-        (matches on AgentRow.name, i.e. AgentSpec.display -- not
-        necessarily the directory/discovery id; see §2.6)
+      → resolve AgentRow for each side via _resolve_agent_row
+        (matches AgentRow.agent_id, with row.name only as a legacy-id fallback;
+        a secondary display-name fallback is accepted only when unique)
       → validate_homogeneous((rowA, rowB))   [app/services/designer_workflows.py]
           raises DesignerValidationError for <2 agents or mixed VM/Python kinds
       → new_match_run_directory(battle_root)  -- fresh

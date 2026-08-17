@@ -2,15 +2,15 @@
 ;   ISCC.exe tools\installer.iss
 
 #define AppName "Bytefray"
-#define AppVersion "1.4.0"
+#define AppVersion "1.4.1"
 ; Release-artifact filenames use the hyphenated tag spelling (matching the
-; "v1.4.0" Git tag/GitHub release name) while AppVersion keeps the PEP 440
+; "v1.4.1" Git tag/GitHub release name) while AppVersion keeps the PEP 440
 ; spelling used by the Python package/CLI. Both spellings are identical for
-; a final release ("1.4.0"); ReleaseTag is kept as its own define (rather
+; a final release ("1.4.1"); ReleaseTag is kept as its own define (rather
 ; than folded back into AppVersion) so the same pattern continues to work
 ; unchanged for a future pre-release identity (e.g. "1.1.0rc1" /
 ; "1.1.0-rc1"). See docs/ROADMAP.md and CHANGELOG.md for context.
-#define ReleaseTag "1.4.0"
+#define ReleaseTag "1.4.1"
 #define AppPublisher "Bytefray Project"
 #define DistRoot "..\dist\windows"
 #define OutputRoot "..\dist\installer"
