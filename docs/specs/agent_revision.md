@@ -931,7 +931,7 @@ raise, using only the existing `agent_revision_fingerprint`/
 store; writing to it (restoring a snapshot to a target directory) stays a
 CLI-only operation (`bytefray agents revisions restore`) for this milestone.
 
-**Implemented and release-prepared for v1.3.0** (`docs/ROADMAP.md`'s
+**Shipped in v1.3.0** (`docs/ROADMAP.md`'s
 "Designer Workflow Completion").
 `RevisionBrowserDialog` gains an explicit **"Restore Files…"** action, opening a
 new `RestoreRevisionDialog` (`app/views/evaluation_history.py`) that shows

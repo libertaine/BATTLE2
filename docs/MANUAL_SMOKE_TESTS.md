@@ -367,6 +367,13 @@ and run `tools/smoke_after_install.ps1 -Lifecycle` with explicit `-InstallerPath
 uninstall so the preservation checks remain inspectable; remove that test data
 manually after review.
 
+Do not alter a development workstation's installed-product state solely to run
+this lifecycle check. When the frozen applications are already qualified and
+the installer compiles successfully with the intended embedded version, lack of
+an install/uninstall cycle is not by itself a release blocker. Run the stronger
+lifecycle qualification in Windows Sandbox or another disposable Windows
+environment when it is required.
+
 CI builds the executables, but install-shell integration and visible GUI behavior
 require a Windows host and are not reasonably asserted by the unit suite.
 

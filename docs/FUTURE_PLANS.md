@@ -201,9 +201,8 @@ generalized to gameplay itself.
 - **Richer GUI access to evaluation/history/provenance** — **status:
   substantially addressed.** `docs/ROADMAP.md`'s shipped v1.1.0
   section covers the Evaluation History browser, two-run comparison, and
-  revision/provenance inspection; its v1.3.0 section records comparison-row
-  drill-down and Designer revision restore as implemented and
-  release-prepared, with tag/publication pending.
+  revision/provenance inspection; its shipped v1.3.0 section records
+  comparison-row drill-down and Designer revision restore.
   The broad item is not duplicated here. It remains as a pointer because
   evaluation-history indexing and further comparison/drill-down refinement
   are still smaller-grained candidates rather than fully closed.

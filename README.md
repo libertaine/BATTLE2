@@ -72,7 +72,7 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 1.0.1 | Post-1.0 Maintenance | Released — patch release. **Fix:** the Agent Designer Advanced tab's per-agent JSON params were silently discarded instead of reaching the agent process. Otherwise repository/build cleanup: removed dead code and ~132MB of committed build output, consolidated packaging/sync tooling, established a Ruff-clean baseline enforced in CI, and refreshed contributor/security documentation. No gameplay, Agent API, Ruleset, or evaluation-schema change. |
 | 1.1.0 | Evaluation Insight & Designer Polish | Released — brings the already-shipped v0.7/v0.8 evaluation-history and agent-revision engine layers into Agent Designer: a Tools → Evaluation History… browser for past `agents evaluate` runs (including legacy artifacts), comparability-first two-run comparison, and agent-revision provenance inspection with a live current-source-drift check the CLI itself doesn't have. No gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
 | 1.2.0 | Portable Agent Packaging & Sharing | Released — extends the existing content-addressed agent-revision store across a machine boundary: `agents export`/`agents package show`/`agents import` package one agent revision into a portable, inspectable-without-execution `.bytefray-agent` file, transfer it by any ordinary means, and import it through fail-closed validation into another installation with its `agent_revision_id` and provenance metadata preserved. Adversarially tested against path traversal, tampering, and collision, and qualified with a genuine cross-platform (Windows/Linux) round trip. Introduces exactly one new, independent compatibility axis (`bytefray.agent_package` schema v1); no gameplay, Agent API, Ruleset, or evaluation/result/replay-schema change. |
-| 1.3.0 | Designer Workflow Completion | Release prepared — adds Agent Designer package export/inspection/import with integrity and trust disclosure, exact comparison-row Replay/Agent Lab drill-down with side/orientation/tick preservation, and revision **Restore Files…** with live-catalog refresh and stale-state invalidation. Independent qualification hardened package/archive validation, corrected all four Windows PyInstaller layouts to the intended onedir shape, made GUI build smokes isolated and synchronous, and added CLI disclosure of ambiguous duplicate comparison groups. Technical qualification, the user-completed manual GUI qualification, and the final four-application Windows build passed; installer/remaining artifact qualification, tag, and publication remain pending. No gameplay, Agent API, Ruleset, package/revision/evaluation/result/replay-schema, evaluation-methodology, or data-root-semantics change. |
+| 1.3.0 | Designer Workflow Completion | Released — adds Agent Designer package export/inspection/import with integrity and trust disclosure, exact comparison-row Replay/Agent Lab drill-down with side/orientation/tick preservation, and revision **Restore Files…** with live-catalog refresh and stale-state invalidation. Independent qualification hardened package/archive validation, corrected all four Windows PyInstaller layouts to the intended onedir shape, made GUI build smokes isolated and synchronous, and added CLI disclosure of ambiguous duplicate comparison groups. Technical and manual GUI qualification passed; the installer, portable applications, wheel, source archive, and published SHA-256 values were verified for the final release. No gameplay, Agent API, Ruleset, package/revision/evaluation/result/replay-schema, evaluation-methodology, or data-root-semantics change. |
 
 **Future plans (post-1.0):** substantial ideas are deliberately kept out of
 v1.0's required scope so it isn't held hostage to every interesting
@@ -129,17 +129,18 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Current release:** [Bytefray v1.2.0](https://github.com/libertaine/Bytefray/releases/tag/v1.2.0).
+**Current release:** [Bytefray v1.3.0](https://github.com/libertaine/Bytefray/releases/tag/v1.3.0).
 Earlier downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Windows installer** | [Bytefray-Setup-1.2.0.exe](https://github.com/libertaine/Bytefray/releases/download/v1.2.0/Bytefray-Setup-1.2.0.exe) | Installs under `C:\Program Files\Bytefray` |
-| 💼 **Portable Windows applications** | [bytefray-1.2.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v1.2.0/bytefray-1.2.0-windows.zip) | Complete onedir layouts for all four executables |
-| 🐍 **Python wheel** | [bytefray-1.2.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v1.2.0/bytefray-1.2.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
-| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v1.2.0/SHA256SUMS.txt) | SHA-256 values for release assets |
+| 🧰 **Windows installer** | [Bytefray-Setup-1.3.0.exe](https://github.com/libertaine/Bytefray/releases/download/v1.3.0/Bytefray-Setup-1.3.0.exe) | Installs under `C:\Program Files\Bytefray` |
+| 💼 **Portable Windows applications** | [bytefray-1.3.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v1.3.0/bytefray-1.3.0-windows.zip) | Complete onedir layouts for all four executables |
+| 🐍 **Python wheel** | [bytefray-1.3.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v1.3.0/bytefray-1.3.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 📦 **Source archive** | [bytefray-1.3.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v1.3.0/bytefray-1.3.0.tar.gz) | Source distribution for Python/package workflows |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v1.3.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---
 

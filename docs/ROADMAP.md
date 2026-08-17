@@ -329,11 +329,15 @@ producing a package that lies about being self-describing).
 
 ## v1.3.0 — Designer Workflow Completion
 
-**Status: release-prepared.** Implementation, independent technical
-qualification, and the user-completed manual GUI qualification passed;
-v1.3.0 version identity is finalized and the four-application Windows build
-is qualified, with installer/remaining artifact qualification, tag, and
-publication pending. Where
+**Status: shipped.** `v1.3.0` is tagged and published. Implementation,
+independent technical qualification, and the user-completed manual GUI
+qualification passed. The installer, four-application portable Windows build,
+wheel, source archive, and published SHA-256 values were verified with embedded
+1.3.0 identity. An install/uninstall lifecycle run was not performed on the
+development workstation and was not a release blocker because the frozen
+applications were already qualified and the installer compiled successfully;
+that stronger state-mutating check belongs in Windows Sandbox or another
+disposable Windows environment. Where
 v1.1 surfaced evaluation history/revision provenance into Agent Designer and
 v1.2 shipped a CLI-only portable agent-package format, v1.3 finishes
 connecting Agent Designer to those already-shipped 1.x engine capabilities
