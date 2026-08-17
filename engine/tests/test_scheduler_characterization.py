@@ -108,3 +108,119 @@ def test_dead_entrant_cpu_total_stops_after_death():
     assert kernel.stats["B"]["total_cpu"] == 1
     assert kernel.stats["A"]["total_cpu"] == 12
     assert kernel.stats["C"]["total_cpu"] == 12
+
+
+class _RecordingRenderer:
+    """Minimal renderer stub so ``LegacyRendererObserver.publish_tick`` fires.
+
+    ``Kernel.renderer`` is ``None`` by default, which makes
+    ``LegacyRendererObserver`` skip the call entirely (see ``telemetry.
+    LegacyRendererObserver.publish_tick``) -- this stub exists only so the
+    tick-lifecycle order tests below can observe that stage actually
+    happening, not to exercise renderer content itself.
+    """
+
+    def __init__(self, order: list[str]) -> None:
+        self.order = order
+
+    def on_init(self, kernel: object) -> None:
+        del kernel
+
+    def on_tick(self, tick: int, snapshot: dict[str, Any]) -> None:
+        del tick, snapshot
+        self.order.append("renderer_publish")
+
+    def on_close(self) -> None:
+        pass
+
+
+def _wrap(monkeypatch, order: list[str], obj: object, name: str, label: str) -> None:
+    original = getattr(obj, name)
+
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        order.append(label)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(obj, name, wrapper)
+
+
+def test_tick_lifecycle_runs_in_the_documented_order_with_no_death(monkeypatch):
+    """Pin ``match.MatchRunner.run``'s per-tick stage order directly.
+
+    See ``engine/src/battle_engine/match.py``'s ``MatchRunner.run``: execute
+    -> statistics -> alive scoring -> territory scoring -> death
+    attribution (skipped here -- nothing dies) -> replay publication ->
+    renderer publication -> ``_alive_prev`` update -> termination check.
+    The existing golden-corpus digests in ``test_ruleset_v1_equivalence.py``
+    would catch a reordering here too, but only as an opaque hash mismatch;
+    this test names the exact stage that moved, which matters once v1.5
+    considers extracting this loop into a shared scheduler abstraction.
+    """
+
+    order: list[str] = []
+    kernel = _kernel(quota=1)
+    kernel.spawn("A", 0, enc(NOP))
+    kernel.spawn("B", 16, enc(NOP))
+    kernel.renderer = _RecordingRenderer(order)
+
+    _wrap(monkeypatch, order, kernel.vm, "step", "execute")
+    _wrap(monkeypatch, order, kernel.statistics, "record_tick", "statistics")
+    _wrap(monkeypatch, order, kernel.scoring, "score_alive", "score_alive")
+    _wrap(monkeypatch, order, kernel.scoring, "score_territory", "score_territory")
+    _wrap(monkeypatch, order, kernel.scoring, "score_kill", "score_kill")
+    _wrap(monkeypatch, order, kernel.sink, "emit", "replay_emit")
+
+    kernel.run(max_ticks=1, verbose=False)
+
+    assert order == [
+        "replay_emit",  # header
+        "replay_emit",  # tick-0 initial snapshot, published before the loop
+        "execute", "execute",  # one vm.step per living agent this tick
+        "statistics",
+        "score_alive",
+        "score_territory",
+        # score_kill is skipped: nothing died this tick.
+        "replay_emit",  # tick 1 snapshot
+        "renderer_publish",
+    ]
+
+
+def test_tick_lifecycle_scores_the_kill_after_territory_and_before_replay_publication(
+    monkeypatch,
+):
+    """Same stage order, with an actual kill so ``score_kill`` participates.
+
+    ``_attribute_deaths`` (which calls ``score_kill``) runs after both
+    ``score_alive``/``score_territory`` and before the tick's replay record
+    is published -- see ``match.MatchRunner.run``. B's program counter is
+    an invalid opcode owned by A, so B dies on its first step and A is
+    attributed the kill (the same setup as ``test_match_services.
+    test_kernel_attributes_kill_to_memory_owner``).
+    """
+
+    order: list[str] = []
+    kernel = _kernel(quota=1)
+    kernel.spawn("A", 0, enc(NOP))
+    kernel.spawn("B", 16, enc(NOP))
+    kernel.vm._wr8(16, 0xFF, "A")
+    kernel.renderer = _RecordingRenderer(order)
+
+    _wrap(monkeypatch, order, kernel.statistics, "record_tick", "statistics")
+    _wrap(monkeypatch, order, kernel.scoring, "score_alive", "score_alive")
+    _wrap(monkeypatch, order, kernel.scoring, "score_territory", "score_territory")
+    _wrap(monkeypatch, order, kernel.scoring, "score_kill", "score_kill")
+    _wrap(monkeypatch, order, kernel.sink, "emit", "replay_emit")
+
+    kernel.run(max_ticks=1, verbose=False)
+
+    assert kernel.agents[1].alive is False
+    assert order == [
+        "replay_emit",  # header
+        "replay_emit",  # tick-0 initial snapshot
+        "statistics",
+        "score_alive",
+        "score_territory",
+        "score_kill",
+        "replay_emit",  # tick 1 snapshot, published after death attribution
+        "renderer_publish",
+    ]

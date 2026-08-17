@@ -7,7 +7,11 @@ from _hang_safety import hang_safety_timeout
 from battle_engine.agents import resolve_agent
 from battle_engine.config import Config
 from battle_engine.match_service import MatchEntrant
-from battle_engine.python_runtime import PythonEntrantInitializationError, TerminationReason
+from battle_engine.python_runtime import (
+    PythonEntrantController,
+    PythonEntrantInitializationError,
+    TerminationReason,
+)
 from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.telemetry import JSONLSink
 
@@ -60,6 +64,35 @@ class Agent:
 
     def act(self, observation):
         os._exit(9)
+
+def create_agent():
+    return Agent()
+"""
+
+# Deliberately exercises the RNG (context.rng), memory writes, and a
+# HALT-driven death -- the same shape as the golden corpus's RANDOM_WRITER
+# fixture (test_ruleset_v1_equivalence.py) -- so the equivalence test below
+# is a genuine cross-check of engine-owned semantics (action application,
+# derived-seed RNG, scoring/statistics), not just of two controllers that
+# happen to both do nothing.
+RANDOM_WRITER_SOURCE = """
+from battle_engine.agent_api import ActionKind, AgentAction
+
+class Agent:
+    def reset(self, context):
+        self.rng = context.rng
+        self.arena_size = context.arena_size
+        self.calls = 0
+
+    def act(self, observation):
+        self.calls += 1
+        if self.calls == 4:
+            return AgentAction(ActionKind.HALT)
+        return AgentAction(
+            ActionKind.WRITE,
+            self.rng.randrange(self.arena_size),
+            self.rng.randrange(256),
+        )
 
 def create_agent():
     return Agent()
@@ -186,3 +219,59 @@ def test_initialization_failure_cleans_up_already_started_workers(tmp_path: Path
     assert "A" in handles  # the first (passive) entrant's worker was started
     for handle in handles.values():
         assert handle.exit_code is not None
+
+
+def test_supervised_and_unsupervised_controllers_agree_on_outcome(tmp_path: Path) -> None:
+    """Same entrants/config through both controllers must reach the same state.
+
+    ``supervised_runtime``'s module docstring claims "same authoritative
+    match semantics" as ``python_runtime.PythonEntrantController`` --
+    action application, tick scheduling, and scoring are the identical
+    engine-owned code, only *production* (load/reset/act) is relocated
+    into a worker subprocess. Nothing in the existing suite actually
+    proves that claim end-to-end; this does, using a deterministic
+    RNG-driven agent (derived seed depends only on
+    ``config.seed``/slot/``agent_id``/API version, identical for both
+    controllers) so a real divergence in action handling, scheduling
+    order, or RNG derivation between the two implementations would fail
+    this test rather than only surfacing as an unexplained golden-corpus
+    difference after a future refactor.
+    """
+
+    entrants = _entrants(
+        tmp_path, {"alpha": RANDOM_WRITER_SOURCE, "beta": RANDOM_WRITER_SOURCE}
+    )
+    config = Config(arena_size=64, instr_per_tick=2, seed=2024)
+
+    unsupervised = PythonEntrantController(config, entrants, 6)
+    unsupervised_result = unsupervised.run(
+        JSONLSink(str(tmp_path / "unsupervised.jsonl")), verbose=False
+    )
+
+    with hang_safety_timeout(30):
+        supervised = SupervisedPythonEntrantController(
+            config, entrants, 6, agent_call_timeout=5.0
+        )
+        try:
+            supervised_result = supervised.run(
+                JSONLSink(str(tmp_path / "supervised.jsonl")), verbose=False
+            )
+        finally:
+            supervised._close_all_handles()
+
+    assert supervised_result.winner == unsupervised_result.winner
+    assert supervised_result.termination_reason == unsupervised_result.termination_reason
+    assert supervised_result.ticks_run == unsupervised_result.ticks_run
+    assert dict(supervised_result.score) == dict(unsupervised_result.score)
+    assert bytes(supervised.vm.arena) == bytes(unsupervised.vm.arena)
+    assert list(supervised.vm.writer) == list(unsupervised.vm.writer)
+    assert supervised_result.statistics == unsupervised_result.statistics
+    for supervised_state, unsupervised_state in zip(
+        supervised_result.states, unsupervised_result.states
+    ):
+        assert supervised_state.agent_id == unsupervised_state.agent_id
+        assert supervised_state.derived_seed == unsupervised_state.derived_seed
+        assert supervised_state.alive == unsupervised_state.alive
+        assert supervised_state.cpu_used == unsupervised_state.cpu_used
+        assert supervised_state.mem_writes == unsupervised_state.mem_writes
+        assert supervised_state.entrant_termination == unsupervised_state.entrant_termination

@@ -463,6 +463,18 @@ Ruleset v1 there must still be exactly one execution state per entrant, and the
 v1.4 equivalence corpus remains the acceptance boundary. No new gameplay,
 Agent API v2, multiprocess entrant, replication, or resource semantics.
 
+**Phase 1 (semantic reconstruction and invariant lock) is complete** on
+`v1.5-development`: a full Ruleset-v1 semantic ownership map, tick-lifecycle
+order, entrant-identity/execution-state field classification, deterministic-
+identity dependency graph, golden-corpus coverage audit, and the durable v1.5
+invariants later phases must preserve — see
+[the Phase 1 baseline](V1_5_PHASE1_RULESET_V1_BASELINE.md). No architecture
+changed in Phase 1; it added characterization coverage (Python-side scheduler
+call-order tests, VM tick-lifecycle stage-order tests, and a supervised-vs-
+unsupervised Python equivalence test) and is the acceptance boundary Phase 2's
+Ruleset/policy dispatch work should qualify against, alongside the existing
+v1.4 equivalence corpus.
+
 ## v1.6.0 — Evaluation Scale & Analysis
 
 **Status: planned direction only.** Evidence may justify deterministic parallel
