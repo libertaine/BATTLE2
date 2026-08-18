@@ -34,6 +34,17 @@ This changelog records notable user- and developer-visible changes to Bytefray.
   dependency, and works on any existing valid v1/v2 evaluation artifact
   without re-running it. See
   [docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md](docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md).
+- Derived behavior-profile analytics for `bytefray agents evaluate`,
+  `evaluations show` (add `--no-behavior` to skip it), and the Designer's
+  evaluation results dialog: survival, write activity, territory
+  occupancy/retention/spread, and kill interaction, computed overall and
+  split by orientation/opponent, from each cell's own already-written
+  `result.json` -- no `evaluation.json` schema change, no new runtime
+  dependency. Deliberately kept structurally independent of Phase 4's
+  outcome evidence (never reads `outcome`/score fields) and deliberately
+  narrow: no clustering, no archetype naming, no composite score, no
+  combined behavioral-distance scalar. See
+  [docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
 
 ## [1.5.0] - 2026-08-18
 

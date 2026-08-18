@@ -490,6 +490,62 @@ with no need to re-run anything. See
 [V1_6_PHASE4_EVALUATION_ANALYSIS.md](V1_6_PHASE4_EVALUATION_ANALYSIS.md)
 for the full statistical design, formulas, and limitations.
 
+### Behavior profile (v1.6 Phase 5)
+
+Win rate and score tell you *whether* a candidate did well. They don't
+tell you *how* it played — two agents can have similar win rates while
+using genuinely different strategies, or different win rates while
+playing similarly. Since v1.6 Phase 5, `agents evaluate` prints a concise
+`behavior:` block alongside (never merged into) the `evidence:` block
+above:
+
+```text
+behavior:
+  survival: 100% (n=40)   writes/tick: 8.00
+  territory: last=31.7%  peak=31.7%  avg=17.1%  retention=100%
+  kills: 0.00/match   deaths: 0.00/match
+  orientation-sensitive dimensions: territory_last_pct, territory_max_pct
+```
+
+Eleven independent dimensions are computed (never combined into one
+score): `survival_fraction`, `writes_per_tick`, `writes_per_alive_tick`,
+`territory_last_pct`/`territory_max_pct`/`territory_avg_pct`,
+`territory_retention` (how much of peak territory was still held at
+match end), `territory_spread` (peak minus average — how "peaky" vs.
+sustained occupancy was), `kills_per_match`, `kill_involvement_rate`, and
+`deaths_per_match`. Every dimension reports a sample count and range
+alongside its mean, and reports insufficient data explicitly rather than
+a fabricated zero when nothing contributed.
+
+**Behavior is computed entirely from each cell's own already-written
+`result.json`** (not the tick-by-tick replay) — nothing here reads
+`outcome`, `score_subject`, or `score_opponent`; the input type Phase 5's
+analysis functions accept structurally cannot carry those fields. Two
+agents with an identical win rate can still show a materially different
+behavior profile, and the reverse.
+
+**A known, disclosed limitation of the shipped Python starter agents**:
+`kills_per_match`/`deaths_per_match` are always `0` for every evaluation
+`agents evaluate` can currently run — the Agent API exposes no attack
+action, and Python-kind Ruleset-v1 matches have no kill mechanic at all
+(confirmed both from source and by running every shipped starter). This
+is a structural fact about the current agent population, not a bug in the
+measurement.
+
+`bytefray agents evaluations show <id>` prints the same profile with a
+full by-opponent/by-orientation breakdown (pass `--no-behavior` to skip
+it — each scored cell's `result.json` is read once, ~5-6ms/cell measured,
+which adds up on a stress-scale, thousands-of-cells artifact; `evaluations
+list` never reads this data regardless of the flag, so listing stays
+cheap at any scale). Like `analysis:`, behavior is always **derived**,
+never persisted in `evaluation.json` — it works on any existing valid
+evaluation artifact, including ones produced before Phase 5 shipped. See
+[V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](V1_6_PHASE5_BEHAVIOR_ANALYSIS.md) for
+the full dimension list, normalization, validation corpus and findings
+(including a genuinely ambiguous one, reported honestly), and what was
+deliberately deferred (replay-derived territory trajectory, write-
+concentration metrics, a combined behavioral-distance scalar, clustering).
+
 ### Inspecting a regression
 
 Every regressed (or otherwise interesting) cell comes with the exact
@@ -611,6 +667,14 @@ not break that down by opponent/orientation, since the two compared
 evaluations may not even share the same opponent/seed set; its existing
 `unmatched`/`changed_condition` counts already disclose how much of each
 side went unmatched.
+
+Since v1.6 Phase 5, `evaluations show` also prints a `behavior:` section
+(see "Behavior profile" above) — the same eleven-dimension profile the
+live CLI's concise block summarizes, with the full by-opponent and
+by-orientation breakdown always expanded, on by default and skippable with
+`--no-behavior`. `evaluations compare` does not currently show a behavior
+section (deliberately deferred — see the Phase 5 record's discussion of
+why cross-artifact behavior comparison needs its own design pass).
 
 ### Agent revisions (v0.8)
 

@@ -85,8 +85,8 @@ fill a release milestone without users/packages that require it.
 
 ## Richer evaluation / statistical analysis
 
-**Status: Delivered in part (v1.6 Phase 4); remainder Candidate, with one
-Exploratory sub-item.**
+**Status: Delivered in part (v1.6 Phase 4 and Phase 5); remainder
+Candidate, with one Exploratory sub-item.**
 
 - ~~Richer aggregate evaluation analysis and confidence/statistical
   summaries.~~ Delivered in v1.6.0 Phase 4: Wilson score intervals on
@@ -94,12 +94,33 @@ Exploratory sub-item.**
   significance test (exact sign test / exact McNemar test) over discordant
   paired conditions, with by-opponent/by-orientation breakdowns -- see
   [V1_6_PHASE4_EVALUATION_ANALYSIS.md](V1_6_PHASE4_EVALUATION_ANALYSIS.md).
+- ~~Behavior profiling.~~ Delivered in v1.6.0 Phase 5: a derived
+  `behavior:` profile (survival, write activity, territory occupancy/
+  retention/spread, kill interaction), overall and split by orientation/
+  opponent, kept structurally independent of outcome -- see
+  [V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
+  Deliberately narrower than a full behavioral-similarity system: no
+  clustering, no archetype naming, no composite "strategy score," and no
+  combined behavioral-distance scalar (per-dimension deltas only) --
+  Phase 5 stopped there because a defensible cross-dimension weighting
+  was not found, not because of a time constraint. Replay-derived
+  territory-trajectory metrics (early expansion rate, peak timing,
+  contraction) were evaluated and explicitly deferred for a concrete
+  architecture-boundary reason (the incremental reconstruction they need
+  lives in `battle_client`, which `battle_engine` must never depend on) --
+  a future phase implementing them belongs in `battle_client`/Designer,
+  not `battle_engine`.
 - Ranking systems such as Elo/Glicko or similar.
 - Benchmark/reference agent populations.
 - Improved comparative visualization.
+- Clustering agents into behavioral archetypes -- Phase 5's profile
+  vectors would make this technically easy, but it was explicitly not
+  attempted; any future work here needs its own validation against a
+  known-strategy fixture set, not an assumption that Phase 5's dimensions
+  are sufficient for it.
 
 Ranking systems in particular should not be treated as a v1.0 requirement;
-Phase 4 explicitly does not introduce one (no Elo/Glicko/TrueSkill/global
+neither Phase 4 nor Phase 5 introduces one (no Elo/Glicko/TrueSkill/global
 rating -- comparison stays scoped to explicit evaluation conditions).
 
 Reusable, named **evaluation presets** (`bytefray agents evaluate --preset

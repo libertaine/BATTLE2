@@ -35,6 +35,19 @@ for `aggregates_recomputed`/`comparison_recomputed`. It changes no
 identity, health, or comparison semantics this spec establishes; see
 `docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md` for its full design.
 
+**v1.6 Phase 5 note:** unlike Phase 4's `analysis`, Phase 5's behavior
+profile is deliberately **not** an `EvaluationSummary` field, and is never
+computed inside `adapt_v1`/`adapt_v2`/`discover` — each cell's own
+`result.json` read is real, measured I/O (unlike Phase 4's free, in-memory
+`analysis`), so wiring it into adaptation would have made `evaluations
+list` pay a per-cell cost merely to enumerate artifacts. Instead, a new,
+separate module (`evaluation_history/behavior_adapter.py`) builds
+containment-checked `CellRef`s from an already-adapted summary's `cells`,
+called only from `evaluations show`'s own command handler (skippable with
+`--no-behavior`). `evaluations list` and every other read path in this
+package are unaffected; see `docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md` for
+the full design and the measurements behind this choice.
+
 ## 1. Established v0.6.1 facts (verified in source, not assumed)
 
 - `agent_evaluation.py` already implements `run_dir` on `agent_test.test_agent`

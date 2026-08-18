@@ -27,6 +27,7 @@ from battle_engine.agent_evaluation import (
     methodology_lines,
 )
 from battle_engine.evaluation_analysis import EvaluationAnalysis, EvidenceState
+from battle_engine.evaluation_behavior import BehaviorAnalysis
 from battle_engine.evaluation_presets import ORIENTATION_BOTH as PRESET_ORIENTATION_BOTH
 from battle_engine.evaluation_presets import EvaluationPreset
 from PySide6.QtCore import Qt, Signal
@@ -294,6 +295,33 @@ def _evidence_summary_line(analysis: EvaluationAnalysis) -> str:
     return "evidence: " + "  |  ".join(parts)
 
 
+def _behavior_summary_line(behavior: BehaviorAnalysis) -> str:
+    """v1.6 Phase 5 (docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md Sec 20): one
+    concise line -- survival, write activity, territory retention -- from
+    an already-computed ``BehaviorAnalysis``. No behavioral measurement
+    happens here, only plain string formatting of values the shared
+    ``evaluation_behavior`` module already derived. Deliberately a
+    separate line from ``_evidence_summary_line`` above -- behavior (how
+    the candidate played) and evidence (whether it won) stay visually
+    distinct, never merged into one line.
+    """
+
+    overall = behavior.candidate_overall
+    if overall.sample_count == 0:
+        return "behavior: insufficient data (0 scored cells)"
+    survival = overall.dimension("survival_fraction")
+    writes = overall.dimension("writes_per_tick")
+    retention = overall.dimension("territory_retention")
+    parts = [
+        f"survival {100.0 * survival.mean:.0f}%" if survival.mean is not None else "survival n/a",
+        f"writes/tick {writes.mean:.2f}" if writes.mean is not None else "writes/tick n/a",
+        f"territory retention {100.0 * retention.mean:.0f}%" if retention.mean is not None else "retention n/a",
+    ]
+    if behavior.candidate_vs_baseline_largest:
+        parts.append("largest vs. baseline: " + ", ".join(behavior.candidate_vs_baseline_largest))
+    return "behavior: " + "  |  ".join(parts)
+
+
 def _find_cell(
     presentation: EvaluationPresentation, schedule_id: str
 ) -> EvaluationCellPresentation | None:
@@ -346,6 +374,10 @@ class EvaluationResultsDialog(QDialog):
             evidence_label = QLabel(_evidence_summary_line(presentation.analysis))
             evidence_label.setWordWrap(True)
             layout.addWidget(evidence_label)
+        if presentation.behavior is not None:
+            behavior_label = QLabel(_behavior_summary_line(presentation.behavior))
+            behavior_label.setWordWrap(True)
+            layout.addWidget(behavior_label)
 
         layout.addWidget(QLabel("Cells" if not presentation.comparison else "Comparison"))
         self.resultsList = QListWidget()

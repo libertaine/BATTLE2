@@ -9,7 +9,9 @@ from pathlib import Path
 
 from battle_engine.agent_evaluation import ORIENTATION_MODE_CANDIDATE_FIRST_ONLY, methodology_lines
 from battle_engine.evaluation_analysis import EvidenceState, paired_evidence_from_verdicts
+from battle_engine.evaluation_behavior import BehaviorProfile, analyze_behavior
 
+from .behavior_adapter import cell_refs_for_behavior
 from .comparison import align
 from .discovery import AmbiguousSelectorError, adapt_any, discover, resolve_selector
 from .models import ArtifactReadError
@@ -91,20 +93,37 @@ def _cmd_show(args: argparse.Namespace) -> int:
         elif verification.eligible_count == 0:
             verify_error = "no eligible (completed/scored) cells to verify"
 
+    # v1.6 Phase 5 (docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md Sec 18/24): computed
+    # only here, explicitly, per selected artifact -- never inside
+    # adapt_any/discover, so `evaluations list` never pays a per-cell
+    # result.json read merely to enumerate artifacts. On by default (one
+    # small JSON read per scored cell is affordable for ordinary/large
+    # evaluations, measured ~5-6ms/cell); `--no-behavior` skips it for
+    # scripted/automation use against stress-scale (thousands-of-cells)
+    # artifacts where that per-cell cost adds up to several seconds.
+    behavior = (
+        analyze_behavior(summary.candidate_id, summary.baseline_id, cell_refs_for_behavior(summary))
+        if not args.no_behavior
+        else None
+    )
+
     if args.json:
         data = summary.to_json()
         data["verified"] = verified
         data["verify_error"] = verify_error
+        data["behavior"] = behavior.to_json() if behavior is not None else None
         print(json.dumps(data, indent=2, sort_keys=True))
     else:
-        _print_show(summary, verified=verified if args.verify else None, verify_error=verify_error)
+        _print_show(
+            summary, verified=verified if args.verify else None, verify_error=verify_error, behavior=behavior
+        )
 
     if args.verify and not verified:
         return 1
     return 0
 
 
-def _print_show(summary, *, verified: bool | None, verify_error: str | None) -> None:
+def _print_show(summary, *, verified: bool | None, verify_error: str | None, behavior=None) -> None:
     print(f"evaluation_id: {summary.evaluation_id}")
     print(f"schema: {summary.schema.schema} v{summary.schema.schema_version}")
     print(f"path: {summary.location.evaluation_json_path}")
@@ -175,6 +194,8 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None) -> 
                 f"opponent_first: {opponent_first.win_rate_display}"
             )
     _print_analysis(summary)
+    if behavior is not None:
+        _print_behavior(behavior)
     _print_execution_contexts(summary)
     _print_agent_revisions(summary)
     if verified is not None:
@@ -235,6 +256,69 @@ def _print_analysis(summary) -> None:
     print(f"  orientation consistency: {analysis.orientation_consistency}")
     for entry in analysis.by_orientation:
         print(f"    orientation={entry.scope_label}: {_paired_evidence_line(entry)}")
+
+
+def _fmt_fraction_pct(value: float | None) -> str:
+    return f"{100.0 * value:.0f}%" if value is not None else "n/a"
+
+
+def _fmt_percent(value: float | None) -> str:
+    return f"{value:.1f}%" if value is not None else "n/a"
+
+
+def _fmt_rate(value: float | None) -> str:
+    return f"{value:.2f}" if value is not None else "n/a"
+
+
+def _behavior_profile_line(label: str, profile: BehaviorProfile) -> str:
+    if profile.sample_count == 0:
+        return f"  {label}: insufficient data (0 scored cells)"
+    survival = profile.dimension("survival_fraction")
+    writes = profile.dimension("writes_per_tick")
+    last = profile.dimension("territory_last_pct")
+    peak = profile.dimension("territory_max_pct")
+    avg = profile.dimension("territory_avg_pct")
+    retention = profile.dimension("territory_retention")
+    kills = profile.dimension("kills_per_match")
+    deaths = profile.dimension("deaths_per_match")
+    return (
+        f"  {label}: survival={_fmt_fraction_pct(survival.mean)} (n={survival.n})  "
+        f"writes/tick={_fmt_rate(writes.mean)}  "
+        f"territory[last={_fmt_percent(last.mean)} peak={_fmt_percent(peak.mean)} "
+        f"avg={_fmt_percent(avg.mean)} retention={_fmt_fraction_pct(retention.mean)}]  "
+        f"kills={_fmt_rate(kills.mean)}/match deaths={_fmt_rate(deaths.mean)}/match"
+    )
+
+
+def _print_behavior(behavior) -> None:
+    """v1.6 Phase 5 (docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md Sec 18): the full
+    by-opponent/by-orientation behavior breakdown, appropriate here since
+    ``evaluations show`` is already the "drill deeper" workflow (mirrors
+    ``_print_analysis``'s own precedent, Sec 13). Derived entirely from an
+    already-computed ``evaluation_behavior.BehaviorAnalysis`` -- no
+    behavioral measurement happens in this presentation function. Kept in
+    a section of its own, never merged into ``analysis:`` above --
+    behavior (how the candidate played) and analysis (whether it won) stay
+    conceptually and visually separate (Sec 6/26 of the design doc).
+    """
+
+    print("behavior:")
+    print(_behavior_profile_line(f"candidate overall ({behavior.candidate_id})", behavior.candidate_overall))
+    if behavior.baseline_overall is not None:
+        print(_behavior_profile_line(f"baseline overall ({behavior.baseline_id})", behavior.baseline_overall))
+    if behavior.candidate_vs_baseline_largest:
+        print(
+            "  largest candidate-vs-baseline differences: "
+            + ", ".join(behavior.candidate_vs_baseline_largest)
+        )
+    orientation_labels = {"candidate_first": "candidate_first", "opponent_first": "opponent_first"}
+    print("  candidate by orientation:")
+    for profile in behavior.candidate_by_orientation:
+        print(_behavior_profile_line(f"  {orientation_labels.get(profile.scope_label, profile.scope_label)}", profile))
+    if behavior.candidate_by_opponent:
+        print("  candidate by opponent:")
+        for profile in behavior.candidate_by_opponent:
+            print(_behavior_profile_line(f"  {profile.scope_label}", profile))
 
 
 def _print_agent_revisions(summary) -> None:
@@ -456,6 +540,17 @@ def _parser() -> argparse.ArgumentParser:
     show_parser.add_argument("--root", action="append", default=None)
     show_parser.add_argument("--verify", action="store_true")
     show_parser.add_argument("--json", action="store_true")
+    show_parser.add_argument(
+        "--no-behavior",
+        action="store_true",
+        help=(
+            "skip the v1.6 Phase 5 behavior-profile section (on by default) -- "
+            "each scored cell's own result.json is read once (~5-6ms/cell "
+            "measured), which adds up on a stress-scale (thousands-of-cells) "
+            "artifact; never affects 'evaluations list', which never reads "
+            "per-cell result.json regardless of this flag."
+        ),
+    )
 
     compare_parser = sub.add_parser("compare")
     compare_parser.add_argument("left")

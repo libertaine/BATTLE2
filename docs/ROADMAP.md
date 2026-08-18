@@ -585,11 +585,23 @@ by-opponent/by-orientation breakdowns) are now available from `agents
 evaluate`, `evaluations show`/`compare`, and the Designer -- fully derived
 from already-canonical evaluation data, no schema change, no ranking system.
 
+**Phase 5 (behavior profile analytics) is complete** -- see
+[V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
+`agents evaluate`, `evaluations show`, and the Designer now show a
+`behavior:` profile (survival, write activity, territory occupancy/
+retention/spread, kill interaction) alongside Phase 4's outcome evidence,
+kept structurally independent of it -- fully derived from each cell's
+already-written `result.json`, no schema change, no clustering, no
+composite score, no behavioral distance (deferred; see the phase record
+for why).
+
 **Status: remaining direction not yet committed.** Evidence may still
-justify behavioral comparison/profiling, larger experimental matrices, and
-local replay indexing, if real workloads still warrant it -- deliberately
-out of scope for Phase 4, per its own governing prompt. Evaluation
-methodology and artifact compatibility must remain explicit throughout.
+justify larger experimental matrices and local replay indexing, if real
+workloads still warrant it, plus the specific deferrals Phase 5 recorded
+(replay-derived territory trajectory, write-concentration metrics,
+behavioral distance) -- deliberately out of scope for Phase 5, per its own
+governing prompt. Evaluation methodology and artifact compatibility must
+remain explicit throughout.
 
 ## v2.x — Gameplay and Rules Research
 

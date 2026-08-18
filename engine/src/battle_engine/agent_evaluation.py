@@ -2792,6 +2792,62 @@ def _print_evidence(analysis: Any) -> None:
         print(f"  {analysis.orientation_consistency}")
 
 
+def _fmt_fraction_pct(value: float | None) -> str:
+    return f"{100.0 * value:.0f}%" if value is not None else "n/a"
+
+
+def _fmt_percent(value: float | None) -> str:
+    return f"{value:.1f}%" if value is not None else "n/a"
+
+
+def _fmt_rate(value: float | None) -> str:
+    return f"{value:.2f}" if value is not None else "n/a"
+
+
+def _print_behavior(analysis: Any) -> None:
+    """v1.6 Phase 5 (docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md Sec 18): a concise
+    behavior-profile block -- survival, write activity, territory
+    occupancy/retention, kill interaction -- describing *how* the
+    candidate played, deliberately kept separate from the evidence: block
+    above (which describes outcome) and never derived from it. ``analysis``
+    is an ``evaluation_behavior.BehaviorAnalysis``, typed ``Any`` here only
+    to avoid a top-level circular import (mirrors ``_print_evidence``'s
+    existing pattern -- ``evaluation_behavior`` imports from this module).
+    """
+
+    from battle_engine.evaluation_behavior import largest_bounded_differences
+
+    overall = analysis.candidate_overall
+    if overall.sample_count == 0:
+        return
+    survival = overall.dimension("survival_fraction")
+    writes = overall.dimension("writes_per_tick")
+    last = overall.dimension("territory_last_pct")
+    peak = overall.dimension("territory_max_pct")
+    avg = overall.dimension("territory_avg_pct")
+    retention = overall.dimension("territory_retention")
+    kills = overall.dimension("kills_per_match")
+    deaths = overall.dimension("deaths_per_match")
+    print("behavior:")
+    print(
+        f"  survival: {_fmt_fraction_pct(survival.mean)} (n={survival.n})   "
+        f"writes/tick: {_fmt_rate(writes.mean)}"
+    )
+    print(
+        f"  territory: last={_fmt_percent(last.mean)}  peak={_fmt_percent(peak.mean)}  "
+        f"avg={_fmt_percent(avg.mean)}  retention={_fmt_fraction_pct(retention.mean)}"
+    )
+    print(f"  kills: {_fmt_rate(kills.mean)}/match   deaths: {_fmt_rate(deaths.mean)}/match")
+    orientation_largest = largest_bounded_differences(analysis.candidate_orientation_deltas, limit=2)
+    if orientation_largest:
+        print(f"  orientation-sensitive dimensions: {', '.join(orientation_largest)}")
+    if analysis.candidate_vs_baseline_largest:
+        print(
+            "  largest candidate-vs-baseline behavioral differences: "
+            + ", ".join(analysis.candidate_vs_baseline_largest)
+        )
+
+
 def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
     print(f"evaluation: {result.evaluation_id}")
     for line in methodology_lines(request.orientation_mode):
@@ -2807,6 +2863,15 @@ def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
                 if a.subject_role == aggregate.subject_role and a.subject_id == aggregate.subject_id
             ]
             _print_orientation_breakdown(subject_aggregates)
+    from battle_engine.evaluation_behavior import analyze_behavior, cell_ref_from_evaluation_cell
+
+    _print_behavior(
+        analyze_behavior(
+            request.candidate_id,
+            request.baseline_id,
+            [cell_ref_from_evaluation_cell(cell) for cell in result.cells if cell.is_scored],
+        )
+    )
     if request.baseline_id is not None:
         regressed = [entry for entry in result.comparison if entry.classification == "regressed"]
         improved = [entry for entry in result.comparison if entry.classification == "improved"]

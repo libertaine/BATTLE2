@@ -19,14 +19,19 @@ the shipped module has moved well beyond this document (schema/identity
 now v4 as of v0.9, `agent_revisions` (v0.8), `evaluation_history` (v0.7),
 entrant-orientation matrix axis + fixed-arena-alignment disclosure (v0.9),
 evaluation presets (v1.6 Phase 3), derived statistical analysis (v1.6
-Phase 4)). For current behavior see `docs/AGENT_LAB.md`'s "Evaluating a
-candidate" section and `CHANGELOG.md`; this spec is retained for the
-original v0.6 design reasoning, which mostly still holds even where the
-wire shape has moved on. The `classify()` outcome-rank comparator this
-spec designs (§11) is, unchanged, the exact same comparator
-`docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md`'s paired statistical evidence
-is built on — Phase 4 adds interpretation on top of it, never a second
-concept of "improvement."
+Phase 4), derived behavior-profile analytics (v1.6 Phase 5)). For current
+behavior see `docs/AGENT_LAB.md`'s "Evaluating a candidate" section and
+`CHANGELOG.md`; this spec is retained for the original v0.6 design
+reasoning, which mostly still holds even where the wire shape has moved
+on. The `classify()` outcome-rank comparator this spec designs (§11) is,
+unchanged, the exact same comparator `docs/V1_6_PHASE4_EVALUATION_
+ANALYSIS.md`'s paired statistical evidence is built on — Phase 4 adds
+interpretation on top of it, never a second concept of "improvement."
+`docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md`'s behavior profile is a separate,
+independent derived layer over the same `EvaluationCell`/per-cell
+`result.json` data this spec establishes — it never reads `outcome` or
+either score field this spec defines, by construction, so it does not
+extend or reinterpret this spec's own comparison semantics at all.
 
 ## 1. User problem
 

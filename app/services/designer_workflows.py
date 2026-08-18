@@ -22,6 +22,8 @@ from battle_engine.agent_evaluation import (
 )
 from battle_engine.evaluation_analysis import EvaluationAnalysis
 from battle_engine.evaluation_analysis import analyze as analyze_evaluation
+from battle_engine.evaluation_behavior import BehaviorAnalysis, cell_ref_from_evaluation_cell
+from battle_engine.evaluation_behavior import analyze_behavior as analyze_behavior_evaluation
 from battle_engine.evaluation_history.models import evaluation_cells_from_raw
 from battle_engine.launchers import build_agents_command, build_tournament_command
 from battle_engine.result_model import read_result
@@ -323,6 +325,12 @@ class EvaluationPresentation:
     # and evaluation-history read paths use -- zero statistical calculation
     # lives in Qt/UI code. `None` only when the artifact has zero cells.
     analysis: EvaluationAnalysis | None = None
+    # v1.6 Phase 5 (docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md Sec 20): derived by
+    # the same shared `evaluation_behavior.analyze_behavior` entry point the
+    # CLI/evaluation-history read paths use -- zero behavioral measurement
+    # lives in Qt/UI code. `None` only when the artifact has zero scored
+    # cells.
+    behavior: BehaviorAnalysis | None = None
 
 
 def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
@@ -408,9 +416,15 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
         for row in data.get("comparison", ())
     )
     raw_cells = list(data.get("cells", ()))
-    analysis = (
-        analyze_evaluation(candidate_id, baseline_id, evaluation_cells_from_raw(raw_cells, base_dir))
-        if raw_cells
+    real_cells = evaluation_cells_from_raw(raw_cells, base_dir) if raw_cells else ()
+    analysis = analyze_evaluation(candidate_id, baseline_id, real_cells) if real_cells else None
+    behavior = (
+        analyze_behavior_evaluation(
+            candidate_id,
+            baseline_id,
+            [cell_ref_from_evaluation_cell(cell) for cell in real_cells if cell.is_scored],
+        )
+        if real_cells
         else None
     )
 
@@ -426,4 +440,5 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
         orientation_mode=str(data.get("orientation_mode", ORIENTATION_MODE_CANDIDATE_FIRST_ONLY)),
         arena_alignment_mode=str(data.get("arena_alignment_mode", EVALUATION_ARENA_ALIGNMENT_MODE)),
         analysis=analysis,
+        behavior=behavior,
     )
