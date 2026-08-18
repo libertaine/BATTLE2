@@ -2,6 +2,27 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [Unreleased]
+
+### Added
+
+- `bytefray agents evaluate --workers N`: bounded local parallel evaluation
+  across independent evaluation cells, via a pool of long-lived worker
+  subprocesses. Worker count never affects `evaluation_id` or any per-cell
+  result, only wall-clock throughput; default remains `1` (serial). See
+  [docs/V1_6_PHASE2_PARALLEL_EVALUATION.md](docs/V1_6_PHASE2_PARALLEL_EVALUATION.md).
+- `bytefray agents evaluate --preset <name>` and `bytefray agents
+  evaluation-presets list|show|validate`: reusable, hand-editable
+  `bytefray.evaluation_preset` YAML files supplying default candidate/
+  baseline/opponents/seeds/ticks/orientation values for an evaluation, with
+  any explicit CLI flag always overriding the preset. A preset is purely an
+  input-construction convenience -- it never affects `evaluation_id` or any
+  per-cell result, and an in-progress evaluation always resumes from its own
+  frozen `evaluation.json`, never from a preset's current (possibly since
+  edited or deleted) content. The Designer's Evaluate dialog gained a
+  matching preset selector that pre-fills the same fields. See
+  [docs/V1_6_PHASE3_EVALUATION_PRESETS.md](docs/V1_6_PHASE3_EVALUATION_PRESETS.md).
+
 ## [1.5.0] - 2026-08-18
 
 ### Architecture Evolution Readiness

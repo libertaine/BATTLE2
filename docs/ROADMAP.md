@@ -558,12 +558,31 @@ v1.5 architecture is qualified and frozen for release preparation.
 
 ## v1.6.0 — Evaluation Scale & Analysis
 
-**Status: planned direction only.** Evidence may justify deterministic parallel
-evaluation, presets/suites, richer aggregate and statistical analysis,
-behavioral comparison/profiling, larger experimental matrices, and local replay
-indexing if real workloads still warrant it. Evaluation methodology and
-artifact compatibility must remain explicit; parallelism may change throughput,
-never cell identity or results.
+**Phase 0-1 (scale baseline) and Phase 2 (deterministic parallel
+evaluation) are complete** on `v1.6-development` -- see
+[V1_6_PHASE1_EVALUATION_SCALE_BASELINE.md](V1_6_PHASE1_EVALUATION_SCALE_BASELINE.md)
+and
+[V1_6_PHASE2_PARALLEL_EVALUATION.md](V1_6_PHASE2_PARALLEL_EVALUATION.md).
+`bytefray agents evaluate --workers N` dispatches independent evaluation
+cells across a bounded pool of long-lived subprocess workers; worker count
+never affects `evaluation_id` or any per-cell result, only wall-clock
+throughput.
+
+**Phase 3 (reusable, reproducible evaluation presets) is complete** -- see
+[V1_6_PHASE3_EVALUATION_PRESETS.md](V1_6_PHASE3_EVALUATION_PRESETS.md).
+`bytefray agents evaluate --preset <name>` and
+`bytefray agents evaluation-presets list|show|validate` let a hand-authored
+`bytefray.evaluation_preset` YAML file supply default opponent/seed/ticks/
+orientation values for an evaluation, with any explicit CLI flag always
+overriding it; a preset is purely an input-construction convenience and
+never enters `evaluation_id`'s hash or changes what an evaluation means.
+
+**Status: remaining direction not yet committed.** Evidence may still
+justify richer aggregate and statistical analysis, behavioral comparison/
+profiling, larger experimental matrices, and local replay indexing, if real
+workloads still warrant it -- deliberately out of scope for Phase 3, per
+its own governing prompt. Evaluation methodology and artifact compatibility
+must remain explicit throughout.
 
 ## v2.x — Gameplay and Rules Research
 

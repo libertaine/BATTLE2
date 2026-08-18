@@ -265,6 +265,9 @@ def test_designer_evaluate_command_includes_single_orientation_flag_only_when_un
             def output_path(self):
                 return tmp_path / "designer-eval-out"
 
+            def preset_name(self):
+                return None
+
         monkeypatch.setattr("app.agent_designer.EvaluationDialog", _RecordingDialog)
 
         class _FakeProc:
@@ -596,6 +599,9 @@ def test_designer_evaluate_launches_process_on_accept(monkeypatch, tmp_path):
             def output_path(self):
                 return tmp_path / "designer-eval-out"
 
+            def preset_name(self):
+                return None
+
         monkeypatch.setattr("app.agent_designer.EvaluationDialog", _AcceptingDialog)
 
         started = []
@@ -668,6 +674,9 @@ def test_designer_evaluate_shows_warning_on_invalid_request(monkeypatch, tmp_pat
 
             def output_path(self):
                 return tmp_path / "out"
+
+            def preset_name(self):
+                return None
 
         monkeypatch.setattr("app.agent_designer.EvaluationDialog", _EmptyOpponentsDialog)
 

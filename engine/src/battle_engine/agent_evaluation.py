@@ -54,6 +54,14 @@ from battle_engine.agent_test import (
 )
 from battle_engine.agents import AgentSpec, resolve_agent
 from battle_engine.config import Config
+from battle_engine.evaluation_presets import (
+    ORIENTATION_BOTH as _PRESET_ORIENTATION_BOTH,
+)
+from battle_engine.evaluation_presets import (
+    EvaluationPreset,
+    EvaluationPresetError,
+    load_preset,
+)
 from battle_engine.match_service import (
     MatchEntrant,
     MatchRequest,
@@ -2534,12 +2542,30 @@ def _parser() -> argparse.ArgumentParser:
             "See docs/specs/agent_evaluation.md."
         ),
     )
-    parser.add_argument("candidate_id", help="candidate agent's discovery id")
+    parser.add_argument(
+        "candidate_id",
+        nargs="?",
+        default=None,
+        help="candidate agent's discovery id (may instead be set by --preset)",
+    )
+    parser.add_argument(
+        "--preset",
+        default=None,
+        help=(
+            "name of a bytefray.evaluation_preset (see 'bytefray agents "
+            "evaluation-presets') supplying default values for any option not "
+            "explicitly given below; an explicit option always overrides the "
+            "preset. Never affects evaluation_id or any per-cell result -- see "
+            "docs/V1_6_PHASE3_EVALUATION_PRESETS.md."
+        ),
+    )
     parser.add_argument(
         "--baseline", default=None, help="baseline agent's discovery id to compare against"
     )
     parser.add_argument(
-        "--opponents", required=True, help="comma-separated opponent discovery ids"
+        "--opponents",
+        default=None,
+        help="comma-separated opponent discovery ids (may instead be set by --preset)",
     )
     seed_group = parser.add_mutually_exclusive_group()
     seed_group.add_argument("--seeds", default=None, help="comma-separated explicit seeds")
@@ -2547,7 +2573,10 @@ def _parser() -> argparse.ArgumentParser:
         "--seed-range", default=None, help="inclusive seed range START:END"
     )
     parser.add_argument(
-        "--ticks", type=_positive_int, default=DEFAULT_TICKS, help=f"tick budget per cell (default: {DEFAULT_TICKS})"
+        "--ticks",
+        type=_positive_int,
+        default=None,
+        help=f"tick budget per cell (default: {DEFAULT_TICKS}, unless set by --preset)",
     )
     parser.add_argument("--output", type=Path, default=None, help="evaluation artifact directory")
     parser.add_argument("--retry-failed", action="store_true")
@@ -2555,13 +2584,25 @@ def _parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="print the matrix and exit without running anything"
     )
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument(
+    orientation_group = parser.add_mutually_exclusive_group()
+    orientation_group.add_argument(
         "--single-orientation",
         action="store_true",
+        default=None,
         help=(
-            "opt out of the default both-entrant-orientations methodology; "
-            "candidate_first only, matching pre-v0.9 behavior and matrix size. "
+            "opt out of the both-entrant-orientations methodology; candidate_first "
+            "only, matching pre-v0.9 behavior and matrix size. Overrides --preset. "
             "Does not generalize across entrant order -- see docs/AGENT_LAB.md."
+        ),
+    )
+    orientation_group.add_argument(
+        "--both-orientations",
+        action="store_true",
+        default=None,
+        help=(
+            "force the both-entrant-orientations methodology, overriding a "
+            "--preset that requested single-orientation. Redundant with the "
+            "ordinary default when no --preset is given."
         ),
     )
     parser.add_argument(
@@ -2571,8 +2612,9 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             "number of evaluation cells to execute concurrently, via a pool of "
             "long-lived worker subprocesses (default: 1, serial). Never affects "
-            "evaluation_id or any per-cell result -- only wall-clock speed. See "
-            "docs/V1_6_PHASE2_PARALLEL_EVALUATION.md."
+            "evaluation_id or any per-cell result -- only wall-clock speed. Never "
+            "settable by --preset -- execution machinery, not experiment content. "
+            "See docs/V1_6_PHASE2_PARALLEL_EVALUATION.md."
         ),
     )
     return parser
@@ -2619,7 +2661,13 @@ def methodology_lines(orientation_mode: str) -> tuple[str, str]:
     return orientation_line, alignment_line
 
 
-def _print_matrix(request: EvaluationRequest, matrix: Sequence[EvaluationCell]) -> None:
+def _print_matrix(
+    request: EvaluationRequest,
+    matrix: Sequence[EvaluationCell],
+    preset: EvaluationPreset | None = None,
+) -> None:
+    if preset is not None:
+        print(f"preset: {preset.name}  (content_digest={preset.content_digest})")
     subjects = [request.candidate_id] + ([request.baseline_id] if request.baseline_id else [])
     print(f"candidate: {request.candidate_id}")
     print(f"baseline: {request.baseline_id if request.baseline_id else 'none'}")
@@ -2759,23 +2807,84 @@ def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+
+    # v1.6 Phase 3: resolution layering is (1) ordinary defaults, (2) the
+    # --preset (if any), (3) an explicit CLI option -- explicit always wins.
+    # This is the one authoritative resolution path: a preset only ever
+    # supplies values into the same variables an explicit invocation would
+    # set directly below, so nothing downstream of this block (preflight,
+    # EvaluationRequest, evaluation_id) can tell a preset was involved. See
+    # docs/V1_6_PHASE3_EVALUATION_PRESETS.md.
+    preset: EvaluationPreset | None = None
+    if args.preset is not None:
+        try:
+            preset = load_preset(get_data_root(), args.preset)
+        except EvaluationPresetError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+
+    candidate_id = args.candidate_id
+    if candidate_id is None and preset is not None:
+        candidate_id = preset.candidate_id
+    if candidate_id is None:
+        print(
+            "ERROR: candidate is required (supply it as a positional argument, "
+            "or set 'candidate' in the --preset).",
+            file=sys.stderr,
+        )
+        return 2
+
+    baseline_id = args.baseline
+    if baseline_id is None and preset is not None:
+        baseline_id = preset.baseline_id
+
     try:
-        opponent_ids = parse_opponents(args.opponents)
-        seeds = _resolve_seeds(args)
+        if args.opponents is not None:
+            opponent_ids = parse_opponents(args.opponents)
+        elif preset is not None and preset.opponent_ids is not None:
+            opponent_ids = preset.opponent_ids
+        else:
+            raise EvaluationConfigurationError(
+                "opponents are required (supply --opponents, or set 'opponents' "
+                "in the --preset)."
+            )
+
+        if args.seeds is not None or args.seed_range is not None:
+            seeds = _resolve_seeds(args)
+        elif preset is not None and preset.seeds is not None:
+            seeds = preset.seeds
+        elif preset is not None and preset.seed_range is not None:
+            seeds = tuple(range(preset.seed_range[0], preset.seed_range[1] + 1))
+        else:
+            seeds = (Config().seed,)
     except EvaluationConfigurationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    both_orientations = not args.single_orientation
+    if args.ticks is not None:
+        ticks = args.ticks
+    elif preset is not None and preset.ticks is not None:
+        ticks = preset.ticks
+    else:
+        ticks = DEFAULT_TICKS
+
+    if args.single_orientation:
+        both_orientations = False
+    elif args.both_orientations:
+        both_orientations = True
+    elif preset is not None and preset.orientation is not None:
+        both_orientations = preset.orientation == _PRESET_ORIENTATION_BOTH
+    else:
+        both_orientations = True
 
     service = EvaluationService()
     try:
         _specs, evaluation_id = service.preflight(
-            candidate_id=args.candidate_id,
+            candidate_id=candidate_id,
             opponent_ids=opponent_ids,
             seeds=seeds,
-            baseline_id=args.baseline,
-            ticks=args.ticks,
+            baseline_id=baseline_id,
+            ticks=ticks,
             both_orientations=both_orientations,
         )
     except EvaluationConfigurationError as exc:
@@ -2789,19 +2898,19 @@ def main(argv: list[str] | None = None) -> int:
         else _default_output_dir(root, evaluation_id).resolve()
     )
     request = EvaluationRequest(
-        candidate_id=args.candidate_id,
+        candidate_id=candidate_id,
         opponent_ids=opponent_ids,
         seeds=seeds,
         output_dir=output_dir,
-        baseline_id=args.baseline,
-        ticks=args.ticks,
+        baseline_id=baseline_id,
+        ticks=ticks,
         retry_failures=args.retry_failed,
         both_orientations=both_orientations,
         workers=args.workers,
     )
     matrix = build_matrix(request, evaluation_id)
     if not args.quiet or args.dry_run:
-        _print_matrix(request, matrix)
+        _print_matrix(request, matrix, preset)
     if args.dry_run:
         return 0
 

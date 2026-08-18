@@ -189,6 +189,7 @@ def build_designer_evaluate_command(
     ticks: int,
     output_dir: Path,
     both_orientations: bool = True,
+    preset_name: str | None = None,
 ) -> list[str]:
     """Build the ``bytefray agents evaluate`` argument list for one Designer run.
 
@@ -205,6 +206,14 @@ def build_designer_evaluate_command(
     flag (both orientations run by default); ``False`` (unchecked) appends
     ``--single-orientation``, the exact CLI-equivalent single-orientation
     opt-out.
+
+    v1.6 Phase 3 (docs/V1_6_PHASE3_EVALUATION_PRESETS.md): ``preset_name``,
+    when given, appends ``--preset <name>`` alongside the full explicit
+    argument list this function already builds -- the Designer always sends
+    every field explicitly (its dialog was itself pre-filled from the same
+    preset for display), so the preset can never silently supply a value
+    the Designer isn't already sending; this is authoritative-parser reuse,
+    not a second resolution path (Sec 14 of the governing spec).
     """
 
     candidate = candidate_id.strip()
@@ -243,6 +252,8 @@ def build_designer_evaluate_command(
     arguments.extend(("--ticks", str(ticks), "--output", str(output)))
     if not both_orientations:
         arguments.append("--single-orientation")
+    if preset_name:
+        arguments.extend(("--preset", preset_name))
     return build_agents_command("evaluate", arguments)
 
 

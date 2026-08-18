@@ -90,30 +90,40 @@ fill a release milestone without users/packages that require it.
 - Richer aggregate evaluation analysis and confidence/statistical
   summaries.
 - Ranking systems such as Elo/Glicko or similar.
-- Standardized evaluation suites/presets and benchmark/reference
-  populations.
+- Benchmark/reference agent populations.
 - Improved comparative visualization.
 
 None of this is a v1.0 requirement, and ranking systems in particular
-should not be treated as one. A standardized evaluation protocol or preset
-set is worth reconsidering earlier than the rest of this list *if* v0.10's
-own evaluation-methodology work (translation robustness, in particular)
-shows that standardization measurably improves reproducibility — that
-would be a decision made with evidence in hand, not assumed here.
+should not be treated as one.
+
+Reusable, named **evaluation presets** (`bytefray agents evaluate --preset
+<name>`, a hand-authored `bytefray.evaluation_preset` YAML file supplying
+default opponent/seed/ticks/orientation values) shipped in v1.6.0 Phase 3
+-- see
+[V1_6_PHASE3_EVALUATION_PRESETS.md](V1_6_PHASE3_EVALUATION_PRESETS.md).
+Deliberately scoped as an input-construction convenience only: no built-in
+preset catalog, no confidence intervals or statistical analysis, no
+behavior profiling or benchmark/reference-population semantics -- those
+remain open items above, to be reconsidered with evidence in hand rather
+than assumed.
 
 ---
 
 ## Evaluation performance and scaling
 
-**Status: planned direction for v1.6, evidence-gated.**
+**Status: partially delivered in v1.6, remainder evidence-gated.**
 
-Scaling features, not prerequisites for platform stability:
+- **Parallel evaluation** -- delivered in v1.6.0 Phase 2 (bounded local
+  subprocess-worker pool via `--workers N`; see
+  [V1_6_PHASE2_PARALLEL_EVALUATION.md](V1_6_PHASE2_PARALLEL_EVALUATION.md)).
+- **Large evaluation matrices** -- exercised up to 2,000 cells in Phase 2's
+  own stress qualification; no architectural blocker found at that scale.
 
-- Parallel evaluation
+Remaining scaling features, not prerequisites for platform stability:
+
 - Distributed evaluation
-- Large evaluation matrices
 - More efficient artifact processing
-- Larger experimental populations
+- Larger experimental populations beyond what Phase 2 already stress-tested
 
 ---
 

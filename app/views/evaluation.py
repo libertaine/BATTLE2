@@ -26,6 +26,8 @@ from battle_engine.agent_evaluation import (
     ORIENTATION_OPPONENT_FIRST,
     methodology_lines,
 )
+from battle_engine.evaluation_presets import ORIENTATION_BOTH as PRESET_ORIENTATION_BOTH
+from battle_engine.evaluation_presets import EvaluationPreset
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -71,6 +73,7 @@ class EvaluationDialog(QDialog):
         *,
         default_candidate: str | None,
         default_output: Path,
+        presets: dict[str, EvaluationPreset] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         """``python_agents`` is ``(display name, discovery id)`` pairs.
@@ -82,13 +85,32 @@ class EvaluationDialog(QDialog):
         understand (docs/specs/evaluation_history.md Sec 17).
         ``default_candidate`` is a discovery id, matching the value
         ``candidate_id()`` itself returns.
+
+        ``presets`` (v1.6 Phase 3, docs/V1_6_PHASE3_EVALUATION_PRESETS.md)
+        is a name -> already-loaded :class:`EvaluationPreset` mapping --
+        this dialog never parses/resolves preset YAML itself (that would be
+        a second, GUI-side preset implementation, exactly what the
+        governing spec forbids); the caller (``AgentDesigner``) does the
+        loading via ``battle_engine.evaluation_presets`` and hands over
+        already-typed objects purely for display/prefill.
         """
         super().__init__(parent)
         self.setWindowTitle("Evaluate")
         self._agents = list(python_agents)
+        self._presets = dict(presets) if presets else {}
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
+
+        if self._presets:
+            self.presetCombo = QComboBox()
+            self.presetCombo.addItem("(none)", None)
+            for name in sorted(self._presets):
+                self.presetCombo.addItem(name, name)
+            self.presetCombo.currentIndexChanged.connect(self._on_preset_selected)
+            form.addRow("Preset", self.presetCombo)
+        else:
+            self.presetCombo = None
 
         self.candidateCombo = QComboBox()
         for display, agent_id in self._agents:
@@ -155,6 +177,50 @@ class EvaluationDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.resize(560, 520)
+
+    def _on_preset_selected(self) -> None:
+        """Populate fields for display -- never binding, always overridable.
+
+        Reused by ``preset_name()``/the launch path only as the *value*
+        that was selected; resolution/validation of that value against
+        whatever the user edited afterward happens exclusively in the CLI
+        subprocess this dialog's own command eventually launches (Sec 14).
+        """
+
+        if self.presetCombo is None:
+            return
+        name = self.presetCombo.currentData()
+        if name is None:
+            return
+        preset = self._presets.get(name)
+        if preset is None:
+            return
+        if preset.candidate_id is not None:
+            index = self.candidateCombo.findData(preset.candidate_id)
+            if index >= 0:
+                self.candidateCombo.setCurrentIndex(index)
+        index = self.baselineCombo.findData(preset.baseline_id)
+        self.baselineCombo.setCurrentIndex(max(index, 0))
+        if preset.opponent_ids is not None:
+            wanted = set(preset.opponent_ids)
+            for row in range(self.opponentsList.count()):
+                item = self.opponentsList.item(row)
+                item.setSelected(item.data(Qt.UserRole) in wanted)
+        if preset.seeds is not None:
+            self.seedsEdit.setText(", ".join(str(s) for s in preset.seeds))
+            self.seedRangeEdit.setText("")
+        elif preset.seed_range is not None:
+            self.seedRangeEdit.setText(f"{preset.seed_range[0]}:{preset.seed_range[1]}")
+            self.seedsEdit.setText("")
+        if preset.ticks is not None:
+            self.ticksSpin.setValue(preset.ticks)
+        if preset.orientation is not None:
+            self.bothOrientationsCheck.setChecked(preset.orientation == PRESET_ORIENTATION_BOTH)
+
+    def preset_name(self) -> str | None:
+        if self.presetCombo is None:
+            return None
+        return self.presetCombo.currentData()
 
     def candidate_id(self) -> str:
         return self.candidateCombo.currentData()

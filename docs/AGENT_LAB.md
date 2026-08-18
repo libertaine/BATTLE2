@@ -313,6 +313,54 @@ given — an evaluation cell's match seed is never re-derived from a parent
 seed the way tournament match seeds are, so a cell is always directly
 reproducible (see "Inspecting a regression" below).
 
+### Reusable evaluation presets
+
+Since v1.6, a small YAML file can save an opponent/seed/ticks/orientation
+combination you run repeatedly, instead of retyping the same flags every
+time:
+
+```yaml
+# <BYTEFRAY_ROOT>/evaluation_presets/standard.yaml
+schema: bytefray.evaluation_preset
+schema_version: 1
+description: Standard interactive matrix against the shipped starters.
+opponents: [claimer, strider, hunter]
+seeds: [1, 2, 3]
+ticks: 200
+orientation: both
+```
+
+Run it with `--preset`:
+
+```bash
+bytefray agents evaluate my_agent --preset standard
+```
+
+Candidate is deliberately **not** required in the file above — a preset
+usually describes "evaluate whichever agent I'm currently developing
+against this fixed opponent/seed matrix," so the positional candidate
+argument still works exactly as shown. A preset *may* also set `candidate`
+(and `baseline`) for a fixed-subject preset (e.g. a standing regression
+check against one released agent); an explicit positional argument always
+overrides it. Any other flag you pass explicitly — `--ticks`, `--opponents`,
+`--seeds`/`--seed-range`, `--single-orientation`/`--both-orientations` —
+overrides the preset's own value for that field the same way; unset fields
+fall back to the ordinary CLI defaults. `--workers` is never a preset
+field — it's how fast this machine runs the evaluation, not what the
+evaluation is, and a preset run at `--workers 1` and `--workers 8`
+resolves to the identical `evaluation_id` and identical per-cell results.
+
+A preset is purely a convenience for constructing the request: once
+resolved, an evaluation started from `--preset standard` is indistinguishable
+from the same flags typed out by hand — it never affects `evaluation_id`,
+never introduces a second execution path, and an in-progress evaluation's
+resume behavior is governed entirely by its own already-written
+`evaluation.json`, never by whatever the preset file currently contains.
+See `bytefray agents evaluation-presets list|show|validate` to discover,
+inspect, and check presets, and
+[docs/V1_6_PHASE3_EVALUATION_PRESETS.md](V1_6_PHASE3_EVALUATION_PRESETS.md)
+for the full design record.
+
 ### Entrant orientation
 
 Python matches execute in fixed slot order — one entrant completes its

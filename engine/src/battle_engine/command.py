@@ -103,6 +103,10 @@ def _agents(argv: list[str]) -> int:
         from battle_engine.evaluation_history.cli import main as evaluations_main
 
         return evaluations_main(argv[1:])
+    if argv and argv[0] == "evaluation-presets":
+        from battle_engine.evaluation_presets import main as evaluation_presets_main
+
+        return evaluation_presets_main(argv[1:])
     if argv and argv[0] == "revisions":
         from battle_engine.agent_revisions_cli import main as revisions_main
 
@@ -156,7 +160,9 @@ def _agents(argv: list[str]) -> int:
             "'agents inspect <run-dir>' to inspect a development trace, "
             "'agents diverge <run-a> <run-b>' to find the first tick two "
             "traces disagree, 'agents evaluate <candidate-id>' to run a "
-            "deterministic candidate/baseline evaluation matrix, "
+            "deterministic candidate/baseline evaluation matrix (optionally via "
+            "'--preset <name>'), 'agents evaluation-presets list|show|validate' "
+            "to inspect reusable evaluation presets, "
             "'agents evaluations list|show|compare' to inspect past evaluation "
             "runs, 'agents revisions list|show|restore' to inspect/restore "
             "durably preserved agent source revisions, 'agents export <agent-id>' "

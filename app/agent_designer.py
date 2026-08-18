@@ -784,6 +784,26 @@ class AgentDesigner(QMainWindow):
             return
         row = self.development.selectedAgentRow()
         default_candidate = row.agent_id if row is not None else None
+        # v1.6 Phase 3 (docs/V1_6_PHASE3_EVALUATION_PRESETS.md): discover and
+        # load presets in-process, purely for dialog prefill -- the same
+        # read-only, no-agent-code-executed reasoning already used for
+        # ``_plan_default_evaluation_output``'s in-process ``preflight()``
+        # call below. A preset that fails to load (invalid YAML, unsupported
+        # schema) is silently omitted from the dropdown rather than blocking
+        # the whole dialog; ``bytefray agents evaluation-presets validate``
+        # is the tool for diagnosing why.
+        from battle_engine.evaluation_presets import (
+            EvaluationPresetError,
+            list_presets,
+            load_preset,
+        )
+
+        presets: dict = {}
+        for name in list_presets(self.data_root):
+            try:
+                presets[name] = load_preset(self.data_root, name)
+            except EvaluationPresetError:
+                continue
         # A directory-only placeholder shown before the user has picked
         # opponents/seeds; every plan's *actual* content-addressed default
         # (matching what a bare `bytefray agents evaluate` would use) is
@@ -793,7 +813,11 @@ class AgentDesigner(QMainWindow):
         # evaluation into one fixed, colliding "designer-evaluation" path).
         placeholder_output = self.data_root / "runs" / "evaluations"
         dialog = EvaluationDialog(
-            agents, default_candidate=default_candidate, default_output=placeholder_output, parent=self
+            agents,
+            default_candidate=default_candidate,
+            default_output=placeholder_output,
+            presets=presets,
+            parent=self,
         )
         if not dialog.exec():
             return
@@ -816,6 +840,7 @@ class AgentDesigner(QMainWindow):
                 ticks=dialog.ticks(),
                 output_dir=output_dir,
                 both_orientations=dialog.both_orientations(),
+                preset_name=dialog.preset_name(),
             )
         except (DesignerValidationError, OSError) as exc:
             QMessageBox.warning(self, "Invalid Evaluation", str(exc))
