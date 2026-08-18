@@ -864,12 +864,13 @@ class NativeMatchService:
             )
 
         # Resolved once here -- the one boundary where a homogeneous native
-        # match's Ruleset-v1 execution semantics (currently: entrant
-        # scheduling) are dispatched -- and threaded through to whichever
-        # runtime executes, rather than each runtime resolving it itself.
-        # Every native match currently runs under the one frozen Ruleset
-        # identity; ``resolve_ruleset_policy`` fails closed if that ever
-        # stops being true instead of silently executing as Ruleset v1.
+        # match's Ruleset-v1 execution semantics (as of v1.5 Phase 4: entrant
+        # scheduling and match termination decision/reason) are dispatched --
+        # and threaded through to whichever runtime executes, rather than
+        # each runtime resolving it itself. Every native match currently
+        # runs under the one frozen Ruleset identity; ``resolve_ruleset_
+        # policy`` fails closed if that ever stops being true instead of
+        # silently executing as Ruleset v1.
         ruleset_policy = resolve_ruleset_policy(BYTEFRAY_RULESET_ID)
 
         replay_path = request.replay_path.resolve()

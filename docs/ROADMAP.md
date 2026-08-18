@@ -538,6 +538,23 @@ schema, deterministic identity, entrant ordering, Python seed derivation,
 or gameplay semantic changed; the v1.4/v1.5 Ruleset-v1 equivalence corpus
 shows zero golden differences.
 
+**Phase 6 (integrated architecture-equivalence qualification) is
+complete** on `v1.5-development`: a qualification, not a refactor pass --
+see [the Phase 6 record](V1_5_PHASE6_ARCHITECTURE_EQUIVALENCE.md). The
+combined result of Phases 2-5 was directly verified equivalent to v1.4.1
+Ruleset-v1 behavior, including running the golden corpus against the
+actual v1.4.1 source tree (not merely against an unedited test file) and
+confirming zero source diff since v1.4.1 in `vm.py`, `scoring.py`,
+`statistics.py`, and `rules.py`. A repository-wide architecture-bypass
+search found no independent scheduler/termination implementation, no
+uncontrolled Ruleset resolution path, and no duplicated entrant-identity
+storage. Native runtime qualification exercised real VM, unsupervised
+Python, and supervised Python matches (2 and 3 entrants, non-default
+scheduler quota) through both the CLI and a freshly built/installed wheel
+in an isolated venv. The only production change this phase made was
+correcting one stale comment; no test was added, changed, or removed. The
+v1.5 architecture is qualified and frozen for release preparation.
+
 ## v1.6.0 — Evaluation Scale & Analysis
 
 **Status: planned direction only.** Evidence may justify deterministic parallel
