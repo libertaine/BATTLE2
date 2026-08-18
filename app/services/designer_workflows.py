@@ -20,6 +20,9 @@ from battle_engine.agent_evaluation import (
     read_evaluation,
     rerun_command,
 )
+from battle_engine.evaluation_analysis import EvaluationAnalysis
+from battle_engine.evaluation_analysis import analyze as analyze_evaluation
+from battle_engine.evaluation_history.models import evaluation_cells_from_raw
 from battle_engine.launchers import build_agents_command, build_tournament_command
 from battle_engine.result_model import read_result
 
@@ -315,6 +318,11 @@ class EvaluationPresentation:
     # value, "fixed".
     orientation_mode: str = ORIENTATION_MODE_CANDIDATE_FIRST_ONLY
     arena_alignment_mode: str = EVALUATION_ARENA_ALIGNMENT_MODE
+    # v1.6 Phase 4 (docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md Sec 14): derived
+    # by the same shared `evaluation_analysis.analyze` entry point the CLI
+    # and evaluation-history read paths use -- zero statistical calculation
+    # lives in Qt/UI code. `None` only when the artifact has zero cells.
+    analysis: EvaluationAnalysis | None = None
 
 
 def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
@@ -399,6 +407,13 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
         )
         for row in data.get("comparison", ())
     )
+    raw_cells = list(data.get("cells", ()))
+    analysis = (
+        analyze_evaluation(candidate_id, baseline_id, evaluation_cells_from_raw(raw_cells, base_dir))
+        if raw_cells
+        else None
+    )
+
     return EvaluationPresentation(
         evaluation_id=str(data.get("evaluation_id", "")),
         candidate_id=candidate_id,
@@ -410,4 +425,5 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
         comparison=comparison,
         orientation_mode=str(data.get("orientation_mode", ORIENTATION_MODE_CANDIDATE_FIRST_ONLY)),
         arena_alignment_mode=str(data.get("arena_alignment_mode", EVALUATION_ARENA_ALIGNMENT_MODE)),
+        analysis=analysis,
     )

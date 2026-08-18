@@ -22,6 +22,18 @@ This changelog records notable user- and developer-visible changes to Bytefray.
   edited or deleted) content. The Designer's Evaluate dialog gained a
   matching preset selector that pre-fills the same fields. See
   [docs/V1_6_PHASE3_EVALUATION_PRESETS.md](docs/V1_6_PHASE3_EVALUATION_PRESETS.md).
+- Derived aggregate/statistical analysis for `bytefray agents evaluate`,
+  `evaluations show`, `evaluations compare`, and the Designer's evaluation
+  results dialog: Wilson score intervals on observed win rates, and an
+  exact paired candidate-vs-baseline significance test (the exact sign
+  test / exact McNemar test) over discordant paired conditions, with
+  always-visible sample counts and explicit by-opponent/by-orientation
+  breakdowns so a pooled number can never hide an opponent- or
+  orientation-specific effect. Fully derived from already-canonical
+  evaluation cells -- no `evaluation.json` schema change, no new runtime
+  dependency, and works on any existing valid v1/v2 evaluation artifact
+  without re-running it. See
+  [docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md](docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md).
 
 ## [1.5.0] - 2026-08-18
 

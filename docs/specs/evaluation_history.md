@@ -27,6 +27,14 @@ sibling-key, recovered-not-unknown treatment already documented here for
 `CHANGELOG.md`'s Unreleased entry and `docs/AGENT_LAB.md` for the current,
 authoritative field list.
 
+**v1.6 Phase 4 note:** `EvaluationSummary` (§11) gained one additional
+field, `analysis` — a derived, never-persisted `EvaluationAnalysis` (Wilson
+win-rate intervals, exact paired candidate-vs-baseline evidence) computed
+by the v1/v2 adapters from the same `real_cells` they already reconstruct
+for `aggregates_recomputed`/`comparison_recomputed`. It changes no
+identity, health, or comparison semantics this spec establishes; see
+`docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md` for its full design.
+
 ## 1. Established v0.6.1 facts (verified in source, not assumed)
 
 - `agent_evaluation.py` already implements `run_dir` on `agent_test.test_agent`

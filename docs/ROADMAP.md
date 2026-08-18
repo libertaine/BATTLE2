@@ -577,12 +577,19 @@ orientation values for an evaluation, with any explicit CLI flag always
 overriding it; a preset is purely an input-construction convenience and
 never enters `evaluation_id`'s hash or changes what an evaluation means.
 
+**Phase 4 (aggregate & statistical analysis) is complete** -- see
+[V1_6_PHASE4_EVALUATION_ANALYSIS.md](V1_6_PHASE4_EVALUATION_ANALYSIS.md).
+Wilson-interval win-rate estimates and an exact paired candidate-vs-baseline
+significance test (over discordant paired conditions, with explicit
+by-opponent/by-orientation breakdowns) are now available from `agents
+evaluate`, `evaluations show`/`compare`, and the Designer -- fully derived
+from already-canonical evaluation data, no schema change, no ranking system.
+
 **Status: remaining direction not yet committed.** Evidence may still
-justify richer aggregate and statistical analysis, behavioral comparison/
-profiling, larger experimental matrices, and local replay indexing, if real
-workloads still warrant it -- deliberately out of scope for Phase 3, per
-its own governing prompt. Evaluation methodology and artifact compatibility
-must remain explicit throughout.
+justify behavioral comparison/profiling, larger experimental matrices, and
+local replay indexing, if real workloads still warrant it -- deliberately
+out of scope for Phase 4, per its own governing prompt. Evaluation
+methodology and artifact compatibility must remain explicit throughout.
 
 ## v2.x — Gameplay and Rules Research
 

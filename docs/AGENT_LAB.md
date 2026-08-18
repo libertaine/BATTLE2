@@ -441,6 +441,55 @@ matchup. Notice the printed rerun command for an `opponent_first` row: it
 reproduces the cell byte for byte, with the opponent (not the subject) in
 the always-first-acting slot, matching exactly how that cell actually ran.
 
+### Statistical evidence (v1.6 Phase 4)
+
+With `--baseline`, the comparison summary is followed by a concise
+`evidence:` block:
+
+```text
+evidence:
+  candidate (my_agent_v2): 14/20 (70%)  95% CI [48%, 85%]
+  baseline (my_agent_v1): 8/20 (40%)  95% CI [22%, 61%]
+  paired: candidate better in 6/9 discordant conditions (67%)  95% CI [35%, 88%]  exact two-sided p=0.508
+  consistent: every group with discordant pairs favors the candidate
+  consistent: every group with discordant pairs favors the candidate
+```
+
+Each win-rate interval is a **Wilson score interval** — the standard
+choice for a small-sample binomial proportion, unlike the naive normal
+approximation, which misbehaves near 0% or 100%. It describes uncertainty
+about the observed proportion **within this specific evaluated sample**,
+not a claim about the agent's "true" win rate against some larger,
+unevaluated population — Bytefray's opponents and seeds are explicit,
+author-chosen values, not random draws. Ties are never credited as a
+half-win: the interval is over win vs. not-win, and `tie_rate`/`loss_rate`
+are always available alongside it (see `evaluations show` below) so a high
+tie rate is never hidden.
+
+The `paired:` line is an **exact** two-sided test (the exact sign test /
+exact McNemar test) over *discordant* paired conditions — cells where the
+candidate and baseline actually disagreed (one classified `improved`, the
+other `regressed`, per the same `win > tie > loss` rule described above).
+It answers "of the conditions where the two sides disagreed, how lopsided
+was that disagreement," not "did the candidate win more matches overall."
+No p-value is ever presented as a bare `SIGNIFICANT`/`NOT SIGNIFICANT`
+verdict, and "not significant" never means "no difference" — read the
+magnitude (`6/9`, `67%`) and the interval before the p-value.
+
+The two `consistent:`/`mixed:` lines describe whether every opponent (and
+every orientation) that had at least one discordant pair pointed the same
+direction — opponent and orientation are real blocking factors, and a
+pooled number can hide a candidate that only wins against one opponent, or
+only when scheduled first. `bytefray agents evaluations show <id>` prints
+the full by-opponent/by-orientation breakdown behind those two lines (see
+"Evaluation history" below); the live CLI keeps this block short on
+purpose. Analysis is always **derived** from the evaluation's own cells,
+never persisted in `evaluation.json` — it works on any existing valid
+evaluation artifact, including ones produced before v1.6 Phase 4 shipped,
+with no need to re-run anything. See
+[V1_6_PHASE4_EVALUATION_ANALYSIS.md](V1_6_PHASE4_EVALUATION_ANALYSIS.md)
+for the full statistical design, formulas, and limitations.
+
 ### Inspecting a regression
 
 Every regressed (or otherwise interesting) cell comes with the exact
@@ -549,6 +598,19 @@ drift, and comparison semantics, including v1's honest limitations (v1
 never persisted enough to recover genuine executable identity for
 historical opponents/candidates, so `evaluations compare` against a v1
 artifact reports those dimensions as unknown rather than guessing).
+
+Since v1.6 Phase 4, `evaluations show` also prints an `analysis:` section —
+the same Wilson-interval/exact-paired-test evidence the live CLI shows
+(see "Statistical evidence" above), but with the full by-opponent and
+by-orientation breakdown always expanded, since `show` is already the
+"drill deeper" workflow. This works on any historical v1 or v2 artifact,
+derived on the fly from its own cells, never from a stored, potentially
+stale statistic. `evaluations compare` prints one shallower
+`statistical evidence:` line over its own already-aligned rows — it does
+not break that down by opponent/orientation, since the two compared
+evaluations may not even share the same opponent/seed set; its existing
+`unmatched`/`changed_condition` counts already disclose how much of each
+side went unmatched.
 
 ### Agent revisions (v0.8)
 

@@ -85,16 +85,22 @@ fill a release milestone without users/packages that require it.
 
 ## Richer evaluation / statistical analysis
 
-**Status: Candidate, with one Exploratory sub-item.**
+**Status: Delivered in part (v1.6 Phase 4); remainder Candidate, with one
+Exploratory sub-item.**
 
-- Richer aggregate evaluation analysis and confidence/statistical
-  summaries.
+- ~~Richer aggregate evaluation analysis and confidence/statistical
+  summaries.~~ Delivered in v1.6.0 Phase 4: Wilson score intervals on
+  observed win rates and an exact paired candidate-vs-baseline
+  significance test (exact sign test / exact McNemar test) over discordant
+  paired conditions, with by-opponent/by-orientation breakdowns -- see
+  [V1_6_PHASE4_EVALUATION_ANALYSIS.md](V1_6_PHASE4_EVALUATION_ANALYSIS.md).
 - Ranking systems such as Elo/Glicko or similar.
 - Benchmark/reference agent populations.
 - Improved comparative visualization.
 
-None of this is a v1.0 requirement, and ranking systems in particular
-should not be treated as one.
+Ranking systems in particular should not be treated as a v1.0 requirement;
+Phase 4 explicitly does not introduce one (no Elo/Glicko/TrueSkill/global
+rating -- comparison stays scoped to explicit evaluation conditions).
 
 Reusable, named **evaluation presets** (`bytefray agents evaluate --preset
 <name>`, a hand-authored `bytefray.evaluation_preset` YAML file supplying
@@ -102,10 +108,9 @@ default opponent/seed/ticks/orientation values) shipped in v1.6.0 Phase 3
 -- see
 [V1_6_PHASE3_EVALUATION_PRESETS.md](V1_6_PHASE3_EVALUATION_PRESETS.md).
 Deliberately scoped as an input-construction convenience only: no built-in
-preset catalog, no confidence intervals or statistical analysis, no
-behavior profiling or benchmark/reference-population semantics -- those
-remain open items above, to be reconsidered with evidence in hand rather
-than assumed.
+preset catalog, no behavior profiling or benchmark/reference-population
+semantics -- those remain open items above, to be reconsidered with
+evidence in hand rather than assumed.
 
 ---
 

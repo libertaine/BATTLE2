@@ -2742,6 +2742,56 @@ def _print_comparison_entry(entry: ComparisonEntry, ticks: int) -> None:
         )
 
 
+def _print_evidence(analysis: Any) -> None:
+    """v1.6 Phase 4 (docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md Sec 12): a
+    concise Wilson-interval + exact paired evidence block -- magnitude and
+    sample size shown before any p-value, never a bare
+    SIGNIFICANT/NOT SIGNIFICANT verdict. ``analysis`` is an
+    ``evaluation_analysis.EvaluationAnalysis``, typed as ``Any`` here only
+    to avoid a top-level circular import (``evaluation_analysis`` imports
+    from this module); see the deferred import at each call site.
+    """
+
+    from battle_engine.evaluation_analysis import EvidenceState
+
+    def _rate_line(label: str, estimate: Any) -> str:
+        interval = estimate.win_interval
+        if interval is None:
+            return f"  {label}: insufficient data (0 scored matches)"
+        pct = 100.0 * (estimate.observed_win_rate or 0.0)
+        return (
+            f"  {label}: {estimate.wins}/{estimate.matches_played} ({pct:.0f}%)  "
+            f"{round(interval.confidence_level * 100)}% CI "
+            f"[{100.0 * interval.lower:.0f}%, {100.0 * interval.upper:.0f}%]"
+        )
+
+    print("evidence:")
+    print(_rate_line(f"candidate ({analysis.candidate_id})", analysis.candidate_overall))
+    if analysis.baseline_overall is not None:
+        print(_rate_line(f"baseline ({analysis.baseline_id})", analysis.baseline_overall))
+    paired = analysis.overall_paired
+    if paired is not None:
+        if paired.state == EvidenceState.NO_MATCHED_CONDITIONS:
+            print("  paired: no matched candidate/baseline conditions")
+        elif paired.state == EvidenceState.NO_DISCORDANT_PAIRS:
+            print(
+                f"  paired: {paired.paired_count} matched conditions, no discordant pairs "
+                "(all unchanged/inconclusive) -- interval/exact test not meaningful"
+            )
+        else:
+            interval = paired.better_interval
+            assert interval is not None and paired.exact_p_value is not None
+            print(
+                f"  paired: candidate better in {paired.improved}/{paired.discordant} discordant "
+                f"conditions ({100.0 * (paired.better_proportion_of_discordant or 0.0):.0f}%)  "
+                f"{round(interval.confidence_level * 100)}% CI "
+                f"[{100.0 * interval.lower:.0f}%, {100.0 * interval.upper:.0f}%]  "
+                f"exact two-sided p={paired.exact_p_value:.3g}"
+            )
+        print(f"  {analysis.opponent_consistency}")
+        print(f"  {analysis.orientation_consistency}")
+
+
 def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
     print(f"evaluation: {result.evaluation_id}")
     for line in methodology_lines(request.orientation_mode):
@@ -2766,6 +2816,11 @@ def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
             f"comparison: {len(improved)} improved, {len(regressed)} regressed, "
             f"{len(unchanged)} unchanged, {len(inconclusive)} inconclusive "
             f"(of {len(result.comparison)} matched cells)"
+        )
+        from battle_engine.evaluation_analysis import analyze as _analyze_evaluation
+
+        _print_evidence(
+            _analyze_evaluation(request.candidate_id, request.baseline_id, result.cells)
         )
         if regressed:
             print("regressions:")

@@ -14,6 +14,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from battle_engine.agent_evaluation import ComparisonEntry, EvaluationCell, SubjectAggregate
+from battle_engine.evaluation_analysis import EvaluationAnalysis
 from battle_engine.result_model import stable_id
 
 
@@ -428,6 +429,14 @@ class EvaluationSummary:
     # identical certainty reason (Sec AA.2/AA.4.6).
     orientation_mode: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
     arena_alignment_mode: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # v1.6 Phase 4 (docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md): derived, never
+    # persisted -- computed by the v1/v2 adapters from the same
+    # ``real_cells`` they already reconstruct for
+    # ``aggregates_recomputed``/``comparison_recomputed`` above (Sec 11),
+    # via the one shared ``evaluation_analysis.analyze`` entry point.
+    # ``None`` only for a hand-built ``EvaluationSummary`` fixture that
+    # never calls it -- every adapter-produced summary always sets this.
+    analysis: EvaluationAnalysis | None = None
 
     def to_json(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -462,6 +471,7 @@ class EvaluationSummary:
             "baseline_revision_verification": self.baseline_revision_verification.value,
             "orientation_mode": self.orientation_mode.to_json(),
             "arena_alignment_mode": self.arena_alignment_mode.to_json(),
+            "analysis": self.analysis.to_json() if self.analysis is not None else None,
         }
 
 

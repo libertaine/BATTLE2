@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from battle_engine.agent_evaluation import ORIENTATION_MODE_CANDIDATE_FIRST_ONLY, methodology_lines
+from battle_engine.evaluation_analysis import EvidenceState, paired_evidence_from_verdicts
 
 from .comparison import align
 from .discovery import AmbiguousSelectorError, adapt_any, discover, resolve_selector
@@ -173,10 +174,67 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None) -> 
                 f"    candidate_first: {candidate_first.win_rate_display if candidate_first else 'n/a'}   "
                 f"opponent_first: {opponent_first.win_rate_display}"
             )
+    _print_analysis(summary)
     _print_execution_contexts(summary)
     _print_agent_revisions(summary)
     if verified is not None:
         print(f"verified: {verified}" + (f"  ({verify_error})" if verify_error else ""))
+
+
+def _rate_estimate_line(label: str, estimate) -> str:
+    interval = estimate.win_interval
+    pct = 100.0 * (estimate.observed_win_rate or 0.0)
+    if interval is None:
+        return f"  {label}: {estimate.wins}/{estimate.matches_played} (insufficient data)"
+    return (
+        f"  {label}: {estimate.wins}/{estimate.matches_played} ({pct:.0f}%)  "
+        f"{round(interval.confidence_level * 100)}% CI "
+        f"[{100.0 * interval.lower:.0f}%, {100.0 * interval.upper:.0f}%]"
+    )
+
+
+def _paired_evidence_line(entry) -> str:
+    if entry.state == EvidenceState.NO_MATCHED_CONDITIONS:
+        return "no matched conditions"
+    if entry.state == EvidenceState.NO_DISCORDANT_PAIRS:
+        return f"{entry.paired_count} matched, no discordant pairs -- interval/exact test not meaningful"
+    interval = entry.better_interval
+    assert interval is not None and entry.exact_p_value is not None
+    return (
+        f"better {entry.improved}/{entry.discordant} discordant "
+        f"({100.0 * (entry.better_proportion_of_discordant or 0.0):.0f}%)  "
+        f"{round(interval.confidence_level * 100)}% CI "
+        f"[{100.0 * interval.lower:.0f}%, {100.0 * interval.upper:.0f}%]  "
+        f"exact two-sided p={entry.exact_p_value:.3g}"
+    )
+
+
+def _print_analysis(summary) -> None:
+    """v1.6 Phase 4 (docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md Sec 13): the
+    full by-opponent/by-orientation breakdown -- deeper detail than the
+    live ``agents evaluate`` CLI's concise ``evidence:`` block (Sec 12),
+    appropriate here since ``evaluations show`` is already the "drill
+    deeper" workflow. Derived entirely from ``EvaluationSummary.analysis``
+    (Sec 11) -- no statistics computed in this presentation function.
+    """
+
+    analysis = summary.analysis
+    if analysis is None:
+        return
+    print("analysis:")
+    print(_rate_estimate_line(f"candidate overall ({analysis.candidate_id})", analysis.candidate_overall))
+    if analysis.baseline_overall is not None:
+        print(_rate_estimate_line(f"baseline overall ({analysis.baseline_id})", analysis.baseline_overall))
+    paired = analysis.overall_paired
+    if paired is None:
+        return
+    print(f"  paired overall: {_paired_evidence_line(paired)}")
+    print(f"  opponent consistency: {analysis.opponent_consistency}")
+    for entry in analysis.by_opponent:
+        print(f"    opponent={entry.scope_label}: {_paired_evidence_line(entry)}")
+    print(f"  orientation consistency: {analysis.orientation_consistency}")
+    for entry in analysis.by_orientation:
+        print(f"    orientation={entry.scope_label}: {_paired_evidence_line(entry)}")
 
 
 def _print_agent_revisions(summary) -> None:
@@ -301,14 +359,28 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     # cells) must never be reported as deep-verified.
     fully_verified = bool(args.verify) and left_verify_error is None and right_verify_error is None
 
+    # v1.6 Phase 4 (docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md Sec 13):
+    # deliberately shallower than `show`'s per-opponent/per-orientation
+    # breakdown -- `compare` operates across two independently-evaluated
+    # artifacts, over only the already-aligned `result.rows`, using the
+    # identical "improved"/"regressed"/"unchanged"/"inconclusive"
+    # vocabulary `ComparisonRow.verdict` already produces (`comparison.py`'s
+    # `verdict()` is documented as the same mapping as
+    # `agent_evaluation.classify`). Every already-disclosed
+    # `unmatched_left`/`unmatched_right`/`changed_condition`/
+    # `ambiguous_duplicate_groups` limitation is unchanged by this.
+    evidence = paired_evidence_from_verdicts("compare", [row.verdict for row in result.rows])
+
     if args.json:
         data = result.to_json()
         data["deep_verified"] = fully_verified
         data["left_verify_error"] = left_verify_error
         data["right_verify_error"] = right_verify_error
+        data["statistical_evidence"] = evidence.to_json()
         print(json.dumps(data, indent=2, sort_keys=True))
     else:
         _print_compare(left, right, result, left_verify_error, right_verify_error, fully_verified)
+        print(f"statistical evidence: {_paired_evidence_line(evidence)}")
 
     if args.verify and (left_verify_error is not None or right_verify_error is not None):
         return 1

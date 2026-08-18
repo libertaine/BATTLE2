@@ -26,6 +26,7 @@ from battle_engine.agent_evaluation import (
     ORIENTATION_OPPONENT_FIRST,
     methodology_lines,
 )
+from battle_engine.evaluation_analysis import EvaluationAnalysis, EvidenceState
 from battle_engine.evaluation_presets import ORIENTATION_BOTH as PRESET_ORIENTATION_BOTH
 from battle_engine.evaluation_presets import EvaluationPreset
 from PySide6.QtCore import Qt, Signal
@@ -261,6 +262,38 @@ def _classification_label(classification: str) -> str:
     }.get(classification, classification)
 
 
+def _evidence_summary_line(analysis: EvaluationAnalysis) -> str:
+    """v1.6 Phase 4 (docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md Sec 14): one
+    concise line -- candidate/baseline win-rate interval plus overall
+    paired evidence -- from an already-computed ``EvaluationAnalysis``.
+    No statistics are computed here, only plain string formatting of
+    values the shared ``evaluation_analysis`` module already derived.
+    """
+
+    overall = analysis.candidate_overall
+    interval = overall.win_interval
+    parts = [
+        f"candidate {overall.wins}/{overall.matches_played}"
+        + (
+            f" ({100.0 * (overall.observed_win_rate or 0.0):.0f}%, "
+            f"{round(interval.confidence_level * 100)}% CI "
+            f"[{100.0 * interval.lower:.0f}%, {100.0 * interval.upper:.0f}%])"
+            if interval is not None
+            else " (insufficient data)"
+        )
+    ]
+    paired = analysis.overall_paired
+    if paired is not None:
+        if paired.state == EvidenceState.EVALUATED and paired.exact_p_value is not None:
+            parts.append(
+                f"better in {paired.improved}/{paired.discordant} discordant pairs  "
+                f"exact p={paired.exact_p_value:.3g}"
+            )
+        elif paired.state == EvidenceState.NO_DISCORDANT_PAIRS:
+            parts.append("no discordant pairs")
+    return "evidence: " + "  |  ".join(parts)
+
+
 def _find_cell(
     presentation: EvaluationPresentation, schedule_id: str
 ) -> EvaluationCellPresentation | None:
@@ -309,6 +342,10 @@ class EvaluationResultsDialog(QDialog):
                     f"({aggregate.matches_played} played)"
                 )
             )
+        if presentation.analysis is not None:
+            evidence_label = QLabel(_evidence_summary_line(presentation.analysis))
+            evidence_label.setWordWrap(True)
+            layout.addWidget(evidence_label)
 
         layout.addWidget(QLabel("Cells" if not presentation.comparison else "Comparison"))
         self.resultsList = QListWidget()

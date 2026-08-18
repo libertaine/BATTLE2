@@ -11,6 +11,7 @@ from battle_engine.agent_evaluation import (
     all_subject_aggregates,
     compare_candidate_baseline,
 )
+from battle_engine.evaluation_analysis import analyze as analyze_evaluation
 from battle_engine.result_model import stable_id
 
 from .models import (
@@ -608,6 +609,7 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
     # default), which is also the historically correct fact.
     aggregates = all_subject_aggregates(candidate_id, baseline_id, real_cells)
     comparison = compare_candidate_baseline(real_cells) if baseline_id is not None else ()
+    analysis = analyze_evaluation(candidate_id, baseline_id, real_cells)
 
     # v0.9 Phase 6 (Sec L.2/AA.4.6): schema < 4 never recorded these --
     # recovered as certain historical facts, never UNKNOWN.
@@ -652,6 +654,7 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         baseline_agent_revision_error=baseline_agent_revision_error,
         orientation_mode=orientation_mode,
         arena_alignment_mode=arena_alignment_mode,
+        analysis=analysis,
     )
 
 
