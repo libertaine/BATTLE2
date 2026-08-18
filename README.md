@@ -69,7 +69,7 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 1.4.0 | Platform Integrity & Scaling | Released — retires obsolete predecessor product surfaces, removes evidence-backed dead code, freezes a compact Ruleset-v1 VM/Python equivalence corpus, replaces duplicate per-tick ownership scans with authoritative incremental counts, records scaling/replay evidence, and qualifies existing three-entrant execution. No gameplay or stable-contract change. |
 | 1.4.1 | Designer Agent-Selection Fix | Released — fixes Simple and Advanced match launch when an agent's display name differs from its canonical discovery ID, with realistic end-to-end GUI regression coverage. No gameplay or stable-contract change. |
 | 1.5.0 | Architecture Evolution Readiness | Released — a fail-closed Ruleset-v1 policy/dispatch seam, one shared sequential-quota scheduler, centralized Ruleset-v1 termination resolution, and entrant identity separated from resolved match inputs and mutable execution state, all directly verified equivalent to v1.4.1 Ruleset-v1 behavior. Still exactly one execution state per entrant; no gameplay, Agent API, Ruleset ID, or schema change. |
-| 1.6.0 | Evaluation Scale & Analysis | Planned direction — evidence-gated deterministic parallel evaluation, presets/suites, richer analysis and behavioral comparison, larger matrices, and replay indexing only if still warranted. |
+| 1.6.0 | Evaluation Scale & Analysis | Released — bounded local parallel evaluation (`--workers N`) via a pool of long-lived worker subprocesses, reusable/reproducible evaluation presets, Wilson-interval and exact paired significance analysis, and derived behavior-profile analytics (survival, write activity, territory, kill interaction), all fully derived from existing evaluation artifacts with worker count and preset identity confirmed not to affect `evaluation_id` or any per-cell result. Larger experimental matrices and replay indexing remain deferred, not yet warranted by evidence. |
 | 2.x | Gameplay / Rules Research | Research boundary — possible multi-unit entrants, replication, communication, richer attack/resource semantics, Agent API v2, and a separately identified Ruleset v2; no detailed design commitment yet. |
 
 **Future plans:** substantial ideas are deliberately kept behind explicit
@@ -126,17 +126,17 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Current release:** [Bytefray v1.5.0](https://github.com/libertaine/Bytefray/releases/tag/v1.5.0).
+**Current release:** [Bytefray v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0).
 Earlier downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Windows installer** | [Bytefray-Setup-1.5.0.exe](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/Bytefray-Setup-1.5.0.exe) | Installs under `C:\Program Files\Bytefray` |
-| 💼 **Portable Windows applications** | [bytefray-1.5.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/bytefray-1.5.0-windows.zip) | Complete onedir layouts for all four executables |
-| 🐍 **Python wheel** | [bytefray-1.5.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/bytefray-1.5.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
-| 📦 **Source archive** | [bytefray-1.5.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/bytefray-1.5.0.tar.gz) | Source distribution for Python/package workflows |
+| 🧰 **Windows installer** | [Bytefray-Setup-1.6.0.exe](https://github.com/libertaine/Bytefray/releases/download/v1.6.0/Bytefray-Setup-1.6.0.exe) | Installs under `C:\Program Files\Bytefray` |
+| 💼 **Portable Windows applications** | [bytefray-1.6.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v1.6.0/bytefray-1.6.0-windows.zip) | Complete onedir layouts for all four executables |
+| 🐍 **Python wheel** | [bytefray-1.6.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v1.6.0/bytefray-1.6.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 📦 **Source archive** | [bytefray-1.6.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v1.6.0/bytefray-1.6.0.tar.gz) | Source distribution for Python/package workflows |
 | 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---

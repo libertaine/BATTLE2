@@ -558,6 +558,13 @@ v1.5 architecture is qualified and frozen for release preparation.
 
 ## v1.6.0 — Evaluation Scale & Analysis
 
+**Status: shipped.** `v1.6.0` is tagged and published. It adds bounded
+local parallel evaluation, reusable evaluation presets, derived aggregate/
+statistical analysis, and derived behavior-profile analytics, all fully
+derived from existing evaluation artifacts with no change to Ruleset-v1,
+Agent API v1, or any persisted schema. Phase 6's integrated qualification
+(see below) found no release-blocking defect.
+
 **Phase 0-1 (scale baseline) and Phase 2 (deterministic parallel
 evaluation) are complete** on `v1.6-development` -- see
 [V1_6_PHASE1_EVALUATION_SCALE_BASELINE.md](V1_6_PHASE1_EVALUATION_SCALE_BASELINE.md)
@@ -595,9 +602,18 @@ already-written `result.json`, no schema change, no clustering, no
 composite score, no behavioral distance (deferred; see the phase record
 for why).
 
-**Status: remaining direction not yet committed.** Evidence may still
-justify larger experimental matrices and local replay indexing, if real
-workloads still warrant it, plus the specific deferrals Phase 5 recorded
+**Phase 6 (integrated qualification) is complete** -- see
+[V1_6_PHASE6_INTEGRATED_QUALIFICATION.md](V1_6_PHASE6_INTEGRATED_QUALIFICATION.md).
+No release-blocking defect was found; two non-blocking findings (a
+pre-existing `evaluations compare` fallback-grouping precision gap, and an
+`evaluations show` wording inconsistency for an all-inconclusive-pairs
+edge case) were disclosed rather than fixed, per the qualification
+charter's scope discipline, and are queued for a future maintenance pass
+rather than v1.6.0 itself.
+
+**Deferred beyond v1.6.0, not yet committed:** evidence may still justify
+larger experimental matrices and local replay indexing, if real workloads
+still warrant it, plus the specific deferrals Phase 5 recorded
 (replay-derived territory trajectory, write-concentration metrics,
 behavioral distance) -- deliberately out of scope for Phase 5, per its own
 governing prompt. Evaluation methodology and artifact compatibility must

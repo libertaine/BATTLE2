@@ -2,9 +2,9 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
-## [Unreleased]
+## [1.6.0] - 2026-08-18
 
-### Added
+### Evaluation Scale & Analysis
 
 - `bytefray agents evaluate --workers N`: bounded local parallel evaluation
   across independent evaluation cells, via a pool of long-lived worker
@@ -45,6 +45,21 @@ This changelog records notable user- and developer-visible changes to Bytefray.
   narrow: no clustering, no archetype naming, no composite score, no
   combined behavioral-distance scalar. See
   [docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
+
+### Compatibility
+
+This release changes no Ruleset ID, Ruleset-v1 semantics, Agent API v1
+contract, or replay/result/evaluation/package schema; every existing v1-v4
+`evaluation.json` artifact remains readable. Worker count and evaluation
+preset name/path are both confirmed identity-neutral -- `evaluation_id` and
+every per-cell result are unaffected, verified at 60/540/2,000-cell scale
+across serial and parallel execution, interrupt/resume, and source-drift
+abort. No new runtime dependency. Independently qualified on Windows
+(source and frozen build), Linux (WSL2 Ubuntu), and Python 3.10-3.13; see
+[docs/V1_6_PHASE6_INTEGRATED_QUALIFICATION.md](docs/V1_6_PHASE6_INTEGRATED_QUALIFICATION.md)
+for the full qualification record, including two disclosed non-blocking
+findings deferred to future maintenance (neither is a wrong calculation or
+a release blocker).
 
 ## [1.5.0] - 2026-08-18
 
