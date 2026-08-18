@@ -20,8 +20,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import queue
 import re
 import sys
+import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
@@ -332,6 +335,42 @@ def current_execution_context(rules_compatibility_id: str) -> ExecutionContext:
     )
 
 
+@dataclass(frozen=True)
+class CellExecutionResult:
+    """``_execute_cell``'s return value (v1.6 Phase 2).
+
+    ``execution_context`` is ``None`` only for the pre-execution-drift early
+    return (no execution was attempted, so there is nothing to attribute to
+    an environment) -- every other path sets it, mirroring exactly which
+    paths called the old ``record_context_usage()`` closure. Replacing that
+    closure (a coordinator-local mutable capture, unsafe to call from a
+    worker process) with this explicit return value is what lets
+    ``_execute_cell`` run unchanged inside a worker subprocess: the worker
+    reports the context it observed, and only the coordinator (never a
+    worker) decides whether it is new and appends it -- see
+    ``_register_execution_context``.
+    """
+
+    cell: EvaluationCell
+    execution_context: ExecutionContext | None = None
+
+
+def _register_execution_context(
+    context: ExecutionContext,
+    execution_contexts: list[dict[str, Any]],
+    known_context_ids: set[str],
+) -> None:
+    """Coordinator-owned dedup/append, extracted from the old ``record_context_
+    usage`` closure so both the serial and parallel dispatch paths call the
+    exact same logic -- never a worker, and never duplicated.
+    """
+
+    if context.context_id in known_context_ids:
+        return
+    execution_contexts.append({**context.to_dict(), "first_used_at": _utc_now_iso()})
+    known_context_ids.add(context.context_id)
+
+
 def _resolve_python_agent(root: Path, agent_id: str) -> AgentSpec:
     try:
         spec = resolve_agent(root, agent_id)
@@ -570,6 +609,14 @@ class EvaluationRequest:
     # demonstrates is real. False restores exactly today's historical,
     # single-orientation (candidate_first-only) behavior and matrix size.
     both_orientations: bool = True
+    # v1.6 Phase 2: bounded subprocess-worker parallelism across independent
+    # EvaluationCells (docs/V1_6_PHASE2_PARALLEL_EVALUATION.md). Default 1 is
+    # the serial-equivalent path -- deliberately conservative, matching this
+    # module's existing default-conservatism precedent (--seeds). Never part
+    # of _evaluation_id's hash payload (see _evaluation_id below): worker
+    # count must never affect what an evaluation *means*, only how fast it
+    # runs.
+    workers: int = 1
 
     @property
     def orientation_mode(self) -> str:
@@ -1192,39 +1239,166 @@ def _cell_from_state(cell: EvaluationCell, previous: Mapping[str, Any]) -> Evalu
 
 
 def _checkpoint_cells(
-    completed: Sequence[EvaluationCell],
+    completed_by_schedule_id: Mapping[str, EvaluationCell],
     matrix: Sequence[EvaluationCell],
     prior_cells: Mapping[str, Any],
 ) -> list[EvaluationCell]:
     """B2: a checkpoint must never be less complete than the durable state
     already on disk.
 
-    ``completed`` covers only the matrix prefix *this run's own loop* has
-    reached so far -- during a retry, that is strictly less than every cell
-    a *prior* run already durably persisted (e.g. seed 2 completed in an
-    earlier run, then seed 1 is retried in this one; ``completed`` after
-    seed 1's retry contains only seed 1). Writing ``completed`` verbatim as
-    a mid-loop checkpoint would silently drop every already-durable cell
-    this run's loop has not reached *yet*.
+    ``completed_by_schedule_id`` covers only the cells resolved or executed
+    *so far* -- during a retry, that is strictly less than every cell a
+    *prior* run already durably persisted (e.g. seed 2 completed in an
+    earlier run, then seed 1 is retried in this one; the map after seed 1's
+    retry contains only seed 1). Writing it verbatim as a mid-run checkpoint
+    would silently drop every already-durable cell not yet reached.
 
     This backfills exactly those cells: any matrix cell not already covered
-    by ``completed`` that has a prior persisted entry keeps that entry
-    verbatim (reconstructed via ``_cell_from_state``), in matrix order. A
-    cell with no prior durable state at all (genuinely never before
+    by ``completed_by_schedule_id`` that has a prior persisted entry keeps
+    that entry verbatim (reconstructed via ``_cell_from_state``), in matrix
+    order. A cell with no prior durable state at all (genuinely never before
     recorded) is left out entirely -- never fabricated as a placeholder --
     so an ordinary first-ever run's intermediate checkpoints are byte-for-
     byte unaffected (this is a no-op whenever ``prior_cells`` is empty).
+
+    Keyed by ``schedule_id`` rather than assuming a positionally
+    matrix-ordered input (v1.6 Phase 2, docs/V1_6_PHASE2_PARALLEL_
+    EVALUATION.md): the parallel dispatch path resolves cells in
+    wall-clock/completion order, not matrix order, so canonical ordering is
+    reconstructed here -- by walking ``matrix`` and looking each cell up --
+    for both the serial and parallel dispatch paths alike. One ordering
+    implementation, not two.
     """
 
-    processed_ids = {cell.schedule_id for cell in completed}
-    merged = list(completed)
+    merged: list[EvaluationCell] = []
     for cell in matrix:
-        if cell.schedule_id in processed_ids:
+        resolved = completed_by_schedule_id.get(cell.schedule_id)
+        if resolved is not None:
+            merged.append(resolved)
             continue
         previous = prior_cells.get(cell.schedule_id)
         if previous is not None:
             merged.append(_cell_from_state(cell, previous))
     return merged
+
+
+def _drift_detail(cell: EvaluationCell) -> dict[str, Any]:
+    """The ``abort_detail`` payload shape for a drift-detected cell (unchanged
+    from pre-Phase-2 behavior -- see ``EvaluationService.run``)."""
+
+    return {
+        "role": cell.subject_role,
+        "subject_id": cell.subject_id,
+        "opponent_id": cell.opponent_id,
+        "schedule_id": cell.schedule_id,
+        "code": cell.error_code,
+        "detail": cell.error_message,
+    }
+
+
+def _drain_abandoned_cells(
+    pending_queue: queue.Queue[EvaluationCell | None],
+) -> list[EvaluationCell]:
+    """Non-blocking drain of whatever is still sitting in ``pending_queue``.
+
+    Used by the parallel dispatch path (v1.6 Phase 2) both when a drift is
+    observed (those cells are simply abandoned -- never dispatched, never
+    recorded at all, matching what today's serial ``break`` already does for
+    matrix positions it never reaches) and when every worker has died with
+    cells still queued (those are recorded as failed, never silently
+    dropped -- see ``_run_pending_parallel``). A best-effort race against
+    dispatcher threads concurrently popping the same queue is acceptable
+    here: whichever side wins a given item only changes which cell happens
+    to be "one more in flight" at the moment of the decision, which is
+    already an explicitly disclosed, worker-count/timing-dependent behavior
+    (Phase 0-1 baseline Sec 8).
+    """
+
+    drained: list[EvaluationCell] = []
+    while True:
+        try:
+            item = pending_queue.get_nowait()
+        except queue.Empty:
+            break
+        if item is not None:
+            drained.append(item)
+    return drained
+
+
+def _evaluation_dispatcher_loop(
+    handle: Any,
+    pending_queue: queue.Queue[EvaluationCell | None],
+    results_queue: queue.Queue[tuple[str, CellExecutionResult | None, Any]],
+    ticks: int,
+    data_root: Path | None,
+    planned_identities: Mapping[str, dict[str, Any]],
+) -> None:
+    """One dispatcher thread's body: owns exactly one worker subprocess handle
+    for its entire lifetime, processing cells strictly one at a time against
+    it -- mirrors ``agent_worker.AgentWorkerHandle``'s existing single-
+    in-flight-call model exactly, so no wire-protocol correlation IDs are
+    needed. Blocks indefinitely on ``pending_queue.get()`` between cells
+    (never a polling timeout): the coordinator never pushes a shutdown
+    sentinel (``None``) until it is certain no more work -- including any
+    retry -- will ever be enqueued, so a thread can never legitimately give
+    up early, and never blocks forever on work that will never arrive.
+
+    Imports ``battle_engine.evaluation_worker`` and ``battle_engine.
+    agent_worker.WorkerCallStatus`` lazily (function-local): this module
+    cannot import ``evaluation_worker`` at module scope without a circular
+    import, since ``evaluation_worker`` itself imports this module.
+    """
+
+    from battle_engine.agent_worker import WorkerCallStatus
+    from battle_engine.evaluation_worker import WorkerFailure, _cell_from_wire
+
+    while True:
+        cell = pending_queue.get()
+        if cell is None:
+            return
+        call_result = handle.submit_cell(
+            cell, ticks=ticks, data_root=data_root, planned_identities=planned_identities
+        )
+        if call_result.status == WorkerCallStatus.OK:
+            payload = call_result.payload or {}
+            resolved_cell = _cell_from_wire(payload["cell"])
+            context_payload = payload.get("execution_context")
+            context = ExecutionContext(**context_payload) if context_payload else None
+            results_queue.put(
+                (cell.schedule_id, CellExecutionResult(cell=resolved_cell, execution_context=context), None)
+            )
+        elif call_result.status == WorkerCallStatus.FAILED:
+            # A well-formed {"ok": false, ...} -- the worker's own
+            # belt-and-suspenders catch-all (evaluation_worker._handle_run_
+            # cell), expected to be rare since _execute_cell/test_agent
+            # already handle nearly everything internally. The worker
+            # process itself is still alive and protocol-intact; only this
+            # one cell failed -- this dispatcher thread keeps running.
+            diagnostic = (call_result.payload or {}).get("diagnostic") or {}
+            failed_cell = replace(
+                cell,
+                status="failed",
+                outcome=None,
+                error_code=str(diagnostic.get("code", "evaluation_worker_error")),
+                error_message=str(diagnostic.get("message", ""))[:240],
+            )
+            results_queue.put((cell.schedule_id, CellExecutionResult(cell=failed_cell), None))
+        else:
+            # EXITED / PROTOCOL_ERROR / TIMEOUT (TIMEOUT is unreachable --
+            # submit_cell never passes a protocol timeout): this worker is
+            # presumed dead. Report the failure and stop -- no automatic
+            # replacement subprocess is spawned (v1.6 Phase 2 Sec 9's
+            # smallest-change policy); the coordinator decides whether to
+            # retry this specific cell on a different, still-live worker.
+            results_queue.put(
+                (
+                    cell.schedule_id,
+                    None,
+                    WorkerFailure(schedule_id=cell.schedule_id, status=call_result.status, detail=str(call_result.status)),
+                )
+            )
+            handle.close()
+            return
 
 
 def _resumed_cell_mismatch(
@@ -1418,7 +1592,35 @@ class EvaluationService:
         evaluation_id = self._evaluation_id(request, identities, conditions)
         return specs, evaluation_id
 
-    def run(self, request: EvaluationRequest) -> EvaluationResult:
+    def run(
+        self,
+        request: EvaluationRequest,
+        *,
+        checkpoint_batch_size: int = 16,
+        checkpoint_batch_interval: float = 1.0,
+    ) -> EvaluationResult:
+        """Run (or resume) an evaluation.
+
+        ``checkpoint_batch_size``/``checkpoint_batch_interval`` (v1.6 Phase
+        2, docs/V1_6_PHASE2_PARALLEL_EVALUATION.md Sec 8): ``evaluation.json``
+        is checkpointed after every ``checkpoint_batch_size`` newly-completed
+        cells or every ``checkpoint_batch_interval`` seconds, whichever comes
+        first -- applied uniformly regardless of ``request.workers``, since
+        the O(n^2) cumulative cost of rewriting the whole, growing ``cells``
+        list after literally every single cell (Phase 0-1 baseline Sec 5.4)
+        exists independent of dispatch mode. The unconditional checkpoint
+        before any cell executes and the unconditional final checkpoint are
+        both unaffected -- only the *frequency* of the intermediate
+        checkpoints changes, never their completeness (each one is always a
+        full, canonically matrix-ordered snapshot) or the final persisted
+        content. On an ungraceful crash, at most ``checkpoint_batch_size``
+        cells or ``checkpoint_batch_interval`` seconds of already-completed
+        work (whichever bound was reached last) is not yet durable; resume
+        simply re-executes exactly those cells, the same as it always has
+        for any cell absent from a prior checkpoint -- no new durable
+        "in-progress" cell state is introduced.
+        """
+
         specs = self._validate(request)
         # Frozen at validate time, deliberately never re-derived from a live
         # AgentSpec.source_path later -- Sec 7's pre-check compares a fresh
@@ -1455,16 +1657,9 @@ class EvaluationService:
 
         created_at = prior.get("created_at") or _utc_now_iso()
         execution_contexts: list[dict[str, Any]] = list(prior.get("execution_contexts", ()))
-        known_context_ids = {item.get("context_id") for item in execution_contexts}
-
-        def record_context_usage() -> str:
-            context = current_execution_context(EVALUATION_RULES_COMPATIBILITY_ID)
-            if context.context_id not in known_context_ids:
-                execution_contexts.append(
-                    {**context.to_dict(), "first_used_at": _utc_now_iso()}
-                )
-                known_context_ids.add(context.context_id)
-            return context.context_id
+        known_context_ids: set[str] = {
+            item["context_id"] for item in execution_contexts if item.get("context_id") is not None
+        }
 
         # First checkpoint: written before any cell executes, so a crash
         # during cell 1 still leaves discoverable lifecycle state (Sec 5).
@@ -1491,13 +1686,27 @@ class EvaluationService:
                 execution_contexts=execution_contexts,
             )
 
-        completed: list[EvaluationCell] = []
-        drift: dict[str, Any] | None = None
-        any_newly_executed = False
+        # -- Phase A: resolve everything possible from prior state --------
+        #
+        # A single forward pass over `matrix`, in order -- zero dependency
+        # on dispatch mode, no threads involved (v1.6 Phase 2 Sec 4).
+        # Mirrors today's per-cell resume decision exactly. Stops early
+        # (matching the old loop's `break`) the instant it resolves a cell
+        # whose *persisted* status is already `drift_detected` -- cells at
+        # or after that point in matrix order are never eligible for
+        # dispatch this run, exactly as the old serial loop never reached
+        # them either (M2: the only correct recovery from a drifted
+        # evaluation is a fresh one). Any *pending* cell strictly before
+        # that point may still independently drift when actually executed
+        # in Phase B below -- since it is, by construction, earlier in
+        # matrix order, that drift (if any) is what actually determines the
+        # abort point; see the min-matrix_ordinal selection after Phase B.
+        completed_by_schedule_id: dict[str, EvaluationCell] = {}
+        pending: list[EvaluationCell] = []
+        drifted_cells: list[EvaluationCell] = []
         for cell in matrix:
             previous = prior_cells.get(cell.schedule_id)
             resolved: EvaluationCell | None = None
-            newly_executed = False
             if previous is not None:
                 resolved = self._resolve_from_state(cell, previous, specs, request)
                 if (
@@ -1515,28 +1724,42 @@ class EvaluationService:
                     and request.retry_failures
                 ):
                     resolved = None
-            if resolved is None:
-                resolved = self._execute_cell(
-                    cell, request, planned_identities, record_context_usage
-                )
-                newly_executed = True
-                any_newly_executed = True
-            completed.append(resolved)
-            # Checkpoint only for genuinely new work (a cell just executed
-            # or re-executed in *this* run). A cell merely reconstructed
-            # from prior state is, by definition, already durably on disk;
-            # writing after it anyway would mean a crash partway through
-            # re-verifying a previously *complete* artifact leaves behind a
-            # strictly smaller/worse ``cells`` list and a ``running``
-            # lifecycle than what was already safely persisted (B2) -- the
-            # untouched on-disk artifact is always at least as good as any
-            # partial reconstruction, so it is never overwritten with one.
-            if newly_executed:
+            if resolved is not None:
+                completed_by_schedule_id[cell.schedule_id] = resolved
+                if resolved.status == "drift_detected":
+                    drifted_cells.append(resolved)
+                    break
+            else:
+                pending.append(cell)
+
+        # -- Phase B: dispatch `pending` (serial or a bounded worker pool) --
+        any_newly_executed = False
+        batch_count = 0
+        last_checkpoint_time = time.monotonic()
+
+        def ingest(result: CellExecutionResult) -> bool:
+            """Coordinator-only: record one Phase-B result, register its
+            execution context, and checkpoint on the batch policy. Returns
+            True iff this result is itself a newly observed drift (the
+            caller stops feeding further cells to workers when this fires).
+            """
+
+            nonlocal any_newly_executed, batch_count, last_checkpoint_time
+            any_newly_executed = True
+            completed_by_schedule_id[result.cell.schedule_id] = result.cell
+            if result.execution_context is not None:
+                _register_execution_context(result.execution_context, execution_contexts, known_context_ids)
+            is_drift = result.cell.status == "drift_detected"
+            if is_drift:
+                drifted_cells.append(result.cell)
+            batch_count += 1
+            now = time.monotonic()
+            if batch_count >= checkpoint_batch_size or (now - last_checkpoint_time) >= checkpoint_batch_interval:
                 self._write_state(
                     state_path,
                     evaluation_id,
                     request,
-                    _checkpoint_cells(completed, matrix, prior_cells),
+                    _checkpoint_cells(completed_by_schedule_id, matrix, prior_cells),
                     matrix,
                     planned_identities=planned_identities,
                     revision_plan=revision_plan,
@@ -1545,21 +1768,43 @@ class EvaluationService:
                     lifecycle_state="running",
                     execution_contexts=execution_contexts,
                 )
-            if resolved.status == "drift_detected":
-                drift = {
-                    "role": resolved.subject_role,
-                    "subject_id": resolved.subject_id,
-                    "opponent_id": resolved.opponent_id,
-                    "schedule_id": resolved.schedule_id,
-                    "code": resolved.error_code,
-                    "detail": resolved.error_message,
-                }
-                break
+                batch_count = 0
+                last_checkpoint_time = now
+            return is_drift
 
-        aggregates = self._all_aggregates(request, completed)
-        comparison = (
-            compare_candidate_baseline(completed) if request.baseline_id is not None else ()
-        )
+        if pending:
+            if request.workers <= 1:
+                for cell in pending:
+                    result = self._execute_cell(
+                        cell, request.ticks, request.data_root, planned_identities
+                    )
+                    if ingest(result):
+                        break
+            else:
+                self._run_pending_parallel(pending, request, planned_identities, ingest)
+
+        # The authoritative drift (if any) is the one with the smallest
+        # `matrix_ordinal` among every drifted cell actually observed this
+        # run -- whether resolved instantly from prior state (Phase A) or
+        # discovered by real execution (Phase B). Phase A's own early
+        # `break` already guarantees `pending` never contains a cell at or
+        # after a Phase-A-found drift point, so any Phase-B drift is always
+        # earlier in matrix order and naturally wins this selection -- no
+        # special-case "which phase wins" logic is needed (v1.6 Phase 2
+        # Sec 6/Sec 7; Phase 0-1 baseline Sec 8 option (a)).
+        drift = _drift_detail(min(drifted_cells, key=lambda c: c.matrix_ordinal)) if drifted_cells else None
+
+        # Every derived view (aggregates, comparison, the persisted `cells[]`,
+        # and the returned `EvaluationResult.cells`) is built from this one
+        # canonically matrix-ordered list -- never from `completed_by_
+        # schedule_id`'s raw insertion order, which (under parallel dispatch)
+        # reflects wall-clock completion order, not matrix order. This keeps
+        # every worker count's output identical for anything order-sensitive,
+        # and matches invariant #4 (docs/V1_6_PHASE2_PARALLEL_EVALUATION.md).
+        final_cells = _checkpoint_cells(completed_by_schedule_id, matrix, prior_cells)
+
+        aggregates = self._all_aggregates(request, final_cells)
+        comparison = compare_candidate_baseline(final_cells) if request.baseline_id is not None else ()
         # M1: a true no-op resume -- everything reconstructed from prior
         # state, nothing newly executed, and that prior state was already a
         # genuinely finished evaluation -- must preserve the original
@@ -1580,7 +1825,7 @@ class EvaluationService:
             state_path,
             evaluation_id,
             request,
-            _checkpoint_cells(completed, matrix, prior_cells),
+            final_cells,
             matrix,
             aggregates=aggregates,
             comparison=comparison,
@@ -1597,11 +1842,128 @@ class EvaluationService:
         return EvaluationResult(
             evaluation_id=evaluation_id,
             request=request,
-            cells=tuple(completed),
+            cells=tuple(final_cells),
             aggregates=aggregates,
             comparison=comparison,
             state_path=state_path,
         )
+
+    # -- parallel dispatch (v1.6 Phase 2) ----------------------------------
+
+    def _run_pending_parallel(
+        self,
+        pending: list[EvaluationCell],
+        request: EvaluationRequest,
+        planned_identities: Mapping[str, dict[str, Any]],
+        ingest: Callable[[CellExecutionResult], bool],
+    ) -> None:
+        """Dispatch ``pending`` across ``min(request.workers, len(pending))``
+        long-lived worker subprocesses.
+
+        Only this method (and the dispatcher threads it starts) touch the
+        two thread-safe queues; ``ingest`` (and everything it touches --
+        ``completed_by_schedule_id``, ``execution_contexts``, checkpoint
+        timing) is only ever called from *this* thread (the coordinator),
+        never from a dispatcher thread -- dispatcher threads only ever push
+        onto ``results``. See docs/V1_6_PHASE2_PARALLEL_EVALUATION.md Sec 4
+        for the full race-freedom argument (in particular: why no polling
+        timeout is needed anywhere in this method, and why a dead worker can
+        never strand a cell forever).
+        """
+
+        from battle_engine.evaluation_worker import EvaluationCellWorkerHandle
+
+        pending_by_schedule_id = {cell.schedule_id: cell for cell in pending}
+        worker_count = min(request.workers, len(pending))
+
+        pending_queue: queue.Queue[EvaluationCell | None] = queue.Queue()
+        for cell in pending:
+            pending_queue.put(cell)
+        results_queue: queue.Queue[tuple[str, CellExecutionResult | None, Any]] = queue.Queue()
+
+        handles = [EvaluationCellWorkerHandle() for _ in range(worker_count)]
+        for handle in handles:
+            handle.start()
+        threads = [
+            threading.Thread(
+                target=_evaluation_dispatcher_loop,
+                args=(handle, pending_queue, results_queue, request.ticks, request.data_root, planned_identities),
+                daemon=True,
+            )
+            for handle in handles
+        ]
+        for thread in threads:
+            thread.start()
+
+        outstanding = len(pending)
+        retried: set[str] = set()
+        live_worker_count = len(threads)
+        stop_requested = False
+
+        try:
+            while outstanding > 0:
+                schedule_id, result, failure = results_queue.get()
+                if failure is not None:
+                    live_worker_count -= 1
+                    if schedule_id not in retried and live_worker_count > 0 and not stop_requested:
+                        retried.add(schedule_id)
+                        pending_queue.put(pending_by_schedule_id[schedule_id])
+                    else:
+                        outstanding -= 1
+                        error_code = (
+                            "evaluation_worker_exited"
+                            if schedule_id in retried
+                            else "evaluation_worker_unavailable"
+                        )
+                        failed_cell = replace(
+                            pending_by_schedule_id[schedule_id],
+                            status="failed",
+                            outcome=None,
+                            error_code=error_code,
+                            error_message=(
+                                "the evaluation cell worker process exited while "
+                                "executing this cell."
+                            ),
+                        )
+                        ingest(CellExecutionResult(cell=failed_cell))
+                    if live_worker_count == 0 and not stop_requested:
+                        for stranded in _drain_abandoned_cells(pending_queue):
+                            outstanding -= 1
+                            stranded_cell = replace(
+                                stranded,
+                                status="failed",
+                                outcome=None,
+                                error_code="evaluation_worker_unavailable",
+                                error_message="no evaluation worker was available to execute this cell.",
+                            )
+                            ingest(CellExecutionResult(cell=stranded_cell))
+                else:
+                    outstanding -= 1
+                    assert result is not None
+                    if ingest(result) and not stop_requested:
+                        stop_requested = True
+                        # Cells still sitting in the queue are simply
+                        # abandoned -- never dispatched, never recorded at
+                        # all (matches what the serial loop's `break`
+                        # already does for matrix positions it never
+                        # reaches). Already in-flight cells are left alone
+                        # and allowed to finish normally.
+                        for abandoned in _drain_abandoned_cells(pending_queue):
+                            outstanding -= 1
+        finally:
+            # No more work will ever be enqueued past this point (the loop
+            # above only exits once every dispatched cell has produced a
+            # result and nothing remains in `pending_queue`) -- safe to
+            # shut every surviving thread down now. A thread can only be
+            # blocked on `pending_queue.get()` here, never mid-`submit_cell`
+            # (that would still be `outstanding`), so a shutdown sentinel
+            # always reaches it promptly.
+            for _ in threads:
+                pending_queue.put(None)
+            for thread in threads:
+                thread.join(timeout=5.0)
+            for handle in handles:
+                handle.close()
 
     # -- validation -----------------------------------------------------
 
@@ -1612,6 +1974,8 @@ class EvaluationService:
             raise EvaluationConfigurationError("Evaluation requires at least one seed.")
         if request.ticks < 1:
             raise EvaluationConfigurationError("Evaluation requires a positive tick limit.")
+        if request.workers < 1:
+            raise EvaluationConfigurationError("Evaluation requires a positive worker count.")
         if request.baseline_id is not None and request.baseline_id == request.candidate_id:
             raise EvaluationConfigurationError(
                 "Candidate and baseline must be different agents."
@@ -1795,14 +2159,27 @@ class EvaluationService:
     def _execute_cell(
         self,
         cell: EvaluationCell,
-        request: EvaluationRequest,
+        ticks: int,
+        data_root: Path | None,
         planned_identities: Mapping[str, dict[str, Any]],
-        record_context_usage: Callable[[], str],
-    ) -> EvaluationCell:
-        root = request.data_root or get_data_root()
+    ) -> CellExecutionResult:
+        """Execute one cell. Pure apart from filesystem I/O under ``cell.artifact_
+        dir`` and reading agent source under ``data_root``/the default data
+        root -- no coordinator state is read or mutated, which is exactly what
+        lets this run unchanged inside a worker subprocess (v1.6 Phase 2).
+
+        Takes ``ticks``/``data_root`` directly rather than a whole
+        ``EvaluationRequest`` -- these are the only two fields this method
+        ever reads; narrowing the signature means a worker process can never
+        accidentally gain access to a coordinator-only field (``resume``,
+        ``retry_failures``, ``workers``, ...) that has no valid meaning
+        per-cell.
+        """
+
+        root = data_root or get_data_root()
         drift = self._detect_pre_execution_drift(cell, planned_identities, root)
         if drift is not None:
-            return replace(cell, status="drift_detected", **drift)
+            return CellExecutionResult(cell=replace(cell, status="drift_detected", **drift))
 
         # v0.9 Phase 6 (Phase 5 spec Sec H.1/T.4): `candidate_first` reuses
         # the exact historical call; `opponent_first` calls the same
@@ -1817,25 +2194,35 @@ class EvaluationService:
         else:
             test_agent_id, test_opponent_id = cell.subject_id, cell.opponent_id
 
+        # Computed once here, after the pre-execution-drift early return
+        # (which must keep making zero calls, matching the old closure's
+        # exact behavior) -- current_execution_context() is a pure function
+        # of environment only (never cell-specific), so every remaining
+        # branch below reuses this same value rather than recomputing it.
+        context = current_execution_context(EVALUATION_RULES_COMPATIBILITY_ID)
+
         try:
             outcome = test_agent(
                 test_agent_id,
                 opponent=test_opponent_id,
                 seed=cell.seed,
-                ticks=request.ticks,
+                ticks=ticks,
                 timeout=None,
                 trace=False,
                 run_dir=cell.artifact_dir,
-                data_root=request.data_root,
+                data_root=data_root,
             )
         except AgentTestError as exc:
-            return replace(
-                cell,
-                status="failed",
-                outcome=None,
-                error_code=exc.diagnostic.code,
-                error_message=" ".join(str(exc).split())[:240],
-                execution_context_id=record_context_usage(),
+            return CellExecutionResult(
+                cell=replace(
+                    cell,
+                    status="failed",
+                    outcome=None,
+                    error_code=exc.diagnostic.code,
+                    error_message=" ".join(str(exc).split())[:240],
+                    execution_context_id=context.context_id,
+                ),
+                execution_context=context,
             )
         if isinstance(outcome, InitializationFailureOutcome):
             # A ``RuntimeDiagnostic`` carries no source/version identity
@@ -1851,36 +2238,48 @@ class EvaluationService:
             # failure after intervening source change").
             post_init_drift = self._detect_pre_execution_drift(cell, planned_identities, root)
             if post_init_drift is not None:
-                return replace(
-                    cell,
-                    status="drift_detected",
-                    **post_init_drift,
-                    execution_context_id=record_context_usage(),
+                return CellExecutionResult(
+                    cell=replace(
+                        cell,
+                        status="drift_detected",
+                        **post_init_drift,
+                        execution_context_id=context.context_id,
+                    ),
+                    execution_context=context,
                 )
             failed_slot = outcome.diagnostic.agent_id
             subject_slot, _opponent_slot = physical_slots_for_orientation(cell.orientation)
             result_outcome = (
                 "subject_init_failed" if failed_slot == subject_slot else "opponent_init_failed"
             )
-            return replace(
-                cell,
-                status="completed",
-                outcome=result_outcome,
-                error_code=outcome.diagnostic.code,
-                error_message=" ".join(outcome.diagnostic.message.split())[:240],
-                execution_context_id=record_context_usage(),
+            return CellExecutionResult(
+                cell=replace(
+                    cell,
+                    status="completed",
+                    outcome=result_outcome,
+                    error_code=outcome.diagnostic.code,
+                    error_message=" ".join(outcome.diagnostic.message.split())[:240],
+                    execution_context_id=context.context_id,
+                ),
+                execution_context=context,
             )
         post_drift = _post_execution_identity_drift(cell, outcome.match_result, planned_identities)
         if post_drift is not None:
-            return replace(
-                cell,
-                status="drift_detected",
-                **post_drift,
-                execution_context_id=record_context_usage(),
+            return CellExecutionResult(
+                cell=replace(
+                    cell,
+                    status="drift_detected",
+                    **post_drift,
+                    execution_context_id=context.context_id,
+                ),
+                execution_context=context,
             )
-        return replace(
-            _cell_from_match_result(cell, outcome.match_result),
-            execution_context_id=record_context_usage(),
+        return CellExecutionResult(
+            cell=replace(
+                _cell_from_match_result(cell, outcome.match_result),
+                execution_context_id=context.context_id,
+            ),
+            execution_context=context,
         )
 
     def _detect_pre_execution_drift(
@@ -2165,6 +2564,17 @@ def _parser() -> argparse.ArgumentParser:
             "Does not generalize across entrant order -- see docs/AGENT_LAB.md."
         ),
     )
+    parser.add_argument(
+        "--workers",
+        type=_positive_int,
+        default=1,
+        help=(
+            "number of evaluation cells to execute concurrently, via a pool of "
+            "long-lived worker subprocesses (default: 1, serial). Never affects "
+            "evaluation_id or any per-cell result -- only wall-clock speed. See "
+            "docs/V1_6_PHASE2_PARALLEL_EVALUATION.md."
+        ),
+    )
     return parser
 
 
@@ -2387,6 +2797,7 @@ def main(argv: list[str] | None = None) -> int:
         ticks=args.ticks,
         retry_failures=args.retry_failed,
         both_orientations=both_orientations,
+        workers=args.workers,
     )
     matrix = build_matrix(request, evaluation_id)
     if not args.quiet or args.dry_run:

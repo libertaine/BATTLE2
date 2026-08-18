@@ -136,6 +136,16 @@ def _agents(argv: list[str]) -> int:
         from battle_engine.agent_worker import main as worker_main
 
         return worker_main(argv[1:])
+    if argv and argv[0] == "_evaluation_worker":
+        # Internal, undocumented: a hidden parallel-evaluation-cell worker
+        # subprocess (v1.6 Phase 2, docs/V1_6_PHASE2_PARALLEL_EVALUATION.md),
+        # reached only by battle_engine.evaluation_worker.
+        # EvaluationCellWorkerHandle spawning another invocation of this
+        # same executable. Never invoked directly by a user and
+        # deliberately omitted from --help text.
+        from battle_engine.evaluation_worker import main as evaluation_worker_main
+
+        return evaluation_worker_main(argv[1:])
     if argv == ["--help"] or argv == ["-h"]:
         return _simple_help(
             "agents",
