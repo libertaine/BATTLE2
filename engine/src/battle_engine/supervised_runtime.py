@@ -56,7 +56,6 @@ from battle_engine.python_runtime import (
     PythonEntrantState,
     PythonRuntimeResult,
     RuntimeDiagnostic,
-    TerminationReason,
     _observation,
     _to_trace_diagnostic,
     apply_action,
@@ -394,7 +393,11 @@ class SupervisedPythonEntrantController:
                 if verbose and (tick % 50 == 0 or tick < 10):
                     alive = [state.agent_id for state in self.states if state.alive]
                     print(f"[T{tick:05d}] alive={alive} score={self.score}")
-                if sum(state.alive for state in self.states) <= 1:
+                if self.ruleset_policy.resolve_termination(
+                    alive_count=sum(state.alive for state in self.states),
+                    tick=tick,
+                    max_ticks=self.max_ticks,
+                ).terminated:
                     break
         finally:
             replay.close()
@@ -410,13 +413,13 @@ class SupervisedPythonEntrantController:
         for state in self.states:
             state.local_source_fingerprint_final = local_source_fingerprint(state.agent_dir)
 
-        alive_count = sum(state.alive for state in self.states)
-        if alive_count == 0:
-            termination_reason = TerminationReason.ALL_AGENTS_DEAD
-        elif alive_count == 1:
-            termination_reason = TerminationReason.LAST_AGENT_STANDING
-        else:
-            termination_reason = TerminationReason.TICK_LIMIT
+        termination_decision = self.ruleset_policy.resolve_termination(
+            alive_count=sum(state.alive for state in self.states),
+            tick=ticks_run,
+            max_ticks=self.max_ticks,
+        )
+        assert termination_decision.reason is not None
+        termination_reason = termination_decision.reason
         winner = resolve_winner(self.states, self.score, self.config.win_mode)
         return PythonRuntimeResult(
             winner=winner,

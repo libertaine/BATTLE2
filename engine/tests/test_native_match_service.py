@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 from battle_engine.builtins import build_agent
 from battle_engine.config import Config, Weights
-from battle_engine.core import Kernel
+from battle_engine.core import HALT, NOP, Kernel, enc
 from battle_engine.match_service import (
     MatchEntrant,
     MatchRequest,
@@ -14,7 +14,7 @@ from battle_engine.match_service import (
 )
 from battle_engine.replay import TickSnapshot, iter_replay, record_to_dict
 from battle_engine.results import build_summary
-from battle_engine.ruleset_policy import UnknownRulesetError
+from battle_engine.ruleset_policy import TerminationReason, UnknownRulesetError
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
 
@@ -133,6 +133,65 @@ def test_service_preserves_spawn_order_and_wraps_entry_points(tmp_path):
     assert result.agents[0].alive is True
     assert result.agents[1].alive is False
     assert result.winner == "A"
+
+
+def test_vm_termination_reasons_for_one_survivor_all_dead_and_tick_limit(tmp_path):
+    """Direct ``NativeMatchResult.termination_reason`` coverage for the VM path.
+
+    ``test_ruleset_v1_equivalence.py``'s golden corpus exercises all three
+    VM scenarios but every one of them happens to end via ``tick_limit``
+    (see Phase 1's baseline) -- it never directly proves ``last_agent_
+    standing``/``all_agents_dead`` for VM the way ``test_python_runtime.
+    py::test_halt_and_tick_limit_have_explicit_termination_reasons`` already
+    does for Python. This pins all three VM reason values explicitly.
+    """
+
+    config = _config()
+
+    survivor = NativeMatchService().run(
+        MatchRequest(
+            config,
+            (
+                MatchEntrant("A", "halts", 0, enc(HALT)),
+                MatchEntrant("B", "loops", 16, enc(NOP)),
+            ),
+            5,
+            tmp_path / "survivor.jsonl",
+            False,
+        )
+    )
+    assert survivor.termination_reason is TerminationReason.LAST_AGENT_STANDING
+    assert survivor.ticks_run == 1
+
+    all_dead = NativeMatchService().run(
+        MatchRequest(
+            config,
+            (
+                MatchEntrant("A", "halts-a", 0, enc(HALT)),
+                MatchEntrant("B", "halts-b", 16, enc(HALT)),
+            ),
+            5,
+            tmp_path / "all_dead.jsonl",
+            False,
+        )
+    )
+    assert all_dead.termination_reason is TerminationReason.ALL_AGENTS_DEAD
+    assert all_dead.ticks_run == 1
+
+    tick_limit = NativeMatchService().run(
+        MatchRequest(
+            config,
+            (
+                MatchEntrant("A", "loops-a", 0, enc(NOP)),
+                MatchEntrant("B", "loops-b", 16, enc(NOP)),
+            ),
+            3,
+            tmp_path / "tick_limit.jsonl",
+            False,
+        )
+    )
+    assert tick_limit.termination_reason is TerminationReason.TICK_LIMIT
+    assert tick_limit.ticks_run == 3
 
 
 def test_duplicate_vm_entrant_ids_are_rejected(tmp_path):

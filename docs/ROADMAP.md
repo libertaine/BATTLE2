@@ -503,6 +503,23 @@ statistics, termination resolution, and winner resolution remain outside the
 policy seam; the v1.4/v1.5 Ruleset-v1 equivalence corpus shows zero golden
 differences.
 
+**Phase 4 (termination policy centralization) is complete** on
+`v1.5-development`: the three previously duplicated Ruleset-v1 match
+termination decision/reason computations (VM, unsupervised Python,
+supervised Python) now delegate to one implementation,
+`RulesetPolicy.resolve_termination`, reached through the same Phase 3
+dispatch seam already used for scheduling — see
+[the Phase 4 record](V1_5_PHASE4_TERMINATION_POLICY.md). Each runtime still
+decides *when* to check termination, at exactly the same tick-lifecycle
+position as before; the policy only decides *what the answer is*, from
+alive count, current tick, and the configured tick limit. Termination
+precedence (alive-count-based reasons before the tick limit), exact reason
+values/spelling, HALT/forfeit-only-affects-liveness semantics, and winner
+resolution's runtime-specific ordering relative to termination are all
+unchanged. Scoring, statistics, and winner resolution remain outside the
+policy seam; the v1.4/v1.5 Ruleset-v1 equivalence corpus shows zero golden
+differences.
+
 ## v1.6.0 — Evaluation Scale & Analysis
 
 **Status: planned direction only.** Evidence may justify deterministic parallel

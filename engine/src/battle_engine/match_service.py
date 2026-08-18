@@ -200,6 +200,7 @@ def _build_result(
     entrants: tuple[MatchEntrant, ...],
     kernel_winner: str,
     replay_path: Path,
+    max_ticks: int,
 ) -> NativeMatchResult:
     ticks_run = int(kernel.tick or 0)
     arena_size = int(kernel.cfg.arena_size or 0)
@@ -247,19 +248,19 @@ def _build_result(
             )
         )
     score = MappingProxyType(dict(kernel.score))
+    termination_decision = kernel.ruleset_policy.resolve_termination(
+        alive_count=sum(agent.alive for agent in kernel.agents),
+        tick=ticks_run,
+        max_ticks=max_ticks,
+    )
+    assert termination_decision.reason is not None
     return NativeMatchResult(
         winner=_effective_winner(kernel_winner),
         ticks_run=ticks_run,
         score=score,
         agents=tuple(agent_results),
         replay_path=replay_path,
-        termination_reason=(
-            TerminationReason.ALL_AGENTS_DEAD
-            if not any(agent.alive for agent in kernel.agents)
-            else TerminationReason.LAST_AGENT_STANDING
-            if sum(agent.alive for agent in kernel.agents) == 1
-            else TerminationReason.TICK_LIMIT
-        ),
+        termination_reason=termination_decision.reason,
     )
 
 
@@ -787,7 +788,9 @@ def _run_vm_match(
         sink = None  # Closed successfully; avoid a redundant close in finally.
         recorded_path = temporary_path
         temporary_path = None
-        return _build_result(kernel, request.entrants, kernel_winner, recorded_path)
+        return _build_result(
+            kernel, request.entrants, kernel_winner, recorded_path, request.max_ticks
+        )
     finally:
         if sink is not None:
             try:

@@ -5,39 +5,69 @@
 deliberately kept free of anything executable so it can sit underneath the
 runtime, artifact, and evaluation layers without risk of an import cycle
 (see its own module docstring). This module is the next layer up: it pairs
-that identity with the one piece of *executable* Ruleset-v1 semantics that
-has, as of v1.5 Phase 2, a single shared implementation -- entrant
-scheduling (``battle_engine.scheduler.run_sequential_quota``) -- and
-provides one fail-closed resolver from a Ruleset ID string to its policy.
+that identity with the *executable* Ruleset-v1 semantics that, as of v1.5
+Phase 4, have a single shared implementation -- entrant scheduling
+(``battle_engine.scheduler.run_sequential_quota``) and match termination
+decision/reason (``RulesetPolicy.resolve_termination``) -- and provides one
+fail-closed resolver from a Ruleset ID string to its policy.
 
 This is deliberately a thin seam, not a Ruleset framework. Exactly one
 Ruleset exists (Ruleset v1); the resolver exists so runtime construction
-has one obvious place to obtain Ruleset-owned scheduling semantics instead
-of importing the scheduler directly, and so an unrecognized Ruleset ID
-fails before any gameplay executes rather than silently running as v1.
-Scoring, statistics, termination, and winner resolution are not yet
-Ruleset-policy-owned -- see ``docs/V1_5_PHASE3_RULESET_POLICY_DISPATCH.md``
-for what remains outside this seam and why.
+has one obvious place to obtain Ruleset-owned scheduling/termination
+semantics instead of duplicating them per runtime, and so an unrecognized
+Ruleset ID fails before any gameplay executes rather than silently running
+as v1. Scoring, statistics, and winner resolution are not yet
+Ruleset-policy-owned -- see ``docs/V1_5_PHASE4_TERMINATION_POLICY.md`` for
+what remains outside this seam and why.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from enum import Enum
 
 from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.scheduler import StateT, run_sequential_quota
 
 
+class TerminationReason(str, Enum):
+    """Why a completed Ruleset-v1 match stopped.
+
+    A ``str`` subclass so its ``.value`` -- the persisted/serialized form
+    used in ``result.json`` and the golden corpus -- is exactly its member
+    name's lowercase spelling; this representation predates Phase 4 and is
+    unchanged by it (see ``docs/V1_5_PHASE4_TERMINATION_POLICY.md``'s
+    "Reason representation").
+    """
+
+    LAST_AGENT_STANDING = "last_agent_standing"
+    ALL_AGENTS_DEAD = "all_agents_dead"
+    TICK_LIMIT = "tick_limit"
+
+
+@dataclass(frozen=True)
+class TerminationDecision:
+    """Whether a Ruleset-v1 match has ended, and why.
+
+    ``reason`` is ``None`` exactly when ``terminated`` is ``False`` -- the
+    match should continue and there is nothing to report yet.
+    """
+
+    terminated: bool
+    reason: TerminationReason | None
+
+
 @dataclass(frozen=True)
 class RulesetPolicy:
-    """One Ruleset's executable policy: identity plus its entrant scheduler.
+    """One Ruleset's executable policy: identity, scheduler, and termination.
 
     Immutable and intentionally narrow -- it exposes only what current
-    runtime code actually routes through it (scheduling). It has no
-    knowledge of ``"vm"``/``"python"`` runtime selection, persistence,
-    replay/result schemas, or evaluation; those remain the concern of the
-    callers that hold a ``RulesetPolicy``, not of the policy itself.
+    runtime code actually routes through it (scheduling and the
+    termination decision/reason). It has no knowledge of
+    ``"vm"``/``"python"`` runtime selection, persistence, replay/result
+    schemas, or evaluation; those remain the concern of the callers that
+    hold a ``RulesetPolicy``, not of the policy itself.
     """
 
     ruleset_id: str
@@ -58,6 +88,42 @@ class RulesetPolicy:
         """
 
         run_sequential_quota(states, quota, execute_slot)
+
+    def resolve_termination(
+        self,
+        *,
+        alive_count: int,
+        tick: int,
+        max_ticks: int,
+    ) -> TerminationDecision:
+        """Decide whether a Ruleset-v1 match has ended, and why.
+
+        Ruleset v1's termination rule, identical across VM, unsupervised
+        Python, and supervised Python: no entrants alive ends the match as
+        :attr:`TerminationReason.ALL_AGENTS_DEAD`; exactly one alive ends it
+        as :attr:`TerminationReason.LAST_AGENT_STANDING`; otherwise reaching
+        the configured tick limit ends it as
+        :attr:`TerminationReason.TICK_LIMIT`. Alive-count-based conditions
+        take precedence over the tick limit -- a match that reaches the
+        limit with zero or one entrant alive is reported as
+        ``ALL_AGENTS_DEAD``/``LAST_AGENT_STANDING``, never ``TICK_LIMIT``.
+
+        This is the whole of Ruleset-v1's termination semantic: it takes no
+        runtime-kind, entrant-state, or lifecycle information beyond these
+        three integers, and is called both mid-match (to decide whether a
+        runtime should keep ticking, using only ``.terminated``) and once a
+        match has already stopped (to obtain the final ``.reason``) -- see
+        ``docs/V1_5_PHASE4_TERMINATION_POLICY.md`` for exactly where each
+        runtime calls this.
+        """
+
+        if alive_count == 0:
+            return TerminationDecision(True, TerminationReason.ALL_AGENTS_DEAD)
+        if alive_count == 1:
+            return TerminationDecision(True, TerminationReason.LAST_AGENT_STANDING)
+        if tick >= max_ticks:
+            return TerminationDecision(True, TerminationReason.TICK_LIMIT)
+        return TerminationDecision(False, None)
 
 
 # The one Ruleset that exists. ``ruleset_id`` is exactly the frozen
@@ -108,6 +174,8 @@ def resolve_ruleset_policy(ruleset_id: str) -> RulesetPolicy:
 __all__ = [
     "RULESET_V1",
     "RulesetPolicy",
+    "TerminationDecision",
+    "TerminationReason",
     "UnknownRulesetError",
     "resolve_ruleset_policy",
 ]

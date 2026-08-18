@@ -7,7 +7,6 @@ import random
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -33,19 +32,11 @@ from battle_engine.agent_trace import (
 )
 from battle_engine.config import Config
 from battle_engine.results import resolve_winner
-from battle_engine.ruleset_policy import RULESET_V1, RulesetPolicy
+from battle_engine.ruleset_policy import RULESET_V1, RulesetPolicy, TerminationReason
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import ReplayPublisher, ReplaySink
 from battle_engine.vm import VM
-
-
-class TerminationReason(str, Enum):
-    """Internal reason that a completed native match stopped."""
-
-    LAST_AGENT_STANDING = "last_agent_standing"
-    ALL_AGENTS_DEAD = "all_agents_dead"
-    TICK_LIMIT = "tick_limit"
 
 
 @dataclass(frozen=True)
@@ -704,7 +695,11 @@ class PythonEntrantController:
                 if verbose and (tick % 50 == 0 or tick < 10):
                     alive = [state.agent_id for state in self.states if state.alive]
                     print(f"[T{tick:05d}] alive={alive} score={self.score}")
-                if sum(state.alive for state in self.states) <= 1:
+                if self.ruleset_policy.resolve_termination(
+                    alive_count=sum(state.alive for state in self.states),
+                    tick=tick,
+                    max_ticks=self.max_ticks,
+                ).terminated:
                     break
         finally:
             replay.close()
@@ -718,13 +713,13 @@ class PythonEntrantController:
         for state in self.states:
             state.local_source_fingerprint_final = local_source_fingerprint(state.agent_dir)
 
-        alive_count = sum(state.alive for state in self.states)
-        if alive_count == 0:
-            termination_reason = TerminationReason.ALL_AGENTS_DEAD
-        elif alive_count == 1:
-            termination_reason = TerminationReason.LAST_AGENT_STANDING
-        else:
-            termination_reason = TerminationReason.TICK_LIMIT
+        termination_decision = self.ruleset_policy.resolve_termination(
+            alive_count=sum(state.alive for state in self.states),
+            tick=ticks_run,
+            max_ticks=self.max_ticks,
+        )
+        assert termination_decision.reason is not None
+        termination_reason = termination_decision.reason
         winner = resolve_winner(self.states, self.score, self.config.win_mode)
         return PythonRuntimeResult(
             winner=winner,

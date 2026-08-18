@@ -4,6 +4,7 @@ from typing import Any
 
 from battle_engine.config import Config
 from battle_engine.core import HALT, JMP, MOV, NOP, STORE, Kernel, enc
+from battle_engine.ruleset_policy import RULESET_V1
 from battle_engine.telemetry import NullSummarySink
 
 
@@ -223,4 +224,75 @@ def test_tick_lifecycle_scores_the_kill_after_territory_and_before_replay_public
         "score_kill",
         "replay_emit",  # tick 1 snapshot, published after death attribution
         "renderer_publish",
+    ]
+
+
+class _RecordingRulesetPolicy:
+    """Delegates to ``RULESET_V1`` while recording when termination is checked.
+
+    ``RulesetPolicy`` is a frozen dataclass, so its bound methods cannot be
+    monkeypatched in place the way ``kernel.vm.step``/``kernel.statistics.
+    record_tick``/etc. are spied on above -- this stand-in is passed to
+    ``Kernel(..., ruleset_policy=...)`` instead, matching the duck-typed
+    seam ``Kernel``/``MatchRunner`` already use.
+    """
+
+    ruleset_id = RULESET_V1.ruleset_id
+
+    def __init__(self, order: list[str]) -> None:
+        self._order = order
+
+    def run_scheduler(self, states, quota, execute_slot):  # type: ignore[no-untyped-def]
+        RULESET_V1.run_scheduler(states, quota, execute_slot)
+
+    def resolve_termination(self, *, alive_count, tick, max_ticks):  # type: ignore[no-untyped-def]
+        self._order.append("termination_check")
+        return RULESET_V1.resolve_termination(
+            alive_count=alive_count, tick=tick, max_ticks=max_ticks
+        )
+
+
+def test_tick_lifecycle_checks_termination_after_renderer_publication(monkeypatch):
+    """Prove the termination check is still the last stage each tick.
+
+    Phase 4 replaces the inline ``sum(agent.alive ...) <= 1`` comparison
+    that used to sit here with a call to ``RulesetPolicy.resolve_
+    termination``. This test extends ``test_tick_lifecycle_runs_in_the_
+    documented_order_with_no_death``'s stage-order proof with the one stage
+    that predates Phase 4: the termination check itself must still run
+    after replay publication, renderer publication, and the ``_alive_prev``
+    bookkeeping update -- moving it earlier could let a stale alive count
+    decide whether to keep ticking.
+    """
+
+    order: list[str] = []
+    kernel = Kernel(
+        Config(arena_size=64, instr_per_tick=1),
+        sink=RecordingSink(),  # type: ignore[arg-type]
+        summary_sink=NullSummarySink(),
+        ruleset_policy=_RecordingRulesetPolicy(order),  # type: ignore[arg-type]
+    )
+    kernel.spawn("A", 0, enc(NOP))
+    kernel.spawn("B", 16, enc(NOP))
+    kernel.renderer = _RecordingRenderer(order)
+
+    _wrap(monkeypatch, order, kernel.vm, "step", "execute")
+    _wrap(monkeypatch, order, kernel.statistics, "record_tick", "statistics")
+    _wrap(monkeypatch, order, kernel.scoring, "score_alive", "score_alive")
+    _wrap(monkeypatch, order, kernel.scoring, "score_territory", "score_territory")
+    _wrap(monkeypatch, order, kernel.sink, "emit", "replay_emit")
+
+    kernel.run(max_ticks=1, verbose=False)
+
+    assert order == [
+        "replay_emit",  # header
+        "replay_emit",  # tick-0 initial snapshot
+        "execute", "execute",  # one vm.step per living agent this tick
+        "statistics",
+        "score_alive",
+        "score_territory",
+        # score_kill is skipped: nothing died this tick.
+        "replay_emit",  # tick 1 snapshot
+        "renderer_publish",
+        "termination_check",
     ]

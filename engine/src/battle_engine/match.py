@@ -82,7 +82,11 @@ class MatchRunner:
 
                 for agent in state.agents:
                     state._alive_prev[agent.agent_id] = agent.alive
-                if sum(1 for agent in state.agents if agent.alive) <= 1:
+                if self.ruleset_policy.resolve_termination(
+                    alive_count=sum(1 for agent in state.agents if agent.alive),
+                    tick=tick,
+                    max_ticks=max_ticks,
+                ).terminated:
                     break
         finally:
             try:

@@ -17,6 +17,8 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     RULESET_V1,
     RulesetPolicy,
+    TerminationDecision,
+    TerminationReason,
     UnknownRulesetError,
     resolve_ruleset_policy,
 )
@@ -95,3 +97,55 @@ def test_ruleset_policy_is_immutable() -> None:
     policy = RulesetPolicy(ruleset_id="bytefray-rules-1")
     with pytest.raises(FrozenInstanceError):
         policy.ruleset_id = "tampered"  # type: ignore[misc]
+
+
+def test_termination_continues_when_multiple_alive_below_tick_limit() -> None:
+    decision = RULESET_V1.resolve_termination(alive_count=3, tick=1, max_ticks=10)
+    assert decision == TerminationDecision(terminated=False, reason=None)
+
+
+def test_termination_reports_last_agent_standing_when_exactly_one_alive() -> None:
+    decision = RULESET_V1.resolve_termination(alive_count=1, tick=1, max_ticks=10)
+    assert decision == TerminationDecision(
+        terminated=True, reason=TerminationReason.LAST_AGENT_STANDING
+    )
+
+
+def test_termination_reports_all_agents_dead_when_none_alive() -> None:
+    decision = RULESET_V1.resolve_termination(alive_count=0, tick=1, max_ticks=10)
+    assert decision == TerminationDecision(
+        terminated=True, reason=TerminationReason.ALL_AGENTS_DEAD
+    )
+
+
+def test_termination_reports_tick_limit_when_multiple_alive_at_the_limit() -> None:
+    decision = RULESET_V1.resolve_termination(alive_count=2, tick=10, max_ticks=10)
+    assert decision == TerminationDecision(terminated=True, reason=TerminationReason.TICK_LIMIT)
+
+
+@pytest.mark.parametrize(
+    ("alive_count", "expected_reason"),
+    [
+        (0, TerminationReason.ALL_AGENTS_DEAD),
+        (1, TerminationReason.LAST_AGENT_STANDING),
+    ],
+)
+def test_termination_precedence_prefers_alive_count_over_tick_limit(
+    alive_count: int, expected_reason: TerminationReason
+) -> None:
+    """When the alive-count condition and the tick limit are both true on
+    the same tick, the alive-count-based reason wins -- matching the
+    pre-Phase-4 duplicated ``if alive_count == 0 / == 1 / else`` blocks,
+    where the tick-limit case was always the trailing ``else``.
+    """
+
+    decision = RULESET_V1.resolve_termination(
+        alive_count=alive_count, tick=10, max_ticks=10
+    )
+    assert decision == TerminationDecision(terminated=True, reason=expected_reason)
+
+
+def test_termination_decision_is_immutable() -> None:
+    decision = RULESET_V1.resolve_termination(alive_count=3, tick=1, max_ticks=10)
+    with pytest.raises(FrozenInstanceError):
+        decision.terminated = True  # type: ignore[misc]
