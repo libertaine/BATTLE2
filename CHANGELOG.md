@@ -2,6 +2,38 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [1.5.0] - 2026-08-18
+
+### Architecture Evolution Readiness
+
+- Added a fail-closed, executable Ruleset-v1 policy/dispatch seam
+  (`battle_engine.ruleset_policy`) that pairs the frozen Ruleset-v1 identity
+  with a shared scheduler; only `bytefray-rules-1` resolves, and any other
+  Ruleset ID fails closed instead of silently executing as Ruleset v1.
+- Centralized the three previously duplicated VM/unsupervised-Python/
+  supervised-Python entrant scheduling loops behind one shared sequential-
+  quota scheduler.
+- Centralized the three previously duplicated Ruleset-v1 match-termination
+  decision/reason computations behind one implementation, reached through
+  the same dispatch seam used for scheduling.
+- Separated entrant identity from resolved match inputs and mutable
+  execution state with a new `EntrantIdentity` type, while keeping VM and
+  Python execution states intentionally distinct and preserving exactly one
+  execution state per entrant.
+- Added extensive semantic-characterization and architecture-equivalence
+  qualification: the combined result was directly verified equivalent to
+  v1.4.1 Ruleset-v1 behavior, including running the golden corpus against
+  the actual v1.4.1 source tree and confirming zero source diff since
+  v1.4.1 in `vm.py`, `scoring.py`, `statistics.py`, and `rules.py`.
+
+### Compatibility
+
+This release changes no Ruleset ID, Ruleset-v1 semantics, Agent API v1
+contract, or replay/result/evaluation/package schema. There is no new
+gameplay, no mixed VM/Python execution, and no multi-state entrant. Every
+persisted deterministic identity and the v1.4/v1.5 Ruleset-v1 equivalence
+corpus were confirmed unchanged throughout.
+
 ## [1.4.1] - 2026-08-17
 
 ### Fixed

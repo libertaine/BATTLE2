@@ -68,7 +68,7 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 1.3.0 | Designer Workflow Completion | Released — adds Agent Designer package export/inspection/import with integrity and trust disclosure, exact comparison-row Replay/Agent Lab drill-down with side/orientation/tick preservation, and revision **Restore Files…** with live-catalog refresh and stale-state invalidation. Independent qualification hardened package/archive validation, corrected all four Windows PyInstaller layouts to the intended onedir shape, made GUI build smokes isolated and synchronous, and added CLI disclosure of ambiguous duplicate comparison groups. Technical and manual GUI qualification passed; the installer, portable applications, wheel, source archive, and published SHA-256 values were verified for the final release. No gameplay, Agent API, Ruleset, package/revision/evaluation/result/replay-schema, evaluation-methodology, or data-root-semantics change. |
 | 1.4.0 | Platform Integrity & Scaling | Released — retires obsolete predecessor product surfaces, removes evidence-backed dead code, freezes a compact Ruleset-v1 VM/Python equivalence corpus, replaces duplicate per-tick ownership scans with authoritative incremental counts, records scaling/replay evidence, and qualifies existing three-entrant execution. No gameplay or stable-contract change. |
 | 1.4.1 | Designer Agent-Selection Fix | Released — fixes Simple and Advanced match launch when an agent's display name differs from its canonical discovery ID, with realistic end-to-end GUI regression coverage. No gameplay or stable-contract change. |
-| 1.5.0 | Architecture Evolution Readiness | Planned direction — Ruleset/policy dispatch, entrant identity versus execution-state separation, and scheduler abstraction behind unchanged Ruleset-v1 behavior; still one execution state per entrant and no new gameplay. |
+| 1.5.0 | Architecture Evolution Readiness | Released — a fail-closed Ruleset-v1 policy/dispatch seam, one shared sequential-quota scheduler, centralized Ruleset-v1 termination resolution, and entrant identity separated from resolved match inputs and mutable execution state, all directly verified equivalent to v1.4.1 Ruleset-v1 behavior. Still exactly one execution state per entrant; no gameplay, Agent API, Ruleset ID, or schema change. |
 | 1.6.0 | Evaluation Scale & Analysis | Planned direction — evidence-gated deterministic parallel evaluation, presets/suites, richer analysis and behavioral comparison, larger matrices, and replay indexing only if still warranted. |
 | 2.x | Gameplay / Rules Research | Research boundary — possible multi-unit entrants, replication, communication, richer attack/resource semantics, Agent API v2, and a separately identified Ruleset v2; no detailed design commitment yet. |
 
@@ -126,18 +126,18 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Current release:** [Bytefray v1.4.1](https://github.com/libertaine/Bytefray/releases/tag/v1.4.1).
+**Current release:** [Bytefray v1.5.0](https://github.com/libertaine/Bytefray/releases/tag/v1.5.0).
 Earlier downloads are historical and have been superseded.
 
 Choose one of the options below:
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Windows installer** | [Bytefray-Setup-1.4.1.exe](https://github.com/libertaine/Bytefray/releases/download/v1.4.1/Bytefray-Setup-1.4.1.exe) | Installs under `C:\Program Files\Bytefray` |
-| 💼 **Portable Windows applications** | [bytefray-1.4.1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v1.4.1/bytefray-1.4.1-windows.zip) | Complete onedir layouts for all four executables |
-| 🐍 **Python wheel** | [bytefray-1.4.1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v1.4.1/bytefray-1.4.1-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
-| 📦 **Source archive** | [bytefray-1.4.1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v1.4.1/bytefray-1.4.1.tar.gz) | Source distribution for Python/package workflows |
-| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v1.4.1/SHA256SUMS.txt) | SHA-256 values for release assets |
+| 🧰 **Windows installer** | [Bytefray-Setup-1.5.0.exe](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/Bytefray-Setup-1.5.0.exe) | Installs under `C:\Program Files\Bytefray` |
+| 💼 **Portable Windows applications** | [bytefray-1.5.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/bytefray-1.5.0-windows.zip) | Complete onedir layouts for all four executables |
+| 🐍 **Python wheel** | [bytefray-1.5.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/bytefray-1.5.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 📦 **Source archive** | [bytefray-1.5.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/bytefray-1.5.0.tar.gz) | Source distribution for Python/package workflows |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v1.5.0/SHA256SUMS.txt) | SHA-256 values for release assets |
 
 ---
 

@@ -456,12 +456,13 @@ schema, evaluation methodology, or gameplay behavior changed.
 
 ## v1.5.0 — Architecture Evolution Readiness
 
-**Status: planned direction only.** v1.5 may rearrange implementation behind
-the frozen Ruleset-v1 behavior: a Ruleset dispatch/policy seam, clearer entrant
-identity versus execution-state separation, and a scheduler abstraction. Under
-Ruleset v1 there must still be exactly one execution state per entrant, and the
-v1.4 equivalence corpus remains the acceptance boundary. No new gameplay,
-Agent API v2, multiprocess entrant, replication, or resource semantics.
+**Status: shipped.** `v1.5.0` is tagged and published. It rearranges
+implementation behind the frozen Ruleset-v1 behavior: a Ruleset dispatch/
+policy seam, clearer entrant identity versus execution-state separation, and
+a scheduler abstraction. Under Ruleset v1 there is still exactly one
+execution state per entrant, and the v1.4 equivalence corpus remained the
+acceptance boundary throughout. No new gameplay, Agent API v2, multiprocess
+entrant, replication, or resource semantics.
 
 **Phase 1 (semantic reconstruction and invariant lock) is complete** on
 `v1.5-development`: a full Ruleset-v1 semantic ownership map, tick-lifecycle
