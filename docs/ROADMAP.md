@@ -520,6 +520,24 @@ unchanged. Scoring, statistics, and winner resolution remain outside the
 policy seam; the v1.4/v1.5 Ruleset-v1 equivalence corpus shows zero golden
 differences.
 
+**Phase 5 (entrant identity and execution-state separation) is complete**
+on `v1.5-development`: a new `battle_engine.entrant_identity.
+EntrantIdentity` type gives `match_service.MatchEntrant`, VM `agent_state.
+Agent`, and `python_runtime.PythonEntrantState` one authoritative identity
+object each, instead of independently storing `agent_id`/`name` as flat
+fields duplicable within a class -- see
+[the Phase 5 record](V1_5_PHASE5_ENTRANT_IDENTITY_EXECUTION_STATE.md). All
+three classes keep their original names, public constructor signatures, and
+read call sites unchanged via read-only `agent_id`/`name` compatibility
+properties; `supervised_runtime.py`, `match.py`, `core.py`, `vm.py`,
+`scoring.py`, `statistics.py`, and `telemetry.py` required zero source
+changes. VM and Python execution states remain intentionally distinct
+rather than unified behind a shared abstraction, Ruleset v1 continues to
+create exactly one execution state per resolved entrant, and no persisted
+schema, deterministic identity, entrant ordering, Python seed derivation,
+or gameplay semantic changed; the v1.4/v1.5 Ruleset-v1 equivalence corpus
+shows zero golden differences.
+
 ## v1.6.0 — Evaluation Scale & Analysis
 
 **Status: planned direction only.** Evidence may justify deterministic parallel

@@ -25,9 +25,19 @@ class HasAgentIdentity(Protocol):
     ``PythonEntrantState`` satisfy this without inheritance -- winner
     resolution only ever needs to know who is still alive and how to name
     them, so it should not be coupled to either concrete state class.
+
+    ``agent_id`` is declared read-only (a property, not a plain attribute)
+    because both concrete state classes expose it as a compatibility
+    property backed by their stored ``EntrantIdentity`` -- see
+    ``docs/V1_5_PHASE5_ENTRANT_IDENTITY_EXECUTION_STATE.md``. A plain
+    ``agent_id: str`` attribute declaration here would reject that read-only
+    property under structural typing even though the runtime value is
+    identical.
     """
 
-    agent_id: str
+    @property
+    def agent_id(self) -> str: ...
+
     alive: bool
 
 

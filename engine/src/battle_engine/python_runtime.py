@@ -31,6 +31,7 @@ from battle_engine.agent_trace import (
     TraceWriter,
 )
 from battle_engine.config import Config
+from battle_engine.entrant_identity import EntrantIdentity
 from battle_engine.results import resolve_winner
 from battle_engine.ruleset_policy import RULESET_V1, RulesetPolicy, TerminationReason
 from battle_engine.scoring import ScoreMap, ScoringPolicy
@@ -277,10 +278,21 @@ def _to_trace_diagnostic(diagnostic: RuntimeDiagnostic | None) -> TraceDiagnosti
     )
 
 
-@dataclass
+@dataclass(init=False)
 class PythonEntrantState:
-    agent_id: str
-    name: str
+    """Python execution state for one entrant.
+
+    References the entrant's :class:`~battle_engine.entrant_identity.
+    EntrantIdentity` rather than storing ``agent_id``/``name`` as
+    independent fields -- see
+    ``docs/V1_5_PHASE5_ENTRANT_IDENTITY_EXECUTION_STATE.md``. Both remain
+    available as read-only compatibility properties: the identity itself
+    never mutates once construction finishes, matching every other field
+    below that genuinely does (``pc``, ``alive``, RNG-consumed state,
+    accounting counters, diagnostics).
+    """
+
+    identity: EntrantIdentity
     loaded: LoadedPythonAgent
     rng: random.Random
     slot: int = 0
@@ -315,6 +327,61 @@ class PythonEntrantState:
     region: tuple[int, int] = (0, 0)
     diagnostic: RuntimeDiagnostic | None = None
     entrant_termination: str | None = None
+
+    def __init__(
+        self,
+        agent_id: str,
+        name: str,
+        loaded: LoadedPythonAgent,
+        rng: random.Random,
+        slot: int = 0,
+        derived_seed: int = 0,
+        source_digest: str = "",
+        local_source_fingerprint: str | None = None,
+        agent_dir: Path | None = None,
+        local_source_fingerprint_final: str | None = None,
+        pc: int = 0,
+        register_a: int = 0,
+        register_p: int = 0,
+        zero_flag: bool = False,
+        last_read: int | None = None,
+        alive: bool = True,
+        cpu_used: int = 0,
+        total_actions: int = 0,
+        mem_writes: int = 0,
+        region: tuple[int, int] = (0, 0),
+        diagnostic: RuntimeDiagnostic | None = None,
+        entrant_termination: str | None = None,
+    ) -> None:
+        self.identity = EntrantIdentity(agent_id=agent_id, name=name)
+        self.loaded = loaded
+        self.rng = rng
+        self.slot = slot
+        self.derived_seed = derived_seed
+        self.source_digest = source_digest
+        self.local_source_fingerprint = local_source_fingerprint
+        self.agent_dir = agent_dir
+        self.local_source_fingerprint_final = local_source_fingerprint_final
+        self.pc = pc
+        self.register_a = register_a
+        self.register_p = register_p
+        self.zero_flag = zero_flag
+        self.last_read = last_read
+        self.alive = alive
+        self.cpu_used = cpu_used
+        self.total_actions = total_actions
+        self.mem_writes = mem_writes
+        self.region = region
+        self.diagnostic = diagnostic
+        self.entrant_termination = entrant_termination
+
+    @property
+    def agent_id(self) -> str:
+        return self.identity.agent_id
+
+    @property
+    def name(self) -> str:
+        return self.identity.name
 
 
 @dataclass(frozen=True)

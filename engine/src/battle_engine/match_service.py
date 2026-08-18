@@ -19,6 +19,7 @@ from typing import Any, cast
 from battle_engine.agent_trace import TraceHeader, TraceWriter
 from battle_engine.config import Config
 from battle_engine.core import Kernel
+from battle_engine.entrant_identity import EntrantIdentity
 from battle_engine.python_runtime import (
     PythonEntrantController,
     PythonEntrantInitializationError,
@@ -49,16 +50,49 @@ from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class MatchEntrant:
-    """Explicitly typed resolved entrant for one native execution path."""
+    """Explicitly typed resolved entrant for one native execution path.
 
-    agent_id: str
-    name: str
+    Composes the entrant's :class:`~battle_engine.entrant_identity.
+    EntrantIdentity` (who) with this match's resolved participation data --
+    ``start``/``code``/``kind``/``python_spec`` (how this entrant
+    participates in *this* match) -- rather than storing ``agent_id``/
+    ``name`` as independent fields. See
+    ``docs/V1_5_PHASE5_ENTRANT_IDENTITY_EXECUTION_STATE.md``. ``agent_id``/
+    ``name`` remain read-only compatibility properties so the many call
+    sites across the engine, CLI, tournament service, and tests that
+    construct or read them are unaffected.
+    """
+
+    identity: EntrantIdentity
     start: int
     code: bytes | None
     kind: str = "vm"
     python_spec: Any | None = None
+
+    def __init__(
+        self,
+        agent_id: str,
+        name: str,
+        start: int,
+        code: bytes | None,
+        kind: str = "vm",
+        python_spec: Any | None = None,
+    ) -> None:
+        object.__setattr__(self, "identity", EntrantIdentity(agent_id=agent_id, name=name))
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "code", code)
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "python_spec", python_spec)
+
+    @property
+    def agent_id(self) -> str:
+        return self.identity.agent_id
+
+    @property
+    def name(self) -> str:
+        return self.identity.name
 
     @classmethod
     def python(cls, agent_id: str, name: str, start: int, spec: Any) -> MatchEntrant:
