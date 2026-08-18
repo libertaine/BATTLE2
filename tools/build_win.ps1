@@ -104,7 +104,19 @@ try {
     # invoked with `&`. Start-Process -Wait is therefore required for the
     # standalone Designer: without it, $LASTEXITCODE is stale and the temp
     # root can be deleted before the still-starting child writes to it.
-    $SmokeProcess = Start-Process -FilePath $Smoke.Path -ArgumentList @($Smoke.Args) -Wait -PassThru -WindowStyle Hidden
+    # -ArgumentList rejects an empty array on some PowerShell versions
+    # ("argument is null, empty, or an element ... contains a null value"),
+    # so it's only included via splatting when there are real arguments.
+    $StartProcessArgs = @{
+      FilePath    = $Smoke.Path
+      Wait        = $true
+      PassThru    = $true
+      WindowStyle = "Hidden"
+    }
+    if ($Smoke.Args.Count -gt 0) {
+      $StartProcessArgs["ArgumentList"] = $Smoke.Args
+    }
+    $SmokeProcess = Start-Process @StartProcessArgs
     if ($SmokeProcess.ExitCode -ne 0) {
       throw "GUI import/startup smoke failed with exit code $($SmokeProcess.ExitCode)`: $($Smoke.Path)"
     }
