@@ -347,8 +347,10 @@ def test_windows_build_waits_for_gui_smokes_and_requires_temp_cleanup() -> None:
     gui_block = source[gui_start:gui_end]
 
     assert "& $Smoke.Path" not in gui_block
-    assert "Start-Process -FilePath $Smoke.Path" in gui_block
-    assert "-Wait -PassThru" in gui_block
+    assert "Start-Process @StartProcessArgs" in gui_block
+    assert "FilePath    = $Smoke.Path" in gui_block
+    assert "Wait        = $true" in gui_block
+    assert "PassThru    = $true" in gui_block
     assert "$SmokeProcess.ExitCode" in gui_block
     assert "[Guid]::NewGuid()" in gui_block
     assert "} finally {" in gui_block
