@@ -1,0 +1,9 @@
+{
+  "name": "core_seeker",
+  "display": "Core Seeker (v2.0.0-alpha.1 reference)",
+  "description": "Experimental bytefray-rules-2-alpha1 reference agent: scans with READ for signs of foreign ownership, then commits a WRITE burst to a locked-on region once nearby foreign-looking cells are found twice in a row. Never given the opponent's location for free. Not a claim of optimal strategy -- see docs/V2_0_ALPHA1_EVALUATION.md.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}

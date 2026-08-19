@@ -57,8 +57,10 @@ from battle_engine.python_runtime import (
     PythonRuntimeResult,
     RuntimeDiagnostic,
     _observation,
+    _snapshot_core_owners,
     _to_trace_diagnostic,
     apply_action,
+    apply_core_capture,
     derive_agent_seed,
     diagnose_action_timeout,
     diagnose_invalid_action,
@@ -67,9 +69,10 @@ from battle_engine.python_runtime import (
     diagnose_worker_exited,
     diagnose_worker_protocol_error,
     forfeit_entrant,
+    seed_core_ownership,
 )
 from battle_engine.results import resolve_winner
-from battle_engine.ruleset_policy import RULESET_V1, RulesetPolicy
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ALPHA1_ID, RULESET_V1, RulesetPolicy
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import ReplayPublisher, ReplaySink
@@ -249,7 +252,10 @@ class SupervisedPythonEntrantController:
             agent_dir=getattr(entrant.python_spec, "dir", None),
             pc=entrant.start & 0xFFFFFFFF,
             region=(entrant.start % self.config.arena_size,) * 2,
+            core_start=entrant.start % self.config.arena_size,
         )
+        if self.ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V2_ALPHA1_ID:
+            seed_core_ownership(state, self.vm)
 
         reset_start = time.perf_counter()
         reset_result = handle.reset(
@@ -354,12 +360,16 @@ class SupervisedPythonEntrantController:
             replay.publish_tick(
                 0, self.states, self.score, self.vm, []  # type: ignore[arg-type]
             )
+            is_vulnerable_core = self.ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V2_ALPHA1_ID
             for tick in range(1, self.max_ticks + 1):
                 ticks_run = tick
                 self.vm.clear_tick_diffs()
                 events: list[dict[str, Any]] = []
                 for state in self.states:
                     state.cpu_used = 0
+                pre_tick_core_owners = (
+                    _snapshot_core_owners(self.states, self.vm) if is_vulnerable_core else {}
+                )
 
                 def execute_slot(
                     state: PythonEntrantState,
@@ -375,6 +385,18 @@ class SupervisedPythonEntrantController:
                 self.ruleset_policy.run_scheduler(
                     self.states, self.config.instr_per_tick, execute_slot
                 )
+
+                if is_vulnerable_core:
+                    apply_core_capture(
+                        self.states,
+                        self.vm,
+                        pre_tick_core_owners,
+                        self.scoring,
+                        self.score,
+                        self.statistics_collector,
+                        self.statistics,
+                        events,
+                    )
 
                 self.statistics_collector.record_tick(
                     self.statistics,

@@ -15,7 +15,9 @@ from dataclasses import FrozenInstanceError, dataclass
 import pytest
 from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ALPHA1_ID,
     RULESET_V1,
+    RULESET_V2_ALPHA1,
     RulesetPolicy,
     TerminationDecision,
     TerminationReason,
@@ -74,9 +76,44 @@ def test_policy_scheduler_matches_the_phase_2_sequential_quota_behavior() -> Non
     assert via_policy == via_direct == ["A0", "A1", "A2", "B0", "B1", "C0", "C1", "C2"]
 
 
+def test_v2_alpha1_ruleset_id_resolves_to_its_own_distinct_policy() -> None:
+    """v2.0.0-alpha.1's dispatch registration (Phase 2/Sec 7 of
+    docs/V2_0_ALPHA_ARCHITECTURE.md): registered under its own explicit
+    key, distinct from -- and never aliased to or from -- Ruleset v1.
+    """
+
+    policy = resolve_ruleset_policy(BYTEFRAY_RULESET_V2_ALPHA1_ID)
+    assert policy is RULESET_V2_ALPHA1
+    assert policy.ruleset_id == "bytefray-rules-2-alpha1"
+    assert policy is not RULESET_V1
+    assert policy.ruleset_id != RULESET_V1.ruleset_id
+
+
+def test_v2_alpha1_scheduling_and_termination_are_identical_to_v1() -> None:
+    """The alpha changes core-capture mortality only -- scheduling order
+    and the termination decision formula are the exact same shared
+    implementation as Ruleset v1 (neither reads ``self.ruleset_id``).
+    """
+
+    states = [_FakeState("A"), _FakeState("B")]
+    calls: list[str] = []
+    RULESET_V2_ALPHA1.run_scheduler(states, 2, lambda s, slot: calls.append(f"{s.name}{slot}"))
+    assert calls == ["A0", "A1", "B0", "B1"]
+    assert RULESET_V2_ALPHA1.resolve_termination(
+        alive_count=1, tick=1, max_ticks=10
+    ) == TerminationDecision(terminated=True, reason=TerminationReason.LAST_AGENT_STANDING)
+
+
 @pytest.mark.parametrize(
     "unknown_id",
-    ["bytefray-rules-2", "unknown", "evaluation-rules-999", "evaluation-rules-1", ""],
+    [
+        "bytefray-rules-2",
+        "unknown",
+        "evaluation-rules-999",
+        "evaluation-rules-1",
+        "bytefray-rules-2-alpha2",
+        "",
+    ],
 )
 def test_unknown_ruleset_id_fails_closed_rather_than_resolving_to_v1(
     unknown_id: str,

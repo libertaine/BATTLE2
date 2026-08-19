@@ -230,8 +230,23 @@ def test_agent(
     data_root: Path | None = None,
     resource_root: Path | None = None,
     run_dir: Path | None = None,
+    ruleset_id: str | None = None,
+    agent_start: int = 0,
+    opponent_start: int = 0,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     """Run one short, real development match for ``agent_id``.
+
+    ``ruleset_id``/``agent_start``/``opponent_start`` are v2.0.0-alpha.1's
+    additive selectors (see ``docs/V2_0_ALPHA_ARCHITECTURE.md`` Sec 6):
+    ``ruleset_id`` defaults to ``None`` (``MatchRequest``'s own default,
+    resolving to the frozen Ruleset v1 identity), and both start addresses
+    default to ``0`` -- the exact literal values every existing caller
+    already passes today via the hardcoded
+    ``MatchEntrant.python(..., 0, ...)`` construction this replaces. Every
+    existing caller leaves all three at their defaults and sees
+    byte-for-byte unchanged behavior, including both entrants still
+    starting at the identical shared address ``0``; only alpha-experiment
+    callers (this module's own evaluation tooling) pass distinct values.
 
     Returns a :class:`DevelopmentTestOutcome` for any completed match
     (win/loss/tie/forfeit/death/tick-limit -- all exit ``0`` at the CLI
@@ -271,6 +286,9 @@ def test_agent(
             data_root=data_root,
             resource_root=resource_root,
             run_dir=run_dir,
+            ruleset_id=ruleset_id,
+            agent_start=agent_start,
+            opponent_start=opponent_start,
         )
     except AgentTestError:
         raise
@@ -296,6 +314,9 @@ def _test_agent(
     data_root: Path | None,
     resource_root: Path | None,
     run_dir: Path | None = None,
+    ruleset_id: str | None = None,
+    agent_start: int = 0,
+    opponent_start: int = 0,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = resource_root or get_resource_root()
@@ -351,14 +372,15 @@ def _test_agent(
     request = MatchRequest(
         config=Config(seed=effective_seed),
         entrants=(
-            MatchEntrant.python(TESTED_AGENT_SLOT, agent_id, 0, tested_spec),
-            MatchEntrant.python(OPPONENT_SLOT, opponent_name, 0, opponent_spec),
+            MatchEntrant.python(TESTED_AGENT_SLOT, agent_id, agent_start, tested_spec),
+            MatchEntrant.python(OPPONENT_SLOT, opponent_name, opponent_start, opponent_spec),
         ),
         max_ticks=effective_ticks,
         replay_path=replay_path,
         verbose=False,
         trace_path=trace_path,
         agent_call_timeout=effective_timeout,
+        ruleset_id=ruleset_id,
     )
 
     try:

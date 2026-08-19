@@ -1,0 +1,9 @@
+{
+  "name": "core_defender",
+  "display": "Core Defender (v2.0.0-alpha.1 reference)",
+  "description": "Experimental bytefray-rules-2-alpha1 reference agent: spends part of its budget refreshing its own core region while expanding with the rest. Not a claim of optimal strategy -- see docs/V2_0_ALPHA1_EVALUATION.md.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}

@@ -33,11 +33,191 @@ from battle_engine.agent_trace import (
 from battle_engine.config import Config
 from battle_engine.entrant_identity import EntrantIdentity
 from battle_engine.results import resolve_winner
-from battle_engine.ruleset_policy import RULESET_V1, RulesetPolicy, TerminationReason
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ALPHA1_ID,
+    RULESET_V1,
+    RulesetPolicy,
+    TerminationReason,
+)
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import ReplayPublisher, ReplaySink
 from battle_engine.vm import VM
+
+# v2.0.0-alpha.1 "Vulnerable Core" (docs/V2_0_ALPHA_ARCHITECTURE.md Sec 6,
+# docs/V2_0_ALPHA1_EVALUATION.md): each Python entrant's core is a
+# fixed-size window of ``CORE_SIZE`` bytes anchored at its own original
+# spawn address (``entrant.start % arena_size``), using ordinary
+# ``pos % arena_size`` wrap -- the same addressing every other arena access
+# in this engine already uses (``vm.py``'s ``_rd32``/``_wr8``). Deliberately
+# NOT derived from the entrant's program size, write count, or any other
+# entrant-controlled property (that would reward padding/footprint
+# inflation with survivability -- see the governing task's Phase 3).
+#
+# 8 was chosen, not computed: Python entrants load no code into the arena
+# at all (unlike the VM path, which has a real per-entrant code footprint
+# to reason about -- see ``VM.load_code``), so there is no existing
+# "footprint" to size a core against in the first place. Against the
+# default ``Config.arena_size == 4096``, 8 cells is small enough (0.2% of
+# the arena) that a core is a genuine localized target an opponent must
+# actually find and fully overwrite -- not a proxy for general territorial
+# dominance -- while still being more than one cell, so a single incidental
+# write passing through can't trivially end a match by accident. It is a
+# fixed module constant, not threaded through ``Config``, per the governing
+# task's instruction not to make it configurable for this alpha.
+CORE_SIZE = 8
+
+
+def core_addresses(core_start: int, arena_size: int) -> tuple[int, ...]:
+    """Every address in one entrant's core region, using ordinary arena wrap."""
+
+    start = core_start % arena_size
+    return tuple((start + offset) % arena_size for offset in range(CORE_SIZE))
+
+
+def _snapshot_core_owners(
+    states: list[PythonEntrantState], vm: VM
+) -> dict[str, tuple[str | None, ...]]:
+    """Per-living-entrant core ownership *before* this tick's actions run.
+
+    Captured once at the start of each tick (before ``run_scheduler``
+    executes any action this tick) so :func:`apply_core_capture` can later
+    tell, for an entrant that ends the tick core-captured, whether that
+    capture happened *during* this tick (attributable to a specific write --
+    see :func:`_attribute_core_capture`) or was already true before any of
+    this tick's actions ran (unattributable, e.g. two entrants spawned with
+    overlapping cores).
+    """
+
+    return {
+        state.agent_id: tuple(
+            vm.writer[address] for address in core_addresses(state.core_start, len(vm.arena))
+        )
+        for state in states
+        if state.alive
+    }
+
+
+def seed_core_ownership(state: PythonEntrantState, vm: VM) -> None:
+    """Establish an entrant's initial ownership of its own core region.
+
+    Python entrants never place code in the arena (unlike the VM path,
+    where ``Kernel.spawn``/``VM.load_code`` establish initial ownership
+    over an entrant's code footprint as a side effect of loading it) --
+    without this, "owns zero cells of its own core" would already be
+    vacuously true before tick one, since nothing has written there yet,
+    and the mechanic would capture every entrant on its very first check.
+    This is the Python-runtime-only equivalent spawn-time step: routed
+    through ``VM._wr8`` exactly like any other write (so it appears in
+    tick zero's replay diffs precisely as ``load_code`` already does for
+    the VM), establishing this entrant as the sole owner of every cell in
+    its own core before any ``act()`` call happens. Only called under
+    ``bytefray-rules-2-alpha1``; Ruleset v1 Python matches never call this,
+    so their tick-zero ``memory_diffs`` stay empty exactly as before.
+    """
+
+    for address in core_addresses(state.core_start, len(vm.arena)):
+        vm._wr8(address, 0, state.agent_id)
+
+
+def _attribute_core_capture(
+    state: PythonEntrantState,
+    core_addrs: tuple[int, ...],
+    before_owners: tuple[str | None, ...],
+    vm: VM,
+) -> str | None:
+    """Find which entrant's write caused ``state`` to lose its last core cell.
+
+    Replays this tick's ``vm.tick_diffs`` (already in true execution order --
+    entrants act in fixed scheduled order, so diffs are appended in the
+    order writes actually happened) restricted to addresses inside
+    ``core_addrs``, starting from ``before_owners`` (this entrant's core
+    ownership before any of this tick's actions ran). Returns the ``owner``
+    of the one diff that makes ``state``'s core-owned count drop from one
+    to zero -- unambiguous by construction, since only one write can be
+    "the write that took the last cell" once diffs are replayed in their
+    real order. Returns ``None`` if ``state`` already owned zero core cells
+    before this tick's actions ran (an edge case with no single attributable
+    cause this tick -- see ``seed_core_ownership``'s docstring for how an
+    overlapping-core spawn could produce this).
+    """
+
+    core_set = set(core_addrs)
+    local_owner: dict[int, str | None] = dict(zip(core_addrs, before_owners, strict=True))
+    remaining = sum(1 for owner in local_owner.values() if owner == state.agent_id)
+    if remaining == 0:
+        return None
+    for start, length, owner, _values in vm.tick_diffs:
+        for offset in range(length):
+            address = (start + offset) % len(vm.arena)
+            if address not in core_set:
+                continue
+            previous = local_owner[address]
+            if previous == owner:
+                continue
+            local_owner[address] = owner
+            if previous == state.agent_id:
+                remaining -= 1
+                if remaining == 0:
+                    return owner
+    return None  # pragma: no cover - unreachable given the caller's own invariant
+
+
+def apply_core_capture(
+    states: list[PythonEntrantState],
+    vm: VM,
+    pre_tick_core_owners: Mapping[str, tuple[str | None, ...]],
+    scoring: ScoringPolicy,
+    score: ScoreMap,
+    statistics_collector: StatisticsCollector,
+    statistics: StatisticsMap,
+    events: list[dict[str, Any]],
+) -> None:
+    """bytefray-rules-2-alpha1: kill any living entrant now core-captured.
+
+    An entrant is core-captured when it owns zero cells of its own fixed
+    ``CORE_SIZE`` core region (Phase 4's semantic definition -- deliberately
+    "owns zero", not "one opponent owns all of it", so the rule stays
+    well-defined if Bytefray ever supports more than two entrants). Checked
+    once per tick, after all of this tick's actions have executed and
+    before scoring/termination -- so a captured entrant receives no
+    alive/territory score for the tick it dies on, exactly like an
+    ordinary Python ``HALT``, and no hidden extra turn. Kill credit goes to
+    whichever entrant's ``WRITE`` caused the final defender-owned core cell
+    to change owner this tick, when :func:`_attribute_core_capture` can
+    determine it unambiguously; otherwise this is recorded as an
+    unattributed death, exactly like an ordinary unattributed Python
+    forfeit/halt.
+    """
+
+    for state in states:
+        if not state.alive:
+            continue
+        addrs = core_addresses(state.core_start, len(vm.arena))
+        owned_now = sum(1 for address in addrs if vm.writer[address] == state.agent_id)
+        if owned_now > 0:
+            continue
+        before = pre_tick_core_owners.get(state.agent_id, ())
+        # ``before`` is only ever absent-or-mis-sized if this entrant somehow
+        # reached this point without a pre-tick snapshot (an invariant
+        # violation, not a real match state -- every state alive at tick
+        # start is snapshotted before any of that tick's actions run); guard
+        # defensively rather than let ``_attribute_core_capture``'s
+        # ``zip(..., strict=True)`` raise on a length mismatch.
+        killer = (
+            _attribute_core_capture(state, addrs, before, vm)
+            if len(before) == len(addrs)
+            else None
+        )
+        state.alive = False
+        state.entrant_termination = "core_captured"
+        if killer is not None and killer != state.agent_id:
+            scoring.score_kill(score, killer)
+            statistics_collector.record_death(statistics, state.agent_id, killer)
+            events.append({"type": "kill", "victim": state.agent_id, "by": killer})
+        else:
+            statistics_collector.record_death(statistics, state.agent_id)
+            events.append({"type": "death", "victim": state.agent_id})
 
 
 @dataclass(frozen=True)
@@ -327,6 +507,13 @@ class PythonEntrantState:
     region: tuple[int, int] = (0, 0)
     diagnostic: RuntimeDiagnostic | None = None
     entrant_termination: str | None = None
+    # v2.0.0-alpha.1: this entrant's own core-region anchor
+    # (``entrant.start % arena_size``), fixed at construction and never
+    # moved by ``JUMP`` or anything else -- unlike ``pc``, which the
+    # entrant's own actions can relocate. Always populated (harmless and
+    # unused under Ruleset v1); only ``apply_core_capture`` reads it, and
+    # only under ``bytefray-rules-2-alpha1``.
+    core_start: int = 0
 
     def __init__(
         self,
@@ -352,6 +539,7 @@ class PythonEntrantState:
         region: tuple[int, int] = (0, 0),
         diagnostic: RuntimeDiagnostic | None = None,
         entrant_termination: str | None = None,
+        core_start: int = 0,
     ) -> None:
         self.identity = EntrantIdentity(agent_id=agent_id, name=name)
         self.loaded = loaded
@@ -374,6 +562,7 @@ class PythonEntrantState:
         self.region = region
         self.diagnostic = diagnostic
         self.entrant_termination = entrant_termination
+        self.core_start = core_start
 
     @property
     def agent_id(self) -> str:
@@ -568,7 +757,10 @@ class PythonEntrantController:
                 agent_dir=getattr(entrant.python_spec, "dir", None),
                 pc=entrant.start & 0xFFFFFFFF,
                 region=(entrant.start % config.arena_size,) * 2,
+                core_start=entrant.start % config.arena_size,
             )
+            if self.ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V2_ALPHA1_ID:
+                seed_core_ownership(state, self.vm)
             context = MatchContext(
                 agent_id=entrant.agent_id,
                 seed=seed,
@@ -715,18 +907,25 @@ class PythonEntrantController:
             replay.publish_header(self.config)
             # Publish initial entrant state as tick 0, before any act()
             # call. Python entrants never populate the arena (source is not
-            # loaded into memory), so memory_diffs is empty here, but the
-            # per-entrant starting pc/region/registers are still captured --
-            # see match.py's MatchRunner.run for the VM-side counterpart.
+            # loaded into memory), so memory_diffs is empty here under
+            # Ruleset v1 -- but not under bytefray-rules-2-alpha1, whose
+            # __init__ already seeded each entrant's own core ownership
+            # (see seed_core_ownership) before this call, exactly mirroring
+            # how match.py's MatchRunner.run publishes the VM's own
+            # spawn-time load_code diffs as tick zero.
             replay.publish_tick(
                 0, self.states, self.score, self.vm, []  # type: ignore[arg-type]
             )
+            is_vulnerable_core = self.ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V2_ALPHA1_ID
             for tick in range(1, self.max_ticks + 1):
                 ticks_run = tick
                 self.vm.clear_tick_diffs()
                 events: list[dict[str, Any]] = []
                 for state in self.states:
                     state.cpu_used = 0
+                pre_tick_core_owners = (
+                    _snapshot_core_owners(self.states, self.vm) if is_vulnerable_core else {}
+                )
 
                 def execute_slot(
                     state: PythonEntrantState,
@@ -740,6 +939,18 @@ class PythonEntrantController:
                 self.ruleset_policy.run_scheduler(
                     self.states, self.config.instr_per_tick, execute_slot
                 )
+
+                if is_vulnerable_core:
+                    apply_core_capture(
+                        self.states,
+                        self.vm,
+                        pre_tick_core_owners,
+                        self.scoring,
+                        self.score,
+                        self.statistics_collector,
+                        self.statistics,
+                        events,
+                    )
 
                 self.statistics_collector.record_tick(
                     self.statistics,
@@ -799,6 +1010,7 @@ class PythonEntrantController:
 
 
 __all__ = [
+    "CORE_SIZE",
     "InvalidPythonActionError",
     "PythonEntrantController",
     "PythonEntrantInitializationError",
@@ -807,6 +1019,8 @@ __all__ = [
     "RuntimeDiagnostic",
     "TerminationReason",
     "apply_action",
+    "apply_core_capture",
+    "core_addresses",
     "derive_agent_seed",
     "diagnose_action_exception",
     "diagnose_action_timeout",
@@ -818,5 +1032,6 @@ __all__ = [
     "diagnose_worker_exited",
     "diagnose_worker_protocol_error",
     "forfeit_entrant",
+    "seed_core_ownership",
     "validate_action",
 ]
