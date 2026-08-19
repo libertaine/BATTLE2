@@ -1,5 +1,5 @@
 """v2.0.0-alpha experimental reference agents (Core Defender, Core Seeker,
-Reactive Core Defender).
+Reactive Core Defender, Core Tracker).
 
 Loaded directly from bundled package resources under
 ``battle_engine/data/reference_agents/<name>/`` -- the same
@@ -19,6 +19,11 @@ controlled experiment, not a promoted feature. ``reactive_core_defender``
 (added for alpha.2, docs/V2_0_ALPHA2_REACTIVE_DEFENSE.md) is a distinct
 agent alongside the original ``core_defender``, not a replacement for it,
 so the two remain directly comparable in the same evaluation matrix.
+``core_tracker`` (added for alpha.8,
+docs/V2_0_ALPHA8_PLACEMENT_AGNOSTIC_OFFENSE.md) is likewise a distinct,
+additive sibling of the original ``core_seeker`` -- a placement-agnostic
+offense benchmark, not a mutation of the historical-control attacker, so
+both stay directly comparable in the same evaluation matrix.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from pathlib import Path
 from battle_engine.agents import AgentSpec
 from battle_engine.paths import get_resource_root
 
-REFERENCE_AGENT_NAMES = ("core_defender", "core_seeker", "reactive_core_defender")
+REFERENCE_AGENT_NAMES = ("core_defender", "core_seeker", "reactive_core_defender", "core_tracker")
 
 
 def _reference_agents_resource_dir(resource_root: Path) -> Path:

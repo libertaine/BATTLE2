@@ -33,8 +33,16 @@ def test_reference_agent_names_are_exactly_defender_and_seeker() -> None:
     # alpha.2 (docs/V2_0_ALPHA2_REACTIVE_DEFENSE.md) added a third,
     # additive reference agent, reactive_core_defender, alongside the
     # original two -- not a replacement, so the original pair stays
-    # available for direct comparison.
-    assert REFERENCE_AGENT_NAMES == ("core_defender", "core_seeker", "reactive_core_defender")
+    # available for direct comparison. alpha.8
+    # (docs/V2_0_ALPHA8_PLACEMENT_AGNOSTIC_OFFENSE.md) likewise added a
+    # fourth, additive reference agent, core_tracker, alongside the
+    # original core_seeker -- also not a replacement, for the same reason.
+    assert REFERENCE_AGENT_NAMES == (
+        "core_defender",
+        "core_seeker",
+        "reactive_core_defender",
+        "core_tracker",
+    )
 
 
 def test_reference_agents_are_not_part_of_the_general_starter_roster() -> None:
@@ -42,6 +50,7 @@ def test_reference_agents_are_not_part_of_the_general_starter_roster() -> None:
 
     assert "core_defender" not in STARTER_AGENT_NAMES
     assert "core_seeker" not in STARTER_AGENT_NAMES
+    assert "core_tracker" not in STARTER_AGENT_NAMES
 
 
 def test_reference_agent_spec_rejects_unknown_names() -> None:

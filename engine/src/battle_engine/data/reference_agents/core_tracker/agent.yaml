@@ -1,0 +1,9 @@
+{
+  "name": "core_tracker",
+  "display": "Core Tracker (v2.0.0-alpha.8 reference)",
+  "description": "Experimental bytefray-rules-2-alpha1 reference agent: placement-agnostic offense benchmark. Coarse RNG-anchored scan for foreign-looking bytes, then a bounded coarse-to-fine probe burst that requires a genuinely separate second observation (never a stale-read echo) before committing a WRITE assault. Never given the opponent's location for free. A distinct sibling of core_seeker, not a replacement -- see docs/V2_0_ALPHA8_PLACEMENT_AGNOSTIC_OFFENSE.md.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}
