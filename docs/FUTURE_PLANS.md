@@ -117,7 +117,14 @@ Candidate, with one Exploratory sub-item.**
   vectors would make this technically easy, but it was explicitly not
   attempted; any future work here needs its own validation against a
   known-strategy fixture set, not an assumption that Phase 5's dimensions
-  are sufficient for it.
+  are sufficient for it. "Behavioral ecology / emergent-strategy
+  measurement" under "Strategic Complexity & Open-Endedness" below widens
+  this same idea to a fuller candidate metric set (expansion rate, process
+  count/mortality, movement, opponent-contact frequency, recovery after
+  damage, resource efficiency) and an explicit archetype vocabulary
+  (expanders, fortresses, raiders, parasites, scout-heavy, resilient,
+  burst attackers) to eventually validate against -- not duplicated in
+  full here.
 
 Ranking systems in particular should not be treated as a v1.0 requirement;
 neither Phase 4 nor Phase 5 introduces one (no Elo/Glicko/TrueSkill/global
@@ -190,7 +197,10 @@ or affect during a match? Very small arenas likely favor immediate
 conflict; larger arenas may make exploration, reconnaissance, uncertainty,
 prediction, and coordinated deployment strategically relevant. Any change
 here should be evidence-driven, in the same spirit as v0.9/v0.10's
-evaluation-methodology work.
+evaluation-methodology work. "Partial observability / fog of war" and
+"Reconnaissance dynamics" under "Strategic Complexity & Open-Endedness"
+below develop the information-availability side of this question further;
+not duplicated in full here.
 
 ### Multiple execution processes / multipronged agents
 
@@ -233,6 +243,272 @@ Historical evaluations must remain interpretable according to the rules
 under which they were produced — this is the same honesty principle
 `EVALUATION_RULES_COMPATIBILITY_ID` already applies at evaluation scope,
 generalized to gameplay itself.
+
+---
+
+## Strategic Complexity & Open-Endedness
+
+**Status: Research.** `V2_0_ALPHA_ARCHITECTURE.md`'s own §2 finding (from
+v0.6.1, see `CHANGELOG.md`) is that unrestricted "claim as much of the
+arena as fast as possible, and never stop" play is close to dominant under
+current scoring, with no viable defensive counter-strategy. This section
+collects research candidates for mechanics that could make simple,
+globally-dominant strategies harder to discover, while preserving what
+already makes Bytefray useful as a strategy-research platform:
+deterministic evaluation, rules a human can read and reason about, exact
+reproducibility, and independence from any one AI/ML framework. These are
+research candidates for a *possible* future experimental ruleset, in the
+spirit of the `bytefray-rules-2-alpha1` Vulnerable Core experiment
+(`V2_0_ALPHA1_EVALUATION.md`) — narrow, falsifiable, additive-identity, and
+measured against the existing starter roster before any wider claim is
+made — not promises about the canonical Bytefray ruleset, and not made
+committed release requirements merely by being recorded here.
+
+The following are the strongest candidates for an eventual experimental
+ruleset or dedicated v2.x research pass:
+
+### Partial observability / fog of war
+
+`RULES.md`'s "Observation and information boundaries" already restricts
+*direct* state inspection, but both runtimes permit `READ`/`LOAD` of any
+arena address at any time ("Arbitrary READ/WRITE"), so an entrant with
+budget to spend effectively has unconditional global information today.
+Research candidate: limit what an entrant can observe without spending an
+action on it — a radius-limited field of view, a local-neighborhood-only
+read, memory of previously observed but potentially stale cells, or
+configurable visibility rules.
+
+> Does reducing global information meaningfully increase strategic depth
+> and reduce the effectiveness of simple, globally-optimized strategies?
+
+**High-interest.** Not a commitment to changing the canonical ruleset.
+
+### Reconnaissance dynamics
+
+A companion question to observability: should information cost something?
+Candidate mechanisms include explicit scanning, temporary expanded
+visibility, low-cost scout behavior, or reconnaissance actions that
+compete with execution/write budget for the same resource. Deliberately
+**do not assume a new VM opcode is required** — document and try an
+engine/ruleset-level experiment using the existing `READ` vocabulary
+first (informally prefigured by `bytefray-rules-2-alpha1`'s Core Seeker
+reference agent, which spends part of its budget scanning for
+concentrated foreign ownership before committing to an attack, per
+`V2_0_ALPHA_ARCHITECTURE.md` §6); a permanent instruction-set expansion
+needs its own separate justification.
+
+**High-interest.**
+
+### Agent-wide execution / memory bandwidth budgets
+
+If "Multiple execution processes / multipronged agents" above is ever
+pursued, a related and independently useful question is whether resource
+limits should apply across an agent's *complete* process tree rather than
+treating each spawned process as separately-funded capacity — a total
+instructions-per-frame ceiling, a total writes-per-frame ceiling, or
+another shared, configurable budget. Research questions should cover
+whether this produces useful tradeoffs among a single strong process, a
+swarm, scouts, defenders, and dormant reserves, and specifically whether
+it makes process proliferation a meaningful strategic cost rather than a
+free multiplier — directly relevant to the risk `V2_0_ALPHA_ARCHITECTURE.md`
+§5 already names for candidate (C): "replication that isn't cost-bounded
+becomes a free multiplier by construction."
+
+**High-interest.** Depends on multi-process entrant semantics existing at
+all — see "Multiple execution processes / multipronged agents" above; not
+a standalone mechanic on its own.
+
+### Memory decay / territory maintenance
+
+Investigate deterministic decay or reset of arena cells that are not
+actively maintained — for example, resetting ownership after N untouched
+ticks, with configurable thresholds, possibly limited to certain cell
+states. Prefer deterministic decay over any probabilistic form. Research
+questions: does decay reduce static defensive dominance, encourage
+movement and territory maintenance, weaken early-game snowballing, and
+create a meaningful maintenance cost?
+
+**High-interest.**
+
+### Seeded environmental noise / memory corruption
+
+Investigate controlled environmental faults — memory corruption, read/
+write errors, instruction faults, or hazardous arena zones. Any stochastic
+behavior here must preserve Bytefray's existing reproducibility guarantee:
+**the same agents, the same Ruleset identity, the same orientation, and
+the same seed must still produce the same match**, exactly as `RULES.md`'s
+"Seed as a gameplay concept" and the VM/Python determinism clauses already
+require for everything else in the engine. Prefer seeded pseudo-random
+behavior and explicit environmental configuration over anything
+undeclared. Fixed hazard zones may be more strategically interesting than
+uniform global corruption, since they add geography and a risk/reward
+tradeoff rather than a uniform tax.
+
+**Medium-high / experimental.**
+
+### Behavioral ecology / emergent-strategy measurement
+
+Not a gameplay mechanic — an evaluation/research objective, and one
+Bytefray is already partway toward: v1.6 Phase 5's `behavior:` profile
+(`V1_6_PHASE5_BEHAVIOR_ANALYSIS.md`) already derives survival, write
+activity, territory occupancy/retention/spread, and kill-interaction rates
+per cell (see "Clustering agents into behavioral archetypes" under
+"Richer evaluation / statistical analysis" above, which this widens).
+Future evaluation could characterize agents using a fuller metric set —
+expansion rate, process count, process mortality, write intensity,
+movement, opponent-contact frequency, recovery after damage, and resource
+efficiency, alongside Phase 5's existing dimensions — in service of
+identifying naturally occurring strategy classes (expanders, fortresses,
+raiders, parasites, scout-heavy agents, resilient/recovery-focused agents,
+burst attackers) from measurement, rather than hard-coding archetypes into
+the engine. Any of the mechanics above would make this measurement more
+informative, not less: a wider behavioral spread is itself a plausible
+success signal for any of them, the same way `territory_retention` already
+served that role for `bytefray-rules-2-alpha1`
+(`V1_6_PHASE5_BEHAVIOR_ANALYSIS.md` §14.1/§14.4).
+
+**High research value.**
+
+The following are potentially valuable architecture studies, not yet
+feature commitments — each needs its own research pass before a design is
+chosen:
+
+### Arena topology abstraction
+
+Investigate whether arena semantics can eventually separate from the
+current flat `pos % arena_size` addressing (`V2_0_ALPHA_ARCHITECTURE.md`
+§2) enough to support toroidal layouts, irregular graphs, or layered
+graphs — alongside the current linear/grid layout — behind something like
+a `neighbors(cell) -> cells` interface. Not to be implemented now; the
+primary research question is whether topology can become configurable
+without destabilizing addressing, movement, replay, serialization,
+visualization, agent assumptions, evaluation identity, or rules
+compatibility.
+
+**Medium / architecture study.** Graph-based or layered topology should be
+investigated before literal 3D geometry — see "3D memory arenas" below.
+
+### Multi-agent / team semantics
+
+Investigate what genuinely distinct cooperating agents, squads, or
+independently controlled subagents would mean for Bytefray, without
+conflating today's internal processes/threads with separately rewarded
+agents. `EntrantIdentity` (`V2_0_ALPHA_ARCHITECTURE.md` §3) is a clean
+value object other identity concepts could follow the shape of, but it
+does not itself define what an independently meaningful team member is.
+Credit-assignment research (below) should wait until that definition
+exists.
+
+**Medium / deferred architecture study.**
+
+### Population evaluation API
+
+Consider whether `bytefray.evaluation`'s existing infrastructure (`agents
+evaluate`, presets, Phase 2 parallel workers) should eventually support
+efficient large-population experimentation — reproducible batch matches,
+tournament pools, configurable opponent populations, machine-readable
+metrics, deterministic evaluation identities — while keeping the engine
+independent of any specific machine-learning framework. Related to, but
+distinct from, "Evaluation performance and scaling" above.
+
+**Medium-high enabling infrastructure.**
+
+The following are interesting, but should **not** become core Bytefray
+engine responsibilities unless future evidence strongly justifies moving
+that boundary — explicitly external research integrations:
+
+```text
+Bytefray engine
+    ↓
+evaluation API
+    ↓
+external research/training harness
+    ↓
+RL / evolutionary / self-play system
+```
+
+Bytefray's job in this picture is reproducible evaluation primitives;
+everything below stays in an external harness built on top of them.
+
+### Population-based self-play / MARL
+
+Evolving or training agents against changing opponent populations.
+Bytefray should expose reproducible evaluation primitives; external tools
+should handle training. Bytefray should not become a PyTorch/JAX/RL
+framework.
+
+**External research — not core Bytefray.**
+
+### Credit assignment for subagents
+
+Only becomes well-posed once genuine multi-agent/team semantics (above)
+exist; assigning rewards to individual Bytefray processes today would risk
+turning an implementation detail into gameplay semantics.
+
+**External/deferred research — depends on multi-agent semantics.**
+
+### Automated agent synthesis / genetic evolution
+
+Genetic programming, evolutionary search, novelty search, MAP-Elites, or
+other quality-diversity algorithms, consuming Bytefray's evaluation
+results and reproducibility guarantees while the evolutionary system
+itself stays external.
+
+**External research — high experimental interest, not core engine.**
+
+### LLM-guided mutation operators
+
+A candidate-population → Bytefray evaluation → fitness/behavioral metrics
+→ LLM-guided mutation → new candidates loop, testing whether repeated
+selection can produce novel strategies that were not explicitly
+hand-designed. Do not add LLM APIs, model dependencies, inference
+runtimes, API keys, or provider-specific code to the Bytefray engine for
+this.
+
+**External research — interesting but out of core scope.**
+
+### Open-ended evolution / MAP-Elites ecology
+
+Quality-diversity search over Bytefray's behavioral metrics (v1.6 Phase 5
+and the wider set above) to find multiple viable ecological niches rather
+than optimizing win rate alone. Scientifically interesting; belongs in an
+external experiment harness built on top of Bytefray's evaluation API.
+
+**External research — long-term.**
+
+Not every topology experiment has equal priority:
+
+### 3D memory arenas
+
+Literal 3D arena geometry currently appears to offer relatively little
+additional research value compared with the generic graph/topology
+abstraction above, while introducing substantially greater visualization,
+replay, usability, and implementation complexity. Not removed from
+consideration, but deprioritized behind graph/layered topology research.
+
+**Low — defer indefinitely unless future research justifies it.**
+
+### Interactions with existing v2.x work
+
+These additions complement, rather than displace, the existing v2.x
+direction (Reactive Core Defender / strategic-agent research, GUI/display
+polish, Replay Viewer HUD separation, Agent Designer presentation
+improvements, field-size/engine-performance research, and ongoing
+ruleset/strategy-balance investigation). Some likely interactions worth
+keeping in mind as that work continues:
+
+- shared execution/write budgets across a process tree may materially
+  affect Reactive Core Defender-style strategic-agent research, if or when
+  multi-process entrants exist;
+- partial observability would change how defender/reconnaissance
+  strategies are evaluated, including any future successors to
+  `bytefray-rules-2-alpha1`'s Core Defender/Core Seeker reference agents;
+- larger arenas (see "Arena / field-size research" above) likely make
+  reconnaissance and information cost more strategically important, not
+  less;
+- behavioral-ecology metrics may improve interpretation of future balance
+  studies the same way `territory_retention` already did for the
+  Vulnerable Core evaluation.
 
 ---
 

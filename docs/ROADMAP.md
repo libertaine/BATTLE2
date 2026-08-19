@@ -644,6 +644,17 @@ has changed; this is a planning document, not a shipped or scheduled
 capability, and lives on a `v2.0-development` branch rather than `main` until
 an actual experiment is run and its results justify further work.
 
+A broader catalogue of possible v2.x research directions — partial
+observability, reconnaissance dynamics, process-tree resource budgets,
+memory decay, seeded environmental noise, behavioral-ecology measurement,
+arena-topology and multi-agent architecture studies, and clearly-external
+research integrations (self-play/MARL, genetic/evolutionary synthesis,
+LLM-guided mutation) — is recorded in
+[FUTURE_PLANS.md](FUTURE_PLANS.md)'s **Strategic Complexity &
+Open-Endedness** section. None of it is committed 2.x scope; it exists so
+these research directions are preserved while `bytefray-rules-2-alpha1` and
+any future experiment are evaluated on their own evidence.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:
