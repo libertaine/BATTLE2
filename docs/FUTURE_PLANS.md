@@ -160,6 +160,16 @@ could change the nature of the game enough to require a new rules
 compatibility identity, or a future ruleset entirely, separate from the
 one v0.10 freezes for 1.0. **None of this is a v1.0 requirement.**
 
+A first architecture/research pass over exactly these candidates —
+advanced offensive mechanics, arena/field-size, multiple execution
+processes, replication, and translation/placement — is recorded in
+[V2_0_ALPHA_ARCHITECTURE.md](V2_0_ALPHA_ARCHITECTURE.md), including which
+v1.5 seams are real extension points versus internal cleanup, and a
+recommended first experiment (a Python-side core-vulnerability mortality
+mechanic). It changes no status below to "Candidate" or "Planned" — the
+recommendation is unimplemented and unvalidated by an actual experimental
+run.
+
 ### Advanced offensive mechanics
 
 Continued exploration of how "attack" should evolve. The important design

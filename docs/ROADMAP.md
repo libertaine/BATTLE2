@@ -629,6 +629,21 @@ scheduler/resource semantics, Agent API v2, and a separately identified
 Ruleset v2. Which ideas belong in 2.0 versus later 2.x releases will be decided
 only when evidence and an explicit compatibility design exist.
 
+**A first architecture/research pass is complete** (not yet implemented) —
+see [V2_0_ALPHA_ARCHITECTURE.md](V2_0_ALPHA_ARCHITECTURE.md). It maps which
+v1.5 seams (`RulesetPolicy` dispatch, the shared scheduler) are genuine
+extension points versus internal deduplication, evaluates arena/information-
+density, multiple execution processes, replication, richer offensive
+mechanics, and translation/placement against a common framework, and
+recommends a first experimental theme — a Python-side "vulnerable core"
+mortality mechanic (candidate identity `bytefray-rules-2-alpha1`), motivated
+directly by v0.6.1's own recorded finding (see the `[0.6.1]` CHANGELOG entry)
+that unrestricted expansion is close to dominant under current scoring with
+no viable defensive counter-strategy. No Ruleset, Agent API, or schema code
+has changed; this is a planning document, not a shipped or scheduled
+capability, and lives on a `v2.0-development` branch rather than `main` until
+an actual experiment is run and its results justify further work.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:
