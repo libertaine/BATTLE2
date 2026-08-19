@@ -126,9 +126,27 @@ class RulesetPolicy:
         return TerminationDecision(False, None)
 
 
-# The one Ruleset that exists. ``ruleset_id`` is exactly the frozen
-# ``BYTEFRAY_RULESET_ID`` -- this module never mints its own identity.
+# The frozen Ruleset. ``ruleset_id`` is exactly ``BYTEFRAY_RULESET_ID`` --
+# this module never mints its own identity for it.
 RULESET_V1 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_ID)
+
+
+# v2.0.0-alpha.1's experimental identity (see
+# docs/V2_0_ALPHA_ARCHITECTURE.md Sec 6/7). Spelled ``-alpha1``, never a
+# bare ``bytefray-rules-2``: the mechanic's exact shape is a hypothesis
+# under test, not a matured contract, and this module must never let an
+# unproven experimental guess masquerade as a durable compatibility
+# promise (docs/RULES.md's bump policy).
+#
+# Scheduling and termination are *identical* to Ruleset v1 -- neither
+# ``run_scheduler`` nor ``resolve_termination`` reads ``self.ruleset_id``,
+# so this is a second, distinctly-identified ``RulesetPolicy`` instance
+# reusing the exact same shared implementation, not a subclass or a copy.
+# The vulnerable-core mechanic itself lives entirely in
+# ``battle_engine.python_runtime`` (Python-only, gated on this exact
+# ``ruleset_id`` value) -- this policy object carries no knowledge of it.
+BYTEFRAY_RULESET_V2_ALPHA1_ID = "bytefray-rules-2-alpha1"
+RULESET_V2_ALPHA1 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_V2_ALPHA1_ID)
 
 
 class UnknownRulesetError(LookupError):
@@ -153,7 +171,15 @@ class UnknownRulesetError(LookupError):
 # artifact identity alias is not evidence that runtime dispatch should
 # execute the aliased ID as today's Ruleset v1 -- see
 # ``docs/V1_5_PHASE3_RULESET_POLICY_DISPATCH.md``'s "Resolver design".
-_RULESET_POLICIES: Mapping[str, RulesetPolicy] = {RULESET_V1.ruleset_id: RULESET_V1}
+#
+# ``bytefray-rules-2-alpha1`` is registered under its own explicit key,
+# never aliased to or from ``bytefray-rules-1`` (``rules.py``'s
+# ``_RULESET_ALIASES`` gets no entry for it either -- see that table's own
+# docstring).
+_RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
+    RULESET_V1.ruleset_id: RULESET_V1,
+    RULESET_V2_ALPHA1.ruleset_id: RULESET_V2_ALPHA1,
+}
 
 
 def resolve_ruleset_policy(ruleset_id: str) -> RulesetPolicy:
@@ -172,7 +198,9 @@ def resolve_ruleset_policy(ruleset_id: str) -> RulesetPolicy:
 
 
 __all__ = [
+    "BYTEFRAY_RULESET_V2_ALPHA1_ID",
     "RULESET_V1",
+    "RULESET_V2_ALPHA1",
     "RulesetPolicy",
     "TerminationDecision",
     "TerminationReason",

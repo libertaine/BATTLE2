@@ -112,6 +112,16 @@ class MatchRequest:
     path. Only Python compositions honor either field; a VM match request
     that happens to set them is a no-op, since VM matches have no Python
     Agent API boundary to trace or supervise.
+
+    ``ruleset_id`` is v2.0.0-alpha.1's one additive selector (see
+    ``docs/V2_0_ALPHA_ARCHITECTURE.md`` Sec 6): ``None`` continues to
+    resolve to ``BYTEFRAY_RULESET_ID`` exactly as before this field
+    existed, so every existing caller is unaffected. Never persisted on
+    ``MatchRequest`` itself -- the *resolved* identity (this value, or the
+    frozen default) is what gets threaded into the canonical match/result
+    identity and the replay/result ``ruleset_id`` fields by
+    ``canonical_match_id``/``_finalize_native_artifacts``, so an alpha
+    artifact can never masquerade as a Ruleset-v1 one after the fact.
     """
 
     config: Config
@@ -121,6 +131,7 @@ class MatchRequest:
     verbose: bool = True
     trace_path: Path | None = None
     agent_call_timeout: float | None = None
+    ruleset_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -211,6 +222,20 @@ class PythonMatchExecutionError(RuntimeError):
     def __init__(self, diagnostic: RuntimeDiagnostic):
         super().__init__(diagnostic.message)
         self.diagnostic = diagnostic
+
+
+def _resolve_ruleset_id(request: MatchRequest) -> str:
+    """Return the Ruleset identity ``request`` actually executes/executed under.
+
+    The one place this resolution is computed -- ``NativeMatchService.run``
+    (dispatch), ``canonical_match_id`` (identity hashing), and
+    ``_finalize_native_artifacts`` (persisted ``ruleset_id`` fields) all
+    call this instead of each independently repeating ``request.ruleset_id
+    or BYTEFRAY_RULESET_ID``, so the dispatched, hashed, and persisted
+    identity can never drift apart for the same request.
+    """
+
+    return request.ruleset_id or BYTEFRAY_RULESET_ID
 
 
 def _effective_winner(raw_winner: str) -> str:
@@ -609,7 +634,7 @@ def canonical_match_id(request: MatchRequest) -> str:
         "match",
         {
             "mode": "b2",
-            "ruleset_id": BYTEFRAY_RULESET_ID,
+            "ruleset_id": _resolve_ruleset_id(request),
             "reproducibility": reproducibility,
             "entrants": entrant_identities,
         },
@@ -671,6 +696,7 @@ def _finalize_native_artifacts(
     # is safe because that same validation already restricts `kind` to
     # exactly "vm" or "python" before a request can reach this function.
     runtime_kind = cast(RuntimeKind, request.entrants[0].kind)
+    resolved_ruleset_id = _resolve_ruleset_id(request)
 
     header: ReplayHeader | None = None
     ticks: list[Any] = []
@@ -684,7 +710,7 @@ def _finalize_native_artifacts(
                 runtime_kind=runtime_kind,
                 reproducibility=reproducibility,
                 entrants=tuple(entrants),
-                ruleset_id=BYTEFRAY_RULESET_ID,
+                ruleset_id=resolved_ruleset_id,
                 schema_version=3,
             )
         else:
@@ -750,7 +776,7 @@ def _finalize_native_artifacts(
             entrants=tuple(entrants),
             reproducibility=reproducibility,
             replay=ReplayReference(match_id, replay_digest, publish_path.name),
-            ruleset_id=BYTEFRAY_RULESET_ID,
+            ruleset_id=resolved_ruleset_id,
         )
         write_json_atomic(result_path, envelope.as_dict())
         complete = True
@@ -864,14 +890,16 @@ class NativeMatchService:
             )
 
         # Resolved once here -- the one boundary where a homogeneous native
-        # match's Ruleset-v1 execution semantics (as of v1.5 Phase 4: entrant
-        # scheduling and match termination decision/reason) are dispatched --
+        # match's Ruleset execution semantics (entrant scheduling and match
+        # termination decision/reason, as of v1.5 Phase 4) are dispatched --
         # and threaded through to whichever runtime executes, rather than
-        # each runtime resolving it itself. Every native match currently
-        # runs under the one frozen Ruleset identity; ``resolve_ruleset_
-        # policy`` fails closed if that ever stops being true instead of
-        # silently executing as Ruleset v1.
-        ruleset_policy = resolve_ruleset_policy(BYTEFRAY_RULESET_ID)
+        # each runtime resolving it itself. ``request.ruleset_id`` selects
+        # the Ruleset (v2.0.0-alpha.1 additive selector); ``None`` resolves
+        # to the frozen ``BYTEFRAY_RULESET_ID`` exactly as every caller from
+        # before this field existed still does. ``resolve_ruleset_policy``
+        # fails closed for any unrecognized ID instead of silently executing
+        # as Ruleset v1.
+        ruleset_policy = resolve_ruleset_policy(_resolve_ruleset_id(request))
 
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")

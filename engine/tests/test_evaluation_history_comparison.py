@@ -458,6 +458,30 @@ def test_v1_unknown_rules_id_never_compares_equal_even_to_another_unknown():
     assert result.denominators.directly_comparable == 0
 
 
+def test_v2_alpha1_rules_id_never_aligns_against_v1():
+    """v2.0.0-alpha.1's evaluation/comparison-machinery guard (Phase 6).
+
+    Nothing in ``agent_evaluation.EvaluationService`` threads
+    ``MatchRequest.ruleset_id`` through today -- ``EVALUATION_RULES_
+    COMPATIBILITY_ID`` is a hardcoded module constant, so a real
+    ``bytefray-rules-2-alpha1``-tagged evaluation summary cannot currently
+    be produced through that pipeline (see docs/V2_0_ALPHA_ARCHITECTURE.md
+    Sec 4/Sec 6's "Explicitly deferred" -- EvaluationService plumbing is
+    out of this alpha's scope). This proves the *existing* alignment
+    refusal already established by
+    ``test_unrelated_rules_id_does_not_alias_by_naming_convention`` above
+    also covers the exact literal alpha identity, using directly
+    constructed summaries: if that pipeline is ever extended to run the
+    alpha Ruleset, its results can never be silently conflated with a
+    Ruleset-v1 evaluation's.
+    """
+
+    left = _summary(cells=(_cell(outcome="win"),), rules_id="bytefray-rules-1")
+    right = _summary(cells=(_cell(outcome="win"),), rules_id="bytefray-rules-2-alpha1")
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 0
+
+
 def test_unknown_condition_occurrence_index_never_aligns():
     left = _summary(cells=(_cell(outcome="win", unknown_occurrence=True),))
     right = _summary(cells=(_cell(outcome="win"),))
