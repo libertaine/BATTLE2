@@ -1,4 +1,5 @@
-"""v2.0.0-alpha.1 experimental reference agents (Core Defender, Core Seeker).
+"""v2.0.0-alpha experimental reference agents (Core Defender, Core Seeker,
+Reactive Core Defender).
 
 Loaded directly from bundled package resources under
 ``battle_engine/data/reference_agents/<name>/`` -- the same
@@ -9,12 +10,15 @@ pattern ``agent_test._reference_opponent_spec`` already established for the
 internal ``reference`` opponent (see that function's own docstring).
 
 Deliberately kept out of ``battle_engine.starters.STARTER_AGENT_NAMES``:
-these two agents exist to evaluate one experimental Ruleset
+these agents exist to evaluate one experimental Ruleset
 (``bytefray-rules-2-alpha1``, see ``docs/V2_0_ALPHA_ARCHITECTURE.md``), not
 to join Bytefray's permanent default roster shown to every
 ``bytefray agents create``/Designer user regardless of which Ruleset they
 run -- the governing task is explicit that this alpha must stay a
-controlled experiment, not a promoted feature.
+controlled experiment, not a promoted feature. ``reactive_core_defender``
+(added for alpha.2, docs/V2_0_ALPHA2_REACTIVE_DEFENSE.md) is a distinct
+agent alongside the original ``core_defender``, not a replacement for it,
+so the two remain directly comparable in the same evaluation matrix.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from pathlib import Path
 from battle_engine.agents import AgentSpec
 from battle_engine.paths import get_resource_root
 
-REFERENCE_AGENT_NAMES = ("core_defender", "core_seeker")
+REFERENCE_AGENT_NAMES = ("core_defender", "core_seeker", "reactive_core_defender")
 
 
 def _reference_agents_resource_dir(resource_root: Path) -> Path:
@@ -43,10 +47,10 @@ def _reference_agents_resource_dir(resource_root: Path) -> Path:
 
 def reference_agent_spec(name: str, resource_root: Path | None = None) -> AgentSpec:
     """Build an :class:`~battle_engine.agents.AgentSpec` for one bundled
-    v2.0.0-alpha.1 reference agent (``"core_defender"`` or
-    ``"core_seeker"``), loaded directly from its packaged resource
-    directory exactly like ``agent_test._reference_opponent_spec`` builds
-    the internal ``reference`` opponent's spec.
+    v2.0.0-alpha reference agent (one of ``REFERENCE_AGENT_NAMES``), loaded
+    directly from its packaged resource directory exactly like
+    ``agent_test._reference_opponent_spec`` builds the internal
+    ``reference`` opponent's spec.
     """
 
     if name not in REFERENCE_AGENT_NAMES:

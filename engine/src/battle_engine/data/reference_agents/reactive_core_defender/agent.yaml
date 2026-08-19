@@ -1,0 +1,9 @@
+{
+  "name": "reactive_core_defender",
+  "display": "Reactive Core Defender (v2.0.0-alpha.2 reference)",
+  "description": "Experimental bytefray-rules-2-alpha1 reference agent: signs its own core once, then patrols it with cheap READ inspection and only spends WRITE actions on repair when a mismatch is actually detected, instead of unconditionally refreshing. Not a claim of optimal strategy -- see docs/V2_0_ALPHA2_REACTIVE_DEFENSE.md.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}

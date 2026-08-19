@@ -30,7 +30,11 @@ ALPHA = BYTEFRAY_RULESET_V2_ALPHA1_ID
 
 
 def test_reference_agent_names_are_exactly_defender_and_seeker() -> None:
-    assert REFERENCE_AGENT_NAMES == ("core_defender", "core_seeker")
+    # alpha.2 (docs/V2_0_ALPHA2_REACTIVE_DEFENSE.md) added a third,
+    # additive reference agent, reactive_core_defender, alongside the
+    # original two -- not a replacement, so the original pair stays
+    # available for direct comparison.
+    assert REFERENCE_AGENT_NAMES == ("core_defender", "core_seeker", "reactive_core_defender")
 
 
 def test_reference_agents_are_not_part_of_the_general_starter_roster() -> None:
