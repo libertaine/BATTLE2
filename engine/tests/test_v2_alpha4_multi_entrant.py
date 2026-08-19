@@ -314,19 +314,25 @@ def test_three_alive_at_tick_limit_winner_decided_by_score(tmp_path) -> None:
     assert result.termination_reason.value == "tick_limit"
 
 
-def test_two_alive_at_tick_limit_dead_entrant_can_still_win_by_score(tmp_path) -> None:
+def test_two_alive_at_tick_limit_dead_entrant_cannot_win_by_score(tmp_path) -> None:
     """With exactly two of three entrants alive at the tick limit,
     ``resolve_winner``'s single-survivor override (``len(alive) == 1``)
-    never fires, so the match falls through to ordinary score comparison
-    across ALL entrants -- including the dead one. Territory score has no
-    "alive" gate (``ScoringPolicy.score_territory``), so a dead entrant's
-    previously-claimed cells keep contributing every remaining tick. This
-    is a genuinely new, N>2-only structural consequence: in a 2-entrant
-    match, any single death immediately forces ``alive_count == 1`` and an
-    unconditional survivor win (alpha.3 Sec 8), so a dead entrant winning
-    on points is architecturally impossible there. With three entrants, it
-    is not merely possible -- it happens here in a deterministic,
-    unremarkable scenario, not a contrived edge case.
+    never fires, so pre-alpha.4.1 the match fell through to ordinary score
+    comparison across ALL entrants -- including the dead one. Territory
+    score has no "alive" gate (``ScoringPolicy.score_territory``), so a
+    dead entrant's previously-claimed cells kept contributing every
+    remaining tick, letting it outscore -- and win against -- both live
+    survivors (this was alpha.4's central finding, docs/
+    V2_0_ALPHA4_MULTI_ENTRANT_FEASIBILITY.md Sec 7).
+
+    As of alpha.4.1's survivor-eligibility rule
+    (docs/V2_0_ALPHA4_1_WINNER_SEMANTICS.md), a dead entrant is no longer
+    eligible while any entrant survives: A's dominant score (276) is
+    excluded entirely, and the two survivors B/C -- both plain NOP agents
+    that never claimed any territory -- are left exactly tied on their
+    alive-tick score alone (10 each). The dead entrant's score is neither
+    erased nor consulted; it simply can no longer buy a win, and it does
+    not skew the survivors' own tie either.
     """
 
     entrants = (
@@ -349,12 +355,16 @@ def test_two_alive_at_tick_limit_dead_entrant_can_still_win_by_score(tmp_path) -
     assert b.alive is True and c.alive is True
     # A: 4 alive ticks (halts entering tick 5) + territory accrued every
     # tick from 32 owned cells, including the 6 ticks after its own death.
+    # Its score is preserved untouched by winner-eligibility filtering.
     assert a.alive_ticks == 4
     assert a.score == 276
     assert b.score == 10
     assert c.score == 10
     assert result.termination_reason.value == "tick_limit"
-    assert result.winner == "A"
+    # Dead A is excluded from eligibility despite the highest score; B/C
+    # are left tied on their own merits -- not "A wins", not "B wins by
+    # default", but a genuine tie among the survivors.
+    assert result.winner == "tie"
 
 
 def test_one_survivor_forces_win_regardless_of_score(tmp_path) -> None:

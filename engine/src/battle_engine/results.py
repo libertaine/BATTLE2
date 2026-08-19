@@ -52,6 +52,19 @@ def resolve_winner(
     than an empty string) should apply ``WINNER_TIE_SENTINEL`` themselves;
     keeping that mapping out of this function lets it stay agnostic of
     presentation concerns.
+
+    Survivor eligibility (v2.0.0-alpha.4.1): a dead entrant can never win
+    while at least one entrant is still alive, regardless of accumulated
+    score -- the direct N-entrant generalization of the pre-existing
+    1v1/single-survivor rule below, not a new rule. With exactly one
+    entrant alive, that entrant wins outright (unchanged). With two or
+    more alive, ``score_fallback`` compares only the alive entrants --
+    dead entrants keep their historical score (nothing here mutates
+    ``score``) but are excluded from winner eligibility. With zero alive,
+    there is no survivor to prefer, so comparison falls back to every
+    entrant, dead or alive, exactly as it always has -- see
+    ``docs/V2_0_ALPHA4_1_WINNER_SEMANTICS.md`` for why the zero-survivor
+    case is deliberately not given its own special rule.
     """
 
     alive = [agent.agent_id for agent in agents if agent.alive]
@@ -60,9 +73,13 @@ def resolve_winner(
         return alive[0]
     if mode == "survival":
         return ""
+    eligible = set(alive) if alive else {agent.agent_id for agent in agents}
     if score:
-        top = sorted(score.items(), key=lambda item: (-item[1], item[0]))
-        if len(top) == 1 or top[0][1] > top[1][1]:
+        top = sorted(
+            (item for item in score.items() if item[0] in eligible),
+            key=lambda item: (-item[1], item[0]),
+        )
+        if top and (len(top) == 1 or top[0][1] > top[1][1]):
             return top[0][0]
     return ""
 
