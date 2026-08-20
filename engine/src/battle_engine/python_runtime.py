@@ -35,6 +35,7 @@ from battle_engine.entrant_identity import EntrantIdentity
 from battle_engine.results import resolve_winner
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ALPHA1_ID,
+    BYTEFRAY_RULESET_V2_ALPHA11_ID,
     RULESET_V1,
     RulesetPolicy,
     TerminationReason,
@@ -67,6 +68,78 @@ from battle_engine.vm import VM
 # task's instruction not to make it configurable for this alpha.
 CORE_SIZE = 8
 
+# v2.0.0-alpha.11 "Consistent Core Observability"
+# (docs/V2_0_ALPHA11_RULESET_V2_CANDIDATE_RESOLUTION.md).
+#
+# The defect this closes, stated precisely: under
+# ``bytefray-rules-2-alpha1``, ``seed_core_ownership`` establishes a core's
+# initial ownership by writing the byte value ``0`` -- which is exactly what
+# untouched arena already contains (docs/RULES.md: "The arena starts filled
+# with byte 0"). Ownership is engine-internal and unreadable by any entrant,
+# so *content* is the only channel through which a core can be observed at
+# all. The consequence, measured across alpha.10's 976-match corpus: an
+# entrant that never writes into its own core is literally invisible to
+# every non-privileged searcher (0% capture rate against ``claimer``/
+# ``hunter``), while an entrant that *defends* its core becomes detectable
+# precisely because it defended (12-28% capture rate against the two
+# defenders). Defending was informationally self-punishing and blind
+# expansion bought invisibility for free.
+#
+# ``CORE_BEACON_BYTE`` is the public, fixed constant a core's own cells hold
+# instead. It is Ruleset knowledge on exactly the same footing as
+# ``CORE_SIZE`` already is (``core_defender``/``reactive_core_defender``/
+# ``core_tracker`` all already hardcode ``8`` on that basis) -- not
+# privileged information about any specific opponent, and deliberately not
+# keyed to any reference agent: no agent needs to recognize this particular
+# value to benefit, since every existing content-based searcher keys on
+# "non-zero and not my own signature", which any non-zero beacon satisfies.
+#
+# ``0xCE`` was chosen, not computed: it must be non-zero (a zero beacon is
+# the defect itself) and must differ from every signature byte used by any
+# bundled starter or reference agent -- ``0x99`` (adaptive), ``0xC1``
+# (claimer), ``0xE3`` (hunter), ``0xC2`` (strider), ``0x2C`` (wanderer),
+# ``0xD3`` (core_defender), ``0x5E`` (core_seeker), ``0xA5`` (core_tracker),
+# ``0xC7`` (reactive_core_defender) -- so that no agent is accidentally
+# blinded to beacons by its own ``value != self.signature`` self-filter and
+# no agent's ordinary territory is mistaken for a core.
+CORE_BEACON_BYTE = 0xCE
+
+# The historical alpha.1 seeding content: ownership without an observable
+# footprint. Retained explicitly (rather than as a bare literal) so the
+# alpha.1-vs-alpha.11 difference is a named, greppable Ruleset property.
+CORE_SEED_BYTE_ALPHA1 = 0x00
+
+# Which experimental Ruleset identities carry which Python-only mechanic.
+# Finite, explicit sets -- never a prefix or naming-convention check, for the
+# same fail-closed reason ``ruleset_policy._RULESET_POLICIES`` is finite.
+VULNERABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
+    {BYTEFRAY_RULESET_V2_ALPHA1_ID, BYTEFRAY_RULESET_V2_ALPHA11_ID}
+)
+OBSERVABLE_CORE_RULESET_IDS: frozenset[str] = frozenset({BYTEFRAY_RULESET_V2_ALPHA11_ID})
+
+
+def has_vulnerable_core(ruleset_id: str) -> bool:
+    """Whether ``ruleset_id``'s Python semantics include core capture."""
+
+    return ruleset_id in VULNERABLE_CORE_RULESET_IDS
+
+
+def has_observable_core(ruleset_id: str) -> bool:
+    """Whether ``ruleset_id``'s Python semantics include the core beacon.
+
+    Strictly narrower than :func:`has_vulnerable_core`:
+    ``bytefray-rules-2-alpha1`` has a vulnerable core with *no* observable
+    footprint, and must keep behaving exactly that way forever.
+    """
+
+    return ruleset_id in OBSERVABLE_CORE_RULESET_IDS
+
+
+def core_seed_byte(ruleset_id: str) -> int:
+    """The byte value ``ruleset_id`` seeds core cells with at match start."""
+
+    return CORE_BEACON_BYTE if has_observable_core(ruleset_id) else CORE_SEED_BYTE_ALPHA1
+
 
 def core_addresses(core_start: int, arena_size: int) -> tuple[int, ...]:
     """Every address in one entrant's core region, using ordinary arena wrap."""
@@ -98,8 +171,18 @@ def _snapshot_core_owners(
     }
 
 
-def seed_core_ownership(state: PythonEntrantState, vm: VM) -> None:
+def seed_core_ownership(
+    state: PythonEntrantState, vm: VM, *, beacon: int = CORE_SEED_BYTE_ALPHA1
+) -> None:
     """Establish an entrant's initial ownership of its own core region.
+
+    ``beacon`` is the byte value written into every core cell. It defaults to
+    ``CORE_SEED_BYTE_ALPHA1`` (``0``) so ``bytefray-rules-2-alpha1`` and every
+    existing caller keep byte-identical historical behavior; alpha.11 passes
+    ``CORE_BEACON_BYTE`` instead (see ``core_seed_byte``). Only the *content*
+    differs -- the ownership this establishes, and therefore every ownership
+    count, territory score, and capture decision downstream of it, is
+    identical under both Rulesets.
 
     Python entrants never place code in the arena (unlike the VM path,
     where ``Kernel.spawn``/``VM.load_code`` establish initial ownership
@@ -117,7 +200,50 @@ def seed_core_ownership(state: PythonEntrantState, vm: VM) -> None:
     """
 
     for address in core_addresses(state.core_start, len(vm.arena)):
-        vm._wr8(address, 0, state.agent_id)
+        vm._wr8(address, beacon, state.agent_id)
+
+
+def maintain_core_beacons(states: list[PythonEntrantState], vm: VM) -> None:
+    """bytefray-rules-2-alpha11: a self-owned core cell is never blank.
+
+    The whole of the alpha.11 observability invariant, and deliberately no
+    more than that. For every *living* entrant, any cell of its own core that
+    **it still owns** and whose content has become ``0x00`` is rewritten to
+    :data:`CORE_BEACON_BYTE`, attributed to that same owner.
+
+    Three properties this rule is carefully scoped to preserve, each of which
+    a broader "restore the marker" rule would have broken:
+
+    * **Observability does not equal invulnerability.** Only cells the owner
+      *already owns* are touched, so an attacker's write is never reverted,
+      no ownership is ever restored, ``vm.ownership_counts`` never changes,
+      and the capture rule (:func:`apply_core_capture`) is not affected in
+      any way. A core is exactly as killable as it was under alpha.1.
+    * **The owner's own content is left alone.** Only ``0x00`` is repaired,
+      never a non-zero byte, so ``core_defender``'s ``0xD3`` and
+      ``reactive_core_defender``'s ``0xC7`` core signatures survive intact
+      and their ``READ``-then-compare repair logic keeps working exactly as
+      designed. A rule that normalized *all* self-owned core content to the
+      beacon would make every reactive patrol read look like damage and
+      drive that agent into permanent false repair -- silently redesigning a
+      reference defender.
+    * **The owner cannot hide.** Writing ``0`` over its own core is the only
+      way an entrant could restore alpha.1's invisibility while keeping
+      ownership, and that is precisely what this repairs.
+
+    Called once per tick after :func:`apply_core_capture` (so a core captured
+    this tick belongs to a dead entrant and is no longer maintained) and
+    before statistics/scoring/replay publication (so any maintenance write
+    lands in this tick's ``memory_diffs`` and replays reconstruct exactly).
+    Routed through ``VM._wr8`` like every other write in this engine.
+    """
+
+    for state in states:
+        if not state.alive:
+            continue
+        for address in core_addresses(state.core_start, len(vm.arena)):
+            if vm.writer[address] == state.agent_id and vm.arena[address] == 0:
+                vm._wr8(address, CORE_BEACON_BYTE, state.agent_id)
 
 
 def _attribute_core_capture(
@@ -759,8 +885,10 @@ class PythonEntrantController:
                 region=(entrant.start % config.arena_size,) * 2,
                 core_start=entrant.start % config.arena_size,
             )
-            if self.ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V2_ALPHA1_ID:
-                seed_core_ownership(state, self.vm)
+            if has_vulnerable_core(self.ruleset_policy.ruleset_id):
+                seed_core_ownership(
+                    state, self.vm, beacon=core_seed_byte(self.ruleset_policy.ruleset_id)
+                )
             context = MatchContext(
                 agent_id=entrant.agent_id,
                 seed=seed,
@@ -916,7 +1044,8 @@ class PythonEntrantController:
             replay.publish_tick(
                 0, self.states, self.score, self.vm, []  # type: ignore[arg-type]
             )
-            is_vulnerable_core = self.ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V2_ALPHA1_ID
+            is_vulnerable_core = has_vulnerable_core(self.ruleset_policy.ruleset_id)
+            is_observable_core = has_observable_core(self.ruleset_policy.ruleset_id)
             for tick in range(1, self.max_ticks + 1):
                 ticks_run = tick
                 self.vm.clear_tick_diffs()
@@ -951,6 +1080,8 @@ class PythonEntrantController:
                         self.statistics,
                         events,
                     )
+                if is_observable_core:
+                    maintain_core_beacons(self.states, self.vm)
 
                 self.statistics_collector.record_tick(
                     self.statistics,
@@ -1010,7 +1141,11 @@ class PythonEntrantController:
 
 
 __all__ = [
+    "CORE_BEACON_BYTE",
+    "CORE_SEED_BYTE_ALPHA1",
     "CORE_SIZE",
+    "OBSERVABLE_CORE_RULESET_IDS",
+    "VULNERABLE_CORE_RULESET_IDS",
     "InvalidPythonActionError",
     "PythonEntrantController",
     "PythonEntrantInitializationError",
@@ -1021,6 +1156,7 @@ __all__ = [
     "apply_action",
     "apply_core_capture",
     "core_addresses",
+    "core_seed_byte",
     "derive_agent_seed",
     "diagnose_action_exception",
     "diagnose_action_timeout",
@@ -1032,6 +1168,9 @@ __all__ = [
     "diagnose_worker_exited",
     "diagnose_worker_protocol_error",
     "forfeit_entrant",
+    "has_observable_core",
+    "has_vulnerable_core",
+    "maintain_core_beacons",
     "seed_core_ownership",
     "validate_action",
 ]

@@ -149,6 +149,29 @@ BYTEFRAY_RULESET_V2_ALPHA1_ID = "bytefray-rules-2-alpha1"
 RULESET_V2_ALPHA1 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_V2_ALPHA1_ID)
 
 
+# v2.0.0-alpha.11's experimental identity (see
+# docs/V2_0_ALPHA11_RULESET_V2_CANDIDATE_RESOLUTION.md). Adds *Consistent
+# Core Observability* on top of alpha.1's Vulnerable Core: a core cell owned
+# by its own living entrant is never blank, so a core has a rules-defined,
+# ordinary-``READ``-visible footprint whether or not its owner ever chooses
+# to defend it (alpha.10 Sec 37 found the opposite -- defending was what made
+# a core detectable, which is the wrong incentive).
+#
+# A *separate* identity, not a mutation of ``bytefray-rules-2-alpha1``:
+# alpha.1--alpha.10 matches using the same agents, seed, and placement can
+# behave differently under this rule, so reusing the alpha1 identity would
+# silently reinterpret ten alphas' worth of persisted artifacts. alpha1
+# stays executable with byte-identical historical semantics.
+#
+# Scheduling and termination are again *identical* to Ruleset v1 -- neither
+# ``run_scheduler`` nor ``resolve_termination`` reads ``self.ruleset_id``.
+# The observability mechanic itself lives entirely in
+# ``battle_engine.python_runtime`` (Python-only, gated on this exact
+# ``ruleset_id`` value); this policy object carries no knowledge of it.
+BYTEFRAY_RULESET_V2_ALPHA11_ID = "bytefray-rules-2-alpha11"
+RULESET_V2_ALPHA11 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_V2_ALPHA11_ID)
+
+
 class UnknownRulesetError(LookupError):
     """A Ruleset ID has no known policy.
 
@@ -179,6 +202,7 @@ class UnknownRulesetError(LookupError):
 _RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
     RULESET_V1.ruleset_id: RULESET_V1,
     RULESET_V2_ALPHA1.ruleset_id: RULESET_V2_ALPHA1,
+    RULESET_V2_ALPHA11.ruleset_id: RULESET_V2_ALPHA11,
 }
 
 
@@ -199,8 +223,10 @@ def resolve_ruleset_policy(ruleset_id: str) -> RulesetPolicy:
 
 __all__ = [
     "BYTEFRAY_RULESET_V2_ALPHA1_ID",
+    "BYTEFRAY_RULESET_V2_ALPHA11_ID",
     "RULESET_V1",
     "RULESET_V2_ALPHA1",
+    "RULESET_V2_ALPHA11",
     "RulesetPolicy",
     "TerminationDecision",
     "TerminationReason",

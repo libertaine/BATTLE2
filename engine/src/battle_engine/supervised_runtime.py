@@ -61,6 +61,7 @@ from battle_engine.python_runtime import (
     _to_trace_diagnostic,
     apply_action,
     apply_core_capture,
+    core_seed_byte,
     derive_agent_seed,
     diagnose_action_timeout,
     diagnose_invalid_action,
@@ -69,10 +70,13 @@ from battle_engine.python_runtime import (
     diagnose_worker_exited,
     diagnose_worker_protocol_error,
     forfeit_entrant,
+    has_observable_core,
+    has_vulnerable_core,
+    maintain_core_beacons,
     seed_core_ownership,
 )
 from battle_engine.results import resolve_winner
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ALPHA1_ID, RULESET_V1, RulesetPolicy
+from battle_engine.ruleset_policy import RULESET_V1, RulesetPolicy
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.telemetry import ReplayPublisher, ReplaySink
@@ -254,8 +258,10 @@ class SupervisedPythonEntrantController:
             region=(entrant.start % self.config.arena_size,) * 2,
             core_start=entrant.start % self.config.arena_size,
         )
-        if self.ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V2_ALPHA1_ID:
-            seed_core_ownership(state, self.vm)
+        if has_vulnerable_core(self.ruleset_policy.ruleset_id):
+            seed_core_ownership(
+                state, self.vm, beacon=core_seed_byte(self.ruleset_policy.ruleset_id)
+            )
 
         reset_start = time.perf_counter()
         reset_result = handle.reset(
@@ -360,7 +366,8 @@ class SupervisedPythonEntrantController:
             replay.publish_tick(
                 0, self.states, self.score, self.vm, []  # type: ignore[arg-type]
             )
-            is_vulnerable_core = self.ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V2_ALPHA1_ID
+            is_vulnerable_core = has_vulnerable_core(self.ruleset_policy.ruleset_id)
+            is_observable_core = has_observable_core(self.ruleset_policy.ruleset_id)
             for tick in range(1, self.max_ticks + 1):
                 ticks_run = tick
                 self.vm.clear_tick_diffs()
@@ -397,6 +404,8 @@ class SupervisedPythonEntrantController:
                         self.statistics,
                         events,
                     )
+                if is_observable_core:
+                    maintain_core_beacons(self.states, self.vm)
 
                 self.statistics_collector.record_tick(
                     self.statistics,
