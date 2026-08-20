@@ -667,8 +667,8 @@ semantic contract (see [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)):
 
 ## v2.0.0-beta1 — Ruleset v2 Integration
 
-**Status: implementation and qualification complete; publication pending.**
-Converts the evidence-backed `bytefray-rules-2-alpha11` candidate into a
+**Status: shipped.** `v2.0.0-beta1` is tagged and published as a GitHub
+prerelease. Converts the evidence-backed `bytefray-rules-2-alpha11` candidate into a
 supported, compatibility-honest product ruleset. See
 [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md) for the full scope. Purpose:
 
@@ -689,10 +689,14 @@ qualification across Windows/Linux, source/wheel/frozen builds, and
 v1/v2/VM-rejection execution) are all complete on
 `v2.0-beta1-development` — see
 [V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md](V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md)
-for the full qualification record and GO decision. Release preparation,
-tagging, and publication are tracked as a separate, later step; this
-section will be updated to **shipped** once the `v2.0.0-beta1` GitHub
-Release is actually published.
+for the full qualification record and GO decision. Release preparation
+qualified the wheel, source distribution, portable Windows build, and
+Windows installer (full install/upgrade/uninstall lifecycle) against the
+release-prep commit, and the `v2.0.0-beta1` tag/GitHub prerelease publish
+the exact same commit. See the
+[v2.0.0-beta1 release](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta1)
+for the published assets and notes. Next planned milestone: **v2.0.0-beta2
+— Evaluation & Multi-Entrant Methodology** (see below).
 
 ## v2.0.0-beta2 — Evaluation & Multi-Entrant Methodology
 
