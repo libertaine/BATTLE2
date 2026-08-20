@@ -78,6 +78,115 @@ def test_cli_creates_replay_and_summary_json(tmp_path):
     assert set(summary["score"]) == {"A", "B"}
 
 
+def _write_python_agent(root: Path, name: str) -> None:
+    directory = root / "agents" / name
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {
+                "kind": "python",
+                "api_version": 1,
+                "entrypoint": "agent.py:create_agent",
+                "version": "1.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        "from battle_engine.agent_api import ActionKind, AgentAction\n"
+        "class Agent:\n"
+        "    def reset(self, context): pass\n"
+        "    def act(self, observation): return AgentAction(ActionKind.NOP)\n"
+        "def create_agent(): return Agent()\n",
+        encoding="utf-8",
+    )
+
+
+def test_ruleset_flag_omitted_defaults_to_v1(tmp_path):
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "3", "--arena", "128", "--seed", "7",
+        "--a-type", "writer", "--b-type", "runner", "--b-start", "64",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    canonical = json.loads((replay.parent / "result.json").read_text())
+    assert canonical["ruleset_id"] == "bytefray-rules-1"
+
+
+def test_ruleset_flag_explicit_v1(tmp_path):
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "3", "--arena", "128", "--seed", "7",
+        "--a-type", "writer", "--b-type", "runner", "--b-start", "64",
+        "--ruleset", "bytefray-rules-1",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    canonical = json.loads((replay.parent / "result.json").read_text())
+    assert canonical["ruleset_id"] == "bytefray-rules-1"
+
+
+def test_ruleset_flag_explicit_v2_python_succeeds(tmp_path, monkeypatch):
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _write_python_agent(tmp_path, "alpha_agent")
+    _write_python_agent(tmp_path, "beta_agent")
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "3", "--arena", "128", "--seed", "7",
+        "--a-type", "alpha_agent", "--b-type", "beta_agent", "--b-start", "64",
+        "--ruleset", "bytefray-rules-2",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    canonical = json.loads((replay.parent / "result.json").read_text())
+    assert canonical["ruleset_id"] == "bytefray-rules-2"
+
+
+def test_ruleset_flag_explicit_v2_vm_fails_cleanly_with_no_artifacts(tmp_path):
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "3", "--arena", "128", "--seed", "7",
+        "--a-type", "writer", "--b-type", "runner", "--b-start", "64",
+        "--ruleset", "bytefray-rules-2",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2
+    assert "bytefray-rules-2" in result.stderr
+    assert "Python entrants only" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not replay.exists()
+    assert not (replay.parent / "result.json").exists()
+
+
+def test_ruleset_flag_unknown_value_fails_closed(tmp_path):
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--a-type", "writer", "--b-type", "runner",
+        "--ruleset", "bytefray-rules-99",
+        "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2
+    assert "invalid choice" in result.stderr
+
+
+def test_cli_help_lists_ruleset_product_choices_not_alpha_ids():
+    result = _run("-m", "battle_engine.cli", "--help")
+    assert result.returncode == 0
+    assert "bytefray-rules-1" in result.stdout
+    assert "bytefray-rules-2" in result.stdout
+    assert "alpha" not in result.stdout
+
+
 def test_resolve_agent_applies_per_agent_env_json_to_builtin_construction(
     monkeypatch, tmp_path
 ):

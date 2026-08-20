@@ -125,6 +125,61 @@ def test_scaffolded_agent_tests_successfully_against_reference(tmp_path):
     assert outcome.summary_path.is_file()
 
 
+def test_ruleset_kwarg_omitted_defaults_to_v1(tmp_path):
+    scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
+
+    outcome = run_development_test("example", data_root=tmp_path, resource_root=ROOT)
+
+    assert outcome.ruleset_id == "bytefray-rules-1"
+    data = json.loads(outcome.match_result.result_path.read_text(encoding="utf-8"))
+    assert data["ruleset_id"] == "bytefray-rules-1"
+
+
+def test_ruleset_kwarg_explicit_v2_produces_v2_artifact_identity(tmp_path):
+    scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
+
+    outcome = run_development_test(
+        "example",
+        data_root=tmp_path,
+        resource_root=ROOT,
+        ruleset_id="bytefray-rules-2",
+    )
+
+    assert outcome.ruleset_id == "bytefray-rules-2"
+    data = json.loads(outcome.match_result.result_path.read_text(encoding="utf-8"))
+    assert data["ruleset_id"] == "bytefray-rules-2"
+    from battle_engine.replay import ReplayHeader, iter_replay
+
+    header = next(
+        record
+        for record in iter_replay(outcome.match_result.replay_path)
+        if isinstance(record, ReplayHeader)
+    )
+    assert header.ruleset_id == "bytefray-rules-2"
+
+
+def test_non_python_tested_agent_rejected_even_with_explicit_v2(tmp_path):
+    """agents test's Python-only requirement pre-empts the Ruleset boundary.
+
+    A non-Python agent is rejected by ``_resolve_python_entrant``'s existing
+    ``agent_kind_unsupported`` check regardless of Ruleset -- it never
+    reaches ``NativeMatchService``, so this is the same, pre-existing tool
+    error whether or not ``--ruleset bytefray-rules-2`` was requested.
+    """
+
+    _write_builtin_agent(tmp_path, "builtin_agent")
+
+    with pytest.raises(AgentTestError) as caught:
+        run_development_test(
+            "builtin_agent",
+            data_root=tmp_path,
+            resource_root=ROOT,
+            ruleset_id="bytefray-rules-2",
+        )
+
+    assert caught.value.diagnostic.code == "agent_kind_unsupported"
+
+
 def test_validate_then_test_both_succeed(tmp_path):
     scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
 
@@ -562,6 +617,49 @@ def test_forfeit_line_present_on_tested_agent_forfeit(tmp_path, monkeypatch, cap
 
     assert exit_code == 0
     assert "forfeit: raises stage=action code=agent_action_failed" in captured.out
+
+
+def test_cli_ruleset_flag_omitted_defaults_to_v1(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
+
+    exit_code = main(["example", "--ticks", "5"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "ruleset: bytefray-rules-1" in captured.out
+
+
+def test_cli_ruleset_flag_explicit_v2_succeeds_and_prints_identity(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
+
+    exit_code = main(["example", "--ticks", "5", "--ruleset", "bytefray-rules-2"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.err == ""
+    assert "ruleset: bytefray-rules-2" in captured.out
+    assert "Traceback" not in captured.out
+
+
+def test_cli_ruleset_flag_unknown_value_fails_closed(capsys):
+    with pytest.raises(SystemExit) as caught:
+        main(["example", "--ruleset", "bytefray-rules-99"])
+    assert caught.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_cli_help_lists_ruleset_choices_but_not_alpha_ids(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    out = capsys.readouterr().out
+    assert "--ruleset" in out
+    assert "bytefray-rules-1" in out
+    assert "bytefray-rules-2" in out
+    assert "alpha" not in out
 
 
 def test_cli_help_exits_zero_and_mentions_flags():

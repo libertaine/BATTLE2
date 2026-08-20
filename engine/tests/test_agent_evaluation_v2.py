@@ -144,6 +144,38 @@ def test_v2_artifact_records_planned_identities(two_agents: Path):
 
 
 # ---------------------------------------------------------------------------
+# Beta1 Phase 2: evaluation boundary -- never accidentally run permanent
+# Ruleset v2 with v1-era evaluation methodology (docs/V2_0_BETA1_PLAN.md
+# Sec "Later beta1 phases"/beta2 boundary). `agents evaluate` has no
+# Ruleset-selection surface at all today, so every cell it runs -- not just
+# the evaluation-level `rules_compatibility_id` field -- must persist
+# `bytefray-rules-1` on its own match artifact.
+# ---------------------------------------------------------------------------
+
+
+def test_evaluation_cells_always_execute_under_ruleset_v1(two_agents: Path):
+    service = EvaluationService()
+    result = service.run(_request(two_agents))
+    data = json.loads(result.state_path.read_text(encoding="utf-8"))
+    assert data["rules_compatibility_id"] == EVALUATION_RULES_COMPATIBILITY_ID
+    assert EVALUATION_RULES_COMPATIBILITY_ID == "bytefray-rules-1"
+    assert data["cells"]
+    for cell in data["cells"]:
+        cell_dir = result.state_path.parent / cell["artifact_dir"]
+        match_result_data = json.loads((cell_dir / "result.json").read_text(encoding="utf-8"))
+        assert match_result_data["ruleset_id"] == "bytefray-rules-1"
+
+
+def test_evaluate_cli_has_no_ruleset_selection_flag(capsys):
+    from battle_engine.agent_evaluation import main as evaluate_main
+
+    with pytest.raises(SystemExit):
+        evaluate_main(["--help"])
+    out = capsys.readouterr().out
+    assert "--ruleset" not in out
+
+
+# ---------------------------------------------------------------------------
 # Lifecycle and provenance (Sec 5/6)
 # ---------------------------------------------------------------------------
 

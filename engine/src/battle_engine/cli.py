@@ -16,12 +16,15 @@ from battle_engine.match_service import (
     MatchRequest,
     NativeMatchService,
     PythonMatchExecutionError,
+    RulesetRuntimeUnsupportedError,
     UnsupportedMatchCompositionError,
 )
 from battle_engine.paths import get_data_root
 from battle_engine.pmars import PMarsError, run_pmars
 from battle_engine.python_runtime import PythonEntrantInitializationError
 from battle_engine.result_model import ResultEnvelope, stable_id, write_json_atomic
+from battle_engine.rules import BYTEFRAY_RULESET_ID
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
 from battle_engine.starters import ensure_starter_agents
 
 DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
@@ -189,6 +192,17 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "--win-mode",
         choices=["survival", "score", "score_fallback"],
         help="winner resolution mode at timeout",
+    )
+    p.add_argument(
+        "--ruleset",
+        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        default=None,
+        help=(
+            f"gameplay Ruleset identity (default: {BYTEFRAY_RULESET_ID}). "
+            f"{BYTEFRAY_RULESET_V2_ID} supports Python entrants only. Affects "
+            "gameplay semantics and is recorded in the match's result/replay "
+            "artifacts."
+        ),
     )
 
     # Agent selection
@@ -665,10 +679,12 @@ def main(argv: Iterable[str] | None = None) -> int:
                 max_ticks=args.ticks,
                 replay_path=replay_path,
                 verbose=not args.quiet,
+                ruleset_id=args.ruleset,
             )
         )
     except (
         UnsupportedMatchCompositionError,
+        RulesetRuntimeUnsupportedError,
         PythonEntrantInitializationError,
         PythonMatchExecutionError,
     ) as exc:
@@ -701,6 +717,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             "kill_w": cfg.weights.kill,
             "territory_w": cfg.weights.territory,
             "territory_bucket": cfg.weights.territory_bucket,
+            "ruleset_id": args.ruleset or BYTEFRAY_RULESET_ID,
         },
         "agents": {
             "A": nameA,
@@ -716,6 +733,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     if not args.quiet:
         print(
             f"Winner: {effective_winner}; "
+            f"ruleset: {args.ruleset or BYTEFRAY_RULESET_ID}; "
             f"result: {match_result.result_path}; "
             f"replay: {replay_path}; "
             f"summary: {summary_path}"

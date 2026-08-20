@@ -45,6 +45,7 @@ from battle_engine.match_service import (
     NativeMatchResult,
     NativeMatchService,
     PythonMatchExecutionError,
+    RulesetRuntimeUnsupportedError,
     UnsupportedMatchCompositionError,
 )
 from battle_engine.paths import get_data_root, get_resource_root
@@ -53,6 +54,8 @@ from battle_engine.python_runtime import (
     RuntimeDiagnostic,
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
+from battle_engine.rules import BYTEFRAY_RULESET_ID
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
 
 REFERENCE_OPPONENT_NAME = "reference"
 DEFAULT_TICKS = 200
@@ -195,6 +198,7 @@ class DevelopmentTestOutcome:
     ticks_requested: int
     match_result: NativeMatchResult
     summary_path: Path
+    ruleset_id: str = BYTEFRAY_RULESET_ID
     trace_path: Path | None = None
 
 
@@ -427,6 +431,18 @@ def _test_agent(
             code=exc.diagnostic.code,
             message=exc.diagnostic.message,
         ) from exc
+    except RulesetRuntimeUnsupportedError as exc:
+        # Unreachable via this module's own entrants today -- both slots are
+        # always resolved through ``_resolve_python_entrant``, which already
+        # rejects any non-Python agent regardless of Ruleset (see its own
+        # ``agent_kind_unsupported`` check above). Handled anyway so a future
+        # change here fails closed with a clear tool error instead of an
+        # unwrapped internal one.
+        raise _tool_error(
+            stage=exc.diagnostic.stage,
+            code=exc.diagnostic.code,
+            message=exc.diagnostic.message,
+        ) from exc
     except PythonMatchExecutionError as exc:
         raise _tool_error(
             stage=exc.diagnostic.stage,
@@ -444,6 +460,7 @@ def _test_agent(
         ticks_requested=effective_ticks,
         match_result=match_result,
         summary_path=summary_path,
+        ruleset_id=ruleset_id or BYTEFRAY_RULESET_ID,
         trace_path=trace_path if trace_path is not None and trace_path.exists() else None,
     )
 
@@ -516,6 +533,7 @@ def _print_completed_match(outcome: DevelopmentTestOutcome) -> None:
     winner = _winner_display(match_result, outcome.agent_id, outcome.opponent_name)
     print(f"agent: {outcome.agent_id}")
     print(f"opponent: {outcome.opponent_name}")
+    print(f"ruleset: {outcome.ruleset_id}")
     print(f"seed: {outcome.seed}")
     print(f"ticks: {match_result.ticks_run}/{outcome.ticks_requested}")
     print(f"winner: {winner}")
@@ -616,6 +634,17 @@ def _parser() -> argparse.ArgumentParser:
         default=True,
         help="do not write the trace.jsonl development-trace artifact",
     )
+    parser.add_argument(
+        "--ruleset",
+        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        default=None,
+        help=(
+            f"gameplay Ruleset identity (default: {BYTEFRAY_RULESET_ID}). "
+            f"{BYTEFRAY_RULESET_V2_ID} supports Python entrants only. Affects "
+            "gameplay semantics and is recorded in the match's result/replay "
+            "artifacts."
+        ),
+    )
     return parser
 
 
@@ -636,6 +665,7 @@ def main(argv: list[str] | None = None) -> int:
             ticks=args.ticks,
             timeout=effective_timeout,
             trace=args.trace,
+            ruleset_id=args.ruleset,
         )
     except AgentTestError as exc:
         _print_tool_error(args.agent_id, exc)

@@ -12,6 +12,7 @@ from battle_engine.match_service import MatchEntrant
 from battle_engine.replay import MatchConfiguration, ReplayHeader, write_replay
 from battle_engine.result_model import ReplayReference, ResultEnvelope
 from battle_engine.tournament_cli import _print_result
+from battle_engine.tournament_cli import main as tournament_cli_main
 from battle_engine.tournament_service import (
     TournamentConfigurationError,
     TournamentMatch,
@@ -124,6 +125,46 @@ def test_mixed_division_is_rejected_before_artifacts(tmp_path):
     with pytest.raises(TournamentConfigurationError, match="mixed groups"):
         TournamentService().run(_request(tmp_path, entrants=entrants))
     assert not list(tmp_path.iterdir())
+
+
+def test_ruleset_id_omitted_defaults_to_v1(tmp_path):
+    result = TournamentService().run(_request(tmp_path, entrants=_entrants(2), rounds=1))
+    envelope = json.loads((result.matches[0].artifact_dir / "result.json").read_text())
+    assert envelope["ruleset_id"] == "bytefray-rules-1"
+
+
+def test_permanent_v2_rejects_vm_entrants_per_match_with_no_artifacts(tmp_path):
+    result = TournamentService().run(
+        _request(
+            tmp_path,
+            entrants=_entrants(2),
+            rounds=1,
+            ruleset_id="bytefray-rules-2",
+        )
+    )
+    assert len(result.matches) == 1
+    match = result.matches[0]
+    assert match.status == "rejected"
+    assert match.error_code == "ruleset_runtime_unsupported"
+    assert "Python entrants only" in match.error_message
+    assert not match.artifact_dir.exists()
+
+
+def test_cli_help_lists_ruleset_choices_but_not_alpha_ids(capsys):
+    with pytest.raises(SystemExit):
+        tournament_cli_main(["--help"])
+    out = capsys.readouterr().out
+    assert "--ruleset" in out
+    assert "bytefray-rules-1" in out
+    assert "bytefray-rules-2" in out
+    assert "alpha" not in out
+
+
+def test_cli_ruleset_flag_unknown_value_fails_closed(capsys):
+    with pytest.raises(SystemExit) as caught:
+        tournament_cli_main(["writer", "runner", "--ruleset", "bytefray-rules-99"])
+    assert caught.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
 
 
 def test_failed_match_is_recorded_and_excluded_from_standings(tmp_path):

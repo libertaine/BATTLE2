@@ -12,6 +12,8 @@ from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.config import Config, Weights
 from battle_engine.match_service import MatchEntrant
 from battle_engine.paths import get_data_root
+from battle_engine.rules import BYTEFRAY_RULESET_ID
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
 from battle_engine.starters import ensure_starter_agents
 from battle_engine.tournament_service import (
     TournamentConfigurationError,
@@ -47,6 +49,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--kill-w", type=float, default=5.0)
     parser.add_argument("--territory-w", type=float, default=1.0)
     parser.add_argument("--territory-bucket", type=_positive, default=64)
+    parser.add_argument(
+        "--ruleset",
+        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        default=None,
+        help=(
+            f"gameplay Ruleset identity (default: {BYTEFRAY_RULESET_ID}). "
+            f"{BYTEFRAY_RULESET_V2_ID} supports Python entrants only. Affects "
+            "gameplay semantics and is recorded in each match's result/replay "
+            "artifacts."
+        ),
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--quiet", action="store_true")
@@ -146,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
                 seed=args.seed,
                 retry_failures=args.retry_failed,
                 verbose=False,
+                ruleset_id=args.ruleset,
             )
         )
     except (AgentValidationError, TournamentConfigurationError, OSError, ValueError) as exc:

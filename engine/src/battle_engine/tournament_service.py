@@ -50,6 +50,7 @@ REJECTED_DIAGNOSTIC_CODES = frozenset(
         "agent_reset_failed",
         "unsupported_match_composition",
         "match_configuration_invalid",
+        "ruleset_runtime_unsupported",
     }
 )
 
@@ -69,6 +70,7 @@ class TournamentRequest:
     resume: bool = True
     retry_failures: bool = False
     verbose: bool = False
+    ruleset_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -245,6 +247,7 @@ class TournamentService:
                     max_ticks=request.max_ticks,
                     replay_path=replay_path,
                     verbose=request.verbose,
+                    ruleset_id=request.ruleset_id,
                 )
                 mismatch: str | None
                 try:
@@ -308,6 +311,7 @@ class TournamentService:
                         max_ticks=request.max_ticks,
                         replay_path=replay_path,
                         verbose=request.verbose,
+                        ruleset_id=request.ruleset_id,
                     )
                 )
                 if native.result_path is None:
