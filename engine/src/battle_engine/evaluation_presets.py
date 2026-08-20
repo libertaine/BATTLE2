@@ -64,8 +64,15 @@ _ALLOWED_FIELDS = {
     "seed_range",
     "ticks",
     "orientation",
+    "ruleset",
 }
 _REQUIRED_FIELDS = {"schema", "schema_version"}
+
+# v2.0.0-beta2 Phase 1: mirrors battle_engine.agent_evaluation's own
+# --ruleset choices exactly (see that module's docstring for why these are
+# duplicated literals rather than an import -- this module must stay
+# import-independent of agent_evaluation).
+_VALID_RULESETS = ("bytefray-rules-1", "bytefray-rules-2")
 
 _NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
@@ -98,6 +105,11 @@ class EvaluationPreset:
     seed_range: tuple[int, int] | None
     ticks: int | None
     orientation: str | None
+    # v2.0.0-beta2 Phase 1: the same optional Ruleset selector `agents
+    # evaluate --ruleset` accepts, resolved the identical way -- `None`
+    # (not set by this preset) falls back to the ordinary default (v1,
+    # unchanged) unless overridden by an explicit CLI --ruleset.
+    ruleset_id: str | None
     content_digest: str
     raw: dict[str, Any]
 
@@ -300,6 +312,14 @@ def load_preset_file(path: Path, *, name: str | None = None) -> EvaluationPreset
                 f"{path}: 'orientation' must be one of {_VALID_ORIENTATIONS!r}, got {orientation!r}."
             )
 
+    ruleset_id = data.get("ruleset")
+    if ruleset_id is not None:
+        _require_type(ruleset_id, str, "ruleset", path)
+        if ruleset_id not in _VALID_RULESETS:
+            raise EvaluationPresetError(
+                f"{path}: 'ruleset' must be one of {_VALID_RULESETS!r}, got {ruleset_id!r}."
+            )
+
     # Content fingerprint: the parsed field payload only -- never filename,
     # path, or directory. Two presets with different names/paths but
     # byte-identical fields produce the same digest (Sec 7 of the governing
@@ -317,6 +337,7 @@ def load_preset_file(path: Path, *, name: str | None = None) -> EvaluationPreset
         seed_range=seed_range,
         ticks=ticks,
         orientation=orientation,
+        ruleset_id=ruleset_id,
         content_digest=content_digest,
         raw=data,
     )
@@ -345,6 +366,7 @@ def _preset_to_json(preset: EvaluationPreset) -> dict[str, Any]:
         ),
         "ticks": preset.ticks,
         "orientation": preset.orientation,
+        "ruleset": preset.ruleset_id,
         "content_digest": preset.content_digest,
     }
 
@@ -389,6 +411,7 @@ def _print_show(preset: EvaluationPreset) -> None:
         print("seeds: (not set by this preset -- explicit override, or the ordinary single-seed default)")
     print(f"ticks: {preset.ticks if preset.ticks is not None else '(not set -- ordinary default)'}")
     print(f"orientation: {preset.orientation or '(not set -- ordinary default: both)'}")
+    print(f"ruleset: {preset.ruleset_id or '(not set -- ordinary default: bytefray-rules-1)'}")
     print(
         "This preset supplies a partial EvaluationRequest: any field it does not set falls "
         "back to the ordinary CLI default, and any explicit CLI flag always overrides it. It "

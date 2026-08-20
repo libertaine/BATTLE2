@@ -651,6 +651,20 @@ def canonical_match_id(request: MatchRequest) -> str:
                 "api_version": api_version,
                 "agent_version": getattr(spec, "version", None),
             }
+            # v2.0.0-beta2 Phase 1: a Python entrant's start address is a
+            # genuine gameplay-relevant identity input under Ruleset v2
+            # (it determines core placement/capture geometry -- see
+            # agent_evaluation.EvaluationPlacement), so two match requests
+            # differing only by start must not share match_id. Included
+            # only when non-default (unlike the "vm" branch's unconditional
+            # "entry" key above) so this stays a purely additive identity
+            # fix: every existing Python match_id ever computed used
+            # start=0 for both entrants (agent_test/tournament_service have
+            # never varied it before this phase), so this key's absence at
+            # start=0 keeps every historical Python match_id, result_id,
+            # and replay_id byte-for-byte unchanged. See docs/COMPATIBILITY.md.
+            if entrant.start != 0:
+                metadata["start"] = entrant.start
         entrant_identities.append(
             {"agent_id": entrant.agent_id, "name": entrant.name, "metadata": metadata}
         )

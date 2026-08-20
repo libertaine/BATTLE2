@@ -272,6 +272,11 @@ def adapt_v1_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 # of this module that only ever put the subject in the
                 # always-first-acting slot.
                 orientation=ConfidenceValue.recovered("candidate_first"),
+                # v2.0.0-beta2 Phase 1 (Sec Identity): no v1-schema
+                # evaluation ever varied placement -- recovered as the
+                # certain historical fact, mirroring orientation immediately
+                # above.
+                placement=ConfidenceValue.recovered("fixed"),
             )
         )
 

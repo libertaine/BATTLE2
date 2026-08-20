@@ -337,6 +337,17 @@ class AdaptedCell:
     # always-first-acting slot, unconditionally (Sec C.6). A schema-4 cell
     # reads this as ``RECORDED``.
     orientation: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # v2.0.0-beta2 Phase 1 (design doc Sec Identity): which deterministic
+    # start-address pair this cell executed under -- "fixed" (the
+    # historical v1 alignment, both starts 0) or one of
+    # agent_evaluation.standard_placements()'s three v2 ids. Mirrors
+    # orientation's own recovery pattern exactly (Sec L.2): every schema
+    # version that predates this concept (< 5) is recovered as
+    # ``ConfidenceValue.recovered("fixed")``, never ``unknown()``, because
+    # the historical fact is certain -- no shipped version of this module
+    # varied placement before this phase. A schema-5 cell reads this as
+    # ``RECORDED``.
+    placement: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
 
     @property
     def is_scored(self) -> bool:
@@ -370,6 +381,7 @@ class AdaptedCell:
             "opponent_agent_revision_error": self.opponent_agent_revision_error.to_json(),
             "opponent_revision_verification": self.opponent_revision_verification.value,
             "orientation": self.orientation.to_json(),
+            "placement": self.placement.to_json(),
         }
 
 

@@ -276,6 +276,16 @@ def _condition_key(
     # through to unmatched, never silently folded into a verdict.
     if cell.orientation.confidence == FieldConfidence.UNKNOWN:
         return None
+    # v2.0.0-beta2 Phase 1 (Sec Identity/Sec Compare): placement joins the
+    # alignment key for the identical reason -- a "fixed"-placement v1 cell
+    # aligns only against another "fixed" cell; two differently-placed v2
+    # cells (e.g. "opposed" vs "quarter") must never be presented as a
+    # clean matched pair merely because arena_alignment_id's mode label
+    # already matched. `arena_alignment_id` alone is a *methodology*-level
+    # gate (fixed vs ruleset_v2_standard_placements); `placement.value` is
+    # the specific condition within that methodology.
+    if cell.placement.confidence == FieldConfidence.UNKNOWN:
+        return None
     opponent = cell.opponent_identity.value or {}
     return (
         opponent.get("agent_id"),
@@ -296,6 +306,7 @@ def _condition_key(
         arena_alignment_id,
         cell.condition_occurrence_index.value,
         cell.orientation.value,
+        cell.placement.value,
     )
 
 

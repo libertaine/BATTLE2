@@ -80,7 +80,8 @@ from battle_engine.result_model import (
     write_json_atomic,
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
-from battle_engine.rules import BYTEFRAY_RULESET_ID
+from battle_engine.rules import BYTEFRAY_RULESET_ID, normalize_ruleset_id
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
 
 SCHEMA_NAME = "bytefray.evaluation"
 SCHEMA_VERSION = 4
@@ -153,6 +154,36 @@ EVALUATION_RULES_COMPATIBILITY_ID = BYTEFRAY_RULESET_ID
 # EVALUATION_RULES_COMPATIBILITY_ID already is (Sec AA.3/AA.4).
 EVALUATION_ARENA_ALIGNMENT_MODE = "fixed"
 
+# v2.0.0-beta2 Phase 1 (docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md): the
+# Ruleset-v2 1v1 evaluation methodology's own arena-alignment identifier --
+# a sibling value to EVALUATION_ARENA_ALIGNMENT_MODE above, never a
+# replacement for it. Selected only when a request's --ruleset resolves to
+# BYTEFRAY_RULESET_V2_ID; every v1 evaluation (omitted --ruleset, or
+# --ruleset bytefray-rules-1) keeps EVALUATION_ARENA_ALIGNMENT_MODE ==
+# "fixed" exactly as before -- see resolve_evaluation_methodology.
+EVALUATION_ARENA_ALIGNMENT_MODE_V2_STANDARD = "ruleset_v2_standard_placements"
+
+# A second, additive identity/schema recipe used only by an evaluation whose
+# resolved Ruleset is BYTEFRAY_RULESET_V2_ID (Sec F/G of the design doc).
+# IDENTITY_VERSION/SCHEMA_VERSION above are never bumped for this -- every
+# v1 evaluation (omitted or explicit bytefray-rules-1) keeps hashing and
+# persisting under identity_version/schema_version 4 exactly as before, so
+# no historical evaluation_id, schedule_id, or artifact schema_version is
+# affected by these constants merely existing. A v2 evaluation has no
+# historical artifact to stay compatible with -- this module's evaluation
+# methodology has never supported Ruleset v2 before this phase.
+IDENTITY_VERSION_V2 = 5
+SCHEMA_VERSION_V2 = 5
+
+# Ruleset-v2's standard 1v1 seed methodology (docs/V2_0_BETA2_PHASE1_
+# EVALUATION_METHODOLOGY.md Sec D): alpha.8/alpha.10 proved single-seed
+# evaluation insufficient for any RNG-consuming agent (Core Tracker's win
+# rate against expansion varied 25%-75% across five seeds at otherwise
+# identical conditions). Used only as permanent-v2's *default* when the CLI
+# is not given an explicit --seeds/--seed-range and no --preset supplies
+# seeds -- an explicit seed selection always overrides it.
+STANDARD_V2_SEEDS: tuple[int, ...] = (1, 2, 3, 4, 5)
+
 CANDIDATE = "candidate"
 BASELINE = "baseline"
 
@@ -209,6 +240,110 @@ def physical_slots_for_orientation(orientation: str) -> tuple[str, str]:
     if orientation == ORIENTATION_OPPONENT_FIRST:
         return OPPONENT_SLOT, TESTED_AGENT_SLOT
     return TESTED_AGENT_SLOT, OPPONENT_SLOT
+
+
+@dataclass(frozen=True)
+class EvaluationPlacement:
+    """One deterministic pair of Python-entrant start addresses for a 1v1 cell.
+
+    ``placement_id`` is a short, human-documentable label; ``subject_start``/
+    ``opponent_start`` are absolute arena addresses (before ``% arena_size``
+    wraparound, matching ``MatchEntrant.python``'s own convention) expressed
+    from the *evaluation-role* perspective (subject/opponent) -- independent
+    of which physical slot or scheduler order actually executes each role
+    for a given cell. Named to mirror ``EvaluationCell.subject_id``/
+    ``opponent_id`` (not ``candidate_start``/``opponent_start``): a
+    baseline cell's "subject" is the baseline, not the candidate, and
+    placement must describe *where the subject starts* regardless of role.
+    Deliberately 1v1-scoped (two named fields, not a generic seat map) --
+    see ``docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md``'s multi-entrant
+    extension seam for how this generalizes to N seats in Beta2 Phase 2.
+    """
+
+    placement_id: str
+    subject_start: int
+    opponent_start: int
+
+
+def standard_placements(arena_size: int | None = None) -> tuple[EvaluationPlacement, ...]:
+    """The standard Ruleset-v2 1v1 placement set (design doc Sec Placement).
+
+    Three deterministic conditions, derived mechanically as fractions of
+    ``arena_size`` -- never hand-picked coordinates, never dependent on any
+    specific opponent's scan geometry (alpha.7's COLD/HOT fixtures were
+    calibrated to one superseded attacker and are deliberately not reused
+    here as permanent methodology; see the design doc):
+
+    * ``opposed`` -- maximal, half-arena separation, phase 0. The control
+      condition: as far apart as the arena allows.
+    * ``quarter`` -- a closer, non-opposed quarter-arena separation, phase
+      0. Proves a conclusion is not an artifact of exact-half separation.
+    * ``opposed-shifted`` -- the same half-arena separation as ``opposed``,
+      phase-shifted by a quarter turn. Proves an ``opposed`` conclusion is
+      not an artifact of starting exactly at address 0.
+
+    Non-overlapping by construction: every gap here is a quarter or half of
+    ``arena_size``, vastly larger than ``CORE_SIZE`` (8). Never random --
+    every coordinate is a pure function of ``arena_size``.
+    """
+
+    size = arena_size if arena_size is not None else Config().arena_size
+    half = size // 2
+    quarter = size // 4
+    return (
+        EvaluationPlacement("opposed", subject_start=0, opponent_start=half),
+        EvaluationPlacement("quarter", subject_start=0, opponent_start=quarter),
+        EvaluationPlacement(
+            "opposed-shifted",
+            subject_start=quarter,
+            opponent_start=(quarter + half) % size,
+        ),
+    )
+
+
+def resolve_evaluation_ruleset_id(ruleset_id: str | None) -> str:
+    """The ``rules_compatibility_id`` a request's optional ``--ruleset`` resolves to.
+
+    ``None`` (omitted) and the explicit v1 identity resolve to the exact
+    same historical value evaluation has always used -- Phase 1H's
+    "omitted" and "v1" cases are one and the same resolved methodology, byte-
+    identical in every downstream hash payload (see ``EvaluationRequest.
+    resolved_rules_compatibility_id``).
+    """
+
+    if ruleset_id is None:
+        return EVALUATION_RULES_COMPATIBILITY_ID
+    return normalize_ruleset_id(ruleset_id)
+
+
+def is_ruleset_v2_methodology(rules_compatibility_id: str) -> bool:
+    """Whether a resolved rules-compatibility id selects the v2 evaluation methodology.
+
+    Methodology is tied 1:1 to Ruleset identity (design doc Sec Ruleset
+    selection): only ``BYTEFRAY_RULESET_V2_ID`` gets balanced placement/
+    standard-seed/capture-metric methodology. Every historical alpha
+    Ruleset identity a result/replay artifact might still reference is
+    deliberately excluded -- product-facing evaluation methodology never
+    advertises an alpha Ruleset identity.
+    """
+
+    return rules_compatibility_id == BYTEFRAY_RULESET_V2_ID
+
+
+def resolved_arena_alignment_mode(is_v2_methodology: bool) -> str:
+    return (
+        EVALUATION_ARENA_ALIGNMENT_MODE_V2_STANDARD
+        if is_v2_methodology
+        else EVALUATION_ARENA_ALIGNMENT_MODE
+    )
+
+
+def resolved_identity_version(is_v2_methodology: bool) -> int:
+    return IDENTITY_VERSION_V2 if is_v2_methodology else IDENTITY_VERSION
+
+
+def resolved_schema_version(is_v2_methodology: bool) -> int:
+    return SCHEMA_VERSION_V2 if is_v2_methodology else SCHEMA_VERSION
 
 
 class EvaluationConfigurationError(ValueError):
@@ -404,6 +539,9 @@ def _expected_cell_match_id(
     seed: int,
     ticks: int,
     orientation: str,
+    ruleset_id: str,
+    subject_start: int,
+    opponent_start: int,
 ) -> str:
     """Recompute the ``match_id`` a fresh cell run would produce.
 
@@ -447,19 +585,20 @@ def _expected_cell_match_id(
     """
 
     if orientation == ORIENTATION_OPPONENT_FIRST:
-        slot_a_agent_id, slot_a_spec = opponent_id, opponent_spec
-        slot_b_agent_id, slot_b_spec = subject_id, subject_spec
+        slot_a_agent_id, slot_a_spec, slot_a_start = opponent_id, opponent_spec, opponent_start
+        slot_b_agent_id, slot_b_spec, slot_b_start = subject_id, subject_spec, subject_start
     else:
-        slot_a_agent_id, slot_a_spec = subject_id, subject_spec
-        slot_b_agent_id, slot_b_spec = opponent_id, opponent_spec
+        slot_a_agent_id, slot_a_spec, slot_a_start = subject_id, subject_spec, subject_start
+        slot_b_agent_id, slot_b_spec, slot_b_start = opponent_id, opponent_spec, opponent_start
     request = MatchRequest(
         config=Config(seed=seed),
         entrants=(
-            MatchEntrant.python(TESTED_AGENT_SLOT, slot_a_agent_id, 0, slot_a_spec),
-            MatchEntrant.python(OPPONENT_SLOT, slot_b_agent_id, 0, slot_b_spec),
+            MatchEntrant.python(TESTED_AGENT_SLOT, slot_a_agent_id, slot_a_start, slot_a_spec),
+            MatchEntrant.python(OPPONENT_SLOT, slot_b_agent_id, slot_b_start, slot_b_spec),
         ),
         max_ticks=ticks,
         replay_path=Path("."),
+        ruleset_id=ruleset_id,
     )
     return canonical_match_id(request)
 
@@ -625,10 +764,27 @@ class EvaluationRequest:
     # count must never affect what an evaluation *means*, only how fast it
     # runs.
     workers: int = 1
+    # v2.0.0-beta2 Phase 1: explicit Ruleset selection for `agents evaluate`,
+    # mirroring `agent_test`'s own `--ruleset` precedent. `None` (the
+    # default) and the explicit v1 identity both resolve to the exact
+    # historical v1 evaluation methodology, byte-identical in every
+    # downstream identity hash -- see `resolved_rules_compatibility_id`/
+    # `resolve_evaluation_ruleset_id`. Only `BYTEFRAY_RULESET_V2_ID`
+    # activates the balanced-placement/standard-seed/capture-metric v2
+    # methodology.
+    ruleset_id: str | None = None
 
     @property
     def orientation_mode(self) -> str:
         return ORIENTATION_MODE_BOTH if self.both_orientations else ORIENTATION_MODE_CANDIDATE_FIRST_ONLY
+
+    @property
+    def resolved_rules_compatibility_id(self) -> str:
+        return resolve_evaluation_ruleset_id(self.ruleset_id)
+
+    @property
+    def is_v2_methodology(self) -> bool:
+        return is_ruleset_v2_methodology(self.resolved_rules_compatibility_id)
 
 
 @dataclass(frozen=True)
@@ -671,6 +827,23 @@ class EvaluationCell:
     # tuples.
     orientation: str = ORIENTATION_CANDIDATE_FIRST
     orientation_index: int = 0
+    # v2.0.0-beta2 Phase 1 (design doc Sec Placement/Sec Identity): which
+    # deterministic start-address pair this cell executed under, and this
+    # cell's own resolved Ruleset -- matrix axes, structurally siblings of
+    # seed/orientation, mirroring orientation's own default-sentinel
+    # pattern exactly. Every v1 cell (the overwhelming majority, forever)
+    # gets the fixed historical sentinel values below; only a v2-methodology
+    # cell (`rules_compatibility_id == BYTEFRAY_RULESET_V2_ID`) ever sets
+    # `placement_id` to anything other than "fixed" or either start to a
+    # nonzero address. `rules_compatibility_id` is stored per cell (not
+    # read from a module constant at execution time) because `_execute_cell`
+    # must stay a pure function of its own arguments (v1.6 Phase 2's worker-
+    # purity invariant) -- see EvaluationService._execute_cell.
+    rules_compatibility_id: str = EVALUATION_RULES_COMPATIBILITY_ID
+    placement_id: str = "fixed"
+    subject_start: int = 0
+    opponent_start: int = 0
+    placement_index: int = 0
 
     @property
     def is_scored(self) -> bool:
@@ -740,6 +913,14 @@ class ComparisonEntry:
     # "opponent=X seed=Y" header that are actually different orientation
     # pairs, with no way to tell them apart.
     orientation: str = ORIENTATION_CANDIDATE_FIRST
+    # v2.0.0-beta2 Phase 1 (design doc Sec Compare/Sec Q): part of the
+    # grouping key now, mirroring orientation immediately above -- without
+    # it, a v2 both_orientations-and-placements comparison could pair a
+    # candidate's "opposed" cell against a baseline's "quarter" cell for
+    # the "same" nominal (opponent, seed, orientation), silently
+    # attributing a placement effect to a candidate/baseline difference
+    # that isn't real. Always "fixed" for v1 comparisons.
+    placement_id: str = "fixed"
 
 
 @dataclass(frozen=True)
@@ -776,21 +957,29 @@ def build_matrix(
     rules_compatibility_id: str | None = None,
     arena_alignment_mode: str | None = None,
 ) -> tuple[EvaluationCell, ...]:
-    """Build the deterministic subject x opponent x seed x orientation matrix.
+    """Build the deterministic subject x opponent x seed x placement x orientation matrix.
 
     Iteration order is candidate, then baseline (if present); opponents
     and seeds in exact request order, never re-sorted or deduplicated
-    (docs/specs/agent_evaluation.md Sec 7); entrant orientation nests
-    innermost, ``candidate_first`` then ``opponent_first`` when
-    ``request.both_orientations`` (Phase 5 spec Sec I.3) -- only
-    ``candidate_first`` otherwise, reproducing today's historical matrix
-    shape and size exactly.
+    (docs/specs/agent_evaluation.md Sec 7); placement (v2.0.0-beta2 Phase 1)
+    nests inside seed; entrant orientation nests innermost, ``candidate_
+    first`` then ``opponent_first`` when ``request.both_orientations``
+    (Phase 5 spec Sec I.3) -- only ``candidate_first`` otherwise.
+
+    Placement is resolved from ``request.ruleset_id`` (via ``request.
+    is_v2_methodology``), never from an external parameter: a v1-methodology
+    request (omitted or explicit ``bytefray-rules-1``) generates exactly one
+    placement per (subject, opponent, seed) -- the historical fixed
+    alignment, ``placement_id="fixed"``, both starts ``0`` -- reproducing
+    today's exact matrix shape and size. A v2-methodology request
+    (``bytefray-rules-2``) generates ``len(standard_placements())`` (3)
+    placements per (subject, opponent, seed) instead.
 
     ``specs``/``conditions_fingerprint``/``rules_compatibility_id``/
-    ``arena_alignment_mode`` are optional so any pre-v2 caller (none remain
-    in this module, but the signature stays permissive for library callers)
-    still gets a usable matrix without a ``condition_fingerprint`` per cell
-    (docs/specs/evaluation_history.md Sec 8/Sec 14).
+    ``arena_alignment_mode`` are optional and, when given, feed only
+    ``condition_fingerprint`` -- unrelated to placement/ruleset resolution,
+    which always comes from ``request`` itself so even a ``--dry-run``
+    (no specs/conditions_fingerprint) matrix preview shows real placements.
     """
 
     subjects: list[tuple[str, str]] = [(CANDIDATE, request.candidate_id)]
@@ -803,6 +992,12 @@ def build_matrix(
         else (ORIENTATION_CANDIDATE_FIRST,)
     )
 
+    resolved_rules_id = request.resolved_rules_compatibility_id
+    resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+    placements: tuple[EvaluationPlacement | None, ...] = (
+        standard_placements() if resolved_is_v2 else (None,)
+    )
+
     cells: list[EvaluationCell] = []
     ordinal = 0
     for role, subject_id in subjects:
@@ -811,43 +1006,56 @@ def build_matrix(
             for seed_index, seed in enumerate(request.seeds):
                 condition_occurrence_index = occurrence_counts.get((opponent_id, seed), 0)
                 occurrence_counts[(opponent_id, seed)] = condition_occurrence_index + 1
-                for orientation_index, orientation in enumerate(orientations):
-                    ordinal += 1
-                    # `ordinal` is included so a repeated (role, subject_id,
-                    # opponent_id, seed, orientation) tuple -- explicitly
-                    # preserved as distinct cells above -- still gets a
-                    # distinct schedule_id. Without it, duplicate cells
-                    # collide in the resume-state lookup dict
-                    # (EvaluationService._resolve_from_state keys prior
-                    # cells by schedule_id), which silently misattributes
-                    # one duplicate's persisted state to another and can
-                    # demote a legitimately never-yet-run duplicate to
-                    # "corrupted". `orientation` is included in its own
-                    # right too (not just via ordinal) so two cells
-                    # differing only by orientation are guaranteed distinct
-                    # even if the ordinal derivation ever changed (v0.9
-                    # Phase 6, Sec 9/W.1).
-                    schedule_id = stable_id(
-                        "evaluation-cell",
-                        {
-                            "evaluation_id": evaluation_id,
-                            "role": role,
-                            "subject_id": subject_id,
-                            "opponent_id": opponent_id,
-                            "seed": seed,
-                            "orientation": orientation,
-                            "ordinal": ordinal,
-                        },
-                    )
-                    label = (
-                        f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
-                        f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}-{orientation}"
-                    )
-                    condition_fingerprint = None
-                    if specs is not None and conditions_fingerprint is not None:
-                        condition_fingerprint = stable_id(
-                            "evaluation-condition",
+                for placement_index, placement in enumerate(placements):
+                    placement_id = placement.placement_id if placement is not None else "fixed"
+                    subject_start = placement.subject_start if placement is not None else 0
+                    opponent_start = placement.opponent_start if placement is not None else 0
+                    for orientation_index, orientation in enumerate(orientations):
+                        ordinal += 1
+                        # `ordinal` is included so a repeated (role,
+                        # subject_id, opponent_id, seed, placement,
+                        # orientation) tuple -- explicitly preserved as
+                        # distinct cells above -- still gets a distinct
+                        # schedule_id. Without it, duplicate cells collide
+                        # in the resume-state lookup dict
+                        # (EvaluationService._resolve_from_state keys prior
+                        # cells by schedule_id), which silently
+                        # misattributes one duplicate's persisted state to
+                        # another and can demote a legitimately never-yet-
+                        # run duplicate to "corrupted". `orientation` is
+                        # included in its own right too (not just via
+                        # ordinal) so two cells differing only by
+                        # orientation are guaranteed distinct even if the
+                        # ordinal derivation ever changed (v0.9 Phase 6,
+                        # Sec 9/W.1). `placement_id` joins it for the exact
+                        # same reason (Phase 1F): a v1-methodology request
+                        # never varies placement, so this is a no-op there
+                        # (every cell shares "fixed") -- only meaningful,
+                        # and only ever exercised, under v2 methodology.
+                        schedule_id = stable_id(
+                            "evaluation-cell",
                             {
+                                "evaluation_id": evaluation_id,
+                                "role": role,
+                                "subject_id": subject_id,
+                                "opponent_id": opponent_id,
+                                "seed": seed,
+                                "orientation": orientation,
+                                "placement_id": placement_id,
+                                "ordinal": ordinal,
+                            },
+                        )
+                        label = (
+                            f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
+                            f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}"
+                            f"-{placement_id}-{orientation}"
+                            if resolved_is_v2
+                            else f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
+                            f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}-{orientation}"
+                        )
+                        condition_fingerprint = None
+                        if specs is not None and conditions_fingerprint is not None:
+                            fp_payload: dict[str, Any] = {
                                 "opponent": agent_identity(specs[opponent_id]),
                                 "seed": seed,
                                 "effective_conditions": conditions_fingerprint,
@@ -855,25 +1063,42 @@ def build_matrix(
                                 "condition_occurrence_index": condition_occurrence_index,
                                 "orientation": orientation,
                                 "arena_alignment_mode": arena_alignment_mode,
-                            },
+                            }
+                            # Only added when placement genuinely varies
+                            # (v2) -- an unconditional key here would change
+                            # every v1 condition_fingerprint's hash for a
+                            # dimension that never actually varies under v1
+                            # methodology (Phase 1F/1G: smallest honest
+                            # identity evolution, byte-identical v1 output).
+                            if placement is not None:
+                                fp_payload["placement"] = {
+                                    "placement_id": placement.placement_id,
+                                    "subject_start": placement.subject_start,
+                                    "opponent_start": placement.opponent_start,
+                                }
+                            condition_fingerprint = stable_id("evaluation-condition", fp_payload)
+                        cells.append(
+                            EvaluationCell(
+                                schedule_id=schedule_id,
+                                subject_role=role,
+                                subject_id=subject_id,
+                                opponent_id=opponent_id,
+                                seed=seed,
+                                artifact_dir=request.output_dir / "matches" / label,
+                                opponent_index=opponent_index,
+                                seed_index=seed_index,
+                                matrix_ordinal=ordinal,
+                                condition_occurrence_index=condition_occurrence_index,
+                                condition_fingerprint=condition_fingerprint,
+                                orientation=orientation,
+                                orientation_index=orientation_index,
+                                rules_compatibility_id=resolved_rules_id,
+                                placement_id=placement_id,
+                                subject_start=subject_start,
+                                opponent_start=opponent_start,
+                                placement_index=placement_index,
+                            )
                         )
-                    cells.append(
-                        EvaluationCell(
-                            schedule_id=schedule_id,
-                            subject_role=role,
-                            subject_id=subject_id,
-                            opponent_id=opponent_id,
-                            seed=seed,
-                            artifact_dir=request.output_dir / "matches" / label,
-                            opponent_index=opponent_index,
-                            seed_index=seed_index,
-                            matrix_ordinal=ordinal,
-                            condition_occurrence_index=condition_occurrence_index,
-                            condition_fingerprint=condition_fingerprint,
-                            orientation=orientation,
-                            orientation_index=orientation_index,
-                        )
-                    )
     return tuple(cells)
 
 
@@ -998,20 +1223,25 @@ def compare_candidate_baseline(
     # orientation effect to a candidate/baseline difference that isn't
     # real. This is the direct comparison-side consequence of never
     # averaging orientation away within a cell (Sec H.2).
-    candidate_by_key: dict[tuple[str, int, str], list[EvaluationCell]] = {}
+    candidate_by_key: dict[tuple[str, int, str, str], list[EvaluationCell]] = {}
     for cell in cells:
         if cell.subject_role == CANDIDATE:
-            candidate_by_key.setdefault((cell.opponent_id, cell.seed, cell.orientation), []).append(cell)
-    baseline_by_key: dict[tuple[str, int, str], list[EvaluationCell]] = {}
+            candidate_by_key.setdefault(
+                (cell.opponent_id, cell.seed, cell.orientation, cell.placement_id), []
+            ).append(cell)
+    baseline_by_key: dict[tuple[str, int, str, str], list[EvaluationCell]] = {}
     for cell in cells:
         if cell.subject_role == BASELINE:
-            baseline_by_key.setdefault((cell.opponent_id, cell.seed, cell.orientation), []).append(cell)
+            baseline_by_key.setdefault(
+                (cell.opponent_id, cell.seed, cell.orientation, cell.placement_id), []
+            ).append(cell)
     keys = sorted(set(candidate_by_key) | set(baseline_by_key))
 
     entries: list[ComparisonEntry] = []
-    for opponent_id, seed, orientation in keys:
-        candidate_list = candidate_by_key.get((opponent_id, seed, orientation), [])
-        baseline_list = baseline_by_key.get((opponent_id, seed, orientation), [])
+    for opponent_id, seed, orientation, placement_id in keys:
+        key = (opponent_id, seed, orientation, placement_id)
+        candidate_list = candidate_by_key.get(key, [])
+        baseline_list = baseline_by_key.get(key, [])
         for candidate_cell, baseline_cell in zip_longest(candidate_list, baseline_list):
             if candidate_cell is None or baseline_cell is None:
                 entries.append(
@@ -1019,6 +1249,7 @@ def compare_candidate_baseline(
                         opponent_id=opponent_id,
                         seed=seed,
                         orientation=orientation,
+                        placement_id=placement_id,
                         classification="inconclusive",
                         candidate_outcome=candidate_cell.outcome if candidate_cell else None,
                         baseline_outcome=baseline_cell.outcome if baseline_cell else None,
@@ -1034,6 +1265,7 @@ def compare_candidate_baseline(
                         opponent_id=opponent_id,
                         seed=seed,
                         orientation=orientation,
+                        placement_id=placement_id,
                         classification="inconclusive",
                         candidate_outcome=candidate_cell.outcome,
                         baseline_outcome=baseline_cell.outcome,
@@ -1063,6 +1295,7 @@ def compare_candidate_baseline(
                     opponent_id=opponent_id,
                     seed=seed,
                     orientation=orientation,
+                    placement_id=placement_id,
                     classification=classification,
                     candidate_outcome=candidate_cell.outcome,
                     baseline_outcome=baseline_cell.outcome,
@@ -1571,6 +1804,7 @@ class EvaluationService:
         ticks: int = DEFAULT_TICKS,
         data_root: Path | None = None,
         both_orientations: bool = True,
+        ruleset_id: str | None = None,
     ) -> tuple[dict[str, AgentSpec], str]:
         """Validate a request's agent/seed/tick shape and resolve its evaluation id.
 
@@ -1593,6 +1827,7 @@ class EvaluationService:
             ticks=ticks,
             data_root=data_root,
             both_orientations=both_orientations,
+            ruleset_id=ruleset_id,
         )
         specs = self._validate(request)
         conditions = self._effective_conditions(request)
@@ -1643,8 +1878,14 @@ class EvaluationService:
         conditions = self._effective_conditions(request)
         conditions_fp = stable_id("evaluation-conditions", asdict(conditions))
         evaluation_id = self._evaluation_id(request, planned_identities, conditions)
+        resolved_rules_id = request.resolved_rules_compatibility_id
+        resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
         state_path = request.output_dir / "evaluation.json"
-        prior = self._load_state(state_path, evaluation_id) if request.resume else {}
+        prior = (
+            self._load_state(state_path, evaluation_id, resolved_schema_version(resolved_is_v2))
+            if request.resume
+            else {}
+        )
         prior_cells = {item["schedule_id"]: item for item in prior.get("cells", ())}
         # Revision capture (docs/specs/agent_revision.md Sec 4): resolved
         # here, after `prior` is loaded (so an already-planned agent's
@@ -1659,8 +1900,8 @@ class EvaluationService:
             evaluation_id,
             specs,
             conditions_fp,
-            EVALUATION_RULES_COMPATIBILITY_ID,
-            EVALUATION_ARENA_ALIGNMENT_MODE,
+            resolved_rules_id,
+            resolved_arena_alignment_mode(resolved_is_v2),
         )
 
         created_at = prior.get("created_at") or _utc_now_iso()
@@ -1988,6 +2229,23 @@ class EvaluationService:
             raise EvaluationConfigurationError(
                 "Candidate and baseline must be different agents."
             )
+        # Phase 1H: evaluation is product-facing and must never expose a
+        # historical alpha Ruleset identity, even though
+        # resolve_ruleset_policy would happily resolve one -- mirrors
+        # agent_test's own --ruleset choices exactly. Every entrant is
+        # already restricted to Python agents by _resolve_python_agent
+        # below regardless of Ruleset, so this never needs to separately
+        # duplicate the runtime-kind check Beta1's runtime boundary already
+        # performs (RulesetRuntimeUnsupportedError, raised through
+        # AgentTestError/test_agent if that boundary is ever reached).
+        if request.ruleset_id is not None and request.ruleset_id not in (
+            BYTEFRAY_RULESET_ID,
+            BYTEFRAY_RULESET_V2_ID,
+        ):
+            raise EvaluationConfigurationError(
+                f"Unsupported evaluation --ruleset {request.ruleset_id!r}; expected "
+                f"{BYTEFRAY_RULESET_ID!r} or {BYTEFRAY_RULESET_V2_ID!r}."
+            )
         subject_ids = [request.candidate_id]
         if request.baseline_id is not None:
             subject_ids.append(request.baseline_id)
@@ -2016,8 +2274,10 @@ class EvaluationService:
         dict to both this method and ``_write_state`` (Sec 7/B1).
         """
 
-        payload = {
-            "identity_version": IDENTITY_VERSION,
+        resolved_rules_id = request.resolved_rules_compatibility_id
+        resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+        payload: dict[str, Any] = {
+            "identity_version": resolved_identity_version(resolved_is_v2),
             "candidate": identities[request.candidate_id],
             "baseline": (
                 identities[request.baseline_id] if request.baseline_id is not None else None
@@ -2026,20 +2286,44 @@ class EvaluationService:
             "seeds": list(request.seeds),
             "ticks": request.ticks,
             "effective_conditions": asdict(conditions),
-            "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
+            # v0.10 Phase 2/v2.0.0-beta2 Phase 1: was the module constant
+            # EVALUATION_RULES_COMPATIBILITY_ID unconditionally; now the
+            # request's own resolved value -- for every v1 request (omitted
+            # or explicit bytefray-rules-1) that resolved value is exactly
+            # EVALUATION_RULES_COMPATIBILITY_ID, so this key's contribution
+            # to the hash is byte-identical to before for every v1
+            # evaluation_id ever computed. Only an explicit --ruleset
+            # bytefray-rules-2 request ever changes this key's value.
+            "rules_compatibility_id": resolved_rules_id,
             # v0.9 Phase 6 (Phase 5 spec Sec J.2/AA.4.2): both are sibling
             # keys, never folded into "effective_conditions" -- see Sec I.1/
             # AA.3 for why. `orientation_mode` makes a both_orientations
             # request and an explicit single-orientation request of
             # otherwise-identical inputs hash to different evaluation_ids
             # (different matrix sizes/experiments; must never share a
-            # resumable --output). `arena_alignment_mode` is v0.9's only
-            # value ("fixed") but is threaded through identity now so a
-            # future translation-aware methodology can never silently hash
-            # identically to this one (Sec AA.2).
+            # resumable --output). `arena_alignment_mode` was v0.9's only
+            # value ("fixed"); v2.0.0-beta2 Phase 1 gives it a second,
+            # genuinely varying value for v2 methodology (see
+            # resolved_arena_alignment_mode) so a placement-aware
+            # methodology can never silently hash identically to v1's fixed
+            # alignment (Sec AA.2).
             "orientation_mode": request.orientation_mode,
-            "arena_alignment_mode": EVALUATION_ARENA_ALIGNMENT_MODE,
+            "arena_alignment_mode": resolved_arena_alignment_mode(resolved_is_v2),
         }
+        # Phase 1F: the actual resolved placement set, not just a mode
+        # label -- two different v2 placement sets must never collide on
+        # evaluation_id. Omitted entirely for v1 (placements is always
+        # `None` there) so a v1 payload's key set is byte-identical to
+        # every evaluation_id ever computed before this phase.
+        if resolved_is_v2:
+            payload["placements"] = [
+                {
+                    "placement_id": placement.placement_id,
+                    "subject_start": placement.subject_start,
+                    "opponent_start": placement.opponent_start,
+                }
+                for placement in standard_placements()
+            ]
         return stable_id("evaluation-v2", payload)
 
     def _resolve_revision_results(
@@ -2148,6 +2432,9 @@ class EvaluationService:
             cell.seed,
             request.ticks,
             cell.orientation,
+            cell.rules_compatibility_id,
+            cell.subject_start,
+            cell.opponent_start,
         )
         mismatch = _resumed_cell_mismatch(envelope, cell, expected_match_id)
         if mismatch is not None:
@@ -2197,17 +2484,32 @@ class EvaluationService:
         # mapping in this method resolves physical slot <-> evaluation
         # role via `physical_slots_for_orientation`, never by assuming
         # subject==A/opponent==B.
+        # v2.0.0-beta2 Phase 1 (design doc Sec Placement/Sec J): placement
+        # describes *where the subject/opponent start*, independent of
+        # which physical slot/scheduler order executes each role -- the
+        # subject always starts at `cell.subject_start` regardless of
+        # orientation, exactly like every other subject/opponent-role field
+        # this method already resolves through orientation rather than
+        # assuming subject==A/opponent==B.
         if cell.orientation == ORIENTATION_OPPONENT_FIRST:
             test_agent_id, test_opponent_id = cell.opponent_id, cell.subject_id
+            test_agent_start, test_opponent_start = cell.opponent_start, cell.subject_start
         else:
             test_agent_id, test_opponent_id = cell.subject_id, cell.opponent_id
+            test_agent_start, test_opponent_start = cell.subject_start, cell.opponent_start
 
         # Computed once here, after the pre-execution-drift early return
         # (which must keep making zero calls, matching the old closure's
         # exact behavior) -- current_execution_context() is a pure function
-        # of environment only (never cell-specific), so every remaining
-        # branch below reuses this same value rather than recomputing it.
-        context = current_execution_context(EVALUATION_RULES_COMPATIBILITY_ID)
+        # of environment (and this cell's own resolved Ruleset) only, so
+        # every remaining branch below reuses this same value rather than
+        # recomputing it. Reads `cell.rules_compatibility_id`, never the
+        # module constant, so a v2 cell's execution context correctly
+        # records "bytefray-rules-2" -- this method must stay a pure
+        # function of its own arguments for v1.6 Phase 2 worker-subprocess
+        # purity, so this cannot read `EvaluationRequest.ruleset_id`
+        # directly.
+        context = current_execution_context(cell.rules_compatibility_id)
 
         try:
             outcome = test_agent(
@@ -2219,6 +2521,9 @@ class EvaluationService:
                 trace=False,
                 run_dir=cell.artifact_dir,
                 data_root=data_root,
+                ruleset_id=cell.rules_compatibility_id,
+                agent_start=test_agent_start,
+                opponent_start=test_opponent_start,
             )
         except AgentTestError as exc:
             return CellExecutionResult(
@@ -2346,7 +2651,7 @@ class EvaluationService:
 
     # -- persistence --------------------------------------------------------
 
-    def _load_state(self, path: Path, evaluation_id: str) -> dict[str, Any]:
+    def _load_state(self, path: Path, evaluation_id: str, expected_schema_version: int) -> dict[str, Any]:
         if not path.is_file():
             return {}
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -2354,10 +2659,17 @@ class EvaluationService:
             raise EvaluationConfigurationError(
                 f"Existing evaluation state at {path} uses an unrecognized schema."
             )
-        if data.get("schema_version") != SCHEMA_VERSION:
+        # v2.0.0-beta2 Phase 1: `expected_schema_version` is resolved from
+        # *this* request's own methodology (v1 -> SCHEMA_VERSION, v2 ->
+        # SCHEMA_VERSION_V2), never the bare module constant -- a v1 resume
+        # request must keep matching only SCHEMA_VERSION exactly as before
+        # (unaffected by SCHEMA_VERSION_V2 existing), and a v2 resume
+        # request must fail closed against a differently-versioned existing
+        # artifact rather than silently reinterpreting it.
+        if data.get("schema_version") != expected_schema_version:
             raise EvaluationConfigurationError(
                 f"Existing evaluation state at {path} uses unsupported schema version "
-                f"{data.get('schema_version')!r} (expected {SCHEMA_VERSION})."
+                f"{data.get('schema_version')!r} (expected {expected_schema_version})."
             )
         if data.get("evaluation_id") != evaluation_id:
             raise EvaluationConfigurationError(
@@ -2442,12 +2754,22 @@ class EvaluationService:
             "opponents": [_revision_payload(opponent_id) for opponent_id in request.opponent_ids],
         }
         conditions_dict = asdict(conditions)
+        resolved_rules_id = request.resolved_rules_compatibility_id
+        resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
         write_json_atomic(
             path,
             {
                 "schema": SCHEMA_NAME,
-                "schema_version": SCHEMA_VERSION,
-                "identity_version": IDENTITY_VERSION,
+                # v2.0.0-beta2 Phase 1: resolved per request, never the bare
+                # module constant -- for every v1 request (omitted or
+                # explicit bytefray-rules-1) this is exactly SCHEMA_VERSION/
+                # IDENTITY_VERSION (4), byte-identical to every artifact
+                # this module has ever written. Only an explicit --ruleset
+                # bytefray-rules-2 request ever writes SCHEMA_VERSION_V2/
+                # IDENTITY_VERSION_V2 (5) -- a brand-new artifact shape with
+                # no historical instance to stay compatible with.
+                "schema_version": resolved_schema_version(resolved_is_v2),
+                "identity_version": resolved_identity_version(resolved_is_v2),
                 "evaluation_id": evaluation_id,
                 "candidate_id": request.candidate_id,
                 "baseline_id": request.baseline_id,
@@ -2461,13 +2783,13 @@ class EvaluationService:
                 "effective_conditions_fingerprint": stable_id(
                     "evaluation-conditions", conditions_dict
                 ),
-                "rules_compatibility_id": EVALUATION_RULES_COMPATIBILITY_ID,
+                "rules_compatibility_id": resolved_rules_id,
                 # v0.9 Phase 6: sibling top-level fields, same pattern as
                 # rules_compatibility_id immediately above (Phase 5 spec
                 # Sec AA.3/AA.4) -- evaluation-wide methodology, never
                 # folded into effective_conditions.
                 "orientation_mode": request.orientation_mode,
-                "arena_alignment_mode": EVALUATION_ARENA_ALIGNMENT_MODE,
+                "arena_alignment_mode": resolved_arena_alignment_mode(resolved_is_v2),
                 "created_at": created_at,
                 "updated_at": _utc_now_iso(),
                 "finished_at": finished_at,
@@ -2513,10 +2835,15 @@ def read_evaluation(path: Path) -> dict[str, Any]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if data.get("schema") != SCHEMA_NAME:
         raise EvaluationConfigurationError(f"{path}: not a {SCHEMA_NAME} artifact.")
-    if data.get("schema_version") != SCHEMA_VERSION:
+    # v2.0.0-beta2 Phase 1: a caller reading an arbitrary on-disk artifact
+    # (unlike _load_state, which already knows this run's own resolved
+    # methodology) cannot know in advance whether it is a v1 (SCHEMA_VERSION)
+    # or v2 (SCHEMA_VERSION_V2) artifact -- both are equally "this module's
+    # own current schema," just under different resolved methodologies.
+    if data.get("schema_version") not in (SCHEMA_VERSION, SCHEMA_VERSION_V2):
         raise EvaluationConfigurationError(
             f"{path}: unsupported schema version {data.get('schema_version')!r} "
-            f"(expected {SCHEMA_VERSION})."
+            f"(expected {SCHEMA_VERSION} or {SCHEMA_VERSION_V2})."
         )
     return data
 
@@ -2561,6 +2888,18 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--baseline", default=None, help="baseline agent's discovery id to compare against"
+    )
+    parser.add_argument(
+        "--ruleset",
+        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        default=None,
+        help=(
+            f"gameplay Ruleset identity (default: {BYTEFRAY_RULESET_ID}, the historical "
+            f"evaluation methodology, unchanged). {BYTEFRAY_RULESET_V2_ID} runs the "
+            "balanced Ruleset-v2 1v1 methodology: standard placement set, standard seed "
+            "set default, and capture/core evidence. See "
+            "docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
+        ),
     )
     parser.add_argument(
         "--opponents",
@@ -2628,7 +2967,9 @@ def _resolve_seeds(args: argparse.Namespace) -> tuple[int, ...]:
     return (Config().seed,)
 
 
-def methodology_lines(orientation_mode: str) -> tuple[str, str]:
+def methodology_lines(
+    orientation_mode: str, *, arena_alignment_mode: str = EVALUATION_ARENA_ALIGNMENT_MODE
+) -> tuple[str, str]:
     """Shared human-readable methodology disclosure (Phase 5 spec Sec O.1/AA.5).
 
     Takes the same ``orientation_mode`` string vocabulary
@@ -2655,10 +2996,28 @@ def methodology_lines(orientation_mode: str) -> tuple[str, str]:
         )
     )
     alignment_line = (
-        f"Arena alignment: {EVALUATION_ARENA_ALIGNMENT_MODE} — translation "
-        "robustness not evaluated"
+        f"Arena alignment: {arena_alignment_mode} — translation robustness not evaluated"
     )
     return orientation_line, alignment_line
+
+
+def _print_v2_methodology(request: EvaluationRequest, matrix: Sequence[EvaluationCell]) -> None:
+    """Phase 1S: make an expanded v2 matrix's size/conditions obvious up front.
+
+    Never left to be inferred from a final win rate -- a permanent-v2
+    evaluation multiplies every opponent's cell count by
+    ``len(standard_placements()) * (2 if both_orientations else 1)``, which
+    a user must see stated plainly, not reverse-engineer from ``matches:``.
+    """
+
+    placements = standard_placements()
+    orientations = 2 if request.both_orientations else 1
+    cells_per_opponent = len(request.seeds) * len(placements) * orientations
+    print(f"ruleset: {request.resolved_rules_compatibility_id}")
+    print(f"seeds: {', '.join(str(seed) for seed in request.seeds)}")
+    print(f"placements: {len(placements)} ({', '.join(p.placement_id for p in placements)})")
+    print(f"scheduler orders: {'balanced' if request.both_orientations else 'candidate-first only'}")
+    print(f"cells/opponent: {cells_per_opponent}")
 
 
 def _print_matrix(
@@ -2672,11 +3031,17 @@ def _print_matrix(
     print(f"candidate: {request.candidate_id}")
     print(f"baseline: {request.baseline_id if request.baseline_id else 'none'}")
     print(f"opponents: {', '.join(request.opponent_ids)}")
-    print(f"seeds: {', '.join(str(seed) for seed in request.seeds)}")
+    if request.is_v2_methodology:
+        _print_v2_methodology(request, matrix)
+    else:
+        print(f"seeds: {', '.join(str(seed) for seed in request.seeds)}")
     print(f"ticks: {request.ticks}")
     print(f"subjects: {len(subjects)}  opponents: {len(request.opponent_ids)}  seeds: {len(request.seeds)}")
     print(f"matches: {len(matrix)}")
-    for line in methodology_lines(request.orientation_mode):
+    for line in methodology_lines(
+        request.orientation_mode,
+        arena_alignment_mode=resolved_arena_alignment_mode(request.is_v2_methodology),
+    ):
         print(line)
 
 
@@ -2725,7 +3090,11 @@ def _print_orientation_breakdown(subject_aggregates: Sequence[SubjectAggregate])
 
 
 def _print_comparison_entry(entry: ComparisonEntry, ticks: int) -> None:
-    print(f"  opponent={entry.opponent_id} seed={entry.seed} orientation={entry.orientation}")
+    placement_suffix = f" placement={entry.placement_id}" if entry.placement_id != "fixed" else ""
+    print(
+        f"  opponent={entry.opponent_id} seed={entry.seed} orientation={entry.orientation}"
+        f"{placement_suffix}"
+    )
     print(f"    candidate: {entry.candidate_outcome}  baseline: {entry.baseline_outcome}")
     if entry.reason:
         print(f"    reason: {entry.reason}")
@@ -2848,9 +3217,36 @@ def _print_behavior(analysis: Any) -> None:
         )
 
 
+def _print_capture_aggregate(aggregate: Any) -> None:
+    print(f"  captures caused: {aggregate.captures_caused}/{aggregate.available_count}")
+    print(f"  captures suffered: {aggregate.captures_suffered}/{aggregate.available_count}")
+    print(
+        f"  capture rate: caused={_fmt_fraction_pct(aggregate.capture_rate_caused)} "
+        f"suffered={_fmt_fraction_pct(aggregate.capture_rate_suffered)}"
+    )
+    print(f"  survival rate (capture-avoidance): {_fmt_fraction_pct(aggregate.survival_rate)}")
+    if aggregate.capture_ticks:
+        print(
+            f"  capture tick: mean={_fmt_rate(aggregate.mean_capture_tick)} "
+            f"median={_fmt_rate(aggregate.median_capture_tick)}"
+        )
+
+
+def _print_capture(analysis: Any) -> None:
+    print("capture/core evidence:")
+    print(f"[candidate] {analysis.candidate_id}")
+    _print_capture_aggregate(analysis.candidate_overall)
+    if analysis.baseline_overall is not None:
+        print(f"[baseline] {analysis.baseline_id}")
+        _print_capture_aggregate(analysis.baseline_overall)
+
+
 def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
     print(f"evaluation: {result.evaluation_id}")
-    for line in methodology_lines(request.orientation_mode):
+    for line in methodology_lines(
+        request.orientation_mode,
+        arena_alignment_mode=resolved_arena_alignment_mode(request.is_v2_methodology),
+    ):
         print(line)
     for aggregate in result.aggregates:
         if aggregate.orientation_scope != "all":
@@ -2865,13 +3261,12 @@ def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
             _print_orientation_breakdown(subject_aggregates)
     from battle_engine.evaluation_behavior import analyze_behavior, cell_ref_from_evaluation_cell
 
-    _print_behavior(
-        analyze_behavior(
-            request.candidate_id,
-            request.baseline_id,
-            [cell_ref_from_evaluation_cell(cell) for cell in result.cells if cell.is_scored],
-        )
-    )
+    scored_refs = [cell_ref_from_evaluation_cell(cell) for cell in result.cells if cell.is_scored]
+    _print_behavior(analyze_behavior(request.candidate_id, request.baseline_id, scored_refs))
+    if request.is_v2_methodology:
+        from battle_engine.evaluation_capture import analyze_capture
+
+        _print_capture(analyze_capture(request.candidate_id, request.baseline_id, scored_refs))
     if request.baseline_id is not None:
         regressed = [entry for entry in result.comparison if entry.classification == "regressed"]
         improved = [entry for entry in result.comparison if entry.classification == "improved"]
@@ -2958,6 +3353,18 @@ def main(argv: list[str] | None = None) -> int:
     if baseline_id is None and preset is not None:
         baseline_id = preset.baseline_id
 
+    # v2.0.0-beta2 Phase 1: resolved before seeds -- the standard v2 seed
+    # default (below) depends on whether this evaluation is v1 or v2
+    # methodology. Same three-tier resolution as every other option
+    # (explicit CLI > --preset > ordinary default); "ordinary default" here
+    # is `None` (v1, unchanged), never silently promoted to v2.
+    ruleset_id = args.ruleset
+    if ruleset_id is None and preset is not None:
+        ruleset_id = preset.ruleset_id
+    resolved_is_v2 = ruleset_id is not None and is_ruleset_v2_methodology(
+        resolve_evaluation_ruleset_id(ruleset_id)
+    )
+
     try:
         if args.opponents is not None:
             opponent_ids = parse_opponents(args.opponents)
@@ -2975,6 +3382,12 @@ def main(argv: list[str] | None = None) -> int:
             seeds = preset.seeds
         elif preset is not None and preset.seed_range is not None:
             seeds = tuple(range(preset.seed_range[0], preset.seed_range[1] + 1))
+        elif resolved_is_v2:
+            # Phase 1D: permanent-v2's standard seed methodology -- an
+            # explicit --seeds/--seed-range or --preset seed selection
+            # always overrides this (see the branches above, checked
+            # first).
+            seeds = STANDARD_V2_SEEDS
         else:
             seeds = (Config().seed,)
     except EvaluationConfigurationError as exc:
@@ -3006,6 +3419,7 @@ def main(argv: list[str] | None = None) -> int:
             baseline_id=baseline_id,
             ticks=ticks,
             both_orientations=both_orientations,
+            ruleset_id=ruleset_id,
         )
     except EvaluationConfigurationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -3027,6 +3441,7 @@ def main(argv: list[str] | None = None) -> int:
         retry_failures=args.retry_failed,
         both_orientations=both_orientations,
         workers=args.workers,
+        ruleset_id=ruleset_id,
     )
     matrix = build_matrix(request, evaluation_id)
     if not args.quiet or args.dry_run:
@@ -3051,10 +3466,14 @@ if __name__ == "__main__":
 
 __all__ = [
     "BASELINE",
+    "BYTEFRAY_RULESET_ID",
+    "BYTEFRAY_RULESET_V2_ID",
     "CANDIDATE",
     "EVALUATION_ARENA_ALIGNMENT_MODE",
+    "EVALUATION_ARENA_ALIGNMENT_MODE_V2_STANDARD",
     "EVALUATION_RULES_COMPATIBILITY_ID",
     "IDENTITY_VERSION",
+    "IDENTITY_VERSION_V2",
     "LOCAL_SOURCE_FINGERPRINT_VERSION",
     "ORIENTATION_CANDIDATE_FIRST",
     "ORIENTATION_MODE_BOTH",
@@ -3062,10 +3481,13 @@ __all__ = [
     "ORIENTATION_OPPONENT_FIRST",
     "SCHEMA_NAME",
     "SCHEMA_VERSION",
+    "SCHEMA_VERSION_V2",
+    "STANDARD_V2_SEEDS",
     "ComparisonEntry",
     "EffectiveConditions",
     "EvaluationCell",
     "EvaluationConfigurationError",
+    "EvaluationPlacement",
     "EvaluationRequest",
     "EvaluationResult",
     "EvaluationService",
@@ -3079,6 +3501,7 @@ __all__ = [
     "compare_candidate_baseline",
     "current_execution_context",
     "effective_conditions_for",
+    "is_ruleset_v2_methodology",
     "local_source_fingerprint",
     "main",
     "methodology_lines",
@@ -3088,5 +3511,10 @@ __all__ = [
     "physical_slots_for_orientation",
     "read_evaluation",
     "rerun_command",
+    "resolve_evaluation_ruleset_id",
+    "resolved_arena_alignment_mode",
+    "resolved_identity_version",
+    "resolved_schema_version",
     "source_digest",
+    "standard_placements",
 ]

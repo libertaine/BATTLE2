@@ -47,8 +47,19 @@ from .models import (
 # below is version-conditional: schema_version 4 reads the new fields as
 # RECORDED; schema_version 2/3 (which never had this concept) recover them
 # as certain historical facts (Sec L.2/AA.4.6), never UNKNOWN.
-SUPPORTED_V2_VERSIONS = (2, 3, 4)
-_ORIENTATION_AWARE_VERSIONS = (4,)
+#
+# v5 (v2.0.0-beta2 Phase 1, docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md)
+# added per-cell "placement_id"/"subject_start"/"opponent_start"/
+# "placement_index"/"rules_compatibility_id" -- also additive, joining this
+# same adapter for the identical reason as v4 above. Only ever actually
+# written by a Ruleset-v2-methodology evaluation (rules_compatibility_id
+# resolves to "bytefray-rules-2"); a v1-methodology evaluation keeps
+# writing SCHEMA_VERSION (4), never SCHEMA_VERSION_V2 (5), so schema
+# version alone already distinguishes "this artifact's placement is
+# meaningful" from "this artifact never varied placement."
+SUPPORTED_V2_VERSIONS = (2, 3, 4, 5)
+_ORIENTATION_AWARE_VERSIONS = (4, 5)
+_PLACEMENT_AWARE_VERSIONS = (5,)
 
 # A cell that lacks any of these, or has the wrong type, cannot even be
 # safely represented as an `EvaluationCell`/`AdaptedCell` -- H1: this must
@@ -283,6 +294,14 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             if version in _ORIENTATION_AWARE_VERSIONS
             else ConfidenceValue.recovered("candidate_first")
         )
+        # v2.0.0-beta2 Phase 1 (Sec Identity): schema < 5 never varied
+        # placement -- recovered as the certain historical fact "fixed",
+        # never UNKNOWN, mirroring orientation's own recovery above exactly.
+        placement = (
+            _recorded_or_unknown(raw, "placement_id", expected_type=str)
+            if version in _PLACEMENT_AWARE_VERSIONS
+            else ConfidenceValue.recovered("fixed")
+        )
         cells.append(
             AdaptedCell(
                 schedule_id=raw["schedule_id"],
@@ -314,6 +333,7 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 opponent_agent_revision_id=opponent_agent_revision_id,
                 opponent_agent_revision_error=opponent_agent_revision_error,
                 orientation=orientation,
+                placement=placement,
             )
         )
 
@@ -444,6 +464,14 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
     # (`None`) is identical and contributes nothing to disambiguation --
     # exactly the historical (single-orientation) behavior this check
     # already had, unchanged.
+    # v2.0.0-beta2 Phase 1 (Sec Identity): `placement_id` joins the
+    # coordinate for schema >= 5 artifacts, for the identical reason
+    # orientation joined it in v0.9 Phase 6 immediately above -- two cells
+    # differing only by placement legitimately share every other
+    # coordinate component. Pre-Phase-1 artifacts have no `placement_id`
+    # field at all, so every cell's absent-field value (`None`) is
+    # identical and contributes nothing to disambiguation, exactly like
+    # `orientation` did for pre-Phase-6 artifacts.
     coordinate_counts: dict[tuple[Any, ...], list[str]] = {}
     for raw in raw_cells:
         occurrence = raw.get("condition_occurrence_index")
@@ -456,6 +484,7 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             raw.get("seed"),
             occurrence,
             raw.get("orientation"),
+            raw.get("placement_id"),
         )
         coordinate_counts.setdefault(coordinate, []).append(raw["schedule_id"])
     duplicate_coordinates = {
