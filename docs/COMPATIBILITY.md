@@ -107,13 +107,25 @@ evidence behind it.
   `bytefray-rules-1` or `bytefray-rules-2` (the only behavioral difference
   is what the shared arena does around it, not what the agent is allowed to
   do).
-- **Runtime support: Python-runtime gameplay only.** `bytefray-rules-2`
-  dispatches successfully on the native VM path (the policy resolves, since
-  scheduling/termination are identical to Ruleset v1 there too), but
-  Vulnerable Core and core observability are implemented only in
-  `battle_engine.python_runtime`/`supervised_runtime`. **VM parity is not
-  claimed** — a VM match run under `bytefray-rules-2` has no core mechanic
-  at all, exactly as already true for `bytefray-rules-2-alpha1`/`-alpha11`.
+- **Runtime support: Python-runtime gameplay only.** Vulnerable Core and
+  core observability are implemented only in
+  `battle_engine.python_runtime`/`supervised_runtime`. As of `v2.0.0-beta1`
+  Phase 2, `battle_engine.match_service.NativeMatchService` enforces this as
+  an authoritative execution-compatibility boundary: a match requested under
+  the permanent `bytefray-rules-2` identity with **any** VM entrant is
+  rejected (`RulesetRuntimeUnsupportedError`) before any entrant executes
+  and before any replay/result artifact is written — the Ruleset policy
+  itself (`battle_engine.ruleset_policy.RULESET_V2.supported_runtime_kinds
+  == frozenset({"python"})`) declares this restriction, and every production
+  caller (CLI `run`/`tournament`/`agents test`, and anything built on them)
+  inherits it from the one shared seam. **VM parity is not claimed** — this
+  is a compatibility boundary, not a promise that VM entrants would see
+  Vulnerable Core semantics if only they were allowed to run.
+  `bytefray-rules-2-alpha1`/`-alpha11` are deliberately excluded from this
+  restriction and keep their original behavior: the policy resolves and the
+  match dispatches successfully with the core mechanic simply inert, exactly
+  as before Phase 2 — preserving historical alpha-artifact reproducibility
+  rather than retroactively rejecting matches those experiments already ran.
 - **Artifacts record the exact Ruleset.** Every native result/replay written
   under Ruleset v2 persists the literal `"bytefray-rules-2"` string in its
   `ruleset_id` field (`ResultEnvelope`/`ReplayHeader`), exactly like every

@@ -232,16 +232,26 @@ Viewer HUD redesign, Designer visual redesign, installer changes, version
 bump, beta packaging, tag, release, push, main merge, or origin
 reconciliation.
 
-## 7. Later beta1 phases (planned, not implemented here)
+## 7. Later beta1 phases
 
-### Phase 2 — Product execution integration
+**Phase 1 (semantic identity) is complete** — this document's own subject:
+the permanent `bytefray-rules-2` identity, Core Tracker beta cleanup, and
+the documentation delivered in §5, all committed on
+`v2.0-beta1-development`.
 
-- CLI Ruleset selection.
-- Clear, supported default behavior distinguishing v1/v2 selection.
-- Fail-closed runtime-kind handling (Python-only for v2).
-- First-user workflow walkthrough for selecting Ruleset v2.
+**Phase 2 (product execution integration) is complete** — see
+[V2_0_BETA1_PHASE2_PRODUCT_EXECUTION.md](V2_0_BETA1_PHASE2_PRODUCT_EXECUTION.md)
+for the full record. Summary: `--ruleset {bytefray-rules-1,bytefray-rules-2}`
+is now explicit CLI surface on `bytefray run`/`agents test`/`tournament`,
+defaulting to `bytefray-rules-1` when omitted; an authoritative, fail-closed
+runtime-kind check on `RulesetPolicy`/`NativeMatchService.run` rejects any
+VM entrant requested under permanent `bytefray-rules-2` before execution,
+while `bytefray-rules-1` and the historical alpha identities keep their
+exact prior VM behavior; `agents evaluate` remains implicitly v1-only, with
+no accidental v2 evaluation exposed. No gameplay semantic changed; the
+permanent-v2 promotion-equivalence corpus passes unmodified.
 
-### Phase 3 — Replay v2 semantics
+### Phase 3 — Replay v2 semantics (next)
 
 - Core status/capture events surfaced in replay-derived data.
 - HUD/status-model preparation (data only — no rendering yet).

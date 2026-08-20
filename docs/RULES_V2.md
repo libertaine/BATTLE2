@@ -167,12 +167,28 @@ Everything not named above, without exception:
 
 ## Which runtime is supported?
 
-**Python-runtime only.** `bytefray-rules-2` dispatches successfully on the
-native VM path (scheduling/termination are identical to Ruleset v1 there),
-but Vulnerable Core and core observability are implemented only in
-`battle_engine.python_runtime`/`supervised_runtime`. A VM match run under
-`bytefray-rules-2` has no core mechanic at all. VM parity is not claimed and
-is not part of this beta.
+**Python-runtime only.** Vulnerable Core and core observability are
+implemented only in `battle_engine.python_runtime`/`supervised_runtime`,
+which have no VM equivalent. As of `v2.0.0-beta1` Phase 2, this is enforced
+as a product execution-compatibility boundary, not merely a fact about
+where the mechanic happens to be implemented: **a match requested under
+`bytefray-rules-2` with any VM entrant is rejected before any entrant
+executes**, with a typed, actionable error naming the Ruleset and pointing
+to `bytefray-rules-1` for VM play — see
+`docs/V2_0_BETA1_PHASE2_PRODUCT_EXECUTION.md`. Bytefray never dispatches a
+VM entrant under this identity and silently runs a core-less game; it fails
+closed instead. VM parity is not claimed and is not part of this beta.
+
+This restriction applies only to the permanent `bytefray-rules-2` identity.
+The historical experimental identities `bytefray-rules-2-alpha1` and
+`bytefray-rules-2-alpha11` keep their original behavior unchanged for
+historical-artifact compatibility: they still dispatch successfully on a VM
+entrant, with the core mechanic simply inert (scheduling/termination
+identical to Ruleset v1, no Vulnerable Core semantics). This alpha-only
+carve-out exists so that no already-executed historical alpha match's
+behavior is retroactively altered by a beta-era product decision — it is
+not evidence that VM play is, or was ever, a supported way to exercise
+Ruleset v2's actual gameplay.
 
 ## Does the Agent API change?
 
