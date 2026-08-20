@@ -81,6 +81,31 @@ def test_events_at_tick_returns_the_recorded_death(tmp_path):
     assert session.events_at_tick(1) == (KillDeathEvent("death", "A", None),)
 
 
+def test_memory_diffs_at_tick_returns_the_raw_per_write_records(tmp_path):
+    """Mirrors ``test_events_at_tick_returns_the_recorded_death`` for the
+    sibling raw-lookup method (Beta1 Phase 3) -- a non-mutating lookup of
+    one tick's own ``MemoryDiff`` records, independent of the playback
+    cursor and distinct from ``current_state.owners`` (which reflects only
+    the *final* merged ownership across every tick up to the cursor).
+    """
+    entrants = (
+        MatchEntrant("A", "runner", 0, build_agent("runner", 0)),
+        MatchEntrant("B", "writer", 16, build_agent("writer", 16)),
+    )
+    result = NativeMatchService().run(
+        MatchRequest(_config(arena_size=32), entrants, 3, tmp_path / "diffs.jsonl", False)
+    )
+    session = ReplaySession()
+    session.load(result.replay_path)
+
+    tick0_diffs = session.memory_diffs_at_tick(0)
+    assert tick0_diffs
+    assert {diff.owner for diff in tick0_diffs} == {"A", "B"}
+
+    with pytest.raises(ReplaySessionError):
+        session.memory_diffs_at_tick(999)
+
+
 # ---------------------------------------------------------------------------
 # Hand-built replays: precise control over diffs for step/restart assertions
 # ---------------------------------------------------------------------------
