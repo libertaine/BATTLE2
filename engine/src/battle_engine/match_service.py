@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -222,6 +222,39 @@ class PythonMatchExecutionError(RuntimeError):
     def __init__(self, diagnostic: RuntimeDiagnostic):
         super().__init__(diagnostic.message)
         self.diagnostic = diagnostic
+
+
+class RulesetRuntimeUnsupportedError(ValueError):
+    """A match's entrant runtime kind(s) are not supported by its requested Ruleset.
+
+    Distinct from :class:`UnsupportedMatchCompositionError`: that error
+    rejects *heterogeneous* entrant composition (VM mixed with Python)
+    regardless of which Ruleset was requested, and is checked first. This
+    error rejects an otherwise-homogeneous composition whose single runtime
+    kind the *requested Ruleset* itself does not support -- currently only
+    ``bytefray-rules-2``, which supports Python entrants only (Beta1
+    Phase 2; see ``docs/V2_0_BETA1_PHASE2_PRODUCT_EXECUTION.md``). Raised by
+    ``NativeMatchService.run`` before any entrant executes and before any
+    replay/result artifact is written.
+    """
+
+    code = "ruleset_runtime_unsupported"
+
+    def __init__(self, ruleset_id: str, unsupported_kinds: Iterable[str]):
+        kinds = ", ".join(sorted(unsupported_kinds))
+        message = (
+            f"Ruleset {ruleset_id!r} currently supports Python entrants only "
+            f"(requested runtime kind(s): {kinds}). Use {BYTEFRAY_RULESET_ID!r} "
+            "for VM entrants."
+        )
+        super().__init__(message)
+        self.ruleset_id = ruleset_id
+        self.unsupported_kinds = tuple(sorted(unsupported_kinds))
+        self.diagnostic = RuntimeDiagnostic(
+            code=self.code,
+            stage="configuration",
+            message=message,
+        )
 
 
 def _resolve_ruleset_id(request: MatchRequest) -> str:
@@ -901,6 +934,18 @@ class NativeMatchService:
         # as Ruleset v1.
         ruleset_policy = resolve_ruleset_policy(_resolve_ruleset_id(request))
 
+        # Beta1 Phase 2's authoritative runtime-compatibility boundary:
+        # ``kinds`` (already validated as homogeneous above) and
+        # ``ruleset_policy`` (just resolved) are both in scope here and
+        # nowhere else upstream of a runtime actually executing -- every
+        # production caller (``bytefray run``/``agents test``/``tournament``,
+        # and anything built on them) inherits this check without
+        # duplicating it. Fires before either runtime is invoked and before
+        # any replay/result artifact exists at ``replay_path``.
+        unsupported_kinds = ruleset_policy.unsupported_runtime_kinds(kinds)
+        if unsupported_kinds:
+            raise RulesetRuntimeUnsupportedError(ruleset_policy.ruleset_id, unsupported_kinds)
+
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
         if "python" in kinds:
@@ -927,6 +972,7 @@ __all__ = [
     "NativeMatchResult",
     "NativeMatchService",
     "PythonMatchExecutionError",
+    "RulesetRuntimeUnsupportedError",
     "RuntimeDiagnostic",
     "UnsupportedMatchCompositionError",
     "canonical_match_id",

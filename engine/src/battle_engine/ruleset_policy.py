@@ -63,14 +63,43 @@ class RulesetPolicy:
     """One Ruleset's executable policy: identity, scheduler, and termination.
 
     Immutable and intentionally narrow -- it exposes only what current
-    runtime code actually routes through it (scheduling and the
-    termination decision/reason). It has no knowledge of
-    ``"vm"``/``"python"`` runtime selection, persistence, replay/result
-    schemas, or evaluation; those remain the concern of the callers that
-    hold a ``RulesetPolicy``, not of the policy itself.
+    runtime code actually routes through it (scheduling, the termination
+    decision/reason, and -- as of Beta1 Phase 2 -- which entrant runtime
+    kinds this Ruleset supports executing). It has no knowledge of
+    persistence, replay/result schemas, or evaluation; those remain the
+    concern of the callers that hold a ``RulesetPolicy``, not of the policy
+    itself.
+
+    ``supported_runtime_kinds``: ``None`` (the default) means this Ruleset
+    imposes no restriction -- every runtime kind
+    :class:`~battle_engine.match_service.NativeMatchService` already accepts
+    ("vm", "python") may execute under it, exactly as before this field
+    existed. A non-``None`` frozenset is this Ruleset's exhaustive supported
+    set; see :meth:`unsupported_runtime_kinds`. Only the permanent
+    ``bytefray-rules-2`` sets this (Python-only) -- Ruleset v1 and every
+    historical alpha identity remain unrestricted, preserving their exact
+    existing VM/Python behavior (including alpha's inert-on-VM dispatch).
     """
 
     ruleset_id: str
+    supported_runtime_kinds: frozenset[str] | None = None
+
+    def unsupported_runtime_kinds(self, kinds: Iterable[str]) -> frozenset[str]:
+        """Return which of ``kinds`` this Ruleset does not support executing.
+
+        The authoritative Ruleset/runtime-kind compatibility check (Beta1
+        Phase 2): callers -- currently only
+        :class:`~battle_engine.match_service.NativeMatchService` -- pass the
+        resolved entrant runtime-kind set for one match request and reject
+        before any entrant executes if this returns non-empty. Returns an
+        empty ``frozenset`` whenever :attr:`supported_runtime_kinds` is
+        ``None`` (no restriction) or every requested kind is already
+        supported.
+        """
+
+        if self.supported_runtime_kinds is None:
+            return frozenset()
+        return frozenset(kinds) - self.supported_runtime_kinds
 
     def run_scheduler(
         self,
@@ -194,8 +223,22 @@ RULESET_V2_ALPHA11 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_V2_ALPHA11_ID)
 #
 # Scheduling and termination are again *identical* to Ruleset v1 -- neither
 # ``run_scheduler`` nor ``resolve_termination`` reads ``self.ruleset_id``.
+#
+# Beta1 Phase 2 gives this identity -- and only this identity -- a runtime-
+# kind restriction: ``supported_runtime_kinds={"python"}``. Permanent
+# Ruleset-v2 gameplay depends on Python-runtime Vulnerable Core semantics
+# that have no VM implementation; unlike ``bytefray-rules-2-alpha1``/
+# ``-alpha11`` (which keep dispatching successfully but inertly on a VM
+# entrant, their exact pre-existing historical behavior, deliberately
+# preserved), a VM entrant requested under this permanent identity is
+# rejected by ``NativeMatchService`` before any entrant executes -- see
+# ``docs/V2_0_BETA1_PHASE2_PRODUCT_EXECUTION.md``. This is an execution
+# compatibility boundary, not a gameplay change: the frozen semantics this
+# policy's ``run_scheduler``/``resolve_termination`` expose are untouched.
 BYTEFRAY_RULESET_V2_ID = "bytefray-rules-2"
-RULESET_V2 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_V2_ID)
+RULESET_V2 = RulesetPolicy(
+    ruleset_id=BYTEFRAY_RULESET_V2_ID, supported_runtime_kinds=frozenset({"python"})
+)
 
 
 class UnknownRulesetError(LookupError):
