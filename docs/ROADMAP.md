@@ -717,8 +717,24 @@ explicit scheduler-order disclosure, and capture/core evidence as a new
 evaluation-output category kept structurally independent of win/loss/
 score/behavior. Every gameplay-relevant dimension (Ruleset, order,
 placement, seed, ticks) now enters canonical evaluation/schedule identity;
-resume and comparison fail closed across any methodology change. Phases
-2-5 (multi-entrant model, product workflow, Designer presentation,
+resume and comparison fail closed across any methodology change.
+
+**Phase 2 (multi-entrant evaluation model) is implementation-complete** on
+`v2.0-beta2-development`, not yet released — see
+[V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md).
+A generic entrant/seat/permutation/layout model replaces 1v1-only
+vocabulary where a true seat model is needed, without touching Phase 1's
+pairwise identity path. Real 3-entrant evaluation ships through the
+existing `agents evaluate --group` flag (reusing `candidate_id`/
+`--opponents`/`--ruleset`/`--seeds` unchanged); winner semantics are fully
+reused from the engine's own already-N-generic `resolve_winner`, never
+reinvented. A third additive schema/identity version (6) covers group
+artifacts, leaving v1 (4) and Phase 1's pairwise v2 (5) unchanged. A
+genuine Phase 1 defect (a false `planned_identity_inconsistent` health
+report on every 1v1-v2 artifact, caused by a stale evaluation-history
+rehash check) was found and fixed during this phase's own characterization.
+Multi-entrant behavior/capture aggregate analysis remains explicitly
+deferred to Phase 3. Phases 3-4 (multi-entrant analysis/strategic metrics,
 integrated qualification) remain planned.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization

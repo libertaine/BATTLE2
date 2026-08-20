@@ -34,6 +34,31 @@ identity version 4 exactly as before. See
 [docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md)
 for the full design record.
 
+### Multi-entrant evaluation model (v2.0.0-beta2 Phase 2)
+
+`bytefray agents evaluate` gains `--group`: fields the candidate together
+with every `--opponents` entry as one N-entrant roster per cell (standard
+layouts x exhaustive seat permutations), instead of Phase 1's pairwise
+one-cell-per-opponent matrix. Requires `--ruleset bytefray-rules-2` and at
+least two `--opponents`; every non-`--group` evaluation is byte-for-byte
+unaffected. Reuses the engine's own already-N-entrant-generic winner
+resolution unchanged -- no new winner-resolution logic was written. Uses a
+third additive schema/identity version (6), leaving v1 (4) and Phase 1's
+1v1 v2 (5) unchanged. Multi-entrant behavior/capture aggregate analysis is
+explicitly deferred (both the live CLI and `evaluations show` disclose
+this rather than compute misleading per-opponent metrics for a 3+ entrant
+match).
+
+Also fixes a Phase 1 defect discovered during this phase's own
+characterization: `evaluations show`/`list`/`compare`'s artifact-health
+self-consistency check falsely reported `planned_identity_inconsistent`/
+`condition_fingerprint_inconsistent` on every `bytefray-rules-2`
+1v1 evaluation artifact (a stale independent rehash that never matched
+Phase 1's own identity payload) -- a verification bug only; no persisted
+`evaluation_id`/`schedule_id`/`match_id` was ever wrong or rewritten. See
+[docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md)
+for the full design record.
+
 ## [2.0.0-beta1] - 2026-08-20
 
 ### Ruleset v2 (Vulnerable Core)

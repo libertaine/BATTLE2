@@ -56,46 +56,68 @@ extension seam and explicit non-goals.
 
 ## Phase 2 — Multi-Entrant Evaluation Model
 
-**Status: planned, not started.** Purpose: extend the condition/identity
-model Phase 1 built to a generic N-entrant representation, without
-discarding Phase 1's work.
+**Status: implementation complete, not yet released.** See
+`docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md` for the full design
+record and qualification report. Summary:
 
-- generic seat/permutation identity, replacing Phase 1's 1v1-named
-  `EvaluationPlacement`/`orientation` vocabulary where a true seat model is
-  needed, while keeping every identity/schema/resume/comparison mechanism
-  Phase 1 built (already entrant-count-agnostic in its hashing/versioning
-  design);
-- 3-entrant (and, if evidence warrants, N-entrant) schedule identity and
-  scheduler-order permutation generation, informed directly by alpha.11
-  §12's 84% permutation-sensitivity finding in contested trios;
-- winner/placement semantics for more than two entrants (survivor-only
-  eligibility, alpha.4.1, already retained and unconditional on entrant
-  count);
-- a generic cell/result representation that a 1v1 evaluation can still
-  degrade to cleanly, so Phase 1's existing 1v1 methodology remains a
-  supported special case, not a separate code path.
+- a generic entrant/seat/permutation/layout model (`EvaluationSeatAssignment`,
+  `seat_label`, `enumerate_seat_assignments`, `EvaluationLayout`,
+  `standard_layouts`), replacing 1v1-only vocabulary where a true seat
+  model is needed, while leaving Phase 1's `EvaluationPlacement`/
+  `orientation` (1v1) path completely untouched;
+- real 3-entrant evaluation shipped through the existing `agents evaluate`
+  CLI (`--group`, reusing `candidate_id`/`--opponents`/`--ruleset`/
+  `--seeds` unchanged) — this phase delivered further than originally
+  scoped, absorbing what the prior plan sketch called "Phase 3" CLI work,
+  since it turned out to require no separate CLI surface;
+- exhaustive seat-permutation scheduling for N=3 (6 permutations), informed
+  directly by alpha.11's 84% 3-way permutation-sensitivity finding, with a
+  disclosed (not solved) scaling boundary for larger N;
+- winner semantics fully reused from the engine's own already-N-generic
+  `resolve_winner` (survivor-only eligibility, alpha.4.1) — no second
+  winner-resolution algorithm was written;
+- a third additive schema/identity version (`SCHEMA_VERSION_V2_GROUP`/
+  `IDENTITY_VERSION_V2_GROUP` = 6), leaving v1 (4) and Phase 1's pairwise v2
+  (5) completely unchanged;
+- resume/comparison fail closed across roster/seat/layout/methodology
+  changes, again via the existing identity-driven gating with no new
+  gating code;
+- a genuine Phase 1 defect (an evaluation-history health-check rehash that
+  never matched Phase 1's own identity payload, producing a false
+  `planned_identity_inconsistent` on every 1v1-v2 artifact) was discovered
+  during this phase's own characterization and fixed, with regression
+  coverage;
+- real characterization against two 3-entrant rosters (closing Phase 1's
+  disclosed Hunter-coverage gap) and a self-play (duplicate-agent) roster,
+  proving the architecture executes correctly through the real engine
+  boundary, not just schedule generation.
 
-## Phase 3 — Multi-Entrant Product Execution / Evaluation Workflow
+Multi-entrant behavior/capture aggregate analysis is deliberately deferred
+— see Phase 3 below.
 
-**Status: planned, not started.** Purpose: turn Phase 2's model into a
-supported product workflow.
+## Phase 3 — Multi-Entrant Analysis & Strategic Metrics
 
-- CLI support for a 2/3-entrant `agents evaluate` invocation;
-- preset support for multi-entrant opponent/seat configuration;
-- `evaluations list`/`show` presentation for multi-entrant artifacts.
+**Status: planned, not started.** Purpose: proper N-entrant behavior/
+capture aggregate analysis, building on Phase 2's roster/seat/layout
+identity rather than Phase 1's 1v1-shaped `evaluation_behavior.py`/
+`evaluation_capture.py` internals (both currently resolve a cell's subject
+via a 2-value orientation-to-slot mapping, meaningless for a group cell
+whose subject seat varies per cell — Phase 2 explicitly guards this rather
+than computing wrong data, deferring the real fix here).
 
-## Phase 4 — Evaluation Presentation / Designer Compatibility
-
-**Status: planned, not started.** Purpose: Designer/history/compare
-presentation for multi-entrant evaluation and capture/core evidence,
-without a broad Beta3 Designer-workflow redesign (Beta3 owns that).
-
+- per-seat-aware Tier-2 result.json readers for `evaluation_behavior`/
+  `evaluation_capture`, replacing the orientation-based slot resolution
+  with `EvaluationCell.subject_seat`;
+- multi-entrant capture/behavior aggregate reporting in both the live CLI
+  and `evaluations show`, replacing the current "deferred" disclosure;
 - Designer evaluation-history/results consumers correctly disclose
-  multi-entrant methodology, mirroring Phase 1's "minimal compatibility
+  multi-entrant methodology, mirroring Phase 1/2's "minimal compatibility
   presentation adaptation" precedent rather than new complex controls;
-- capture/core display integration in the Designer results view.
+- evidence-driven evaluation of whether exhaustive N! seat-permutation
+  scheduling needs a balanced/rotation policy alternative before N grows
+  past 3 (Phase 2 §3/§17's disclosed, unsolved scaling boundary).
 
-## Phase 5 — Integrated Beta2 Qualification
+## Phase 4 — Integrated Beta2 Qualification
 
 **Status: planned, not started.** Purpose: an integrated regression/
 qualification pass across every Beta2 phase together, mirroring Beta1's
@@ -105,8 +127,12 @@ smoke. No new feature work belongs in this phase.
 
 ---
 
-Additional Beta2 phases beyond the five above are not pre-planned; if
-evidence from Phase 2/3 qualification suggests the multi-entrant scope
-needs a narrower or wider phase boundary than sketched here, that revision
-happens explicitly, the same way every other milestone in this project has
-been re-scoped from real qualification evidence rather than a fixed plan.
+Additional Beta2 phases beyond the four above are not pre-planned; if
+evidence from Phase 3 qualification suggests the multi-entrant analysis
+scope needs a narrower or wider phase boundary than sketched here, that
+revision happens explicitly, the same way every other milestone in this
+project has been re-scoped from real qualification evidence rather than a
+fixed plan. (Phase 2's own plan sketch originally allotted four phases
+after Phase 1; Phase 2 absorbed the CLI-workflow scope originally
+earmarked for a separate phase, so this revision reflects what was
+actually built, not a re-guess.)
