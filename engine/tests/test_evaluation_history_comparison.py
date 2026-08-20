@@ -67,6 +67,7 @@ def _cell(
     verified: bool | None = None,
     execution_context_id: str | None = DEFAULT_CONTEXT_ID,
     orientation: str | None = "candidate_first",
+    placement: str | None = "fixed",
 ) -> AdaptedCell:
     return AdaptedCell(
         schedule_id=f"sched-{opponent_id}-{seed}-{occurrence}",
@@ -110,6 +111,15 @@ def _cell(
             ConfidenceValue.recorded(orientation)
             if orientation is not None
             else ConfidenceValue.unknown()
+        ),
+        # v2.0.0-beta2 Phase 1 (Sec Identity/Sec Compare): part of the
+        # alignment key now, mirroring orientation immediately above --
+        # default to "fixed" (also every pre-Phase-1 cell's certain
+        # historical value) so this suite's existing fixtures keep aligning
+        # exactly as before; `placement=None` opts into UNKNOWN for tests of
+        # that specific edge case.
+        placement=(
+            ConfidenceValue.recorded(placement) if placement is not None else ConfidenceValue.unknown()
         ),
     )
 
@@ -725,6 +735,7 @@ def _baseline_cell(schedule_id: str, match_id: str, artifact_dir: str, outcome: 
         verified=verified,
         execution_context_id=ConfidenceValue.recorded(DEFAULT_CONTEXT_ID),
         orientation=ConfidenceValue.recorded("candidate_first"),
+        placement=ConfidenceValue.recorded("fixed"),
     )
 
 

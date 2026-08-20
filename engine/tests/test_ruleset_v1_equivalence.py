@@ -277,26 +277,45 @@ EXPECTED: dict[str, dict[str, object]] = {
         "termination_reason": "tick_limit",
         "ticks_run": 11,
     },
+    # v2.0.0-beta2 Phase 1 (docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md
+    # Sec Identity): match_service.canonical_match_id's Python-entrant
+    # metadata now includes "start" whenever a Python entrant's start
+    # address is non-zero (previously omitted unconditionally -- a genuine
+    # identity gap: two Python matches differing only by start address
+    # silently collided on match_id, which the new placement-aware
+    # evaluation methodology depends on not happening). This is a
+    # legitimate identity-recipe change per this file's own header policy
+    # ("a legitimate ... methodology ... change must version its contract"):
+    # every request below that starts a Python entrant at a non-zero
+    # address (all three "python_*" cases, via `_python_entrant`'s
+    # `slot * 19`/`slot * 2048` convention) now hashes differently.
+    # match_id/result_id/snapshot_sha256 refreshed accordingly; every other
+    # pinned fact (winner/termination_reason/ticks_run/agents/score --
+    # actual gameplay) is byte-for-byte unchanged, proving this is a pure
+    # identity fix, never a gameplay change. The "vm_*" cases are
+    # unaffected: canonical_match_id's "vm" branch already included
+    # "entry" (their start address) unconditionally, long before this
+    # phase.
     "python_two_way": {
-        "snapshot_sha256": "3a284f349ac73138b9df238c4c63cb78e144c4c62ad7538f5d01740aa42fa984",
-        "match_id": "match_37f7d9caa516a5797303cbd1",
-        "result_id": "result_5405eeb31aa8b925a9a69de8",
+        "snapshot_sha256": "39ed4228a88ec1032e1856168879e16d80362e505662ff17e53aae20c617a32d",
+        "match_id": "match_cb67c1e486cc26d03817048a",
+        "result_id": "result_7646d1d275d08d5b67642c56",
         "winner": "tie",
         "termination_reason": "all_agents_dead",
         "ticks_run": 2,
     },
     "python_starters": {
-        "snapshot_sha256": "26cf95ce240dc379482e3e66acc2c3df4abbec91b59c8555bc4dacf77d6a333c",
-        "match_id": "match_9a50c606dd9e3c80bf13d94c",
-        "result_id": "result_0093cb1a3e698205eba4c51a",
+        "snapshot_sha256": "a03bf79429ae1cb11ff4851f430cc473f27b5f90308145566bb9fba06d76baff",
+        "match_id": "match_dfe37b748d2e7ce6ac61aff2",
+        "result_id": "result_a5493f8ca878daa2f6466242",
         "winner": "B",
         "termination_reason": "tick_limit",
         "ticks_run": 8,
     },
     "python_three_way": {
-        "snapshot_sha256": "7766804e9a412a75fd5f674309ed9b572ac60d4727c16b528a172b0847a313f4",
-        "match_id": "match_f6680bb4d957b3965f6ce3b8",
-        "result_id": "result_d4fad2b4ca1f33ce5583ea8d",
+        "snapshot_sha256": "7e6518017365103a9f09db5338e0830b4d52762fb1e6e930fc6971568d2a0b46",
+        "match_id": "match_c2c26dcb9cc2018c86d4e700",
+        "result_id": "result_3056909f9babd3863ea59cc5",
         "winner": "BETA",
         "termination_reason": "last_agent_standing",
         "ticks_run": 2,

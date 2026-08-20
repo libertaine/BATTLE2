@@ -146,10 +146,11 @@ def test_v2_artifact_records_planned_identities(two_agents: Path):
 # ---------------------------------------------------------------------------
 # Beta1 Phase 2: evaluation boundary -- never accidentally run permanent
 # Ruleset v2 with v1-era evaluation methodology (docs/V2_0_BETA1_PLAN.md
-# Sec "Later beta1 phases"/beta2 boundary). `agents evaluate` has no
-# Ruleset-selection surface at all today, so every cell it runs -- not just
-# the evaluation-level `rules_compatibility_id` field -- must persist
-# `bytefray-rules-1` on its own match artifact.
+# Sec "Later beta1 phases"/beta2 boundary). `agents evaluate` had no
+# Ruleset-selection surface at all in Beta1, so an *omitted* --ruleset (this
+# suite's `_request` default, and every Beta1 caller's only option) must
+# still persist `bytefray-rules-1` on every cell's own match artifact,
+# unchanged by v2.0.0-beta2 Phase 1's new explicit --ruleset flag below.
 # ---------------------------------------------------------------------------
 
 
@@ -166,13 +167,18 @@ def test_evaluation_cells_always_execute_under_ruleset_v1(two_agents: Path):
         assert match_result_data["ruleset_id"] == "bytefray-rules-1"
 
 
-def test_evaluate_cli_has_no_ruleset_selection_flag(capsys):
+def test_evaluate_cli_exposes_ruleset_selection_flag_as_of_beta2_phase1(capsys):
+    """v2.0.0-beta2 Phase 1 lifts the Beta1 boundary above: `agents evaluate`
+    now exposes `--ruleset` with exactly the two product-facing Ruleset
+    identities -- never a historical alpha identity (docs/V2_0_BETA2_
+    PHASE1_EVALUATION_METHODOLOGY.md Sec Ruleset selection)."""
+
     from battle_engine.agent_evaluation import main as evaluate_main
 
     with pytest.raises(SystemExit):
         evaluate_main(["--help"])
     out = capsys.readouterr().out
-    assert "--ruleset" not in out
+    assert "--ruleset {bytefray-rules-1,bytefray-rules-2}" in out
 
 
 # ---------------------------------------------------------------------------
