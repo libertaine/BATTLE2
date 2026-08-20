@@ -619,30 +619,91 @@ behavioral distance) -- deliberately out of scope for Phase 5, per its own
 governing prompt. Evaluation methodology and artifact compatibility must
 remain explicit throughout.
 
-## v2.x — Gameplay and Rules Research
+## v2.0 Alpha Research — Complete
 
-**Status: research boundary, not a Ruleset-v2 design commitment.** New gameplay
-semantics begin no earlier than 2.x. Candidate research includes multi-unit or
-multiprocess entrants, replication/deployment, unit communication, explicit
-destructibility or richer attack mechanics, larger-field gameplay, new
-scheduler/resource semantics, Agent API v2, and a separately identified
-Ruleset v2. Which ideas belong in 2.0 versus later 2.x releases will be decided
-only when evidence and an explicit compatibility design exist.
+**Status: closed.** `v2.0.0-alpha.1` through `v2.0.0-alpha.11` are complete
+on `v2.0-development` (`main` unchanged throughout). The alpha program
+answered the principal gameplay question a first architecture/research pass
+([V2_0_ALPHA_ARCHITECTURE.md](V2_0_ALPHA_ARCHITECTURE.md)) opened: whether a
+Python-side "vulnerable core" mortality mechanic can check unrestricted
+territorial expansion — close to dominant under current scoring since
+v0.6.1 (see the `[0.6.1]` CHANGELOG entry) — without collapsing ordinary
+play or creating a new universal strategy. Candidate semantics validated;
+alpha research is now closed. See
+[V2_0_ALPHA_RESEARCH_SUMMARY.md](V2_0_ALPHA_RESEARCH_SUMMARY.md) for the
+durable synthesis of all eleven experiments, and each `V2_0_ALPHA<N>_*.md`
+document for its own uncorrected evidence record. No `alpha.12` was created;
+no further broad gameplay research reopens under this alpha sequence.
 
-**A first architecture/research pass is complete** (not yet implemented) —
-see [V2_0_ALPHA_ARCHITECTURE.md](V2_0_ALPHA_ARCHITECTURE.md). It maps which
-v1.5 seams (`RulesetPolicy` dispatch, the shared scheduler) are genuine
-extension points versus internal deduplication, evaluates arena/information-
-density, multiple execution processes, replication, richer offensive
-mechanics, and translation/placement against a common framework, and
-recommends a first experimental theme — a Python-side "vulnerable core"
-mortality mechanic (candidate identity `bytefray-rules-2-alpha1`), motivated
-directly by v0.6.1's own recorded finding (see the `[0.6.1]` CHANGELOG entry)
-that unrestricted expansion is close to dominant under current scoring with
-no viable defensive counter-strategy. No Ruleset, Agent API, or schema code
-has changed; this is a planning document, not a shipped or scheduled
-capability, and lives on a `v2.0-development` branch rather than `main` until
-an actual experiment is run and its results justify further work.
+Major decisions this program produced, carried into beta as the starting
+semantic contract (see [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)):
+
+- **Vulnerable Core** (`CORE_SIZE = 8`, owns-zero capture, once-per-tick
+  post-action check): validated as the candidate mechanic for Ruleset v2.
+- **Core observability** (`CORE_BEACON_BYTE = 0xCE`, owner-maintained
+  non-blank invariant): adopted as the candidate semantic that resolves
+  alpha.10's information-asymmetry finding.
+- **Territory maintenance/decay**: tested only as a contingency gate
+  (alpha.11 Resolution B) and **not needed** — Resolution A passed, so the
+  gate never opened; no decay mechanic exists anywhere in the codebase.
+- **Scoring**: unchanged from Ruleset v1 in every weight and formula.
+- **Scheduler**: retained, sequential and order-sensitive; order is an
+  accepted competitive factor, and evaluation methodology must balance it.
+- **Agent API v1**: retained; no Agent API v2 was needed for offense,
+  reactive defense, or placement-agnostic reconnaissance anywhere in the
+  program.
+- **Core Tracker**: the candidate offensive reference benchmark (the
+  placement-agnostic successor to the historical, now-fixture-only Core
+  Seeker).
+- **Multi-entrant execution**: validated as a supported engine capability
+  (900+ 3-entrant matches with zero infrastructure failures), not yet a
+  required product workflow.
+- **Survivor-only winner eligibility** (alpha.4.1): retained — a dead
+  entrant cannot win while any entrant survives.
+- **Old Core Seeker**: retained as a historical characterization fixture,
+  not removed.
+- **Ruleset v1** (`bytefray-rules-1`): remains frozen and untouched
+  throughout.
+
+## v2.0.0-beta1 — Ruleset v2 Integration
+
+**Status: in development.** Converts the evidence-backed
+`bytefray-rules-2-alpha11` candidate into a supported, compatibility-honest
+product ruleset. See [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md) for the full
+scope. Purpose:
+
+- freeze the candidate gameplay semantics validated by alpha.11;
+- establish the permanent `bytefray-rules-2` compatibility identity,
+  distinct from every historical alpha identity — no aliasing;
+- preserve Ruleset v1 and every historical alpha Ruleset identity unchanged
+  and executable;
+- integrate Ruleset v2 into supported execution/product boundaries;
+- perform the one reference-agent cleanup alpha.11 disclosed and deferred
+  (Core Tracker's self-core false-positive);
+- begin first visible v2 presentation integration only after the semantic
+  foundation above is complete.
+
+## v2.0.0-beta2 — Evaluation & Multi-Entrant Methodology
+
+**Status: planned.** Purpose: Ruleset-v2 evaluation methodology (order/
+placement/seed balancing per alpha.11's own requirements), scheduler/order
+balancing tooling, multi-entrant evaluation/productization decisions, and
+core/capture metrics as first-class evaluation outputs.
+
+## v2.0.0-beta3 — Workflow & Compatibility Stabilization
+
+**Status: planned.** Purpose: Agent Designer and Replay Viewer v2
+integration, CLI/workflow updates, multi-entrant workflow if beta2 adopts
+it, historical-artifact qualification, and packaging/user-workflow
+stabilization.
+
+## v2.0.0-rc1 — Release Qualification
+
+**Status: planned.** Purpose: release qualification only — no gameplay
+design work belongs here.
+
+Additional beta releases beyond beta3/rc1 are evidence-driven only and are
+not pre-planned.
 
 ## After v1.0
 

@@ -155,79 +155,147 @@ Remaining scaling features, not prerequisites for platform stability:
 
 ## Future simulation / combat research
 
-**Status: Research.** Preserved as a distinct area because these ideas
-could change the nature of the game enough to require a new rules
-compatibility identity, or a future ruleset entirely, separate from the
-one v0.10 freezes for 1.0. **None of this is a v1.0 requirement.**
+**Status: Research, except where the v2.0 alpha program (below) resolved a
+specific item.** Preserved as a distinct area because these ideas could
+change the nature of the game enough to require a new rules compatibility
+identity, or a future ruleset entirely, separate from the ones `bytefray-rules-1`
+and (as of v2.0.0-beta1) `bytefray-rules-2` freeze. **None of this is a
+2.0 requirement** beyond what the beta1 plan
+([V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)) already scopes.
 
 A first architecture/research pass over exactly these candidates —
 advanced offensive mechanics, arena/field-size, multiple execution
 processes, replication, and translation/placement — is recorded in
-[V2_0_ALPHA_ARCHITECTURE.md](V2_0_ALPHA_ARCHITECTURE.md), including which
-v1.5 seams are real extension points versus internal cleanup, and a
-recommended first experiment (a Python-side core-vulnerability mortality
-mechanic). It changes no status below to "Candidate" or "Planned" — the
-recommendation is unimplemented and unvalidated by an actual experimental
-run.
+[V2_0_ALPHA_ARCHITECTURE.md](V2_0_ALPHA_ARCHITECTURE.md). The eleven-alpha
+research program that followed it is now complete and closed (see
+[V2_0_ALPHA_RESEARCH_SUMMARY.md](V2_0_ALPHA_RESEARCH_SUMMARY.md) and
+`docs/ROADMAP.md`'s "v2.0 Alpha Research — Complete" section); it validated
+exactly one of the candidates below — a Python-side vulnerable-core
+mortality mechanic with owner-maintained core observability — into the
+`bytefray-rules-2` beta candidate. The rest remain Research/Candidate items
+below, each with its disposition updated to reflect what the alpha program
+actually found rather than what it merely proposed to investigate.
+
+### Core observability
+
+**Status: validated, moving into Ruleset-v2 beta semantics — no longer
+open research.** Alpha.10 found that seeding a core's cells at byte `0`
+(indistinguishable from untouched arena) makes an undefended core invisible
+to search while making a *defended* core the only kind findable — the wrong
+incentive. Alpha.11 resolved this with an owner-maintained non-blank
+invariant (`CORE_BEACON_BYTE`), validated across a 1,316-match corpus, and
+it is now part of the beta1 semantic contract
+([V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)). Recorded here, rather than left buried
+under "advanced offensive mechanics" below, because it is the single most
+consequential finding the alpha program produced.
+
+### Territory maintenance / memory decay
+
+**Status: Research — retained for later consideration, not required for
+Bytefray 2.0.** A deterministic decay/expiry/maintenance-cost mechanic for
+claimed territory was designed as a *contingency* in alpha.11 (Resolution
+B), gated on core observability (Resolution A) being mechanically sound but
+insufficient on its own to resolve expansion's near-universal dominance.
+Resolution A returned A-PASS, so the Resolution B gate never opened: **no
+territory-maintenance or decay mechanic was designed, implemented,
+parameterized, or executed anywhere in the alpha program**, because it
+was not needed once core observability alone resolved the finding. This is
+not unfinished mandatory v2 work — it is a contingency that a passing gate
+correctly bypassed. The idea remains available for later research if future
+evidence (post-beta1) reopens the question.
 
 ### Advanced offensive mechanics
 
-Continued exploration of how "attack" should evolve. The important design
-principle: attack should preferably remain an **emergent result of
-manipulating the simulated environment**, not an abstract engine-decided
-`ATTACK opponent` command. Any richer offensive mechanic should make more
-interesting player/agent strategy possible without replacing that strategy
-with a high-level engine action.
+**Status: Research**, with one clarification from the alpha program: 2.0
+offense remains **emergent through ordinary `READ`/`WRITE`/ownership
+behavior** under Agent API v1 — both of the alpha program's reference
+attackers (Core Seeker, then the placement-agnostic Core Tracker) achieved
+deliberate core capture using only the existing action vocabulary, with no
+privileged information and no new engine-level action. The important design
+principle stands unchanged: attack should preferably remain an **emergent
+result of manipulating the simulated environment**, not an abstract
+engine-decided `ATTACK opponent` command. An explicit `ATTACK` action
+remains a later-research idea only; the alpha program found no concrete
+need for one.
 
 ### Arena / field-size research
 
-Further analysis of arena size, rather than assuming the current default
-is universally optimal — its interaction with match duration, observation/
-read rate, write rate, process/execution count, entrant count, strategy
-type, and information availability. A useful framing is **information
-density**: what fraction of the arena can an entrant realistically observe
-or affect during a match? Very small arenas likely favor immediate
-conflict; larger arenas may make exploration, reconnaissance, uncertainty,
-prediction, and coordinated deployment strategically relevant. Any change
-here should be evidence-driven, in the same spirit as v0.9/v0.10's
-evaluation-methodology work.
+**Status: Research — unchanged, not a 2.0 blocker.** Further analysis of
+arena size, rather than assuming the current default is universally
+optimal — its interaction with match duration, observation/read rate,
+write rate, process/execution count, entrant count, strategy type, and
+information availability. A useful framing is **information density**:
+what fraction of the arena can an entrant realistically observe or affect
+during a match? Very small arenas likely favor immediate conflict; larger
+arenas may make exploration, reconnaissance, uncertainty, prediction, and
+coordinated deployment strategically relevant. Fog-of-war and other
+environmental mechanics fall in the same research-only, not-a-2.0-blocker
+category. Any change here should be evidence-driven, in the same spirit as
+v0.9/v0.10's evaluation-methodology work.
 
 ### Multiple execution processes / multipronged agents
 
-Future rules under which one competitive entrant operates through multiple
-execution processes or deployed components across the arena — conceptually
-a commander, scout, attacker/bomber, territory claimer, and defender
-sharing entrant-level state while acting from different positions. The
-design goal would be coordinated multipronged strategy, not simply more
-raw execution throughput — closer to controlling several pieces on a board
-than acting from one effective location.
+**Status: Research — explicitly distinct from validated multi-entrant
+matches.** Future rules under which **one** competitive entrant operates
+through multiple execution processes or deployed components across the
+arena — conceptually a commander, scout, attacker/bomber, territory
+claimer, and defender sharing entrant-level state while acting from
+different positions. The design goal would be coordinated multipronged
+strategy, not simply more raw execution throughput. This is not the same
+question the alpha program answered: alpha.4/4.1/5/11 validated
+**multi-entrant matches** (3+ independent entrants, each with their own
+core, competing in one match) as a real, architecturally supported engine
+capability with correct survivor-only winner semantics. Multiple execution
+processes belonging to a *single* entrant is a different, still-open
+research question this program did not address.
 
 ### Replication / deployment
 
+**Status: Research — unchanged, and distinct from the item above.**
 Whether entrants should be able to create additional execution centers
 during a match: spawning a process elsewhere, copying/deploying code,
 paying a resource/instruction cost to do so, exposing replicated processes
 to destruction, limiting process counts, and trading immediate offense
 against investment in expansion. Replication should create strategic
-choices, not simply serve as a free multiplier.
+choices, not simply serve as a free multiplier. Not exercised or validated
+by the v2.0 alpha program.
 
 ### Specialized sub-agents
 
-Potential future entrants built from multiple role-specific components
-(scout, attacker, defender, claimer, coordinator) rather than clones of one
-controller — enabling research into communication, specialization,
-distributed planning, and coordinated attacks. No implementation or API is
-defined for this yet.
+**Status: Research — unchanged.** Potential future entrants built from
+multiple role-specific components (scout, attacker, defender, claimer,
+coordinator) rather than clones of one controller — enabling research into
+communication, specialization, distributed planning, and coordinated
+attacks. No implementation or API is defined for this yet.
+
+### Agent API v2
+
+**Status: Research — retained as later research only.** The v2.0 alpha
+program found **no concrete need** for an Agent API v2: deliberate offense
+(Core Seeker, then Core Tracker), reactive evidence-driven defense
+(Reactive Core Defender), blind periodic defense (Core Defender), and
+placement-agnostic reconnaissance were all implemented and validated
+entirely within Agent API v1's existing `READ`/`WRITE`/`NOP`/`HALT`
+vocabulary, `Observation`, and `MatchContext`. Ruleset-v2 beta1 retains
+Agent API v1 as its supported Python contract. A DSL compiling to the Agent
+API (see "Accessible agent-authoring language / DSL" above) should still
+wait for an actual Agent API v2 effort before beginning, if one is ever
+justified on its own separate grounds.
 
 ### Future rulesets
 
 If any of the above materially alters gameplay, it belongs in a clearly
-versioned future ruleset rather than a silent mutation of the 1.0 rules:
+versioned future ruleset rather than a silent mutation of an existing one:
 
-- **Ruleset v1** — the stable Bytefray 1.0 game, frozen by v0.10 (see
-  [ROADMAP.md](ROADMAP.md)).
-- **Later ruleset(s)** — experimental multiprocessing/replication/
-  advanced-combat variants, versioned separately.
+- **Ruleset v1** (`bytefray-rules-1`) — the stable Bytefray 1.0 game,
+  frozen by v0.10 (see [ROADMAP.md](ROADMAP.md)).
+- **Ruleset v2** (`bytefray-rules-2`) — the beta candidate emerging from
+  the v2.0 alpha program (`v2.0.0-beta1`, see [ROADMAP.md](ROADMAP.md) and
+  [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)), distinct from every historical alpha
+  identity that preceded it.
+- **Later ruleset(s)** — any future experimental multiprocessing/
+  replication/advanced-combat variant, versioned separately from both of
+  the above.
 
 Historical evaluations must remain interpretable according to the rules
 under which they were produced — this is the same honesty principle
