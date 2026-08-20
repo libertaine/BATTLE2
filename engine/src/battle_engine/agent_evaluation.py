@@ -1175,10 +1175,20 @@ class SubjectAggregate:
     failed: int = 0
     score_total: float = 0.0
     score_avg: float = 0.0
-    score_differential_avg: float = 0.0
+    # v2.0.0-beta2 Phase 3 (design doc Sec 34): ``None`` for a group scope
+    # rather than a silently-computed number -- "opponent" is not a single
+    # entrant in a >2-entrant cell, so `score_opponent`/`territory_opponent`
+    # are always `None` on a group `EvaluationCell` (Phase 2), and treating
+    # that as "opponent score/territory = 0" here would produce a number
+    # that *looks* like a real differential but is actually just the raw
+    # score/territory relabeled. A non-group scope's arithmetic is
+    # completely unchanged (Sec 34: "existing pairwise differential fields
+    # may remain None for group cells... do not overload old names with
+    # new semantics").
+    score_differential_avg: float | None = 0.0
     ticks_avg: float = 0.0
     territory_avg: float = 0.0
-    territory_differential_avg: float = 0.0
+    territory_differential_avg: float | None = 0.0
     # v0.9 Phase 6 (Phase 5 spec Sec K.2): which cells this aggregate
     # summarizes -- "all" (pooled across both orientations, today's only
     # view before Phase 6), "candidate_first", or "opponent_first". Never
@@ -1544,14 +1554,28 @@ def aggregate_cells(
     failed = sum(1 for cell in own if cell.status == "failed")
 
     score_total = sum(cell.score_subject or 0.0 for cell in scored)
-    score_diff_total = sum(
-        (cell.score_subject or 0.0) - (cell.score_opponent or 0.0) for cell in scored
-    )
     ticks_total = sum(cell.ticks_run or 0 for cell in scored)
     territory_total = sum(cell.territory_subject or 0.0 for cell in scored)
-    territory_diff_total = sum(
-        (cell.territory_subject or 0.0) - (cell.territory_opponent or 0.0) for cell in scored
-    )
+    # v2.0.0-beta2 Phase 3 (Sec 34): a group scope's differentials are
+    # always None (see SubjectAggregate's own field docstring) -- an
+    # evaluation is either wholly group or wholly pairwise by construction
+    # (EvaluationService._validate/build_matrix never mix the two), so
+    # checking `own` here is equivalent to checking every scored cell.
+    is_group_scope = any(cell.is_group for cell in own)
+    score_differential_avg: float | None
+    territory_differential_avg: float | None
+    if is_group_scope:
+        score_differential_avg = None
+        territory_differential_avg = None
+    else:
+        score_diff_total = sum(
+            (cell.score_subject or 0.0) - (cell.score_opponent or 0.0) for cell in scored
+        )
+        territory_diff_total = sum(
+            (cell.territory_subject or 0.0) - (cell.territory_opponent or 0.0) for cell in scored
+        )
+        score_differential_avg = (score_diff_total / played) if played else 0.0
+        territory_differential_avg = (territory_diff_total / played) if played else 0.0
 
     return SubjectAggregate(
         subject_role=subject_role,
@@ -1565,10 +1589,10 @@ def aggregate_cells(
         failed=failed,
         score_total=score_total,
         score_avg=(score_total / played) if played else 0.0,
-        score_differential_avg=(score_diff_total / played) if played else 0.0,
+        score_differential_avg=score_differential_avg,
         ticks_avg=(ticks_total / played) if played else 0.0,
         territory_avg=(territory_total / played) if played else 0.0,
-        territory_differential_avg=(territory_diff_total / played) if played else 0.0,
+        territory_differential_avg=territory_differential_avg,
     )
 
 
@@ -3760,6 +3784,14 @@ def _print_matrix(
     print(alignment_line)
 
 
+def _fmt_optional_g(value: float | None) -> str:
+    return f"{value:g}" if value is not None else "n/a (group)"
+
+
+def _fmt_optional_pct2(value: float | None) -> str:
+    return f"{value:.2f}%" if value is not None else "n/a (group)"
+
+
 def _print_aggregate(aggregate: SubjectAggregate) -> None:
     print(f"[{aggregate.subject_role}] {aggregate.subject_id}")
     print(f"  win rate: {aggregate.win_rate_display}")
@@ -3768,12 +3800,13 @@ def _print_aggregate(aggregate: SubjectAggregate) -> None:
         f"played={aggregate.matches_played}"
     )
     print(
-        f"  score_avg={aggregate.score_avg:g} score_differential_avg={aggregate.score_differential_avg:g} "
+        f"  score_avg={aggregate.score_avg:g} "
+        f"score_differential_avg={_fmt_optional_g(aggregate.score_differential_avg)} "
         f"ticks_avg={aggregate.ticks_avg:g}"
     )
     print(
         f"  territory_avg={aggregate.territory_avg:.2f}% "
-        f"territory_differential_avg={aggregate.territory_differential_avg:.2f}%"
+        f"territory_differential_avg={_fmt_optional_pct2(aggregate.territory_differential_avg)}"
     )
     if aggregate.subject_init_failures or aggregate.opponent_init_failures or aggregate.failed:
         print(
@@ -3956,6 +3989,83 @@ def _print_capture(analysis: Any) -> None:
         _print_capture_aggregate(analysis.baseline_overall)
 
 
+def _fmt_rate_stat(stat: Any) -> str:
+    if stat.trials == 0:
+        return "n/a (0 matches)"
+    interval = stat.interval
+    pct = 100.0 * (stat.rate or 0.0)
+    ci = (
+        f"  {round(interval.confidence_level * 100)}% CI [{100.0 * interval.lower:.0f}%, {100.0 * interval.upper:.0f}%]"
+        if interval is not None
+        else ""
+    )
+    return f"{stat.successes}/{stat.trials} ({pct:.0f}%){ci}"
+
+
+def _print_entrant_summary(label: str, summary: Any) -> None:
+    print(f"  {label}:")
+    print(f"    winner: {_fmt_rate_stat(summary.winner)}")
+    print(f"    survival: {_fmt_rate_stat(summary.survival)}")
+    if summary.score.n:
+        print(f"    score: mean={summary.score.mean:.2f} (n={summary.score.n})")
+    if summary.capture_suffered.trials:
+        print(
+            f"    captured: {_fmt_rate_stat(summary.capture_suffered)}   "
+            f"caused: {_fmt_rate_stat(summary.capture_caused)}"
+        )
+
+
+def _print_group_analysis(result: EvaluationResult, request: EvaluationRequest) -> None:
+    """v2.0.0-beta2 Phase 3: entrant-symmetric group analysis, presented
+    candidate-first for CLI familiarity (Sec 22) -- ``evaluation_group_
+    analysis.analyze_group`` itself never receives a candidate id (Sec 6/
+    21's symmetry invariant), so this is pure presentation-time selection
+    over an already-computed, already-symmetric result.
+    """
+
+    from battle_engine.evaluation_group_analysis import (
+        analyze_group,
+        candidate_focused_view,
+        group_cell_ref_from_evaluation_cell,
+    )
+
+    scored_refs = [group_cell_ref_from_evaluation_cell(cell) for cell in result.cells if cell.is_scored]
+    print("group analysis:")
+    if not scored_refs:
+        print("  no scored cells")
+        return
+    analysis = analyze_group(request.roster_agent_ids, scored_refs)
+    view = candidate_focused_view(analysis, request.candidate_id)
+    if view.candidate is not None:
+        _print_entrant_summary(f"candidate ({request.candidate_id}) overall", view.candidate)
+    if view.candidate_seat_sensitivity is not None:
+        print("  by seat:")
+        for seat_summary in view.candidate_seat_sensitivity.by_seat:
+            print(f"    {seat_summary.scope_label}: winner={_fmt_rate_stat(seat_summary.winner)}")
+        seat_range = view.candidate_seat_sensitivity.winner_rate_range
+        if seat_range is not None:
+            print(f"    seat sensitivity (winner-rate range): {100.0 * seat_range:.0f} pp")
+    if view.candidate_layout_sensitivity is not None:
+        print("  by layout:")
+        for layout_summary in view.candidate_layout_sensitivity.by_layout:
+            print(f"    {layout_summary.scope_label}: winner={_fmt_rate_stat(layout_summary.winner)}")
+        layout_range = view.candidate_layout_sensitivity.winner_rate_range
+        if layout_range is not None:
+            print(f"    layout sensitivity (winner-rate range): {100.0 * layout_range:.0f} pp")
+    if view.other_entrants:
+        print("  other entrants:")
+        for other in view.other_entrants:
+            _print_entrant_summary(other.agent_id, other)
+    matrix = analysis.interaction_matrix
+    if matrix.pairs or matrix.unattributed_captures:
+        print("  captures (captor -> victim):")
+        for pair in matrix.pairs:
+            rate_pct = 100.0 * (pair.rate or 0.0)
+            print(f"    {pair.captor_agent_id} -> {pair.victim_agent_id}: {pair.count} ({rate_pct:.0f}%)")
+        if matrix.unattributed_captures:
+            print(f"    unattributed: {matrix.unattributed_captures}")
+
+
 def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
     print(f"evaluation: {result.evaluation_id}")
     # v2.0.0-beta2 Phase 2: skip the 1v1-only "Entrant orientation:" line
@@ -3989,13 +4099,13 @@ def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
     # readers resolve the subject's physical match slot via `cell.
     # orientation` (a 2-value candidate_first/opponent_first axis) --
     # meaningless for a group cell, whose subject occupies whichever seat
-    # `cell.subject_seat` says, not a fixed slot "A". Rather than silently
-    # read the WRONG seat's result.json entry (candidate's seat varies per
-    # cell in group mode), this is deferred explicitly to a later phase --
-    # see docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md's "analysis
-    # compatibility" section.
+    # `cell.subject_seat` says, not a fixed slot "A". They stay deferred
+    # for group cells for exactly that reason; v2.0.0-beta2 Phase 3 adds
+    # `evaluation_group_analysis`, an entrant-symmetric sibling built for
+    # this axis instead -- see docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_
+    # ANALYSIS.md.
     if request.group:
-        print("behavior/capture analysis: deferred for multi-entrant evaluations (see design doc)")
+        _print_group_analysis(result, request)
     else:
         from battle_engine.evaluation_behavior import (
             analyze_behavior,

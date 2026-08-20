@@ -16,10 +16,12 @@ from battle_engine.agent_evaluation import (
 from battle_engine.evaluation_analysis import EvidenceState, paired_evidence_from_verdicts
 from battle_engine.evaluation_behavior import BehaviorProfile, analyze_behavior
 from battle_engine.evaluation_capture import analyze_capture
+from battle_engine.evaluation_group_analysis import analyze_group
 
 from .behavior_adapter import cell_refs_for_behavior
 from .comparison import align
 from .discovery import AmbiguousSelectorError, adapt_any, discover, resolve_selector
+from .group_adapter import group_cell_refs
 from .models import ArtifactReadError
 from .verification import verify_summary
 
@@ -138,6 +140,16 @@ def _cmd_show(args: argparse.Namespace) -> int:
         and is_ruleset_v2_methodology(rules_id)
         else None
     )
+    # v2.0.0-beta2 Phase 3: the group-analysis counterpart to behavior/
+    # capture above -- same opt-in-real-I/O discipline (`--no-behavior`
+    # skips it too, since it is the identical cost class: one result.json
+    # read per scored cell), computed only for a group artifact (never for
+    # a pairwise one, which `evaluation_group_analysis` has no concept of).
+    group_analysis = (
+        analyze_group(summary.roster_agent_ids.value or (), group_cell_refs(summary))
+        if not args.no_behavior and is_group
+        else None
+    )
 
     if args.json:
         data = summary.to_json()
@@ -145,6 +157,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
         data["verify_error"] = verify_error
         data["behavior"] = behavior.to_json() if behavior is not None else None
         data["capture"] = capture.to_json() if capture is not None else None
+        data["group_analysis"] = group_analysis.to_json() if group_analysis is not None else None
         print(json.dumps(data, indent=2, sort_keys=True))
     else:
         _print_show(
@@ -153,6 +166,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
             verify_error=verify_error,
             behavior=behavior,
             capture=capture,
+            group_analysis=group_analysis,
         )
 
     if args.verify and not verified:
@@ -161,7 +175,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
 
 
 def _print_show(
-    summary, *, verified: bool | None, verify_error: str | None, behavior=None, capture=None
+    summary, *, verified: bool | None, verify_error: str | None, behavior=None, capture=None, group_analysis=None
 ) -> None:
     print(f"evaluation_id: {summary.evaluation_id}")
     print(f"schema: {summary.schema.schema} v{summary.schema.schema_version}")
@@ -269,6 +283,8 @@ def _print_show(
         _print_behavior(behavior)
     if capture is not None:
         _print_capture_history(capture)
+    if group_analysis is not None:
+        _print_group_analysis_history(summary.candidate_id, group_analysis)
     _print_execution_contexts(summary)
     _print_agent_revisions(summary)
     if verified is not None:
@@ -387,6 +403,70 @@ def _print_capture_history(capture) -> None:
     _print_capture_aggregate(f"candidate ({capture.candidate_id})", capture.candidate_overall)
     if capture.baseline_overall is not None:
         _print_capture_aggregate(f"baseline ({capture.baseline_id})", capture.baseline_overall)
+
+
+def _fmt_group_rate(stat) -> str:
+    if stat.trials == 0:
+        return "n/a"
+    return f"{stat.successes}/{stat.trials} ({100.0 * (stat.rate or 0.0):.0f}%)"
+
+
+def _print_entrant_summary_row(label: str, summary) -> None:
+    print(f"  {label}:")
+    print(
+        f"    winner: {_fmt_group_rate(summary.winner)}   survival: {_fmt_group_rate(summary.survival)}   "
+        f"eliminated: {_fmt_group_rate(summary.elimination)}"
+    )
+    if summary.score.n:
+        print(f"    score: mean={summary.score.mean:.2f} (n={summary.score.n})")
+    if summary.capture_suffered.trials or summary.capture_caused.trials:
+        print(
+            f"    captured: {_fmt_group_rate(summary.capture_suffered)}   "
+            f"caused: {_fmt_group_rate(summary.capture_caused)}"
+        )
+
+
+def _print_group_analysis_history(candidate_id: str, analysis) -> None:
+    """v2.0.0-beta2 Phase 3 (Sec 24): the ``evaluations show`` counterpart
+    to ``agent_evaluation._print_group_analysis`` -- unlike the live-run
+    CLI's candidate-focused presentation, this is the "drill deeper"
+    workflow, so every roster entrant's own summary is shown (mirrors
+    ``_print_analysis``/``_print_behavior``'s identical "show everything
+    here" precedent), not only the candidate's.
+    """
+
+    print("group analysis:")
+    print(f"  cells analyzed: {analysis.available_cells}/{analysis.cells_analyzed}")
+    print("  entrant summary:")
+    for entrant in analysis.entrant_summaries:
+        marker = " (candidate)" if entrant.agent_id == candidate_id else ""
+        _print_entrant_summary_row(f"{entrant.agent_id}{marker}", entrant)
+    for seat_view in analysis.seat_sensitivity:
+        if seat_view.winner_rate_range is None:
+            continue
+        by_seat = ", ".join(f"{s.scope_label}={_fmt_group_rate(s.winner)}" for s in seat_view.by_seat)
+        print(
+            f"  seat sensitivity [{seat_view.agent_id}]: {by_seat}  "
+            f"(winner-rate range {100.0 * seat_view.winner_rate_range:.0f} pp)"
+        )
+    for layout_view in analysis.layout_sensitivity:
+        if layout_view.winner_rate_range is None:
+            continue
+        by_layout = ", ".join(f"{s.scope_label}={_fmt_group_rate(s.winner)}" for s in layout_view.by_layout)
+        print(
+            f"  layout sensitivity [{layout_view.agent_id}]: {by_layout}  "
+            f"(winner-rate range {100.0 * layout_view.winner_rate_range:.0f} pp)"
+        )
+    matrix = analysis.interaction_matrix
+    if matrix.pairs or matrix.unattributed_captures:
+        print("  captures (captor -> victim):")
+        for pair in matrix.pairs:
+            print(
+                f"    {pair.captor_agent_id} -> {pair.victim_agent_id}: {pair.count} "
+                f"({100.0 * (pair.rate or 0.0):.0f}%)"
+            )
+        if matrix.unattributed_captures:
+            print(f"    unattributed: {matrix.unattributed_captures}")
 
 
 def _print_behavior(behavior) -> None:
