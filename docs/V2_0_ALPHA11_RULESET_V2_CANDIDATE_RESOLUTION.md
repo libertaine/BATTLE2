@@ -610,8 +610,9 @@ seven overcorrection conditions triggered:
 2. Offense gains real but non-universal leverage — `core_tracker` 1v1 10% →
    37.5%, combined 2.6% → 13.1%, still the weakest of the five.
 3. Pure expansion is no longer near-universal — `claimer` 1v1 98.4% → 60.9%,
-   combined 90.1% → 58.1%, 3-way trio share 77.8–93.3% → 50.0–63.3%. Nothing
-   in the corpus exceeds a 60.9% win rate.
+   combined 90.1% → 58.1%, 3-way trio share 77.8–93.3% → 50.0–63.3%. No
+   agent's aggregate win rate exceeds 60.9% (1v1) or 58.1% (combined), and no
+   single trio share exceeds 63.3%.
 4. Defense remains meaningful and is no longer uniquely penalised — defender
    combined win rate roughly doubled; same detectability as expanders, 3–5×
    lower capture rate.
@@ -727,8 +728,9 @@ beta planning; alpha.11 supplies evidence only.
 **GO** for beginning the separate v2 beta-planning phase.
 
 - Expansion dominance is materially resolved (§11/§13/§18) and no new
-  universal strategy replaced it (§14): the maximum win rate anywhere in the
-  corpus is 60.9%, against alpha.10's 98.4%/84.7%.
+  universal strategy replaced it (§14): the highest aggregate win rate
+  anywhere is 60.9% (1v1) / 58.1% (combined), against alpha.10's 98.4% /
+  84.7%.
 - Core observability is coherent, minimal, deterministic, replay-transparent,
   and requires no Agent API change and no agent change.
 - Territory maintenance was correctly **not** adopted — the gate did not open,

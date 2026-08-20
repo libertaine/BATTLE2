@@ -7,9 +7,9 @@ unchanged), and it does *not* claim the permanent `bytefray-rules-2`
 identity. The semantics below currently execute under the experimental
 identity **`bytefray-rules-2-alpha11`**.
 
-Evidence: `docs/V2_0_ALPHA11_RULESET_V2_CANDIDATE_RESOLUTION.md` and the ten
-alpha documents it cites. Where this document says "unchanged", it means
-byte-identical to Ruleset v1 as documented in `docs/RULES.md`.
+Evidence: `docs/V2_0_ALPHA11_RULESET_V2_CANDIDATE_RESOLUTION.md` and the
+alpha.1–alpha.10 documents it cites. Where this document says "unchanged",
+it means byte-identical to Ruleset v1 as documented in `docs/RULES.md`.
 
 ---
 

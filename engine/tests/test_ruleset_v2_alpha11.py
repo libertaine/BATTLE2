@@ -344,12 +344,10 @@ def test_footprint_exists_for_every_primary_agent(tmp_path, agent_name: str) -> 
     for the two expanders (which never write their own core deliberately)
     exactly as it does for the two defenders (which do)."""
 
-    ensure_starter_agents()
+    ensure_starter_agents(data_root=tmp_path)
     starter_names = {"claimer", "hunter"}
     if agent_name in starter_names:
-        from battle_engine.paths import get_data_root
-
-        spec = resolve_agent(get_data_root(), agent_name)
+        spec = resolve_agent(tmp_path, agent_name)
     else:
         spec = reference_agent_spec(agent_name)
 
@@ -383,10 +381,8 @@ def test_expander_core_is_invisible_under_alpha1_but_visible_under_alpha11(
 ) -> None:
     """The exact informational defect, in one matched pair of matches."""
 
-    ensure_starter_agents()
-    from battle_engine.paths import get_data_root
-
-    claimer = resolve_agent(get_data_root(), "claimer")
+    ensure_starter_agents(data_root=tmp_path)
+    claimer = resolve_agent(tmp_path, "claimer")
     observed: dict[str, set[int]] = {}
     for label, ruleset in (("alpha1", ALPHA1), ("alpha11", ALPHA11)):
         entrants = (
