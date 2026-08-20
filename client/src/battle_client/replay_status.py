@@ -36,7 +36,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from battle_engine.python_runtime import CORE_SIZE, core_addresses, has_vulnerable_core
-from battle_engine.replay import EngineEvent, KillDeathEvent, RuntimeEvent, resolve_replay_ruleset
+from battle_engine.replay import (
+    EngineEvent,
+    KillDeathEvent,
+    ReplayHeader,
+    RuntimeEvent,
+    resolve_replay_ruleset,
+)
 
 from battle_client.analysis import collect_match_events, territory_summary
 from battle_client.session import ReplaySession, ReplaySessionError, ReplayState
@@ -289,8 +295,31 @@ def get_entrant_statuses(
     return tuple(statuses)
 
 
+def resolve_match_ruleset_label(header: ReplayHeader) -> str:
+    """A short, confidence-qualified display label for a replay's Ruleset
+    identity (Beta1 Phase 4's "is this v1 or v2" requirement -- see
+    ``docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md``).
+
+    Thin presentation wrapper around ``resolve_replay_ruleset`` -- the same
+    confidence-qualified resolution ``_core_status`` already uses -- kept in
+    this domain module rather than the renderer so the renderer never
+    re-derives Ruleset identity itself. ``"recorded"`` confidence (the
+    normal case for any replay written by this codebase) shows the bare
+    identity string; ``"recovered"``/``"unknown"`` are shown qualified,
+    exactly like ``docs/REPLAY_SCHEMA.md`` documents them, rather than
+    silently presented as equally certain.
+    """
+    resolved = resolve_replay_ruleset(header)
+    if resolved.value is None:
+        return "unknown"
+    if resolved.confidence == "recorded":
+        return resolved.value
+    return f"{resolved.value} ({resolved.confidence})"
+
+
 __all__ = [
     "CoreStatus",
     "EntrantReplayStatus",
     "get_entrant_statuses",
+    "resolve_match_ruleset_label",
 ]

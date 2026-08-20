@@ -22,6 +22,21 @@ regardless of how the viewer got to the current tick.
 ``HeadlessRenderer`` (a different renderer, in ``renderers/headless.py``)
 is unaffected by any of this and still uses the original
 ``ReplayPlayer``/``AbstractRenderer`` streaming path.
+
+**Beta1 Phase 4 (HUD separation).** The window is tiled into three
+non-overlapping bands -- a top HUD band (match header + one status card
+per entrant), a middle arena band, and a bottom footer band (playback/tick,
+a compact status/event message, controls, and the territory-history graph)
+-- via ``battle_client.hud_layout.calculate_layout``. Only spatially
+meaningful overlays (ownership tint, recent-activity heatmap, write
+flashes, agent trails/markers, the selected-cell highlight) are drawn on
+the arena band itself; everything else lives in a band. Per-entrant status
+(alive/dead, Ruleset-v2 core integrity/capture/attribution, score,
+territory, kills) is read entirely from ``battle_client.replay_status.
+get_entrant_statuses`` (the Phase-3 status model) -- this module never
+derives core addresses, ownership, capture state, death state, killer, or
+Ruleset semantics from raw replay structures itself. See
+``docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md`` for the full design record.
 """
 
 from __future__ import annotations
@@ -42,10 +57,27 @@ from battle_client.analysis import (
     compute_territory_history,
     events_near_tick,
     selected_cell_info,
-    territory_summary,
+)
+from battle_client.hud_layout import (
+    CARD_LINE_HEIGHT,
+    FOOTER_HEIGHT,
+    FOOTER_LINE_HEIGHT,
+    HEADER_LINE_HEIGHT,
+    TOP_BAND_HEIGHT,
+    ViewerLayout,
+    calculate_layout,
+    format_entrant_card_lines,
+    format_match_header_lines,
+    format_playback_line,
+    truncate_with_ellipsis,
 )
 from battle_client.player import PlaybackController
 from battle_client.renderers.base import RendererDependencyError
+from battle_client.replay_status import (
+    EntrantReplayStatus,
+    get_entrant_statuses,
+    resolve_match_ruleset_label,
+)
 from battle_client.session import ReplaySession, ReplayState
 
 FLASH_TTL = 6
@@ -93,6 +125,25 @@ DEFAULT_TINT = (80, 80, 80)
 DEFAULT_FLASH = (255, 255, 255)
 DEFAULT_AGENT_COLOR = (200, 200, 200)
 SELECTION_COLOR: tuple[int, int, int] = (255, 255, 0)
+
+# HUD band colors (Beta1 Phase 4). Bands are solid, not translucent -- they
+# no longer overlay the arena, so there is nothing beneath them to blend
+# with (see docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md). Status color is always a
+# color *plus* text ("Alive"/"Dead"/"CAPTURED" are never conveyed by color
+# alone -- see the governing task's Phase 4M).
+PANEL_BG: tuple[int, int, int] = (16, 16, 19)
+PANEL_BORDER: tuple[int, int, int] = (48, 48, 54)
+TEXT_COLOR: tuple[int, int, int] = (225, 225, 225)
+DIM_TEXT_COLOR: tuple[int, int, int] = (150, 150, 155)
+STATUS_ALIVE_COLOR: tuple[int, int, int] = (120, 220, 140)
+STATUS_DEAD_COLOR: tuple[int, int, int] = (225, 100, 100)
+STATUS_CAPTURED_COLOR: tuple[int, int, int] = (235, 150, 70)
+# Rough monospace glyph width for the HUD font, used only to convert a
+# card's pixel width into a character budget for deterministic truncation
+# (see hud_layout.truncate_with_ellipsis) -- an estimate, not a font metric
+# query, since the exact figure only affects how eagerly text truncates,
+# never correctness (see test_hud_layout.py's truncation tests).
+HUD_CHAR_WIDTH_PX = 7
 
 HELP_TEXT = (
     "Space play/pause  Right/Left step  Shift+Right/Left seek 10  "
@@ -156,58 +207,11 @@ def choose_initial_window_scale(
 # ---------------------------------------------------------------------------
 # HUD content: pure functions over ReplaySession/PlaybackController/
 # ReplayState, deliberately kept free of any Pygame dependency so they can
-# be unit tested without opening a window.
+# be unit tested without opening a window. Per-entrant status text
+# construction (name/alive/core/score/territory/kills) lives in
+# battle_client.hud_layout, over the Phase-3 battle_client.replay_status
+# model -- not here (see docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md).
 # ---------------------------------------------------------------------------
-def _agent_display_line(
-    agent_id: str,
-    display_name: str,
-    state: ReplayState,
-    territory: tuple[int, float] | None = None,
-) -> str:
-    """One HUD line for one entrant, labeled for its actual runtime kind.
-
-    VM: ``pc`` is a real fetch address, ``cpu_used`` an instruction count,
-    ``region`` a real code-load footprint. Python: the controller value is
-    never called "pc"/labeled as a source location, ``cpu_used`` is
-    labeled as an action/callback count, and the always-degenerate
-    ``(0, 0)`` region is never presented as a meaningful footprint -- see
-    the runtime-kind semantics table in docs/REPLAY_SCHEMA.md.
-
-    ``territory``, if given, is this agent's ``(owned_cell_count,
-    percentage_of_arena)`` from :func:`territory_summary` -- rendered as
-    its own ``territory=`` token, deliberately never merged into or
-    confused with ``score=``: territory is a point-in-time ownership
-    snapshot, while score (see ``battle_engine.scoring.ScoringPolicy``)
-    accumulates cumulatively in bucketed steps and is not proportional to
-    it.
-    """
-    agent = state.agents.get(agent_id)
-    if agent is None:
-        return f"{agent_id} ({display_name})  no data at this tick"
-
-    status = "alive" if agent.alive else "dead"
-    score = state.score.get(agent_id, 0)
-
-    if state.runtime_kind == "python":
-        position_label = f"ctrl={agent.pc}"
-        cpu_label = f"actions={agent.cpu_used}"
-        region_label = "region=n/a (python controller)"
-    else:
-        position_label = f"pc={agent.pc}"
-        cpu_label = f"cpu={agent.cpu_used}"
-        region_label = f"region={list(agent.region)}" if agent.region else "region=?"
-
-    territory_label = ""
-    if territory is not None:
-        count, percentage = territory
-        territory_label = f"  territory={count}/{len(state.owners)} ({percentage:.1f}%)"
-
-    return (
-        f"{agent_id} ({display_name})  {status}  score={score:g}{territory_label}  "
-        f"{cpu_label}  writes={agent.mem_writes}  {position_label}  {region_label}"
-    )
-
-
 def select_history_window(
     ticks: Sequence[int], values: Sequence[float], current_tick: int, window: int
 ) -> tuple[tuple[int, ...], tuple[float, ...]]:
@@ -377,8 +381,8 @@ def format_inspector_lines(
     info: SelectedCellInfo | None, *, recently_changed: bool = False
 ) -> list[str]:
     """HUD lines for a "Selected cell:" panel, or ``[]`` if ``info`` is
-    ``None`` (nothing selected -- the panel is simply omitted, matching
-    how ``build_hud_lines`` already omits "Recent events:" when empty).
+    ``None`` (nothing selected -- ``PygameRenderer._draw_footer`` falls
+    back to its idle/event message in that case).
 
     ``recently_changed`` is renderer-local presentation state (sourced
     from ``PygameRenderer._flash`` -- see ``_selected_cell_info`` below),
@@ -395,91 +399,6 @@ def format_inspector_lines(
     if recently_changed:
         line += "  (recently changed)"
     return ["Selected cell:", line]
-
-
-def _event_section_start(lines: list[str]) -> int | None:
-    """The index in ``lines`` (as returned by :func:`build_hud_lines`)
-    where the "Recent events:" section's event rows begin, or ``None`` if
-    that call included no such section (no events at/before that tick).
-    """
-    try:
-        return lines.index("Recent events:") + 1
-    except ValueError:
-        return None
-
-
-def build_hud_lines(
-    session: ReplaySession,
-    controller: PlaybackController,
-    *,
-    match_events: list[tuple[int, EngineEvent]] | None = None,
-    selected: SelectedCellInfo | None = None,
-    recently_changed: bool = False,
-) -> list[str]:
-    """The HUD's text content for the session/controller's current state.
-
-    Kept readable rather than exhaustive: one status line, one line per
-    entrant (now including territory alongside score -- see
-    ``_agent_display_line``), a compact "Selected cell:" panel (Phase 7b
-    Slice 2, see ``format_inspector_lines``) when ``selected`` is given, a
-    short "Recent events" section, and winner/termination once the
-    replay's terminal record establishes them -- which is independent of
-    the current playback position, since that metadata comes straight
-    from the canonical replay's own terminal ``MatchResult``, not from
-    scrubbing to the end.
-
-    ``match_events`` lets a caller that already computed
-    ``collect_match_events(session)`` once (it scans every recorded tick,
-    so a real renderer should cache it for the session's lifetime rather
-    than repeat that scan every frame) pass it in; if omitted, it is
-    computed fresh here, which keeps this function usable standalone in
-    tests without that caching concern. ``recently_changed`` is forwarded
-    to ``format_inspector_lines`` -- see that function's docstring for why
-    it is a separate renderer-local parameter rather than a field on
-    ``selected``.
-    """
-    state = session.current_state
-    runtime_label = state.runtime_kind or "unknown"
-    status = "PLAYING" if controller.playing else "PAUSED"
-    if session.at_end:
-        status = "PAUSED (end)" if not controller.playing else status
-
-    territory = territory_summary(state)
-
-    lines = [
-        f"Bytefray Replay -- runtime: {runtime_label}",
-        f"Tick {state.tick} / {session.final_tick}   [{status}]   speed {controller.speed:g}x",
-        "",
-    ]
-
-    agent_names = dict(session.header.agents) if session.header is not None else {}
-    for agent_id in sorted(state.agents):
-        display_name = agent_names.get(agent_id, agent_id)
-        lines.append(
-            _agent_display_line(agent_id, display_name, state, territory.get(agent_id))
-        )
-
-    inspector_lines = format_inspector_lines(selected, recently_changed=recently_changed)
-    if inspector_lines:
-        lines.append("")
-        lines.extend(inspector_lines)
-
-    events = collect_match_events(session) if match_events is None else match_events
-    recent = events_near_tick(events, state.tick)
-    if recent:
-        lines.append("")
-        lines.append("Recent events:")
-        for event_tick, event in recent:
-            lines.append(f"  {format_event_line(event_tick, event)}")
-
-    if session.result is not None:
-        winner = session.winner or "tie"
-        lines.append("")
-        lines.append(f"Winner: {winner}   Termination: {session.termination_reason}")
-
-    lines.append("")
-    lines.append(HELP_TEXT)
-    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -575,15 +494,36 @@ class PygameRenderer:
         # Every recorded (tick, event) pair for the loaded session, computed
         # once in run() -- collect_match_events scans every recorded tick,
         # so this is cached for the session's lifetime rather than redone
-        # every frame (see build_hud_lines's ``match_events`` parameter).
+        # every frame (see get_entrant_statuses's own ``match_events``
+        # parameter, which this same cache is passed into every frame).
         self._match_events: list[tuple[int, EngineEvent]] = []
-        # Where the HUD's "Recent events" panel was last drawn on screen,
-        # and which tick each of its lines corresponds to -- set fresh by
-        # _draw_hud every frame, read by _loop's click handling. None/empty
-        # when the current tick has no events to show.
+        # Where the footer's compact event/status message was last drawn on
+        # screen, and which tick it corresponds to -- set fresh by
+        # _draw_footer every frame, read by _loop's click handling. None/
+        # empty whenever the footer isn't currently showing a clickable
+        # event (nothing recorded yet, or a cell selection is showing
+        # instead -- see _draw_footer).
         self._event_panel_origin: tuple[int, int] | None = None
         self._event_panel_size: tuple[int, int] | None = None
         self._event_panel_ticks: tuple[int, ...] = ()
+
+        # Beta1 Phase 4: the current window's HUD/arena/footer band geometry
+        # (battle_client.hud_layout.calculate_layout), recomputed whenever
+        # the window is (re)configured or resized -- never per-frame, since
+        # it depends only on window size and entrant count, neither of
+        # which changes between resizes. ``None`` before the first
+        # _configure_window() call (e.g. in a unit test that never called
+        # run()) -- every geometry-consuming method below falls back to
+        # treating the whole screen as the arena in that case, matching
+        # this renderer's pre-Phase-4 behavior exactly.
+        self._layout: ViewerLayout | None = None
+        self._entrant_count = 1
+        # The replay's own Ruleset identity label and arena size, resolved
+        # once in run() (see battle_client.replay_status.
+        # resolve_match_ruleset_label) -- match-level facts that do not
+        # change across a replay, so there is no reason to re-resolve them
+        # every frame.
+        self._ruleset_label = "unknown"
 
         # Presentation-only selected-cell inspector state (Phase 7b Slice 2).
         # Set by a click on the arena grid (never on the event panel, which
@@ -642,11 +582,28 @@ class PygameRenderer:
             return None
         return self._to_xy(agent.pc)
 
-    def _screen_xy(self, x: int, y: int) -> tuple[int, int]:
+    def _arena_rect(self) -> tuple[int, int, int, int]:
+        """The arena's current on-screen rect.
+
+        Sourced from ``self._layout`` (set by ``_configure_window``/
+        ``_resize_window`` -- see ``battle_client.hud_layout.
+        calculate_layout``) whenever a real window has been configured.
+        Falls back to treating the whole screen as the arena when no layout
+        has been computed yet (a unit test that pokes ``self.screen``/
+        ``self.grid_cols``/``self.grid_rows`` directly without going through
+        ``run()``) -- this is exactly this renderer's pre-Phase-4 behavior,
+        preserved deliberately so those tests keep their original meaning.
+        """
+        if self._layout is not None:
+            return self._layout.arena_rect
         w, h = self.screen.get_size()
+        return (0, 0, w, h)
+
+    def _screen_xy(self, x: int, y: int) -> tuple[int, int]:
+        ax, ay, aw, ah = self._arena_rect()
         return (
-            int((x + 0.5) * w / self.grid_cols),
-            int((y + 0.5) * h / self.grid_rows),
+            ax + int((x + 0.5) * aw / self.grid_cols),
+            ay + int((y + 0.5) * ah / self.grid_rows),
         )
 
     # ---------- lifecycle ----------
@@ -676,6 +633,20 @@ class PygameRenderer:
         self.arena = session.header.config.arena_size if session.header else 0
         self.grid_cols, self.grid_rows = self._resolve_grid_dims(self.arena)
         self._display_safe_bounds = None
+        # Match-level facts that never change across a replay (Beta1 Phase
+        # 4): entrant count sizes the top band's card row, the Ruleset
+        # label answers "is this v1 or v2" in the match header -- see
+        # battle_client.replay_status.resolve_match_ruleset_label. Resolved
+        # once here, never re-derived by this renderer per frame.
+        # ``match_events=()`` here deliberately skips get_entrant_statuses's
+        # own internal collect_match_events scan -- only the *count* of
+        # entrants is needed for layout sizing, not correct death/kill
+        # fields, and self._match_events (the real cache every per-frame
+        # call below uses) is computed separately just below.
+        self._entrant_count = max(1, len(get_entrant_statuses(session, match_events=())))
+        self._ruleset_label = (
+            resolve_match_ruleset_label(session.header) if session.header is not None else "unknown"
+        )
         self._configure_window()
         # Scans every recorded tick once; see _match_events's docstring in
         # __init__ for why this is cached rather than redone per frame.
@@ -697,16 +668,38 @@ class PygameRenderer:
         finally:
             pygame.quit()
 
+    def _window_size_for_scale(self, scale: int) -> tuple[int, int]:
+        """The total window size for arena cell ``scale``: the arena's own
+        ``grid_cols*scale`` by ``grid_rows*scale`` pixel size, plus the
+        fixed-height top HUD and footer bands (Beta1 Phase 4) -- see
+        ``battle_client.hud_layout.TOP_BAND_HEIGHT``/``FOOTER_HEIGHT``.
+        """
+        return (
+            self.grid_cols * scale,
+            TOP_BAND_HEIGHT + self.grid_rows * scale + FOOTER_HEIGHT,
+        )
+
+    def _arena_display_bounds(self) -> tuple[int, int]:
+        """The display-safe bounds available to the *arena* alone: the
+        full display-safe bounds (``_display_bounds``) minus the fixed HUD/
+        footer band heights, so scale-fitting logic (``integer_scale_to_
+        fit``/``choose_initial_window_scale``, both left otherwise
+        unchanged -- see docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md) sizes the
+        arena to the space it will actually occupy, never the whole
+        display.
+        """
+        bounds = self._display_bounds()
+        return (bounds[0], max(1, bounds[1] - TOP_BAND_HEIGHT - FOOTER_HEIGHT))
+
     def _configure_window(self) -> None:
         pg = self.pg
-        display_bounds = self._display_bounds()
         self.scale = choose_initial_window_scale(
             self.grid_cols,
             self.grid_rows,
-            display_bounds,
+            self._arena_display_bounds(),
             requested_scale=self._requested_scale,
         )
-        window_size = (self.grid_cols * self.scale, self.grid_rows * self.scale)
+        window_size = self._window_size_for_scale(self.scale)
         # Some platforms ignore an icon set after the window is created, so
         # this must run before set_mode().
         icon_path = get_branding_icon_path()
@@ -717,6 +710,7 @@ class PygameRenderer:
         self.grid_surf = pg.Surface((self.grid_cols, self.grid_rows))
         self.font = pg.font.SysFont("consolas", 14)
         self.hud_font = pg.font.SysFont("consolas", 13)
+        self._layout = calculate_layout(window_size, self._entrant_count)
 
     def _display_bounds(self) -> tuple[int, int]:
         if self._display_safe_bounds is not None:
@@ -732,13 +726,14 @@ class PygameRenderer:
         return self._display_safe_bounds
 
     def _resize_window(self) -> None:
-        size = (self.grid_cols * self.scale, self.grid_rows * self.scale)
+        size = self._window_size_for_scale(self.scale)
         self.screen = self.pg.display.set_mode(size, self.pg.RESIZABLE)
         self.pg.display.set_caption(self.title)
+        self._layout = calculate_layout(size, self._entrant_count)
 
     def _fit_to_display(self) -> None:
         fit_scale = integer_scale_to_fit(
-            self.grid_cols, self.grid_rows, self._display_bounds()
+            self.grid_cols, self.grid_rows, self._arena_display_bounds()
         )
         old = self.scale
         self.scale = fit_scale
@@ -749,7 +744,7 @@ class PygameRenderer:
         """Apply one manual integer scale step within display-safe bounds."""
 
         display_scale = integer_scale_to_fit(
-            self.grid_cols, self.grid_rows, self._display_bounds()
+            self.grid_cols, self.grid_rows, self._arena_display_bounds()
         )
         old = self.scale
         self.scale = max(1, min(display_scale, self.scale + change))
@@ -781,8 +776,9 @@ class PygameRenderer:
                         self._fit_to_display()
                 elif event.type in (pg.VIDEORESIZE, getattr(pg, "WINDOWRESIZED", 32769)):
                     w, h = getattr(event, "size", self.screen.get_size())
+                    arena_bounds = (w, max(1, h - TOP_BAND_HEIGHT - FOOTER_HEIGHT))
                     new_scale = integer_scale_to_fit(
-                        self.grid_cols, self.grid_rows, (w, h)
+                        self.grid_cols, self.grid_rows, arena_bounds
                     )
                     if new_scale != self.scale:
                         self.scale = new_scale
@@ -798,29 +794,34 @@ class PygameRenderer:
             pg.display.flip()
 
     def _handle_click(self, controller: PlaybackController, pos: tuple[int, int]) -> None:
-        """Seek to an event's tick, or select an arena cell, for a click at
-        ``pos``.
+        """Seek to the footer's clickable event message, or select an arena
+        cell, for a click at ``pos``.
 
-        The "Recent events" panel takes priority when both could apply (it
-        is drawn on top of the grid): a click resolving to an event tick
-        seeks and returns immediately, without also touching cell
-        selection. ``ReplaySession.seek`` is called directly rather than
-        through ``PlaybackController`` because seeking to an arbitrary
-        already-recorded tick isn't one of the controller's own navigation
+        The footer's event message takes priority when both could apply: a
+        click resolving to its (single) event tick seeks and returns
+        immediately, without also touching cell selection.
+        ``ReplaySession.seek`` is called directly rather than through
+        ``PlaybackController`` because seeking to an arbitrary already-
+        recorded tick isn't one of the controller's own navigation
         primitives (see ``player.py``'s module docstring on why
         ``ReplaySession`` stays the sole source of reconstructed state).
 
-        Otherwise, if the click lands on a valid arena cell, it becomes the
-        selected address (see ``_selected_address``) -- a presentation-only
-        selection, not a navigation command, so it never pauses playback.
-        A click that hits neither the event panel nor a valid arena cell
-        (outside the window, or before the renderer has a real screen --
-        e.g. in a unit test that never called ``run()``) leaves the
-        current selection untouched.
+        Otherwise, if the click lands on a valid arena cell (translated into
+        the arena band's own local coordinates -- see ``_arena_rect``), it
+        becomes the selected address (see ``_selected_address``) -- a
+        presentation-only selection, not a navigation command, so it never
+        pauses playback. A click that hits neither the footer's event
+        message nor a valid arena cell (outside the arena band, or before
+        the renderer has a real screen -- e.g. in a unit test that never
+        called ``run()``) leaves the current selection untouched.
         """
         if self._event_panel_origin is not None and self._event_panel_size is not None:
             tick = resolve_event_click(
-                self._event_panel_ticks, self._event_panel_origin, self._event_panel_size, 16, pos
+                self._event_panel_ticks,
+                self._event_panel_origin,
+                self._event_panel_size,
+                FOOTER_LINE_HEIGHT,
+                pos,
             )
             if tick is not None:
                 controller.pause()
@@ -829,9 +830,9 @@ class PygameRenderer:
 
         if self.screen is None or self.grid_cols <= 0 or self.grid_rows <= 0:
             return
-        address = screen_pos_to_address(
-            pos, self.screen.get_size(), self.grid_cols, self.grid_rows, self.arena
-        )
+        ax, ay, aw, ah = self._arena_rect()
+        local_pos = (pos[0] - ax, pos[1] - ay)
+        address = screen_pos_to_address(local_pos, (aw, ah), self.grid_cols, self.grid_rows, self.arena)
         if address is not None:
             self._selected_address = address
 
@@ -915,6 +916,12 @@ class PygameRenderer:
         gs = self.grid_surf
         state = controller.session.current_state
 
+        # The window background, visible only where a band doesn't paint
+        # over it (e.g. a footer graph panel narrower than its rect) --
+        # matches the panel bands' own color rather than the arena's, since
+        # it is chrome, not battlefield (Beta1 Phase 4).
+        self.screen.fill(PANEL_BG)
+
         gs.fill(GRID_BG)
         max_dim = max(self.grid_cols, self.grid_rows)
         step = max(1, max_dim // 32)
@@ -946,8 +953,9 @@ class PygameRenderer:
             if 0 <= xy[0] < self.grid_cols and 0 <= xy[1] < self.grid_rows:
                 gs.set_at(xy, color)
 
-        scaled = pg.transform.scale(gs, self.screen.get_size())
-        self.screen.blit(scaled, (0, 0))
+        ax, ay, aw, ah = self._arena_rect()
+        scaled = pg.transform.scale(gs, (max(1, aw), max(1, ah)))
+        self.screen.blit(scaled, (ax, ay))
 
         if self.trails_enabled:
             for agent_id, points in self._trail_points.items():
@@ -967,8 +975,8 @@ class PygameRenderer:
             self._draw_agent_marker(agent_id, xy)
 
         self._draw_selection_highlight()
-        self._draw_territory_graph(state)
-        self._draw_hud(controller)
+        self._draw_top_band(controller)
+        self._draw_footer(controller)
 
     def _blend(
         self, a: tuple[int, int, int], b: tuple[int, int, int], alpha: float
@@ -983,10 +991,8 @@ class PygameRenderer:
         color = AGENT_COLORS.get(agent_id, DEFAULT_AGENT_COLOR)
         x, y = pos
         sx, sy = self._screen_xy(x, y)
-        cell_scale = min(
-            self.screen.get_width() / self.grid_cols,
-            self.screen.get_height() / self.grid_rows,
-        )
+        _ax, _ay, aw, ah = self._arena_rect()
+        cell_scale = min(aw / self.grid_cols, ah / self.grid_rows)
         r = max(3, int(0.7 * cell_scale))
         self.pg.draw.circle(self.screen, color, (sx, sy), r)
         self.pg.draw.circle(self.screen, (0, 0, 0), (sx, sy), r, 1)
@@ -1003,41 +1009,48 @@ class PygameRenderer:
         if xy is None:
             return
         x, y = xy
-        w, h = self.screen.get_size()
-        cell_w = w / self.grid_cols
-        cell_h = h / self.grid_rows
+        ax, ay, aw, ah = self._arena_rect()
+        cell_w = aw / self.grid_cols
+        cell_h = ah / self.grid_rows
         rect = self.pg.Rect(
-            int(x * cell_w), int(y * cell_h), max(1, math.ceil(cell_w)), max(1, math.ceil(cell_h))
+            int(ax + x * cell_w),
+            int(ay + y * cell_h),
+            max(1, math.ceil(cell_w)),
+            max(1, math.ceil(cell_h)),
         )
         self.pg.draw.rect(self.screen, SELECTION_COLOR, rect, 2)
 
-    def _draw_territory_graph(self, state: ReplayState) -> None:
-        """Draw the compact territory-history trend panel in the bottom-right
-        corner: one polyline per agent, its owned-cell percentage over a
-        trailing window of ticks ending at the current tick.
+    def _draw_footer_graph(self, state: ReplayState, rect: tuple[int, int, int, int]) -> None:
+        """Draw the compact territory-history trend panel at ``rect``
+        (the footer band's own graph rect -- see ``battle_client.
+        hud_layout.calculate_layout``'s ``footer_graph_rect``): one
+        polyline per agent, its owned-cell percentage over a trailing
+        window of ticks ending at the current tick.
 
-        Reads only ``self._territory_history`` (precomputed once in
-        ``run()`` -- see ``compute_territory_history``); no replay
-        reconstruction happens here, only windowing/downsampling/coordinate
-        math (``select_history_window``/``downsample_series``/
-        ``territory_graph_points``), all pure and cheap. A no-op if no
-        history was computed (e.g. a replay with no tick records).
+        Relocated off the arena in Beta1 Phase 4 (previously an overlay
+        floating in the arena's own bottom-right corner -- see
+        docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md §3): the graph is a trend over
+        time, not tied to any specific arena cell, so it belongs in the
+        HUD, not the battlefield. Reads only ``self._territory_history``
+        (precomputed once in ``run()`` -- see ``compute_territory_
+        history``); no replay reconstruction happens here, only windowing/
+        downsampling/coordinate math (``select_history_window``/
+        ``downsample_series``/``territory_graph_points``), all pure and
+        cheap. A no-op if no history was computed, or if ``rect`` is
+        degenerate (zero-size -- narrow windows omit the graph entirely,
+        see ``hud_layout.FOOTER_GRAPH_MIN_WINDOW_WIDTH``).
         """
         history = self._territory_history
-        if not history.ticks:
+        panel_x, panel_y, panel_w, panel_h = rect
+        if not history.ticks or panel_w <= 0 or panel_h <= 0:
             return
 
-        w, h = self.screen.get_size()
-        panel_w, panel_h, margin = 190, 70, 8
-        panel_x, panel_y = w - panel_w - margin, h - panel_h - margin
-        if panel_x < 0 or panel_y < 0:
-            return
         # Local (panel-surface) coordinates -- the plot area, inset from the
         # panel's own border, leaving a bottom strip for the legend labels.
-        local_plot_rect = (4, 4, panel_w - 8, panel_h - 20)
+        local_plot_rect = (4, 4, max(1, panel_w - 8), max(1, panel_h - 20))
 
         panel = self.pg.Surface((panel_w, panel_h), flags=self.pg.SRCALPHA)
-        panel.fill((0, 0, 0, 150))
+        panel.fill((0, 0, 0, 90))
         self.pg.draw.rect(panel, (90, 90, 90, 255), panel.get_rect(), 1)
 
         legend_x = local_plot_rect[0]
@@ -1062,7 +1075,8 @@ class PygameRenderer:
 
     def _draw_polyline(self, points: list[tuple[int, int]], color: tuple[int, int, int]) -> None:
         screen_points = [self._screen_xy(x, y) for (x, y) in points]
-        width = max(1, min(self.screen.get_size()) // max(self.grid_cols, self.grid_rows) // 3)
+        _ax, _ay, aw, ah = self._arena_rect()
+        width = max(1, min(aw, ah) // max(self.grid_cols, self.grid_rows) // 3)
         self.pg.draw.lines(self.screen, color, False, screen_points, width)
 
     def _selected_cell_info(self, state: ReplayState) -> SelectedCellInfo | None:
@@ -1096,38 +1110,138 @@ class PygameRenderer:
         xy = self._to_xy(self._selected_address)
         return xy is not None and xy in self._flash
 
-    def _draw_hud(self, controller: PlaybackController) -> None:
-        session = controller.session
-        selected = self._selected_cell_info(session.current_state)
-        recently_changed = self._selected_recently_changed()
-        lines = build_hud_lines(
-            session,
-            controller,
-            match_events=self._match_events,
-            selected=selected,
-            recently_changed=recently_changed,
-        )
-        w, _ = self.screen.get_size()
-        line_height = 16
-        hud_h = line_height * len(lines) + 12
-        hud = self.pg.Surface((w, hud_h), flags=self.pg.SRCALPHA)
-        hud.fill((0, 0, 0, 150))
-        for index, text in enumerate(lines):
-            rendered = self.hud_font.render(text, True, (235, 235, 235))
-            hud.blit(rendered, (10, 6 + index * line_height))
-        self.screen.blit(hud, (0, 0))
+    def _draw_top_band(self, controller: PlaybackController) -> None:
+        """Draw the top HUD band: the match-identity header and one status
+        card per entrant.
 
-        # Track where the "Recent events" lines just landed on screen (HUD
-        # surface origin is (0, 0)) so a click can be resolved against them
-        # -- see _handle_click. None/empty whenever there's nothing to
-        # click, e.g. no events at/before the current tick.
-        recent = events_near_tick(self._match_events, session.current_tick)
-        start_index = _event_section_start(lines)
-        if start_index is not None and recent:
-            self._event_panel_origin = (0, 6 + start_index * line_height)
-            self._event_panel_size = (w, line_height * len(recent))
-            self._event_panel_ticks = tuple(tick for tick, _event in recent)
+        Entrant status comes entirely from ``battle_client.replay_status.
+        get_entrant_statuses`` (the Phase-3 status model) -- this method
+        never inspects raw replay structures, ownership, or Ruleset
+        identity itself (see the governing architectural rule in
+        docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md). A no-op if no layout has
+        been computed yet (a unit test that never called ``run()``).
+        """
+        layout = self._layout
+        if layout is None:
+            return
+        session = controller.session
+        state = session.current_state
+
+        band_rect = self.pg.Rect(0, 0, layout.window_size[0], TOP_BAND_HEIGHT)
+        self.pg.draw.rect(self.screen, PANEL_BG, band_rect)
+        self.pg.draw.line(
+            self.screen,
+            PANEL_BORDER,
+            (0, TOP_BAND_HEIGHT - 1),
+            (layout.window_size[0], TOP_BAND_HEIGHT - 1),
+        )
+
+        statuses = get_entrant_statuses(session, state=state, match_events=self._match_events)
+
+        hx, hy, hw, _hh = layout.header_rect
+        header_lines = format_match_header_lines(
+            ruleset_label=self._ruleset_label,
+            runtime_kind=state.runtime_kind or "unknown",
+            arena_size=self.arena,
+            entrant_count=len(statuses),
+            winner=session.winner,
+            termination_reason=session.termination_reason,
+            result_available=session.result is not None,
+        )
+        header_max_chars = max(6, (hw - 6) // HUD_CHAR_WIDTH_PX)
+        for index, text in enumerate(header_lines):
+            if not text:
+                continue
+            rendered = self.hud_font.render(
+                truncate_with_ellipsis(text, header_max_chars), True, TEXT_COLOR
+            )
+            self.screen.blit(rendered, (hx + 6, hy + index * HEADER_LINE_HEIGHT))
+
+        for status, rect in zip(statuses, layout.entrant_card_rects):
+            self._draw_entrant_card(status, rect)
+
+    def _draw_entrant_card(self, status: EntrantReplayStatus, rect: tuple[int, int, int, int]) -> None:
+        """One entrant's status card (name / status+core / stats), entirely
+        formatted by ``battle_client.hud_layout.format_entrant_card_lines``
+        -- this method only chooses colors and blit positions.
+        """
+        cx, cy, cw, _ch = rect
+        max_chars = max(6, cw // HUD_CHAR_WIDTH_PX)
+        name_line, status_line, stats_line = format_entrant_card_lines(status, max_chars=max_chars)
+
+        if status.core is not None and status.core.captured:
+            status_color = STATUS_CAPTURED_COLOR
+        elif status.alive:
+            status_color = STATUS_ALIVE_COLOR
         else:
+            status_color = STATUS_DEAD_COLOR
+        name_color = AGENT_COLORS.get(status.agent_id, DEFAULT_AGENT_COLOR)
+
+        for index, (text, color) in enumerate(
+            ((name_line, name_color), (status_line, status_color), (stats_line, DIM_TEXT_COLOR))
+        ):
+            rendered = self.hud_font.render(text, True, color)
+            self.screen.blit(rendered, (cx, cy + index * CARD_LINE_HEIGHT))
+
+    def _draw_footer(self, controller: PlaybackController) -> None:
+        """Draw the bottom footer band: tick/playback/speed, one compact
+        status/event message, controls/help, and the territory-history
+        graph.
+
+        Also updates ``self._event_panel_*`` (read by ``_handle_click``) to
+        reflect whether the status/event message line drawn this frame is
+        currently showing a clickable event -- cleared whenever it is
+        instead showing the selected-cell inspector or the idle message,
+        neither of which seeks anywhere on click.
+        """
+        layout = self._layout
+        if layout is None:
+            return
+        session = controller.session
+        state = session.current_state
+
+        footer_y = layout.window_size[1] - FOOTER_HEIGHT
+        band_rect = self.pg.Rect(0, footer_y, layout.window_size[0], FOOTER_HEIGHT)
+        self.pg.draw.rect(self.screen, PANEL_BG, band_rect)
+        self.pg.draw.line(self.screen, PANEL_BORDER, (0, footer_y), (layout.window_size[0], footer_y))
+
+        tx, ty, tw, _th = layout.footer_text_rect
+        status_label = "PLAYING" if controller.playing else "PAUSED"
+        if session.at_end and not controller.playing:
+            status_label = "PAUSED (end)"
+        line1 = format_playback_line(
+            tick=state.tick,
+            final_tick=session.final_tick,
+            status_label=status_label,
+            speed=controller.speed,
+        )
+
+        selected = self._selected_cell_info(state)
+        recent = events_near_tick(self._match_events, state.tick, window=1)
+        if selected is not None:
+            inspector = format_inspector_lines(selected, recently_changed=self._selected_recently_changed())
+            line2 = "Selected cell: " + inspector[1].strip() if len(inspector) > 1 else "Selected cell:"
             self._event_panel_origin = None
             self._event_panel_size = None
             self._event_panel_ticks = ()
+        elif recent:
+            event_tick, event = recent[-1]
+            line2 = format_event_line(event_tick, event)
+            self._event_panel_origin = (tx, ty + FOOTER_LINE_HEIGHT)
+            self._event_panel_size = (tw, FOOTER_LINE_HEIGHT)
+            self._event_panel_ticks = (event_tick,)
+        else:
+            line2 = "No recent events"
+            self._event_panel_origin = None
+            self._event_panel_size = None
+            self._event_panel_ticks = ()
+
+        # Deterministic truncation (never dynamic font shrinking -- Phase
+        # 4H) so a long controls string can never visually run past its own
+        # column and under the graph panel drawn just to its right.
+        max_chars = max(6, tw // HUD_CHAR_WIDTH_PX)
+        for index, text in enumerate((line1, line2, HELP_TEXT)):
+            rendered = self.hud_font.render(truncate_with_ellipsis(text, max_chars), True, TEXT_COLOR)
+            self.screen.blit(rendered, (tx, ty + index * FOOTER_LINE_HEIGHT))
+
+        self._draw_footer_graph(state, layout.footer_graph_rect)
