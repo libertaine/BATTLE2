@@ -12,6 +12,13 @@ wherever it is placed, including across an arena wraparound, (e) is not
 permanently derailed by an irrelevant decoy, and (f) does not hardcode any
 of alpha.7's historical placement-condition addresses.
 
+Also covers the v2.0.0-beta1 self-core-filtering revision
+(docs/V2_0_BETA1_PLAN.md): this agent's own core, which always carries a
+non-zero beacon under core-observability maintenance, must never be
+mistaken for a foreign one, while a genuinely foreign region -- including
+one carrying the identical beacon byte, just outside this agent's own
+core -- must still be found exactly as before.
+
 Two complementary styles, matching this repository's own established
 precedent for reference/starter agents:
 
@@ -361,6 +368,96 @@ def test_search_resumes_after_a_completed_assault() -> None:
     more = _drive(instance, memory, pc=0, steps=20)
     assert len(more) == 20  # kept acting normally
     assert any(t["action"].kind is ActionKind.WRITE for t in more)
+
+
+# ---------------------------------------------------------------------------
+# Self-core filtering (v2.0.0-beta1 revision -- docs/V2_0_BETA1_PLAN.md)
+# ---------------------------------------------------------------------------
+
+
+def test_own_core_beacon_never_triggers_a_probe() -> None:
+    """The exact false positive alpha.11 disclosed and left unfixed for
+    experimental validity (docs/V2_0_ALPHA11_RULESET_V2_CANDIDATE_RESOLUTION.md
+    Sec 26 item 2): a scan hit landing inside this agent's own core, carrying
+    the public core-observability beacon, must never be treated as foreign."""
+
+    instance = _load().instance
+    instance.reset(_context(seed=1))
+    own_start = 3000
+    instance.scan_cursor = own_start  # lands exactly on the agent's own core
+    memory = {addr: 0xCE for addr in range(own_start, own_start + 8)}  # CORE_BEACON_BYTE
+    trace = _drive(instance, memory, pc=own_start, steps=60)
+    assert "probe" not in _modes(trace)
+    assert "assault" not in _modes(trace)
+    assert instance.mode == "scan"
+
+
+def test_own_core_with_own_signature_never_triggers_a_probe() -> None:
+    """Same guarantee if this agent has already signed its own core with its
+    own signature byte rather than leaving the engine's beacon in place --
+    already excluded by the pre-existing ``value != self.signature`` check,
+    confirmed here alongside the new address-based filter."""
+
+    instance = _load().instance
+    instance.reset(_context(seed=1))
+    own_start = 3000
+    instance.scan_cursor = own_start
+    memory = {addr: instance.signature for addr in range(own_start, own_start + 8)}
+    trace = _drive(instance, memory, pc=own_start, steps=60)
+    assert "probe" not in _modes(trace)
+    assert instance.mode == "scan"
+
+
+def test_foreign_core_just_outside_the_own_core_boundary_still_triggers() -> None:
+    """The filter is scoped exactly to ``CORE_SIZE_HINT`` cells -- a
+    genuinely foreign compact region immediately adjacent to this agent's
+    own core boundary must still be found, proving the fix is a narrow
+    self-filter, not a general "ignore anything near my spawn" suppression."""
+
+    instance = _load().instance
+    instance.reset(_context(seed=1))
+    own_start = 3000  # own core: 3000..3007
+    foreign_start = 3008  # immediately adjacent, outside the own-core window
+    instance.scan_cursor = foreign_start
+    memory = {addr: 0x77 for addr in range(foreign_start, foreign_start + 8)}
+    trace = _drive(instance, memory, pc=own_start, steps=40)
+    assault_writes = _writes_from(trace, "assault")
+    assert assault_writes
+    assert set(range(foreign_start, foreign_start + 8)).issubset(assault_writes)
+
+
+def test_identical_beacon_content_outside_own_core_still_triggers() -> None:
+    """External evidence: exactly the same byte value (the public beacon) is
+    still legitimate evidence when it is not inside this agent's own core --
+    the filter checks the *address*, never the *value*, so it grants no
+    privileged recognition of the beacon value itself."""
+
+    instance = _load().instance
+    instance.reset(_context(seed=1))
+    own_start = 100  # own core: 100..107, far from the foreign region below
+    foreign_start = 3000
+    instance.scan_cursor = foreign_start
+    memory = {addr: 0xCE for addr in range(foreign_start, foreign_start + 8)}
+    trace = _drive(instance, memory, pc=own_start, steps=40)
+    assault_writes = _writes_from(trace, "assault")
+    assert assault_writes
+    assert set(range(foreign_start, foreign_start + 8)).issubset(assault_writes)
+
+
+def test_own_core_filter_wraps_across_the_arena_end() -> None:
+    """Placement generality: the self-filter must use the same ordinary
+    arena wrap every other address computation in this agent already uses,
+    not just the unwrapped case."""
+
+    arena_size = 64
+    instance = _load().instance
+    instance.reset(_context(seed=1, arena_size=arena_size))
+    own_start = 60  # own core wraps: 60,61,62,63,0,1,2,3
+    instance.scan_cursor = 62  # inside the wrapped own-core region
+    memory = {(60 + i) % arena_size: 0xCE for i in range(8)}
+    trace = _drive(instance, memory, pc=own_start, steps=40)
+    assert "probe" not in _modes(trace)
+    assert instance.mode == "scan"
 
 
 # ---------------------------------------------------------------------------

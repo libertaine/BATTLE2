@@ -245,6 +245,24 @@ What you might reasonably change:
 - ``ASSAULT_WINDOW``/``ASSAULT_ACTIONS``: as in Core Seeker, a wider burst
   tolerates a worse anchor guess at the cost of more actions per
   commitment.
+
+Revision note (v2.0.0-beta1, docs/V2_0_BETA1_PLAN.md): under
+``bytefray-rules-2-alpha11``'s core-observability maintenance, this agent's
+own core cells always carry a non-zero beacon, which ``_looks_foreign``
+could not previously distinguish from a real opponent core -- alpha.11
+disclosed this honestly and left it unfixed for experimental validity (its
+own governing task required preferring no agent change), quantifying it at
+roughly 21 wasted actions (1 scan hit + 4 probe reads + a full 16-action
+assault) whenever this agent's own scan cursor crossed its own core. Beta1
+is explicitly permitted to clean up this reference-agent inefficiency, and
+does so with a minimal, self-knowledge-only filter (``own_core_start``,
+captured from this agent's own ``observation.pc`` exactly as
+``expand_cursor`` already was, plus the existing public ``CORE_SIZE_HINT``):
+``_looks_foreign`` now also rejects any address inside this agent's own
+core region. No opponent coordinates, no ownership access, no
+beacon-specific shortcut, no historical placement value, and no other
+constant in this file changed -- this is self-filtering, not offensive
+retuning.
 """
 
 from battle_engine.agent_api import ActionKind, AgentAction, MatchContext, Observation
@@ -262,6 +280,7 @@ class CoreTrackerAgent:
         self.rng = context.rng
         self.arena_size = context.arena_size
         self.signature = 0xA5
+        self.own_core_start: int | None = None
         # Stride: a fixed, well-tested equidistribution constant (see this
         # module's docstring for why it is deliberately distinct from both
         # core_seeker's 0.381_966_011 and hunter's 0.618_033_988_749_895).
@@ -291,7 +310,12 @@ class CoreTrackerAgent:
             # First call, before this agent has ever moved its own pc:
             # observation.pc is exactly this entrant's original spawn
             # address (see core_defender/agent.py's identical technique).
+            # This agent's own core is anchored at the same address (see
+            # python_runtime.py's core_start = entrant.start % arena_size),
+            # so this is ordinary, already-legitimate self-knowledge, not a
+            # privileged read of anything about an opponent.
             self.expand_cursor = observation.pc % self.arena_size
+            self.own_core_start = self.expand_cursor
             self._expand_cursor_initialized = True
 
         read_addr: int | None = None
@@ -310,7 +334,7 @@ class CoreTrackerAgent:
     # -- scan --------------------------------------------------------------
 
     def _scan_step(self, read_addr: int | None, read_result: int | None) -> AgentAction:
-        if read_addr is not None and self._looks_foreign(read_result):
+        if read_addr is not None and self._looks_foreign(read_addr, read_result):
             return self._begin_probe(read_addr)
 
         self.actions_taken += 1
@@ -343,7 +367,10 @@ class CoreTrackerAgent:
 
     def _probe_step(self, read_addr: int | None, read_result: int | None) -> AgentAction:
         if read_addr is not None:
-            if self._looks_foreign(read_result) and self._pending_probe_offset is not None:
+            if (
+                self._looks_foreign(read_addr, read_result)
+                and self._pending_probe_offset is not None
+            ):
                 self.probe_confirmed_offsets.append(self._pending_probe_offset)
             self._pending_probe_offset = None
 
@@ -387,8 +414,37 @@ class CoreTrackerAgent:
 
     # -- shared --------------------------------------------------------------
 
-    def _looks_foreign(self, value: int | None) -> bool:
-        return value is not None and value != 0 and value != self.signature
+    def _in_own_core(self, address: int) -> bool:
+        """Whether ``address`` falls inside this entrant's own core region.
+
+        Uses only ``self.own_core_start`` (captured from this agent's own
+        ``observation.pc`` on its first ``act()`` call -- ordinary,
+        already-legitimate self-knowledge, never an opponent's coordinates)
+        and the public ``CORE_SIZE_HINT``. No ownership access, no opponent
+        position, no historical placement value.
+        """
+
+        if self.own_core_start is None:
+            return False
+        offset = (address - self.own_core_start) % self.arena_size
+        return offset < CORE_SIZE_HINT
+
+    def _looks_foreign(self, address: int, value: int | None) -> bool:
+        """Whether a ``READ`` result is worth treating as attacker evidence.
+
+        A hit inside this agent's own core is never foreign -- under
+        ``bytefray-rules-2``/``bytefray-rules-2-alpha11``'s core-observability
+        maintenance, this agent's own core always carries a non-zero beacon
+        (or its own signature, if it ever writes there), which would
+        otherwise look identical to a real opponent core and waste a probe/
+        assault cycle on this agent's own, already-owned cells (beta1
+        cleanup of the self-core false positive alpha.11 disclosed and left
+        unfixed for experimental validity -- see docs/V2_0_BETA1_PLAN.md).
+        """
+
+        if value is None or value == 0 or value == self.signature:
+            return False
+        return not self._in_own_core(address)
 
 
 def create_agent() -> CoreTrackerAgent:
