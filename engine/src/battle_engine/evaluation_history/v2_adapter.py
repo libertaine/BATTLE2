@@ -10,6 +10,8 @@ from battle_engine.agent_evaluation import (
     SCHEMA_NAME,
     all_subject_aggregates,
     compare_candidate_baseline,
+    standard_layouts,
+    standard_placements,
 )
 from battle_engine.evaluation_analysis import analyze as analyze_evaluation
 from battle_engine.result_model import stable_id
@@ -57,9 +59,42 @@ from .models import (
 # writing SCHEMA_VERSION (4), never SCHEMA_VERSION_V2 (5), so schema
 # version alone already distinguishes "this artifact's placement is
 # meaningful" from "this artifact never varied placement."
-SUPPORTED_V2_VERSIONS = (2, 3, 4, 5)
-_ORIENTATION_AWARE_VERSIONS = (4, 5)
-_PLACEMENT_AWARE_VERSIONS = (5,)
+#
+# v6 (v2.0.0-beta2 Phase 2, docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md)
+# added per-cell "roster_agent_ids"/"seat_agent_ids"/"layout_id"/
+# "seat_starts"/"seat_assignment_index"/"layout_index" and evaluation-wide
+# "group"/"roster_agent_ids" -- also additive, joining this same adapter
+# for the identical reason as v4/v5 above. Only ever actually written by a
+# multi-entrant ("group") evaluation; a 1v1 v2 evaluation keeps writing
+# SCHEMA_VERSION_V2 (5), never SCHEMA_VERSION_V2_GROUP (6).
+SUPPORTED_V2_VERSIONS = (2, 3, 4, 5, 6)
+_ORIENTATION_AWARE_VERSIONS = (4, 5, 6)
+_PLACEMENT_AWARE_VERSIONS = (5, 6)
+_GROUP_AWARE_VERSIONS = (6,)
+
+
+def _recomputed_v1v1_placements() -> list[dict[str, Any]]:
+    """Mirrors ``EvaluationService._evaluation_id``'s own v5 "placements"
+    payload construction exactly, for the self-consistency rehash below."""
+
+    return [
+        {
+            "placement_id": placement.placement_id,
+            "subject_start": placement.subject_start,
+            "opponent_start": placement.opponent_start,
+        }
+        for placement in standard_placements()
+    ]
+
+
+def _recomputed_group_layouts(entrant_count: int) -> list[dict[str, Any]]:
+    """Mirrors ``EvaluationService._evaluation_id``'s own v6 "layouts"
+    payload construction exactly, for the self-consistency rehash below."""
+
+    return [
+        {"layout_id": layout.layout_id, "seat_starts": list(layout.seat_starts)}
+        for layout in standard_layouts(entrant_count)
+    ]
 
 # A cell that lacks any of these, or has the wrong type, cannot even be
 # safely represented as an `EvaluationCell`/`AdaptedCell` -- H1: this must
@@ -302,6 +337,17 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             if version in _PLACEMENT_AWARE_VERSIONS
             else ConfidenceValue.recovered("fixed")
         )
+        # v2.0.0-beta2 Phase 2 (Sec Identity): schema < 6 never fielded more
+        # than one opponent per cell -- recovered as the certain historical
+        # fact (an empty roster/seat/layout), mirroring placement above.
+        if version in _GROUP_AWARE_VERSIONS:
+            roster = _recorded_or_unknown(raw, "roster_agent_ids", expected_type=list)
+            cell_seat_agent_ids = _recorded_or_unknown(raw, "seat_agent_ids", expected_type=list)
+            layout = _recorded_or_unknown(raw, "layout_id", expected_type=str)
+        else:
+            roster = ConfidenceValue.recovered(())
+            cell_seat_agent_ids = ConfidenceValue.recovered(())
+            layout = ConfidenceValue.recovered("")
         cells.append(
             AdaptedCell(
                 schedule_id=raw["schedule_id"],
@@ -334,6 +380,9 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 opponent_agent_revision_error=opponent_agent_revision_error,
                 orientation=orientation,
                 placement=placement,
+                roster=roster,
+                seat_agent_ids=cell_seat_agent_ids,
+                layout_id=layout,
             )
         )
 
@@ -477,6 +526,16 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         occurrence = raw.get("condition_occurrence_index")
         if not isinstance(occurrence, int) or isinstance(occurrence, bool):
             continue
+        # v2.0.0-beta2 Phase 2 (Sec Identity): `seat_agent_ids`/`layout_id`
+        # join the coordinate for schema >= 6 artifacts -- a group cell's
+        # `opponent_id` is a joined display label (constant for a whole
+        # evaluation's fixed roster, see agent_evaluation._build_group_
+        # matrix), so without this every layout/seat-assignment cell
+        # sharing a seed would spuriously collide here. Pre-Phase-2
+        # artifacts have no `seat_agent_ids` field at all, so every cell's
+        # absent-field value (`None`) is identical and contributes nothing
+        # to disambiguation, exactly like `placement_id` did for pre-
+        # Phase-1 artifacts.
         coordinate = (
             raw["subject_role"],
             raw["subject_id"],
@@ -485,6 +544,8 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             occurrence,
             raw.get("orientation"),
             raw.get("placement_id"),
+            tuple(raw["seat_agent_ids"]) if isinstance(raw.get("seat_agent_ids"), list) else None,
+            raw.get("layout_id"),
         )
         coordinate_counts.setdefault(coordinate, []).append(raw["schedule_id"])
     duplicate_coordinates = {
@@ -543,9 +604,27 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         # module constant, so a valid pre-Phase-6 artifact (identity_version
         # 2/3, which never had these keys) is not falsely flagged
         # inconsistent for a shape it was never supposed to have.
+        #
+        # v2.0.0-beta2 Phase 2 fix: identity_version 5 (Phase 1's 1v1 v2)
+        # and 6 (Phase 2's group) each add their own further keys to
+        # agent_evaluation.EvaluationService._evaluation_id's payload --
+        # this recomputation must mirror that exact branching (never just
+        # >= 4) or every v5/v6 artifact is falsely flagged
+        # PLANNED_IDENTITY_INCONSISTENT regardless of real consistency
+        # (found via a real v5 artifact's `evaluations show` health line
+        # during Phase 2 characterization -- a genuine Phase 1 gap, not a
+        # new Phase 2 requirement).
         if identity_version >= 4:
             recomputed_payload["orientation_mode"] = data.get("orientation_mode")
             recomputed_payload["arena_alignment_mode"] = data.get("arena_alignment_mode")
+        if identity_version >= 6 and data.get("group") is True:
+            recomputed_payload.pop("orientation_mode", None)
+            roster_agent_ids = data.get("roster_agent_ids")
+            if isinstance(roster_agent_ids, list):
+                recomputed_payload["group"] = True
+                recomputed_payload["layouts"] = _recomputed_group_layouts(len(roster_agent_ids))
+        elif identity_version >= 5:
+            recomputed_payload["placements"] = _recomputed_v1v1_placements()
         recomputed_id = stable_id("evaluation-v2", recomputed_payload)
         if recomputed_id != data.get("evaluation_id"):
             codes.append(HealthCode.PLANNED_IDENTITY_INCONSISTENT)
@@ -570,6 +649,14 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             occurrence = raw.get("condition_occurrence_index")
             if not isinstance(occurrence, int) or isinstance(occurrence, bool):
                 continue
+            # v2.0.0-beta2 Phase 2: a group cell (raw["opponent_id"] is a
+            # joined display label, never a real opponent id -- see
+            # AdaptedCell's own docstring) is not verifiable through this
+            # opponent-indexed path at all; skipped here rather than
+            # producing a false CONDITION_FINGERPRINT_INCONSISTENT. See the
+            # design doc's "analysis compatibility" section for why this
+            # narrower verification gap (never a false positive, only
+            # reduced coverage) is an accepted Phase 2 scope boundary.
             try:
                 idx = opponent_ids_list.index(raw.get("opponent_id"))
             except ValueError:
@@ -591,6 +678,18 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             if isinstance(identity_version, int) and identity_version >= 4:
                 fp_payload["orientation"] = raw.get("orientation")
                 fp_payload["arena_alignment_mode"] = data.get("arena_alignment_mode")
+            # v2.0.0-beta2 Phase 2 fix: identity_version 5 (Phase 1) also
+            # adds a per-cell "placement" key to this payload
+            # (build_matrix's own fp_payload construction) -- missing here
+            # was the same genuine Phase 1 gap as the evaluation_id
+            # recomputation above, found via the identical real-artifact
+            # health check.
+            if isinstance(identity_version, int) and identity_version >= 5 and data.get("group") is not True:
+                fp_payload["placement"] = {
+                    "placement_id": raw.get("placement_id"),
+                    "subject_start": raw.get("subject_start"),
+                    "opponent_start": raw.get("opponent_start"),
+                }
             expected_fp = stable_id("evaluation-condition", fp_payload)
             if expected_fp != recorded_fp:
                 inconsistent_fingerprints.append(raw["schedule_id"])
@@ -648,6 +747,15 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
     else:
         orientation_mode = ConfidenceValue.recovered("candidate_first_only")
         arena_alignment_mode = ConfidenceValue.recovered("fixed")
+    # v2.0.0-beta2 Phase 2: schema < 6 never fielded a multi-entrant
+    # ("group") evaluation -- recovered as the certain historical fact
+    # (group=False, empty roster), never UNKNOWN.
+    if version in _GROUP_AWARE_VERSIONS:
+        group = _recorded_or_unknown(data, "group", expected_type=bool)
+        roster_agent_ids = _recorded_or_unknown(data, "roster_agent_ids", expected_type=list)
+    else:
+        group = ConfidenceValue.recovered(False)
+        roster_agent_ids = ConfidenceValue.recovered(())
 
     return EvaluationSummary(
         location=location,
@@ -683,6 +791,8 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         baseline_agent_revision_error=baseline_agent_revision_error,
         orientation_mode=orientation_mode,
         arena_alignment_mode=arena_alignment_mode,
+        group=group,
+        roster_agent_ids=roster_agent_ids,
         analysis=analysis,
     )
 

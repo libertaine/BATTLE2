@@ -348,6 +348,19 @@ class AdaptedCell:
     # varied placement before this phase. A schema-5 cell reads this as
     # ``RECORDED``.
     placement: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # v2.0.0-beta2 Phase 2 (design doc Sec Identity): multi-entrant
+    # ("group") axes -- mirroring orientation/placement's identical
+    # recovery pattern exactly. Every schema version that predates group
+    # mode (< 6) is recovered as ``ConfidenceValue.recovered(())`` (an
+    # empty roster is the certain historical fact: no shipped version of
+    # this module ever fielded more than one opponent per cell before this
+    # phase), never ``unknown()``. A schema-6 cell reads these as
+    # ``RECORDED``. ``roster`` is the canonical (sorted) roster; ``seat_
+    # agent_ids`` is the ordered per-seat assignment; ``layout_id`` mirrors
+    # ``placement``'s role for N seats.
+    roster: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    seat_agent_ids: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    layout_id: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
 
     @property
     def is_scored(self) -> bool:
@@ -382,6 +395,9 @@ class AdaptedCell:
             "opponent_revision_verification": self.opponent_revision_verification.value,
             "orientation": self.orientation.to_json(),
             "placement": self.placement.to_json(),
+            "roster": self.roster.to_json(),
+            "seat_agent_ids": self.seat_agent_ids.to_json(),
+            "layout_id": self.layout_id.to_json(),
         }
 
 
@@ -441,6 +457,16 @@ class EvaluationSummary:
     # identical certainty reason (Sec AA.2/AA.4.6).
     orientation_mode: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
     arena_alignment_mode: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # v2.0.0-beta2 Phase 2: multi-entrant ("group") methodology disclosure
+    # -- mirrors orientation_mode/arena_alignment_mode's sibling-key
+    # pattern exactly. Every historical (schema < 6) evaluation is
+    # recovered as ``recovered(False)``/``recovered(())`` -- certain, not
+    # inferred, since no prior schema version could produce anything else.
+    # Never itself part of comparability gating (arena_alignment_mode's
+    # already-distinct group-mode value already handles that, Sec Compare)
+    # -- purely a convenience for `evaluations show`/`list` disclosure.
+    group: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    roster_agent_ids: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
     # v1.6 Phase 4 (docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md): derived, never
     # persisted -- computed by the v1/v2 adapters from the same
     # ``real_cells`` they already reconstruct for
@@ -483,6 +509,8 @@ class EvaluationSummary:
             "baseline_revision_verification": self.baseline_revision_verification.value,
             "orientation_mode": self.orientation_mode.to_json(),
             "arena_alignment_mode": self.arena_alignment_mode.to_json(),
+            "group": self.group.to_json(),
+            "roster_agent_ids": self.roster_agent_ids.to_json(),
             "analysis": self.analysis.to_json() if self.analysis is not None else None,
         }
 

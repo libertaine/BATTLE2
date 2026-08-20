@@ -265,6 +265,32 @@ def _condition_key(
 
     if conditions_fp is None or rules_id is None or arena_alignment_id is None:
         return None
+    # v2.0.0-beta2 Phase 2 (Sec Compare): a group cell has no meaningful
+    # single `opponent_identity` (a roster, not one opponent) -- keyed on
+    # canonical roster + seat assignment + layout instead. Two group cells
+    # align only when their entire roster (by membership, order-
+    # independent), seat assignment (by permutation, order-dependent), and
+    # layout all match -- never merely because a mode label matched, the
+    # identical discipline `placement`/`arena_alignment_id` already
+    # establish for 1v1. A group cell's `roster` field is only ever
+    # `RECORDED`/`RECOVERED` for a real schema-6 cell or a certain pre-
+    # Phase-2 empty-roster fact respectively (see the v1/v2 adapters), so
+    # this branch is unreachable for a genuinely-unknown roster.
+    if cell.roster.confidence != FieldConfidence.UNKNOWN and cell.roster.value:
+        if cell.seat_agent_ids.confidence == FieldConfidence.UNKNOWN:
+            return None
+        if cell.layout_id.confidence == FieldConfidence.UNKNOWN:
+            return None
+        return (
+            "group",
+            tuple(cell.roster.value),
+            cell.seed,
+            conditions_fp,
+            rules_id,
+            arena_alignment_id,
+            tuple(cell.seat_agent_ids.value or ()),
+            cell.layout_id.value,
+        )
     if cell.opponent_identity.confidence == FieldConfidence.UNKNOWN:
         return None
     if cell.condition_occurrence_index.confidence == FieldConfidence.UNKNOWN:

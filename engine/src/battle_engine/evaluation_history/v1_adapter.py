@@ -277,6 +277,12 @@ def adapt_v1_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 # certain historical fact, mirroring orientation immediately
                 # above.
                 placement=ConfidenceValue.recovered("fixed"),
+                # v2.0.0-beta2 Phase 2: no v1-schema evaluation ever fielded
+                # more than one opponent per cell -- recovered as the
+                # certain historical fact (an empty roster/seat/layout).
+                roster=ConfidenceValue.recovered(()),
+                seat_agent_ids=ConfidenceValue.recovered(()),
+                layout_id=ConfidenceValue.recovered(""),
             )
         )
 
@@ -367,6 +373,8 @@ def adapt_v1_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         # entrant's actual write addresses).
         orientation_mode=ConfidenceValue.recovered("candidate_first_only"),
         arena_alignment_mode=ConfidenceValue.recovered("fixed"),
+        group=ConfidenceValue.recovered(False),
+        roster_agent_ids=ConfidenceValue.recovered(()),
         analysis=analysis,
     )
 

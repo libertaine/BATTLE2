@@ -31,6 +31,7 @@ import json
 import re
 import sys
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -460,6 +461,221 @@ def _test_agent(
         ticks_requested=effective_ticks,
         match_result=match_result,
         summary_path=summary_path,
+        ruleset_id=ruleset_id or BYTEFRAY_RULESET_ID,
+        trace_path=trace_path if trace_path is not None and trace_path.exists() else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Multi-entrant (N >= 2) development test (v2.0.0-beta2 Phase 2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GroupEntrantSpec:
+    """One seat's assignment for a multi-entrant development-test match.
+
+    ``seat`` is the physical match-identity slot (mirrors ``TESTED_AGENT_
+    SLOT``/``OPPONENT_SLOT``'s own convention, generalized: ``"A"``,
+    ``"B"``, ``"C"``, ...) -- also the entrant's position in scheduler/
+    execution order: ``battle_engine.scheduler.run_sequential_quota``
+    executes states in exactly the order it is given, with no separate
+    "seat" concept at the engine level, so seat order *is* scheduler
+    order (see ``docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md``).
+    """
+
+    seat: str
+    agent_id: str
+    start: int = 0
+
+
+@dataclass(frozen=True)
+class GroupTestOutcome:
+    """Everything a multi-entrant evaluation cell needs from one completed match."""
+
+    seats: tuple[str, ...]
+    agent_ids: tuple[str, ...]
+    seed: int
+    ticks_requested: int
+    match_result: NativeMatchResult
+    ruleset_id: str
+    trace_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class GroupInitializationFailureOutcome:
+    """A pre-tick-zero failure of one seat's user-provided agent code.
+
+    Every seat in a multi-entrant match is user-provided agent code under
+    evaluation -- there is no internal reference-opponent seat here, unlike
+    :func:`test_agent`'s default single-opponent path (a multi-entrant
+    roster is always fully explicit) -- so, mirroring
+    :class:`InitializationFailureOutcome`'s own "exit 0, this is a test
+    result about user code" contract, this is never wrapped as an
+    :class:`AgentTestError`.
+    """
+
+    seat: str
+    agent_id: str
+    diagnostic: RuntimeDiagnostic
+    trace_path: Path | None = None
+
+
+def test_agents(
+    entrants: Sequence[GroupEntrantSpec],
+    *,
+    seed: int | None = None,
+    ticks: int | None = None,
+    timeout: float | None = None,
+    trace: bool = True,
+    data_root: Path | None = None,
+    run_dir: Path | None = None,
+    ruleset_id: str | None = None,
+) -> GroupTestOutcome | GroupInitializationFailureOutcome:
+    """Run one short, real N-entrant (N >= 2) development match.
+
+    The N-entrant generalization of :func:`test_agent`, added for
+    v2.0.0-beta2 Phase 2's multi-entrant evaluation methodology.
+    :func:`test_agent`/:func:`_test_agent` are completely unmodified by
+    this addition -- not even refactored to share an internal helper, so
+    the extremely well-tested 1v1 path carries zero risk from this new
+    code. Executes through the identical ``NativeMatchService`` production
+    boundary every other native match uses.
+
+    Raises :class:`AgentTestError` for tool/infrastructure failures (fewer
+    than two entrants, a duplicate seat label, an unknown/non-Python
+    entrant). Any exception not already one of the typed failures above is
+    caught once here and reported as an ``agent_test_internal_error``
+    diagnostic, mirroring :func:`test_agent`'s identical top-level
+    catch-all.
+    """
+
+    try:
+        return _test_agents(
+            entrants,
+            seed=seed,
+            ticks=ticks,
+            timeout=timeout,
+            trace=trace,
+            data_root=data_root,
+            run_dir=run_dir,
+            ruleset_id=ruleset_id,
+        )
+    except AgentTestError:
+        raise
+    except Exception as exc:
+        raise AgentTestError(
+            RuntimeDiagnostic(
+                code="agent_test_internal_error",
+                stage="internal",
+                message=f"{type(exc).__name__}: {exc}",
+                exception_type=type(exc).__name__,
+            )
+        ) from exc
+
+
+def _test_agents(
+    entrants: Sequence[GroupEntrantSpec],
+    *,
+    seed: int | None,
+    ticks: int | None,
+    timeout: float | None,
+    trace: bool,
+    data_root: Path | None,
+    run_dir: Path | None = None,
+    ruleset_id: str | None = None,
+) -> GroupTestOutcome | GroupInitializationFailureOutcome:
+    if len(entrants) < 2:
+        raise _tool_error(
+            stage="discovery",
+            code="agent_test_internal_error",
+            message="A multi-entrant test requires at least two entrants.",
+        )
+    seats = [entrant.seat for entrant in entrants]
+    if len(set(seats)) != len(seats):
+        raise _tool_error(
+            stage="discovery",
+            code="agent_test_internal_error",
+            message=f"Duplicate seat labels in entrant list: {seats!r}.",
+        )
+
+    root = (data_root or get_data_root()).expanduser().resolve()
+    effective_seed = Config().seed if seed is None else seed
+    effective_ticks = DEFAULT_TICKS if ticks is None else ticks
+    effective_timeout = timeout
+
+    specs = [
+        _resolve_python_entrant(entrant.agent_id, data_root=root, role=f"entrant {entrant.seat}")
+        for entrant in entrants
+    ]
+
+    if run_dir is None:
+        run_label = _run_label("group")
+        effective_run_dir = root / "runs" / "agents_test" / entrants[0].agent_id / run_label
+        exist_ok = False
+    else:
+        effective_run_dir = run_dir
+        exist_ok = True
+    try:
+        effective_run_dir.mkdir(parents=True, exist_ok=exist_ok)
+    except OSError as exc:
+        raise _tool_error(
+            stage="artifact",
+            code="output_directory_failed",
+            message=f"Could not create development-test output directory: {exc}",
+        ) from exc
+    run_dir = effective_run_dir
+
+    replay_path = run_dir / "replay.jsonl"
+    trace_path = (run_dir / "trace.jsonl") if trace else None
+    request = MatchRequest(
+        config=Config(seed=effective_seed),
+        entrants=tuple(
+            MatchEntrant.python(entrant.seat, entrant.agent_id, entrant.start, spec)
+            for entrant, spec in zip(entrants, specs, strict=True)
+        ),
+        max_ticks=effective_ticks,
+        replay_path=replay_path,
+        verbose=False,
+        trace_path=trace_path,
+        agent_call_timeout=effective_timeout,
+        ruleset_id=ruleset_id,
+    )
+
+    try:
+        match_result = NativeMatchService().run(request)
+    except PythonEntrantInitializationError as exc:
+        diagnostic = exc.diagnostic
+        outcome_trace_path = trace_path if trace_path is not None and trace_path.exists() else None
+        failed_seat = diagnostic.agent_id or ""
+        failed_agent_id = next(
+            (entrant.agent_id for entrant in entrants if entrant.seat == failed_seat), failed_seat
+        )
+        return GroupInitializationFailureOutcome(
+            seat=failed_seat,
+            agent_id=failed_agent_id,
+            diagnostic=diagnostic,
+            trace_path=outcome_trace_path,
+        )
+    except UnsupportedMatchCompositionError as exc:
+        raise _tool_error(
+            stage=exc.diagnostic.stage, code=exc.diagnostic.code, message=exc.diagnostic.message
+        ) from exc
+    except RulesetRuntimeUnsupportedError as exc:
+        raise _tool_error(
+            stage=exc.diagnostic.stage, code=exc.diagnostic.code, message=exc.diagnostic.message
+        ) from exc
+    except PythonMatchExecutionError as exc:
+        raise _tool_error(
+            stage=exc.diagnostic.stage, code=exc.diagnostic.code, message=exc.diagnostic.message
+        ) from exc
+
+    return GroupTestOutcome(
+        seats=tuple(seats),
+        agent_ids=tuple(entrant.agent_id for entrant in entrants),
+        seed=effective_seed,
+        ticks_requested=effective_ticks,
+        match_result=match_result,
         ruleset_id=ruleset_id or BYTEFRAY_RULESET_ID,
         trace_path=trace_path if trace_path is not None and trace_path.exists() else None,
     )

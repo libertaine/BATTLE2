@@ -107,9 +107,20 @@ def _cmd_show(args: argparse.Namespace) -> int:
     # evaluations, measured ~5-6ms/cell); `--no-behavior` skips it for
     # scripted/automation use against stress-scale (thousands-of-cells)
     # artifacts where that per-cell cost adds up to several seconds.
+    # v2.0.0-beta2 Phase 2: evaluation_behavior/evaluation_capture's Tier-2
+    # readers resolve the subject's physical match slot via a cell's
+    # `orientation` (a 2-value candidate_first/opponent_first axis) --
+    # meaningless for a group cell, whose subject occupies whichever seat
+    # `seat_agent_ids` says, not a fixed slot "A". Computing either here
+    # for a group artifact would silently read the WRONG seat's result.json
+    # entry for any cell where the subject isn't literally in seat "A".
+    # Deferred explicitly, mirroring agent_evaluation._print_result's
+    # identical live-run guard -- see docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_
+    # EVALUATION.md's "analysis compatibility" section.
+    is_group = summary.group.value is True
     behavior = (
         analyze_behavior(summary.candidate_id, summary.baseline_id, cell_refs_for_behavior(summary))
-        if not args.no_behavior
+        if not args.no_behavior and not is_group
         else None
     )
     # v2.0.0-beta2 Phase 1: capture/core evidence is a Ruleset-v2-only
@@ -121,7 +132,10 @@ def _cmd_show(args: argparse.Namespace) -> int:
     rules_id = summary.rules_compatibility_id.value
     capture = (
         analyze_capture(summary.candidate_id, summary.baseline_id, cell_refs_for_behavior(summary))
-        if not args.no_behavior and isinstance(rules_id, str) and is_ruleset_v2_methodology(rules_id)
+        if not args.no_behavior
+        and not is_group
+        and isinstance(rules_id, str)
+        and is_ruleset_v2_methodology(rules_id)
         else None
     )
 
@@ -171,22 +185,44 @@ def _print_show(
     # recovery.
     orientation_mode_value = summary.orientation_mode.value or ORIENTATION_MODE_CANDIDATE_FIRST_ONLY
     arena_alignment_value = summary.arena_alignment_mode.value or resolved_arena_alignment_mode(False)
-    for line in methodology_lines(orientation_mode_value, arena_alignment_mode=arena_alignment_value):
-        print(line)
+    # v2.0.0-beta2 Phase 2 (design-audit finding): the 2-value "Entrant
+    # orientation: both/candidate-first only" line describes 1v1
+    # methodology's own axis -- meaningless, and potentially misleading,
+    # for a group artifact, whose scheduler-order axis is the N!-seat
+    # permutation instead (already disclosed separately, above).
+    orientation_line, alignment_line = methodology_lines(
+        orientation_mode_value, arena_alignment_mode=arena_alignment_value
+    )
+    if summary.group.value is not True:
+        print(orientation_line)
+    print(alignment_line)
     print(
         f"  orientation_mode: {orientation_mode_value} ({summary.orientation_mode.confidence.value})  "
         f"arena_alignment_mode: {summary.arena_alignment_mode.value or 'unknown'} "
         f"({summary.arena_alignment_mode.confidence.value})"
     )
-    # v2.0.0-beta2 Phase 1 (Sec Show): the distinct placement ids actually
-    # observed across this artifact's own cells -- derived from the cells
-    # themselves, never re-stated as a separate stored summary field, so it
-    # can never drift from what the cells actually recorded.
-    placement_values = sorted(
-        {cell.placement.value for cell in summary.cells if cell.placement.value is not None}
-    )
-    if placement_values:
-        print(f"placements: {', '.join(placement_values)} ({len(placement_values)})")
+    if summary.group.value is True:
+        # v2.0.0-beta2 Phase 2 (Sec Show): roster/layout/seat-assignment
+        # disclosure for a multi-entrant artifact -- derived from the
+        # cells themselves, mirroring the placement disclosure below's own
+        # "never re-stated as a separate drift-prone field" discipline.
+        roster_values = summary.roster_agent_ids.value or ()
+        layout_values = sorted({cell.layout_id.value for cell in summary.cells if cell.layout_id.value})
+        seat_values = {tuple(cell.seat_agent_ids.value) for cell in summary.cells if cell.seat_agent_ids.value}
+        print(f"roster: {', '.join(roster_values)} ({len(roster_values)} entrants)")
+        print(f"layouts: {', '.join(layout_values)} ({len(layout_values)})")
+        print(f"seat assignments: {len(seat_values)}")
+    else:
+        # v2.0.0-beta2 Phase 1 (Sec Show): the distinct placement ids
+        # actually observed across this artifact's own cells -- derived
+        # from the cells themselves, never re-stated as a separate stored
+        # summary field, so it can never drift from what the cells
+        # actually recorded.
+        placement_values = sorted(
+            {cell.placement.value for cell in summary.cells if cell.placement.value is not None}
+        )
+        if placement_values:
+            print(f"placements: {', '.join(placement_values)} ({len(placement_values)})")
     codes = ", ".join(code.value for code in summary.health.codes) or "unknown"
     print(f"health: {codes}")
     for detail in summary.health.detail:

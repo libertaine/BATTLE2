@@ -28,6 +28,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
+from itertools import permutations as _permutations
 from itertools import zip_longest
 from pathlib import Path
 from typing import Any
@@ -49,8 +50,11 @@ from battle_engine.agent_test import (
     OPPONENT_SLOT,
     TESTED_AGENT_SLOT,
     AgentTestError,
+    GroupEntrantSpec,
+    GroupInitializationFailureOutcome,
     InitializationFailureOutcome,
     test_agent,
+    test_agents,
 )
 from battle_engine.agents import AgentSpec, resolve_agent
 from battle_engine.config import Config
@@ -163,6 +167,15 @@ EVALUATION_ARENA_ALIGNMENT_MODE = "fixed"
 # "fixed" exactly as before -- see resolve_evaluation_methodology.
 EVALUATION_ARENA_ALIGNMENT_MODE_V2_STANDARD = "ruleset_v2_standard_placements"
 
+# v2.0.0-beta2 Phase 2: the multi-entrant ("group") v2 methodology's own
+# arena-alignment identifier -- a third sibling value. Deliberately
+# distinct from EVALUATION_ARENA_ALIGNMENT_MODE_V2_STANDARD above (never
+# reused): a 1v1 evaluation and a group evaluation must never be presented
+# as comparable merely because a mode label happened to match --
+# evaluation_history.comparison's _arena_alignment_id gate already fails
+# closed on any string difference, generalizing correctly for free.
+EVALUATION_ARENA_ALIGNMENT_MODE_V2_GROUP_STANDARD = "ruleset_v2_group_standard_layouts"
+
 # A second, additive identity/schema recipe used only by an evaluation whose
 # resolved Ruleset is BYTEFRAY_RULESET_V2_ID (Sec F/G of the design doc).
 # IDENTITY_VERSION/SCHEMA_VERSION above are never bumped for this -- every
@@ -174,6 +187,19 @@ EVALUATION_ARENA_ALIGNMENT_MODE_V2_STANDARD = "ruleset_v2_standard_placements"
 # methodology has never supported Ruleset v2 before this phase.
 IDENTITY_VERSION_V2 = 5
 SCHEMA_VERSION_V2 = 5
+
+# v2.0.0-beta2 Phase 2 (docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md):
+# a THIRD, additive identity/schema recipe, used only by a multi-entrant
+# ("group") v2 evaluation. Every 1v1 v2 evaluation (Phase 1's own
+# capability) keeps hashing/persisting under IDENTITY_VERSION_V2/
+# SCHEMA_VERSION_V2 (5) exactly as Phase 1 left it -- group mode introduces
+# genuinely new identity-affecting fields (roster, seat assignment, N-seat
+# layout) that a pure 1v1 v2 cell never has, mirroring exactly how Phase 1
+# itself justified bumping past v1's 4 rather than reusing it. No v6
+# artifact has ever existed before this phase, so there is no historical
+# compatibility burden for this version.
+IDENTITY_VERSION_V2_GROUP = 6
+SCHEMA_VERSION_V2_GROUP = 6
 
 # Ruleset-v2's standard 1v1 seed methodology (docs/V2_0_BETA2_PHASE1_
 # EVALUATION_METHODOLOGY.md Sec D): alpha.8/alpha.10 proved single-seed
@@ -301,6 +327,132 @@ def standard_placements(arena_size: int | None = None) -> tuple[EvaluationPlacem
     )
 
 
+# ---------------------------------------------------------------------------
+# Multi-entrant ("group") domain model (v2.0.0-beta2 Phase 2)
+# ---------------------------------------------------------------------------
+#
+# Deliberately a separate model from EvaluationPlacement/standard_placements
+# above, not a generalization written in place of them: Phase 1's 1v1
+# identity path must stay untouched, byte-for-byte, forever (see
+# docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md's "why two placement
+# models" note for the worked proof that standard_layouts(2, ...) below
+# reproduces standard_placements()'s exact three 1v1 conditions -- evidence
+# this is a genuine generalization, not a coincidence, without ever routing
+# 1v1 cells through this new code).
+
+
+def seat_label(index: int) -> str:
+    """The seat identity for position ``index`` (0-based): "A", "B", "C", ...
+
+    Mirrors ``agent_test.TESTED_AGENT_SLOT``/``OPPONENT_SLOT``'s existing
+    ``"A"``/``"B"`` convention exactly -- a seat *is* the entrant's
+    ``MatchEntrant.agent_id`` for that position, and (per
+    ``battle_engine.scheduler.run_sequential_quota``, which executes states
+    in exactly the order it is given) also its scheduler/execution-order
+    position. There is no separate "execution order" axis to track.
+    """
+
+    if not (0 <= index < 26):
+        raise ValueError(f"seat_label supports at most 26 seats, got index {index}")
+    return chr(ord("A") + index)
+
+
+@dataclass(frozen=True)
+class EvaluationSeatAssignment:
+    """One deterministic assignment of a roster's entrants to seats.
+
+    ``seat_agent_ids`` is ordered by seat (index 0 = seat "A", index 1 =
+    seat "B", ...) -- the agent_id occupying each seat. This is the
+    identity-bearing representation of "permutation": two seat assignments
+    are the same experimental condition iff this tuple is equal, which
+    correctly treats a roster containing a duplicate agent id (the same
+    agent occupying two seats -- self-play) as producing fewer distinct
+    conditions than a fully-distinct roster's ``N!`` permutations would,
+    since two seats holding the identical agent are truly indistinguishable
+    for identity purposes.
+    """
+
+    seat_agent_ids: tuple[str, ...]
+
+
+def enumerate_seat_assignments(roster: Sequence[str]) -> tuple[EvaluationSeatAssignment, ...]:
+    """Every distinct seat assignment for ``roster`` (Phase 2: exhaustive
+    permutation policy only).
+
+    Deduplicates by the resulting ``seat_agent_ids`` tuple, not by the
+    underlying index permutation, so a roster with a repeated agent id
+    yields fewer than ``len(roster)!`` assignments (see
+    ``EvaluationSeatAssignment``). ``itertools.permutations`` enumerates in
+    deterministic lexicographic index order, so generation order is
+    reproducible run to run. Future scheduling policies (rotation-only,
+    balanced subsets, an explicit preset-driven policy) can live as sibling
+    functions with this identical return shape without changing this
+    function's own contract -- see the design doc's "permutation model"
+    section for why exhaustive-only is the right Phase 2 scope.
+    """
+
+    seen: dict[tuple[str, ...], None] = {}
+    for perm in _permutations(range(len(roster))):
+        seats = tuple(roster[i] for i in perm)
+        seen.setdefault(seats, None)
+    return tuple(EvaluationSeatAssignment(seat_agent_ids=seats) for seats in seen)
+
+
+@dataclass(frozen=True)
+class EvaluationLayout:
+    """One deterministic set of per-seat start addresses for an N-entrant cell.
+
+    ``seat_starts[i]`` is the start address for seat ``i`` (``seat_label(i)``),
+    independent of which roster entrant occupies that seat this cell --
+    layout and seat assignment are orthogonal identity dimensions, exactly
+    as ``EvaluationPlacement``/orientation are for 1v1 (Phase 1J's
+    "orientation vs. placement" separation, generalized).
+    """
+
+    layout_id: str
+    seat_starts: tuple[int, ...]
+
+
+def standard_layouts(entrant_count: int, arena_size: int | None = None) -> tuple[EvaluationLayout, ...]:
+    """The standard Ruleset-v2 multi-entrant layout set for ``entrant_count`` seats.
+
+    Three deterministic conditions, mechanically derived as fractions of
+    ``arena_size`` -- the direct N-seat generalization of
+    ``standard_placements()``'s own three 1v1 conditions:
+
+    * ``spread`` -- seats evenly spaced starting at address 0 (the N-seat
+      generalization of ``opposed``'s maximal, phase-0 separation).
+    * ``spread-shifted`` -- the same even spacing, phase-shifted by half a
+      seat gap (generalizes ``opposed-shifted``).
+    * ``close`` -- a tighter, non-maximal spacing (generalizes ``quarter``).
+
+    For ``entrant_count=2`` this formula reproduces ``standard_placements()``'s
+    exact three placements (``opposed``/``opposed-shifted``/``quarter``) --
+    verified by ``test_standard_layouts_reproduce_1v1_placements_at_n_equals_2``
+    -- but this function is never called for 1v1 cells; only group-mode
+    cells (``entrant_count >= 2`` where 2 is reachable only via an explicit
+    2-entrant group, not ordinary 1v1) use it, so Phase 1's frozen
+    ``standard_placements()`` path is never touched by this addition.
+
+    Requires ``entrant_count >= 2``. Non-overlapping by construction for any
+    arena size where ``arena_size // (2 * entrant_count) > CORE_SIZE``, true
+    for every arena size this project documents as supported.
+    """
+
+    if entrant_count < 2:
+        raise ValueError(f"standard_layouts requires at least 2 entrants, got {entrant_count}")
+    size = arena_size if arena_size is not None else Config().arena_size
+    gap = size // entrant_count
+    half_gap = gap // 2
+    return (
+        EvaluationLayout("spread", tuple((i * gap) % size for i in range(entrant_count))),
+        EvaluationLayout(
+            "spread-shifted", tuple((i * gap + half_gap) % size for i in range(entrant_count))
+        ),
+        EvaluationLayout("close", tuple((i * half_gap) % size for i in range(entrant_count))),
+    )
+
+
 def resolve_evaluation_ruleset_id(ruleset_id: str | None) -> str:
     """The ``rules_compatibility_id`` a request's optional ``--ruleset`` resolves to.
 
@@ -330,7 +482,9 @@ def is_ruleset_v2_methodology(rules_compatibility_id: str) -> bool:
     return rules_compatibility_id == BYTEFRAY_RULESET_V2_ID
 
 
-def resolved_arena_alignment_mode(is_v2_methodology: bool) -> str:
+def resolved_arena_alignment_mode(is_v2_methodology: bool, group: bool = False) -> str:
+    if is_v2_methodology and group:
+        return EVALUATION_ARENA_ALIGNMENT_MODE_V2_GROUP_STANDARD
     return (
         EVALUATION_ARENA_ALIGNMENT_MODE_V2_STANDARD
         if is_v2_methodology
@@ -338,11 +492,15 @@ def resolved_arena_alignment_mode(is_v2_methodology: bool) -> str:
     )
 
 
-def resolved_identity_version(is_v2_methodology: bool) -> int:
+def resolved_identity_version(is_v2_methodology: bool, group: bool = False) -> int:
+    if is_v2_methodology and group:
+        return IDENTITY_VERSION_V2_GROUP
     return IDENTITY_VERSION_V2 if is_v2_methodology else IDENTITY_VERSION
 
 
-def resolved_schema_version(is_v2_methodology: bool) -> int:
+def resolved_schema_version(is_v2_methodology: bool, group: bool = False) -> int:
+    if is_v2_methodology and group:
+        return SCHEMA_VERSION_V2_GROUP
     return SCHEMA_VERSION_V2 if is_v2_methodology else SCHEMA_VERSION
 
 
@@ -603,6 +761,37 @@ def _expected_cell_match_id(
     return canonical_match_id(request)
 
 
+def _expected_group_cell_match_id(
+    specs: Mapping[str, AgentSpec],
+    seat_agent_ids: Sequence[str],
+    seat_starts: Sequence[int],
+    seed: int,
+    ticks: int,
+    ruleset_id: str,
+) -> str:
+    """The multi-entrant generalization of :func:`_expected_cell_match_id`.
+
+    Mirrors ``agent_test._test_agents``'s own ``MatchRequest`` construction
+    exactly: entrants in seat order (``seat_agent_ids[i]`` at
+    ``seat_label(i)``), each at its own ``seat_starts[i]``. See
+    ``_expected_cell_match_id``'s own docstring for why entrant *positional*
+    order (not just each entrant's own identity) is load-bearing for
+    ``canonical_match_id`` and must be reproduced exactly.
+    """
+
+    request = MatchRequest(
+        config=Config(seed=seed),
+        entrants=tuple(
+            MatchEntrant.python(seat_label(index), agent_id, start, specs[agent_id])
+            for index, (agent_id, start) in enumerate(zip(seat_agent_ids, seat_starts, strict=True))
+        ),
+        max_ticks=ticks,
+        replay_path=Path("."),
+        ruleset_id=ruleset_id,
+    )
+    return canonical_match_id(request)
+
+
 # Identity fields recorded both in a frozen ``agent_identity()`` snapshot and
 # in a real match's per-entrant ``NativeAgentResult.metadata`` (Python kind)
 # -- the intersection usable to cross-check "what the executor actually
@@ -733,6 +922,52 @@ def _post_execution_identity_drift(
     return None
 
 
+def _post_execution_identity_drift_group(
+    cell: EvaluationCell,
+    match_result: NativeMatchResult,
+    planned_identities: Mapping[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """The multi-entrant (N seats) generalization of
+    :func:`_post_execution_identity_drift` (v2.0.0-beta2 Phase 2).
+
+    Seat *is* physical slot for a group cell (``seat_label(i)`` is
+    literally the ``MatchEntrant.agent_id`` each seat executed as -- see
+    ``EvaluationSeatAssignment``), so there is no orientation-style
+    slot-resolution step here: seat index directly indexes both
+    ``cell.seat_agent_ids`` and ``match_result.agents_by_id``.
+    """
+
+    for index, agent_id in enumerate(cell.seat_agent_ids):
+        planned = planned_identities.get(agent_id)
+        if planned is None:
+            continue
+        agent_result = match_result.agents_by_id.get(seat_label(index))
+        if agent_result is None:
+            continue
+        actual_metadata = agent_result.metadata
+        mismatched = sorted(
+            field
+            for field in _ACTUAL_IDENTITY_FIELDS
+            if planned.get(field) != actual_metadata.get(field)
+        )
+        mismatched.extend(
+            actual_field
+            for planned_field, actual_field in _FINAL_ONLY_IDENTITY_FIELDS
+            if planned.get(planned_field) != actual_metadata.get(actual_field)
+        )
+        mismatched.sort()
+        if mismatched:
+            return {
+                "error_code": "post_execution_identity_drift",
+                "error_message": (
+                    f"seat {seat_label(index)} {agent_id!r} executed identity does not "
+                    f"match the frozen plan (fields: {', '.join(mismatched)}); agent "
+                    "source or configuration changed during execution."
+                )[:240],
+            }
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Domain model
 # ---------------------------------------------------------------------------
@@ -773,6 +1008,14 @@ class EvaluationRequest:
     # activates the balanced-placement/standard-seed/capture-metric v2
     # methodology.
     ruleset_id: str | None = None
+    # v2.0.0-beta2 Phase 2: opt into multi-entrant ("group") methodology --
+    # `candidate_id` plus every `opponent_ids` entry are fielded TOGETHER as
+    # one N-entrant roster each cell, instead of Phase 1's pairwise "one
+    # cell per opponent" matrix. Default False preserves every existing
+    # evaluation's exact pairwise behavior, v1 and v2 1v1 alike, completely
+    # unchanged. Requires v2 methodology (`is_v2_methodology`) -- validated
+    # in `EvaluationService._validate`, never silently ignored.
+    group: bool = False
 
     @property
     def orientation_mode(self) -> str:
@@ -785,6 +1028,30 @@ class EvaluationRequest:
     @property
     def is_v2_methodology(self) -> bool:
         return is_ruleset_v2_methodology(self.resolved_rules_compatibility_id)
+
+    @property
+    def roster_agent_ids(self) -> tuple[str, ...]:
+        """The full multi-entrant roster (candidate + every opponent), in
+        request order, preserving duplicates -- meaningful only when
+        ``group`` is True. See ``canonical_roster`` for the identity form.
+        """
+
+        return (self.candidate_id, *self.opponent_ids)
+
+    @property
+    def canonical_roster(self) -> tuple[str, ...]:
+        """The roster's canonical (sorted, order-independent) identity form.
+
+        Roster *membership* is order-independent -- "Claimer+Core Defender
+        +Reactive Core Defender" is the same roster regardless of which
+        order the user listed them in; seat *assignment* (the ordered,
+        permutation-bearing axis) is a separate identity dimension, carried
+        per cell by ``EvaluationCell.seat_agent_ids``, never here. Sorting
+        preserves duplicate agent ids correctly (a self-play roster's
+        repeat count survives sorting).
+        """
+
+        return tuple(sorted(self.roster_agent_ids))
 
 
 @dataclass(frozen=True)
@@ -844,6 +1111,51 @@ class EvaluationCell:
     subject_start: int = 0
     opponent_start: int = 0
     placement_index: int = 0
+    # v2.0.0-beta2 Phase 2 (design doc Sec Identity): multi-entrant
+    # ("group") axes -- matrix-axis siblings of placement_id/orientation
+    # above, mirroring their identical default-sentinel pattern. Every
+    # non-group cell (every 1v1 cell ever scheduled, v1 or v2, forever)
+    # gets the empty-tuple/empty-string sentinels below; only a
+    # `request.group=True` cell ever populates them. `roster_agent_ids` is
+    # the canonical (sorted) roster; `seat_agent_ids` is the ordered
+    # per-seat assignment for this specific cell (also its scheduler/
+    # execution order -- see `seat_label`); `layout_id`/`seat_starts`
+    # mirror `placement_id`/(`subject_start`,`opponent_start`)'s role, for
+    # N seats instead of 2. `opponent_id` is still populated for a group
+    # cell (every OTHER roster agent id, canonically joined) but is
+    # display/artifact-labeling only there -- never identity-bearing;
+    # `seat_agent_ids`/`roster_agent_ids` are authoritative.
+    roster_agent_ids: tuple[str, ...] = ()
+    seat_agent_ids: tuple[str, ...] = ()
+    layout_id: str = ""
+    seat_starts: tuple[int, ...] = ()
+    seat_assignment_index: int = 0
+    layout_index: int = 0
+
+    @property
+    def is_group(self) -> bool:
+        return bool(self.roster_agent_ids)
+
+    @property
+    def subject_seat(self) -> str | None:
+        """The seat label the subject occupies in this group cell, or
+        ``None`` for a non-group cell.
+
+        If ``subject_id`` occupies more than one seat (self-play, a
+        duplicate agent id in the roster), the first (lowest-index)
+        occurrence is used, deterministically -- a documented Phase 2
+        simplification for reporting the subject's own outcome; every
+        seat's real result remains fully recoverable from this cell's own
+        persisted ``result.json`` regardless.
+        """
+
+        if not self.is_group:
+            return None
+        try:
+            index = self.seat_agent_ids.index(self.subject_id)
+        except ValueError:
+            return None
+        return seat_label(index)
 
     @property
     def is_scored(self) -> bool:
@@ -994,6 +1306,18 @@ def build_matrix(
 
     resolved_rules_id = request.resolved_rules_compatibility_id
     resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+
+    # v2.0.0-beta2 Phase 2: multi-entrant ("group") matrix generation is a
+    # structurally different generation strategy (seed x layout x seat
+    # assignment, over one N-entrant roster) from the pairwise loop below
+    # (subject x opponent x seed x placement x orientation) -- it lives in
+    # its own function and returns early, rather than threading a "group"
+    # branch through every line of the pairwise loop.
+    if request.group and resolved_is_v2:
+        return _build_group_matrix(
+            request, evaluation_id, resolved_rules_id, specs, conditions_fingerprint
+        )
+
     placements: tuple[EvaluationPlacement | None, ...] = (
         standard_placements() if resolved_is_v2 else (None,)
     )
@@ -1099,6 +1423,101 @@ def build_matrix(
                                 placement_index=placement_index,
                             )
                         )
+    return tuple(cells)
+
+
+def _build_group_matrix(
+    request: EvaluationRequest,
+    evaluation_id: str,
+    resolved_rules_id: str,
+    specs: Mapping[str, AgentSpec] | None,
+    conditions_fingerprint: str | None,
+) -> tuple[EvaluationCell, ...]:
+    """Multi-entrant ("group") matrix: seed x layout x seat assignment.
+
+    Only ever called when ``request.group`` and ``request.is_v2_methodology``
+    are both true (validated in ``EvaluationService._validate`` before this
+    is reached). The full roster (``request.candidate_id`` plus every
+    ``request.opponent_ids`` entry, duplicates preserved) is fielded
+    together each cell -- one N-entrant match per cell, never N pairwise
+    1v1 matches. Seed and layout nest outside seat assignment, matching
+    the pairwise matrix's own "environment axes outside the
+    permutation/orientation axis" convention.
+    """
+
+    roster = request.roster_agent_ids
+    canonical_roster = request.canonical_roster
+    layouts = standard_layouts(len(roster))
+    seat_assignments = enumerate_seat_assignments(roster)
+    arena_alignment_mode = EVALUATION_ARENA_ALIGNMENT_MODE_V2_GROUP_STANDARD
+
+    cells: list[EvaluationCell] = []
+    ordinal = 0
+    for seed_index, seed in enumerate(request.seeds):
+        for layout_index, layout in enumerate(layouts):
+            for assignment_index, assignment in enumerate(seat_assignments):
+                ordinal += 1
+                seat_agent_ids = assignment.seat_agent_ids
+                other_agent_ids = tuple(
+                    sorted(agent_id for agent_id in seat_agent_ids if agent_id != request.candidate_id)
+                )
+                opponent_label = "+".join(other_agent_ids) if other_agent_ids else "none"
+                # `ordinal` guarantees a distinct schedule_id even under a
+                # repeated (seed, layout_id, seat_agent_ids) tuple (e.g. a
+                # user-supplied duplicate seed) -- the identical defensive
+                # role `ordinal` already plays in the pairwise matrix above
+                # (Phase 1F/v0.9 Phase 6 precedent).
+                schedule_id = stable_id(
+                    "evaluation-cell",
+                    {
+                        "evaluation_id": evaluation_id,
+                        "role": CANDIDATE,
+                        "roster": list(canonical_roster),
+                        "seat_agent_ids": list(seat_agent_ids),
+                        "seed": seed,
+                        "layout_id": layout.layout_id,
+                        "ordinal": ordinal,
+                    },
+                )
+                label = (
+                    f"{ordinal:04d}-group-"
+                    f"{_safe_path_segment('-'.join(seat_agent_ids))}-seed{seed}-{layout.layout_id}"
+                )
+                condition_fingerprint = None
+                if specs is not None and conditions_fingerprint is not None:
+                    fp_payload: dict[str, Any] = {
+                        "roster": [agent_identity(specs[agent_id]) for agent_id in canonical_roster],
+                        "seat_agent_ids": list(seat_agent_ids),
+                        "seed": seed,
+                        "effective_conditions": conditions_fingerprint,
+                        "rules_compatibility_id": resolved_rules_id,
+                        "arena_alignment_mode": arena_alignment_mode,
+                        "layout": {
+                            "layout_id": layout.layout_id,
+                            "seat_starts": list(layout.seat_starts),
+                        },
+                    }
+                    condition_fingerprint = stable_id("evaluation-condition", fp_payload)
+                cells.append(
+                    EvaluationCell(
+                        schedule_id=schedule_id,
+                        subject_role=CANDIDATE,
+                        subject_id=request.candidate_id,
+                        opponent_id=opponent_label,
+                        seed=seed,
+                        artifact_dir=request.output_dir / "matches" / label,
+                        seed_index=seed_index,
+                        matrix_ordinal=ordinal,
+                        condition_fingerprint=condition_fingerprint,
+                        rules_compatibility_id=resolved_rules_id,
+                        roster_agent_ids=canonical_roster,
+                        seat_agent_ids=seat_agent_ids,
+                        layout_id=layout.layout_id,
+                        seat_starts=layout.seat_starts,
+                        seat_assignment_index=assignment_index,
+                        layout_index=layout_index,
+                    )
+                )
     return tuple(cells)
 
 
@@ -1423,6 +1842,74 @@ def _cell_from_match_result(cell: EvaluationCell, match_result: NativeMatchResul
     )
 
 
+def _cell_from_match_result_group(cell: EvaluationCell, match_result: NativeMatchResult) -> EvaluationCell:
+    """The multi-entrant generalization of :func:`_cell_from_match_result`.
+
+    Only the subject's (candidate's) own outcome/score/territory are
+    resolved into the shared summary fields -- `score_opponent`/
+    `territory_opponent` stay `None` for a group cell (ill-defined for
+    more than one "opponent"); every seat's full result remains fully
+    recoverable from this cell's own persisted result.json (Phase 1's
+    "cell stores summary, result.json stores everything" pattern,
+    unchanged). Per-seat breakdowns beyond the subject's own perspective
+    are explicitly deferred to a later phase -- see the design doc's
+    "analysis compatibility" section.
+    """
+
+    subject_slot = cell.subject_seat
+    winner = match_result.winner
+    outcome = (
+        "tie"
+        if winner == WINNER_TIE_SENTINEL
+        else "win"
+        if winner == subject_slot
+        else "loss"
+    )
+    subject_agent = match_result.agents_by_id.get(subject_slot) if subject_slot else None
+    return replace(
+        cell,
+        status="completed",
+        outcome=outcome,
+        match_id=match_result.match_id,
+        result_id=match_result.result_id,
+        ticks_run=match_result.ticks_run,
+        score_subject=float(match_result.score.get(subject_slot, 0)) if subject_slot else None,
+        territory_subject=(subject_agent.territory_pct_last if subject_agent else None),
+        error_code=None,
+        error_message=None,
+    )
+
+
+def _cell_from_envelope_group(cell: EvaluationCell, envelope: ResultEnvelope) -> EvaluationCell:
+    """Envelope-based mirror of :func:`_cell_from_match_result_group` (resume path)."""
+
+    subject_slot = cell.subject_seat
+    winner = envelope.winner
+    outcome = (
+        "tie"
+        if winner == WINNER_TIE_SENTINEL
+        else "win"
+        if winner == subject_slot
+        else "loss"
+    )
+    subject_entrant = next(
+        (entry for entry in envelope.entrants if entry.get("agent_id") == subject_slot), {}
+    )
+    subject_stats = subject_entrant.get("statistics", {}) or {}
+    return replace(
+        cell,
+        status="completed",
+        outcome=outcome,
+        match_id=envelope.match_id,
+        result_id=envelope.result_id,
+        ticks_run=envelope.ticks,
+        score_subject=float(envelope.score.get(subject_slot, 0)) if subject_slot else None,
+        territory_subject=subject_stats.get("territory_pct_last"),
+        error_code=None,
+        error_message=None,
+    )
+
+
 def _cell_from_envelope(cell: EvaluationCell, envelope: ResultEnvelope) -> EvaluationCell:
     """Envelope-based mirror of :func:`_cell_from_match_result` (resume path)."""
 
@@ -1648,7 +2135,13 @@ def _resumed_cell_mismatch(
     """Sec 14: adapted from ``tournament_service._resumed_result_mismatch``."""
 
     entrant_order = tuple(str(entry.get("agent_id")) for entry in envelope.entrants)
-    expected_order = (TESTED_AGENT_SLOT, OPPONENT_SLOT)
+    # v2.0.0-beta2 Phase 2: a group cell's expected physical slot order is
+    # seat_label(0..N-1) -- N seats, not the fixed 2-entrant (A, B) pair.
+    expected_order = (
+        tuple(seat_label(index) for index in range(len(cell.seat_agent_ids)))
+        if cell.is_group
+        else (TESTED_AGENT_SLOT, OPPONENT_SLOT)
+    )
     if entrant_order != expected_order:
         return f"entrant order {entrant_order} does not match expected {expected_order}"
     actual_seed = envelope.reproducibility.get("seed")
@@ -1805,6 +2298,7 @@ class EvaluationService:
         data_root: Path | None = None,
         both_orientations: bool = True,
         ruleset_id: str | None = None,
+        group: bool = False,
     ) -> tuple[dict[str, AgentSpec], str]:
         """Validate a request's agent/seed/tick shape and resolve its evaluation id.
 
@@ -1828,6 +2322,7 @@ class EvaluationService:
             data_root=data_root,
             both_orientations=both_orientations,
             ruleset_id=ruleset_id,
+            group=group,
         )
         specs = self._validate(request)
         conditions = self._effective_conditions(request)
@@ -1880,9 +2375,12 @@ class EvaluationService:
         evaluation_id = self._evaluation_id(request, planned_identities, conditions)
         resolved_rules_id = request.resolved_rules_compatibility_id
         resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+        resolved_group = request.group and resolved_is_v2
         state_path = request.output_dir / "evaluation.json"
         prior = (
-            self._load_state(state_path, evaluation_id, resolved_schema_version(resolved_is_v2))
+            self._load_state(
+                state_path, evaluation_id, resolved_schema_version(resolved_is_v2, resolved_group)
+            )
             if request.resume
             else {}
         )
@@ -1901,7 +2399,7 @@ class EvaluationService:
             specs,
             conditions_fp,
             resolved_rules_id,
-            resolved_arena_alignment_mode(resolved_is_v2),
+            resolved_arena_alignment_mode(resolved_is_v2, resolved_group),
         )
 
         created_at = prior.get("created_at") or _utc_now_iso()
@@ -2246,6 +2744,24 @@ class EvaluationService:
                 f"Unsupported evaluation --ruleset {request.ruleset_id!r}; expected "
                 f"{BYTEFRAY_RULESET_ID!r} or {BYTEFRAY_RULESET_V2_ID!r}."
             )
+        # v2.0.0-beta2 Phase 2: multi-entrant ("group") methodology
+        # constraints -- fail closed rather than silently degrading to
+        # pairwise or silently ignoring `group`.
+        if request.group:
+            if not request.is_v2_methodology:
+                raise EvaluationConfigurationError(
+                    "Multi-entrant (--group) evaluation requires --ruleset bytefray-rules-2."
+                )
+            if request.baseline_id is not None:
+                raise EvaluationConfigurationError(
+                    "Multi-entrant (--group) evaluation does not support --baseline "
+                    "comparison in this phase; compare two separate evaluations instead."
+                )
+            if len(request.opponent_ids) < 2:
+                raise EvaluationConfigurationError(
+                    "Multi-entrant (--group) evaluation requires at least two opponents "
+                    "(a 3+ entrant roster); use ordinary 1v1 evaluation for a single opponent."
+                )
         subject_ids = [request.candidate_id]
         if request.baseline_id is not None:
             subject_ids.append(request.baseline_id)
@@ -2276,8 +2792,9 @@ class EvaluationService:
 
         resolved_rules_id = request.resolved_rules_compatibility_id
         resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+        resolved_group = request.group and resolved_is_v2
         payload: dict[str, Any] = {
-            "identity_version": resolved_identity_version(resolved_is_v2),
+            "identity_version": resolved_identity_version(resolved_is_v2, resolved_group),
             "candidate": identities[request.candidate_id],
             "baseline": (
                 identities[request.baseline_id] if request.baseline_id is not None else None
@@ -2295,35 +2812,43 @@ class EvaluationService:
             # evaluation_id ever computed. Only an explicit --ruleset
             # bytefray-rules-2 request ever changes this key's value.
             "rules_compatibility_id": resolved_rules_id,
-            # v0.9 Phase 6 (Phase 5 spec Sec J.2/AA.4.2): both are sibling
-            # keys, never folded into "effective_conditions" -- see Sec I.1/
-            # AA.3 for why. `orientation_mode` makes a both_orientations
-            # request and an explicit single-orientation request of
-            # otherwise-identical inputs hash to different evaluation_ids
-            # (different matrix sizes/experiments; must never share a
-            # resumable --output). `arena_alignment_mode` was v0.9's only
-            # value ("fixed"); v2.0.0-beta2 Phase 1 gives it a second,
-            # genuinely varying value for v2 methodology (see
-            # resolved_arena_alignment_mode) so a placement-aware
-            # methodology can never silently hash identically to v1's fixed
-            # alignment (Sec AA.2).
-            "orientation_mode": request.orientation_mode,
-            "arena_alignment_mode": resolved_arena_alignment_mode(resolved_is_v2),
+            # v0.9 Phase 6 (Phase 5 spec Sec J.2/AA.4.2, sibling key, never
+            # folded into "effective_conditions"): "fixed" for v0.9, a
+            # second value for v2.0.0-beta2 Phase 1 1v1, a third for Phase
+            # 2 group mode (resolved_arena_alignment_mode) -- never
+            # collides across methodologies.
+            "arena_alignment_mode": resolved_arena_alignment_mode(resolved_is_v2, resolved_group),
         }
-        # Phase 1F: the actual resolved placement set, not just a mode
-        # label -- two different v2 placement sets must never collide on
-        # evaluation_id. Omitted entirely for v1 (placements is always
-        # `None` there) so a v1 payload's key set is byte-identical to
-        # every evaluation_id ever computed before this phase.
-        if resolved_is_v2:
-            payload["placements"] = [
-                {
-                    "placement_id": placement.placement_id,
-                    "subject_start": placement.subject_start,
-                    "opponent_start": placement.opponent_start,
-                }
-                for placement in standard_placements()
+        if resolved_group:
+            # v2.0.0-beta2 Phase 2: multi-entrant identity. `orientation_
+            # mode` is not meaningful here -- seat assignment (per cell,
+            # not evaluation-wide) is the generalized scheduler-order axis
+            # instead, so it is omitted rather than hashed as a stale
+            # value. The actual resolved layout set (not just a mode
+            # label) enters the hash directly, mirroring Phase 1F's own
+            # "placements" precedent exactly -- two different N-seat
+            # layout sets must never collide on evaluation_id.
+            payload["group"] = True
+            payload["layouts"] = [
+                {"layout_id": layout.layout_id, "seat_starts": list(layout.seat_starts)}
+                for layout in standard_layouts(len(request.roster_agent_ids))
             ]
+        else:
+            payload["orientation_mode"] = request.orientation_mode
+            # Phase 1F: the actual resolved placement set, not just a mode
+            # label -- two different v2 placement sets must never collide
+            # on evaluation_id. Omitted entirely for v1 (placements is
+            # always `None` there) so a v1 payload's key set is byte-
+            # identical to every evaluation_id ever computed before Phase 1.
+            if resolved_is_v2:
+                payload["placements"] = [
+                    {
+                        "placement_id": placement.placement_id,
+                        "subject_start": placement.subject_start,
+                        "opponent_start": placement.opponent_start,
+                    }
+                    for placement in standard_placements()
+                ]
         return stable_id("evaluation-v2", payload)
 
     def _resolve_revision_results(
@@ -2424,18 +2949,28 @@ class EvaluationService:
                 error_message=f"result.json could not be read: {exc}"[:240],
             )
 
-        expected_match_id = _expected_cell_match_id(
-            specs[cell.subject_id],
-            cell.subject_id,
-            specs[cell.opponent_id],
-            cell.opponent_id,
-            cell.seed,
-            request.ticks,
-            cell.orientation,
-            cell.rules_compatibility_id,
-            cell.subject_start,
-            cell.opponent_start,
-        )
+        if cell.is_group:
+            expected_match_id = _expected_group_cell_match_id(
+                specs,
+                cell.seat_agent_ids,
+                cell.seat_starts,
+                cell.seed,
+                request.ticks,
+                cell.rules_compatibility_id,
+            )
+        else:
+            expected_match_id = _expected_cell_match_id(
+                specs[cell.subject_id],
+                cell.subject_id,
+                specs[cell.opponent_id],
+                cell.opponent_id,
+                cell.seed,
+                request.ticks,
+                cell.orientation,
+                cell.rules_compatibility_id,
+                cell.subject_start,
+                cell.opponent_start,
+            )
         mismatch = _resumed_cell_mismatch(envelope, cell, expected_match_id)
         if mismatch is not None:
             return replace(
@@ -2444,8 +2979,9 @@ class EvaluationService:
                 error_code="resumed_result_mismatch",
                 error_message=mismatch[:240],
             )
+        resolved = _cell_from_envelope_group(cell, envelope) if cell.is_group else _cell_from_envelope(cell, envelope)
         return replace(
-            _cell_from_envelope(cell, envelope),
+            resolved,
             execution_context_id=previous.get("execution_context_id"),
         )
 
@@ -2475,6 +3011,14 @@ class EvaluationService:
         drift = self._detect_pre_execution_drift(cell, planned_identities, root)
         if drift is not None:
             return CellExecutionResult(cell=replace(cell, status="drift_detected", **drift))
+
+        # v2.0.0-beta2 Phase 2: a group cell is executed through an
+        # entirely separate branch (agent_test.test_agents, not test_agent)
+        # -- the pairwise path below is completely unmodified by this
+        # addition, byte-for-byte, matching build_matrix's own "separate
+        # function, early return" precedent for the same reason.
+        if cell.is_group:
+            return self._execute_group_cell(cell, ticks, data_root, root, planned_identities)
 
         # v0.9 Phase 6 (Phase 5 spec Sec H.1/T.4): `candidate_first` reuses
         # the exact historical call; `opponent_first` calls the same
@@ -2595,6 +3139,108 @@ class EvaluationService:
             execution_context=context,
         )
 
+    def _execute_group_cell(
+        self,
+        cell: EvaluationCell,
+        ticks: int,
+        data_root: Path | None,
+        root: Path,
+        planned_identities: Mapping[str, dict[str, Any]],
+    ) -> CellExecutionResult:
+        """The multi-entrant generalization of the pairwise branch of
+        :meth:`_execute_cell` (v2.0.0-beta2 Phase 2).
+
+        Same purity contract (pure apart from filesystem I/O under
+        ``cell.artifact_dir``/reading agent source under ``root``) --
+        called only from ``_execute_cell``, after the shared pre-execution
+        drift check has already passed.
+        """
+
+        context = current_execution_context(cell.rules_compatibility_id)
+        entrants = [
+            GroupEntrantSpec(seat=seat_label(index), agent_id=agent_id, start=start)
+            for index, (agent_id, start) in enumerate(
+                zip(cell.seat_agent_ids, cell.seat_starts, strict=True)
+            )
+        ]
+
+        try:
+            outcome = test_agents(
+                entrants,
+                seed=cell.seed,
+                ticks=ticks,
+                timeout=None,
+                trace=False,
+                run_dir=cell.artifact_dir,
+                data_root=data_root,
+                ruleset_id=cell.rules_compatibility_id,
+            )
+        except AgentTestError as exc:
+            return CellExecutionResult(
+                cell=replace(
+                    cell,
+                    status="failed",
+                    outcome=None,
+                    error_code=exc.diagnostic.code,
+                    error_message=" ".join(str(exc).split())[:240],
+                    execution_context_id=context.context_id,
+                ),
+                execution_context=context,
+            )
+        if isinstance(outcome, GroupInitializationFailureOutcome):
+            post_init_drift = self._detect_pre_execution_drift(cell, planned_identities, root)
+            if post_init_drift is not None:
+                return CellExecutionResult(
+                    cell=replace(
+                        cell,
+                        status="drift_detected",
+                        **post_init_drift,
+                        execution_context_id=context.context_id,
+                    ),
+                    execution_context=context,
+                )
+            # "subject_init_failed" only when the *candidate's own* seat is
+            # the one that failed to initialize -- any other failed seat is
+            # reported as "opponent_init_failed", mirroring the pairwise
+            # path's exact two-value vocabulary (Phase 2 does not introduce
+            # a third "which opponent" outcome value here; the failed
+            # agent's own id/seat is still fully recorded in error_message).
+            result_outcome = (
+                "subject_init_failed" if outcome.seat == cell.subject_seat else "opponent_init_failed"
+            )
+            return CellExecutionResult(
+                cell=replace(
+                    cell,
+                    status="completed",
+                    outcome=result_outcome,
+                    error_code=outcome.diagnostic.code,
+                    error_message=(
+                        f"seat {outcome.seat} ({outcome.agent_id}): "
+                        + " ".join(outcome.diagnostic.message.split())
+                    )[:240],
+                    execution_context_id=context.context_id,
+                ),
+                execution_context=context,
+            )
+        post_drift = _post_execution_identity_drift_group(cell, outcome.match_result, planned_identities)
+        if post_drift is not None:
+            return CellExecutionResult(
+                cell=replace(
+                    cell,
+                    status="drift_detected",
+                    **post_drift,
+                    execution_context_id=context.context_id,
+                ),
+                execution_context=context,
+            )
+        return CellExecutionResult(
+            cell=replace(
+                _cell_from_match_result_group(cell, outcome.match_result),
+                execution_context_id=context.context_id,
+            ),
+            execution_context=context,
+        )
+
     def _detect_pre_execution_drift(
         self,
         cell: EvaluationCell,
@@ -2612,10 +3258,17 @@ class EvaluationService:
         else in this codepath would otherwise notice.
         """
 
-        for role, agent_id in (
-            (cell.subject_role, cell.subject_id),
-            ("opponent", cell.opponent_id),
-        ):
+        # v2.0.0-beta2 Phase 2: a group cell's `opponent_id` is a joined
+        # display label (see EvaluationCell's own docstring), never a real
+        # agent id -- resolving it would always fail. Check the real
+        # per-seat roster instead; `dict.fromkeys` dedupes a repeated agent
+        # id (self-play) so it is checked once, not once per occupied seat.
+        role_and_agent_ids: tuple[tuple[str, str], ...] = (
+            tuple(("roster", agent_id) for agent_id in dict.fromkeys(cell.seat_agent_ids))
+            if cell.is_group
+            else ((cell.subject_role, cell.subject_id), ("opponent", cell.opponent_id))
+        )
+        for role, agent_id in role_and_agent_ids:
             planned_identity = planned_identities.get(agent_id)
             if planned_identity is None:
                 continue
@@ -2756,6 +3409,7 @@ class EvaluationService:
         conditions_dict = asdict(conditions)
         resolved_rules_id = request.resolved_rules_compatibility_id
         resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+        resolved_group = request.group and resolved_is_v2
         write_json_atomic(
             path,
             {
@@ -2764,12 +3418,15 @@ class EvaluationService:
                 # module constant -- for every v1 request (omitted or
                 # explicit bytefray-rules-1) this is exactly SCHEMA_VERSION/
                 # IDENTITY_VERSION (4), byte-identical to every artifact
-                # this module has ever written. Only an explicit --ruleset
-                # bytefray-rules-2 request ever writes SCHEMA_VERSION_V2/
-                # IDENTITY_VERSION_V2 (5) -- a brand-new artifact shape with
-                # no historical instance to stay compatible with.
-                "schema_version": resolved_schema_version(resolved_is_v2),
-                "identity_version": resolved_identity_version(resolved_is_v2),
+                # this module has ever written. An explicit --ruleset
+                # bytefray-rules-2 1v1 request writes SCHEMA_VERSION_V2/
+                # IDENTITY_VERSION_V2 (5, Phase 1); a --group request on top
+                # of that writes SCHEMA_VERSION_V2_GROUP/
+                # IDENTITY_VERSION_V2_GROUP (6, Phase 2) -- each a brand-new
+                # artifact shape with no historical instance to stay
+                # compatible with.
+                "schema_version": resolved_schema_version(resolved_is_v2, resolved_group),
+                "identity_version": resolved_identity_version(resolved_is_v2, resolved_group),
                 "evaluation_id": evaluation_id,
                 "candidate_id": request.candidate_id,
                 "baseline_id": request.baseline_id,
@@ -2789,7 +3446,16 @@ class EvaluationService:
                 # Sec AA.3/AA.4) -- evaluation-wide methodology, never
                 # folded into effective_conditions.
                 "orientation_mode": request.orientation_mode,
-                "arena_alignment_mode": resolved_arena_alignment_mode(resolved_is_v2),
+                "arena_alignment_mode": resolved_arena_alignment_mode(resolved_is_v2, resolved_group),
+                # v2.0.0-beta2 Phase 2: additive top-level disclosure of
+                # multi-entrant methodology -- never identity-affecting on
+                # its own (the resolved layout set already is, via
+                # arena_alignment_mode's distinct value and each cell's own
+                # roster/seat fields); purely for `evaluations show`/`list`
+                # and JSON consumers to see at a glance without scanning
+                # cells.
+                "group": resolved_group,
+                "roster_agent_ids": list(request.canonical_roster) if resolved_group else None,
                 "created_at": created_at,
                 "updated_at": _utc_now_iso(),
                 "finished_at": finished_at,
@@ -2835,15 +3501,18 @@ def read_evaluation(path: Path) -> dict[str, Any]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if data.get("schema") != SCHEMA_NAME:
         raise EvaluationConfigurationError(f"{path}: not a {SCHEMA_NAME} artifact.")
-    # v2.0.0-beta2 Phase 1: a caller reading an arbitrary on-disk artifact
-    # (unlike _load_state, which already knows this run's own resolved
-    # methodology) cannot know in advance whether it is a v1 (SCHEMA_VERSION)
-    # or v2 (SCHEMA_VERSION_V2) artifact -- both are equally "this module's
-    # own current schema," just under different resolved methodologies.
-    if data.get("schema_version") not in (SCHEMA_VERSION, SCHEMA_VERSION_V2):
+    # v2.0.0-beta2 Phase 1/2: a caller reading an arbitrary on-disk
+    # artifact (unlike _load_state, which already knows this run's own
+    # resolved methodology) cannot know in advance whether it is a v1
+    # (SCHEMA_VERSION), v2 1v1 (SCHEMA_VERSION_V2), or v2 group
+    # (SCHEMA_VERSION_V2_GROUP) artifact -- all three are equally "this
+    # module's own current schema," just under different resolved
+    # methodologies.
+    _supported_versions = (SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V2_GROUP)
+    if data.get("schema_version") not in _supported_versions:
         raise EvaluationConfigurationError(
             f"{path}: unsupported schema version {data.get('schema_version')!r} "
-            f"(expected {SCHEMA_VERSION} or {SCHEMA_VERSION_V2})."
+            f"(expected one of {_supported_versions})."
         )
     return data
 
@@ -2905,6 +3574,18 @@ def _parser() -> argparse.ArgumentParser:
         "--opponents",
         default=None,
         help="comma-separated opponent discovery ids (may instead be set by --preset)",
+    )
+    parser.add_argument(
+        "--group",
+        action="store_true",
+        help=(
+            "multi-entrant methodology: field the candidate and every --opponents "
+            "entry TOGETHER as one N-entrant roster each cell (standard layouts x "
+            "standard seat permutations), instead of one pairwise 1v1 cell per "
+            "opponent. Requires --ruleset bytefray-rules-2 and at least two "
+            "--opponents (a 3+ entrant roster); does not support --baseline in this "
+            "phase. See docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md."
+        ),
     )
     seed_group = parser.add_mutually_exclusive_group()
     seed_group.add_argument("--seeds", default=None, help="comma-separated explicit seeds")
@@ -3010,14 +3691,34 @@ def _print_v2_methodology(request: EvaluationRequest, matrix: Sequence[Evaluatio
     a user must see stated plainly, not reverse-engineer from ``matches:``.
     """
 
+    print(f"ruleset: {request.resolved_rules_compatibility_id}")
+    print(f"seeds: {', '.join(str(seed) for seed in request.seeds)}")
+    if request.group:
+        _print_group_methodology(request)
+        return
     placements = standard_placements()
     orientations = 2 if request.both_orientations else 1
     cells_per_opponent = len(request.seeds) * len(placements) * orientations
-    print(f"ruleset: {request.resolved_rules_compatibility_id}")
-    print(f"seeds: {', '.join(str(seed) for seed in request.seeds)}")
     print(f"placements: {len(placements)} ({', '.join(p.placement_id for p in placements)})")
     print(f"scheduler orders: {'balanced' if request.both_orientations else 'candidate-first only'}")
     print(f"cells/opponent: {cells_per_opponent}")
+
+
+def _print_group_methodology(request: EvaluationRequest) -> None:
+    """v2.0.0-beta2 Phase 2: multi-entrant matrix disclosure, mirroring
+    the 1v1 disclosure above exactly -- ruleset/seeds are already printed
+    by the caller; roster/layout/permutation/cell-count are this mode's
+    own additional dimensions.
+    """
+
+    roster = request.roster_agent_ids
+    layouts = standard_layouts(len(roster))
+    seat_assignments = enumerate_seat_assignments(roster)
+    cells = len(request.seeds) * len(layouts) * len(seat_assignments)
+    print(f"roster: {', '.join(roster)} ({len(roster)} entrants)")
+    print(f"layouts: {len(layouts)} ({', '.join(layout.layout_id for layout in layouts)})")
+    print(f"seat assignments: {len(seat_assignments)}")
+    print(f"cells: {cells}")
 
 
 def _print_matrix(
@@ -3027,7 +3728,6 @@ def _print_matrix(
 ) -> None:
     if preset is not None:
         print(f"preset: {preset.name}  (content_digest={preset.content_digest})")
-    subjects = [request.candidate_id] + ([request.baseline_id] if request.baseline_id else [])
     print(f"candidate: {request.candidate_id}")
     print(f"baseline: {request.baseline_id if request.baseline_id else 'none'}")
     print(f"opponents: {', '.join(request.opponent_ids)}")
@@ -3036,13 +3736,28 @@ def _print_matrix(
     else:
         print(f"seeds: {', '.join(str(seed) for seed in request.seeds)}")
     print(f"ticks: {request.ticks}")
-    print(f"subjects: {len(subjects)}  opponents: {len(request.opponent_ids)}  seeds: {len(request.seeds)}")
+    # v2.0.0-beta2 Phase 2: "subjects: N opponents: M" and the 2-value
+    # "Entrant orientation: both/candidate-first only" line both describe
+    # 1v1 methodology's own axes (subject_role, orientation) -- neither is
+    # a meaningful description of a group evaluation's roster/seat-
+    # assignment axes, and printing them anyway would misrepresent group
+    # semantics as if a 2-value orientation were still the scheduler-order
+    # axis (Phase 2 design-audit finding). `_print_group_methodology`
+    # already discloses roster/layouts/seat assignments above; only the
+    # arena-alignment line (still correct and useful for group -- it names
+    # the resolved group methodology identifier) is kept.
+    if not request.group:
+        subjects = [request.candidate_id] + ([request.baseline_id] if request.baseline_id else [])
+        print(f"subjects: {len(subjects)}  opponents: {len(request.opponent_ids)}  seeds: {len(request.seeds)}")
     print(f"matches: {len(matrix)}")
-    for line in methodology_lines(
+    _, alignment_line = methodology_lines(
         request.orientation_mode,
-        arena_alignment_mode=resolved_arena_alignment_mode(request.is_v2_methodology),
-    ):
-        print(line)
+        arena_alignment_mode=resolved_arena_alignment_mode(request.is_v2_methodology, request.group),
+    )
+    if not request.group:
+        orientation_line, _ = methodology_lines(request.orientation_mode)
+        print(orientation_line)
+    print(alignment_line)
 
 
 def _print_aggregate(aggregate: SubjectAggregate) -> None:
@@ -3243,30 +3958,56 @@ def _print_capture(analysis: Any) -> None:
 
 def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
     print(f"evaluation: {result.evaluation_id}")
-    for line in methodology_lines(
+    # v2.0.0-beta2 Phase 2: skip the 1v1-only "Entrant orientation:" line
+    # for a group evaluation -- see _print_matrix's identical guard.
+    orientation_line, alignment_line = methodology_lines(
         request.orientation_mode,
-        arena_alignment_mode=resolved_arena_alignment_mode(request.is_v2_methodology),
-    ):
-        print(line)
+        arena_alignment_mode=resolved_arena_alignment_mode(request.is_v2_methodology, request.group),
+    )
+    if not request.group:
+        print(orientation_line)
+    print(alignment_line)
     for aggregate in result.aggregates:
         if aggregate.orientation_scope != "all":
             continue
         _print_aggregate(aggregate)
-        if request.both_orientations:
+        # v2.0.0-beta2 Phase 2: orientation is not a meaningful axis for a
+        # group cell (seat assignment is the generalized scheduler-order
+        # axis instead, per-cell, never pooled into an evaluation-wide
+        # orientation breakdown) -- every group cell defaults to
+        # "candidate_first" (EvaluationCell.orientation's own sentinel),
+        # so printing this breakdown for a group evaluation would show a
+        # misleading "opponent_first: 0" rather than "not applicable".
+        if request.both_orientations and not request.group:
             subject_aggregates = [
                 a
                 for a in result.aggregates
                 if a.subject_role == aggregate.subject_role and a.subject_id == aggregate.subject_id
             ]
             _print_orientation_breakdown(subject_aggregates)
-    from battle_engine.evaluation_behavior import analyze_behavior, cell_ref_from_evaluation_cell
+    # v2.0.0-beta2 Phase 2: evaluation_behavior/evaluation_capture's Tier-2
+    # readers resolve the subject's physical match slot via `cell.
+    # orientation` (a 2-value candidate_first/opponent_first axis) --
+    # meaningless for a group cell, whose subject occupies whichever seat
+    # `cell.subject_seat` says, not a fixed slot "A". Rather than silently
+    # read the WRONG seat's result.json entry (candidate's seat varies per
+    # cell in group mode), this is deferred explicitly to a later phase --
+    # see docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md's "analysis
+    # compatibility" section.
+    if request.group:
+        print("behavior/capture analysis: deferred for multi-entrant evaluations (see design doc)")
+    else:
+        from battle_engine.evaluation_behavior import (
+            analyze_behavior,
+            cell_ref_from_evaluation_cell,
+        )
 
-    scored_refs = [cell_ref_from_evaluation_cell(cell) for cell in result.cells if cell.is_scored]
-    _print_behavior(analyze_behavior(request.candidate_id, request.baseline_id, scored_refs))
-    if request.is_v2_methodology:
-        from battle_engine.evaluation_capture import analyze_capture
+        scored_refs = [cell_ref_from_evaluation_cell(cell) for cell in result.cells if cell.is_scored]
+        _print_behavior(analyze_behavior(request.candidate_id, request.baseline_id, scored_refs))
+        if request.is_v2_methodology:
+            from battle_engine.evaluation_capture import analyze_capture
 
-        _print_capture(analyze_capture(request.candidate_id, request.baseline_id, scored_refs))
+            _print_capture(analyze_capture(request.candidate_id, request.baseline_id, scored_refs))
     if request.baseline_id is not None:
         regressed = [entry for entry in result.comparison if entry.classification == "regressed"]
         improved = [entry for entry in result.comparison if entry.classification == "improved"]
@@ -3420,6 +4161,7 @@ def main(argv: list[str] | None = None) -> int:
             ticks=ticks,
             both_orientations=both_orientations,
             ruleset_id=ruleset_id,
+            group=args.group,
         )
     except EvaluationConfigurationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -3442,6 +4184,7 @@ def main(argv: list[str] | None = None) -> int:
         both_orientations=both_orientations,
         workers=args.workers,
         ruleset_id=ruleset_id,
+        group=args.group,
     )
     matrix = build_matrix(request, evaluation_id)
     if not args.quiet or args.dry_run:
@@ -3470,10 +4213,12 @@ __all__ = [
     "BYTEFRAY_RULESET_V2_ID",
     "CANDIDATE",
     "EVALUATION_ARENA_ALIGNMENT_MODE",
+    "EVALUATION_ARENA_ALIGNMENT_MODE_V2_GROUP_STANDARD",
     "EVALUATION_ARENA_ALIGNMENT_MODE_V2_STANDARD",
     "EVALUATION_RULES_COMPATIBILITY_ID",
     "IDENTITY_VERSION",
     "IDENTITY_VERSION_V2",
+    "IDENTITY_VERSION_V2_GROUP",
     "LOCAL_SOURCE_FINGERPRINT_VERSION",
     "ORIENTATION_CANDIDATE_FIRST",
     "ORIENTATION_MODE_BOTH",
@@ -3482,14 +4227,17 @@ __all__ = [
     "SCHEMA_NAME",
     "SCHEMA_VERSION",
     "SCHEMA_VERSION_V2",
+    "SCHEMA_VERSION_V2_GROUP",
     "STANDARD_V2_SEEDS",
     "ComparisonEntry",
     "EffectiveConditions",
     "EvaluationCell",
     "EvaluationConfigurationError",
+    "EvaluationLayout",
     "EvaluationPlacement",
     "EvaluationRequest",
     "EvaluationResult",
+    "EvaluationSeatAssignment",
     "EvaluationService",
     "ExecutionContext",
     "SubjectAggregate",
@@ -3501,6 +4249,7 @@ __all__ = [
     "compare_candidate_baseline",
     "current_execution_context",
     "effective_conditions_for",
+    "enumerate_seat_assignments",
     "is_ruleset_v2_methodology",
     "local_source_fingerprint",
     "main",
@@ -3515,6 +4264,8 @@ __all__ = [
     "resolved_arena_alignment_mode",
     "resolved_identity_version",
     "resolved_schema_version",
+    "seat_label",
     "source_digest",
+    "standard_layouts",
     "standard_placements",
 ]
