@@ -52,7 +52,7 @@ does not imply, and should not silently piggyback on, a change to another:
 | Agent API version | The Python agent programming contract, including RNG derivation. | `battle_engine.agent_api.AGENT_API_VERSION`. |
 | Ruleset identity | The gameplay rules of the game itself. | `battle_engine.rules.BYTEFRAY_RULESET_ID`. |
 | Artifact schema versions | Wire shape of persisted artifacts. | `battle_engine.replay.SCHEMA_VERSION` (`battle2.replay`), `battle_engine.result_model` (`battle2.result`), `battle_engine.agent_evaluation.SCHEMA_VERSION`/`IDENTITY_VERSION` (`bytefray.evaluation`), `battle_engine.agent_trace` (`bytefray.agent_trace`). |
-| Evaluation methodology fields | How `agents evaluate` measures agents (orientation coverage, arena-alignment disclosure), not gameplay itself. | `bytefray.evaluation`'s `orientation_mode`/`arena_alignment_mode` fields. |
+| Evaluation methodology fields | How `agents evaluate` measures agents (orientation coverage, arena-alignment/placement disclosure, seed set, Ruleset selection), not gameplay itself. | `bytefray.evaluation`'s `orientation_mode`/`arena_alignment_mode`/`rules_compatibility_id` (request-resolved as of v2.0.0-beta2 Phase 1) fields, and each cell's `placement_id`/`subject_start`/`opponent_start`. |
 | Agent revision identity | Content-addressed identity of one archived copy of an agent's source. | `battle_engine.agent_revisions`. |
 | Source fingerprint versions | Deterministic hash-scope versioning for drift detection. | `battle_engine.agent_api.LOCAL_SOURCE_FINGERPRINT_VERSION`, `battle_engine.agent_revisions`' own fingerprint version. |
 | Agent package format | Wire shape/versioning of the portable `.bytefray-agent` transport container itself — independent of the agent revision identity it wraps. | `battle_engine.agent_package.PACKAGE_SCHEMA_VERSION` (`bytefray.agent_package`). |
@@ -144,6 +144,36 @@ evidence behind it.
   separately, so no historical alpha artifact can ever be silently
   reinterpreted as a permanent Ruleset-v2 artifact, and evaluation
   comparison/resume both continue to fail closed across any pair of them.
+
+## Ruleset-v2 1v1 evaluation methodology (v2.0.0-beta2 Phase 1)
+
+`agents evaluate` gained an explicit `--ruleset {bytefray-rules-1,
+bytefray-rules-2}` selector. This is an **evaluation methodology** change,
+never a gameplay change — no Ruleset semantic, Agent API, or artifact
+schema (`battle2.result`/`battle2.replay`) was touched. Two independent
+compatibility guarantees hold:
+
+- **Omitted, or explicit `bytefray-rules-1`.** Resolves to the exact same
+  historical v1 evaluation methodology, byte-for-byte: identical
+  `evaluation_id`/`schedule_id` hash payloads, identical
+  `SCHEMA_VERSION`/`IDENTITY_VERSION` (4), identical matrix shape/size for
+  the same request. No pre-Phase-1 evaluation script, preset, or resumed
+  artifact changes behavior.
+- **Explicit `bytefray-rules-2`.** A new methodology: a standard,
+  mechanically-derived three-placement set, a standard five-seed default,
+  and capture/core evidence — see
+  [V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md).
+  Uses a second, additive schema/identity version,
+  `SCHEMA_VERSION_V2`/`IDENTITY_VERSION_V2` (5) — there is no historical
+  `bytefray-rules-2` evaluation artifact to preserve compatibility with,
+  since evaluation had no Ruleset selector at all before this phase.
+
+Placement (`EvaluationPlacement`/each cell's `subject_start`/
+`opponent_start`) is a new, additive identity axis. `match_service.
+canonical_match_id`'s Python-entrant metadata now includes `"start"`
+whenever a Python entrant's start address is non-zero — additive: every
+historical Python match ever run used `start=0` for both entrants, so this
+never changes a historical `match_id`/`result_id`/`replay_id`.
 
 ## Historical alias: evaluation-rules-1 ↔ bytefray-rules-1
 

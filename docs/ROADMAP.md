@@ -700,10 +700,26 @@ for the published assets and notes. Next planned milestone: **v2.0.0-beta2
 
 ## v2.0.0-beta2 — Evaluation & Multi-Entrant Methodology
 
-**Status: planned.** Purpose: Ruleset-v2 evaluation methodology (order/
-placement/seed balancing per alpha.11's own requirements), scheduler/order
-balancing tooling, multi-entrant evaluation/productization decisions, and
-core/capture metrics as first-class evaluation outputs.
+**Status: in development.** Purpose: Ruleset-v2 evaluation methodology
+(order/placement/seed balancing per alpha.11's own requirements),
+scheduler/order balancing tooling, multi-entrant evaluation/productization
+decisions, and core/capture metrics as first-class evaluation outputs. See
+[V2_0_BETA2_PLAN.md](V2_0_BETA2_PLAN.md) for the phase breakdown.
+
+**Phase 1 (Ruleset-v2 1v1 evaluation methodology) is implementation-
+complete** on `v2.0-beta2-development`, not yet released — see
+[V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md).
+`agents evaluate` gains an explicit `--ruleset {bytefray-rules-1,
+bytefray-rules-2}` selector; the historical v1 methodology is preserved
+byte-for-byte when omitted. Permanent v2 methodology adds a standard,
+mechanically-derived three-placement set, a standard five-seed default,
+explicit scheduler-order disclosure, and capture/core evidence as a new
+evaluation-output category kept structurally independent of win/loss/
+score/behavior. Every gameplay-relevant dimension (Ruleset, order,
+placement, seed, ticks) now enters canonical evaluation/schedule identity;
+resume and comparison fail closed across any methodology change. Phases
+2-5 (multi-entrant model, product workflow, Designer presentation,
+integrated qualification) remain planned.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 

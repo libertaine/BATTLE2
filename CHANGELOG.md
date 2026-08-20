@@ -2,6 +2,38 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [Unreleased]
+
+### Ruleset-v2 1v1 evaluation methodology (v2.0.0-beta2 Phase 1)
+
+`bytefray agents evaluate` gains an explicit `--ruleset {bytefray-rules-1,
+bytefray-rules-2}` selector. Omitted (or explicit `bytefray-rules-1`) runs
+the historical v1 evaluation methodology completely unchanged, including
+every evaluation/schedule identity ever computed. `bytefray-rules-2`
+activates a new, balanced 1v1 methodology:
+
+- a standard, mechanically-derived three-condition placement set
+  (`opposed`, `quarter`, `opposed-shifted`), expressed as fractions of
+  arena size rather than hand-picked coordinates;
+- a standard five-seed default (`1, 2, 3, 4, 5`), overridable like any
+  other seed selection;
+- explicit scheduler-order ("both entrant orientations") disclosure,
+  distinct from placement;
+- capture/core interaction as a new evaluation-output category
+  (`battle_engine.evaluation_capture`) -- captures caused/suffered,
+  capture rate, capture tick, killer attribution -- kept structurally
+  independent of win/loss/score/behavior, never a combined "performance
+  score."
+
+Every gameplay-relevant condition (Ruleset, scheduler order, placement,
+seed, ticks) now enters canonical evaluation/schedule identity; resume and
+cross-evaluation comparison fail closed across any methodology change.
+Additive, request-methodology-resolved schema/identity version 5 is used
+only for `bytefray-rules-2` evaluations; every v1 evaluation keeps schema/
+identity version 4 exactly as before. See
+[docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md)
+for the full design record.
+
 ## [2.0.0-beta1] - 2026-08-20
 
 ### Ruleset v2 (Vulnerable Core)
