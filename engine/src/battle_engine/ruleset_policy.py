@@ -172,13 +172,39 @@ BYTEFRAY_RULESET_V2_ALPHA11_ID = "bytefray-rules-2-alpha11"
 RULESET_V2_ALPHA11 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_V2_ALPHA11_ID)
 
 
+# v2.0.0-beta1's permanent identity (see docs/V2_0_BETA1_PLAN.md and
+# docs/V2_0_ALPHA11_RULESET_V2_CANDIDATE_RESOLUTION.md Sec 25-26). The alpha
+# program validated "Vulnerable Core" plus "Consistent Core Observability"
+# as a beta-ready candidate under the experimental identity
+# ``bytefray-rules-2-alpha11``; beta1 promotes that evidence-backed
+# semantic into a real, permanent compatibility identity.
+#
+# Deliberately its own explicit key, never an alias of
+# ``bytefray-rules-2-alpha11``: ``rules._RULESET_ALIASES`` gets no entry for
+# it, and this table does not collapse the two together. Historical alpha11
+# artifacts must remain distinctly, honestly identified as alpha11 --
+# reusing that identity here would silently reinterpret ten alphas' worth of
+# experimental evidence as a permanent product contract, and would let a
+# future evaluation accidentally align an experimental run against a
+# permanent one under one canonical match identity. The two share their
+# behavioral implementation in ``battle_engine.python_runtime`` (the
+# semantics are intentionally identical at promotion time -- see the beta1
+# promotion-equivalence corpus, ``engine/tests/test_ruleset_v2_promotion_equivalence.py``)
+# but are registered, dispatched, and persisted as separate identities.
+#
+# Scheduling and termination are again *identical* to Ruleset v1 -- neither
+# ``run_scheduler`` nor ``resolve_termination`` reads ``self.ruleset_id``.
+BYTEFRAY_RULESET_V2_ID = "bytefray-rules-2"
+RULESET_V2 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_V2_ID)
+
+
 class UnknownRulesetError(LookupError):
     """A Ruleset ID has no known policy.
 
-    Raised by :func:`resolve_ruleset_policy` for any ID other than the
-    current ``BYTEFRAY_RULESET_ID``. Deliberately fails closed: an
-    unrecognized Ruleset ID -- including a plausible-looking future ID such
-    as ``"bytefray-rules-2"`` -- must never silently resolve to Ruleset v1.
+    Raised by :func:`resolve_ruleset_policy` for any ID not present in
+    :data:`_RULESET_POLICIES`. Deliberately fails closed: an unrecognized
+    Ruleset ID -- including a plausible-looking but unregistered future
+    identity -- must never silently resolve to Ruleset v1.
     """
 
     def __init__(self, ruleset_id: str):
@@ -195,24 +221,27 @@ class UnknownRulesetError(LookupError):
 # execute the aliased ID as today's Ruleset v1 -- see
 # ``docs/V1_5_PHASE3_RULESET_POLICY_DISPATCH.md``'s "Resolver design".
 #
-# ``bytefray-rules-2-alpha1`` is registered under its own explicit key,
-# never aliased to or from ``bytefray-rules-1`` (``rules.py``'s
-# ``_RULESET_ALIASES`` gets no entry for it either -- see that table's own
-# docstring).
+# ``bytefray-rules-2-alpha1``, ``bytefray-rules-2-alpha11``, and
+# ``bytefray-rules-2`` are each registered under their own explicit key,
+# never aliased to or from ``bytefray-rules-1`` or each other (``rules.py``'s
+# ``_RULESET_ALIASES`` gets no entry for any of them either -- see that
+# table's own docstring).
 _RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
     RULESET_V1.ruleset_id: RULESET_V1,
     RULESET_V2_ALPHA1.ruleset_id: RULESET_V2_ALPHA1,
     RULESET_V2_ALPHA11.ruleset_id: RULESET_V2_ALPHA11,
+    RULESET_V2.ruleset_id: RULESET_V2,
 }
 
 
 def resolve_ruleset_policy(ruleset_id: str) -> RulesetPolicy:
     """Return the executable policy for ``ruleset_id``, or fail closed.
 
-    Only the exact current ``BYTEFRAY_RULESET_ID`` resolves. Historical
-    aliases, prefix matches, and "latest Ruleset" fallbacks are all
-    deliberately unsupported here -- an unrecognized ``ruleset_id`` raises
-    :class:`UnknownRulesetError` rather than executing as Ruleset v1.
+    Only the exact, explicitly registered identities in
+    :data:`_RULESET_POLICIES` resolve. Historical aliases, prefix matches,
+    and "latest Ruleset" fallbacks are all deliberately unsupported here --
+    an unrecognized ``ruleset_id`` raises :class:`UnknownRulesetError`
+    rather than executing as Ruleset v1 or any other registered identity.
     """
 
     try:
@@ -224,7 +253,9 @@ def resolve_ruleset_policy(ruleset_id: str) -> RulesetPolicy:
 __all__ = [
     "BYTEFRAY_RULESET_V2_ALPHA1_ID",
     "BYTEFRAY_RULESET_V2_ALPHA11_ID",
+    "BYTEFRAY_RULESET_V2_ID",
     "RULESET_V1",
+    "RULESET_V2",
     "RULESET_V2_ALPHA1",
     "RULESET_V2_ALPHA11",
     "RulesetPolicy",

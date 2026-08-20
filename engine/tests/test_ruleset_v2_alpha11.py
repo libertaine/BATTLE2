@@ -240,7 +240,7 @@ def test_ruleset_v1_still_resolves() -> None:
 @pytest.mark.parametrize(
     "unknown",
     [
-        "bytefray-rules-2",
+        "bytefray-rules-3",
         "bytefray-rules-2-alpha12",
         "bytefray-rules-2-alpha1x",
         "BYTEFRAY-RULES-2-ALPHA11",
@@ -257,6 +257,19 @@ def test_alpha11_is_not_a_ruleset_alias_of_anything() -> None:
 
     assert normalize_ruleset_id(ALPHA11) == ALPHA11
     assert normalize_ruleset_id(ALPHA1) == ALPHA1
+
+
+def test_alpha11_is_not_aliased_to_or_from_permanent_v2() -> None:
+    """v2.0.0-beta1 promotes alpha.11's semantics under a distinct,
+    non-aliased identity (docs/V2_0_BETA1_PLAN.md) -- alpha.11 artifacts
+    must remain their own, separately identified historical record."""
+
+    from battle_engine.rules import normalize_ruleset_id
+    from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+
+    assert normalize_ruleset_id(ALPHA11) != BYTEFRAY_RULESET_V2_ID
+    assert normalize_ruleset_id(BYTEFRAY_RULESET_V2_ID) == BYTEFRAY_RULESET_V2_ID
+    assert resolve_ruleset_policy(ALPHA11) is not resolve_ruleset_policy(BYTEFRAY_RULESET_V2_ID)
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,7 @@ from battle_engine.results import resolve_winner
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ALPHA1_ID,
     BYTEFRAY_RULESET_V2_ALPHA11_ID,
+    BYTEFRAY_RULESET_V2_ID,
     RULESET_V1,
     RulesetPolicy,
     TerminationReason,
@@ -109,13 +110,24 @@ CORE_BEACON_BYTE = 0xCE
 # alpha.1-vs-alpha.11 difference is a named, greppable Ruleset property.
 CORE_SEED_BYTE_ALPHA1 = 0x00
 
-# Which experimental Ruleset identities carry which Python-only mechanic.
-# Finite, explicit sets -- never a prefix or naming-convention check, for the
-# same fail-closed reason ``ruleset_policy._RULESET_POLICIES`` is finite.
+# Which Ruleset identities carry which Python-only mechanic. Finite,
+# explicit sets -- never a prefix or naming-convention check, for the same
+# fail-closed reason ``ruleset_policy._RULESET_POLICIES`` is finite.
+#
+# ``BYTEFRAY_RULESET_V2_ID`` ("bytefray-rules-2", v2.0.0-beta1's permanent
+# identity) carries both mechanics, identically to
+# ``BYTEFRAY_RULESET_V2_ALPHA11_ID``: beta1 promotes alpha.11's
+# evidence-backed candidate semantics as-is (see
+# docs/V2_0_ALPHA11_RULESET_V2_CANDIDATE_RESOLUTION.md Sec 25-26 and
+# docs/V2_0_BETA1_PLAN.md), sharing this exact implementation rather than
+# duplicating it -- the two identities are distinguished by registration and
+# persistence (``ruleset_policy.py``), not by behavior.
 VULNERABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V2_ALPHA1_ID, BYTEFRAY_RULESET_V2_ALPHA11_ID}
+    {BYTEFRAY_RULESET_V2_ALPHA1_ID, BYTEFRAY_RULESET_V2_ALPHA11_ID, BYTEFRAY_RULESET_V2_ID}
 )
-OBSERVABLE_CORE_RULESET_IDS: frozenset[str] = frozenset({BYTEFRAY_RULESET_V2_ALPHA11_ID})
+OBSERVABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
+    {BYTEFRAY_RULESET_V2_ALPHA11_ID, BYTEFRAY_RULESET_V2_ID}
+)
 
 
 def has_vulnerable_core(ruleset_id: str) -> bool:

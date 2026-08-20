@@ -10,20 +10,31 @@ pattern ``agent_test._reference_opponent_spec`` already established for the
 internal ``reference`` opponent (see that function's own docstring).
 
 Deliberately kept out of ``battle_engine.starters.STARTER_AGENT_NAMES``:
-these agents exist to evaluate one experimental Ruleset
-(``bytefray-rules-2-alpha1``, see ``docs/V2_0_ALPHA_ARCHITECTURE.md``), not
-to join Bytefray's permanent default roster shown to every
-``bytefray agents create``/Designer user regardless of which Ruleset they
-run -- the governing task is explicit that this alpha must stay a
-controlled experiment, not a promoted feature. ``reactive_core_defender``
-(added for alpha.2, docs/V2_0_ALPHA2_REACTIVE_DEFENSE.md) is a distinct
-agent alongside the original ``core_defender``, not a replacement for it,
-so the two remain directly comparable in the same evaluation matrix.
-``core_tracker`` (added for alpha.8,
-docs/V2_0_ALPHA8_PLACEMENT_AGNOSTIC_OFFENSE.md) is likewise a distinct,
-additive sibling of the original ``core_seeker`` -- a placement-agnostic
-offense benchmark, not a mutation of the historical-control attacker, so
-both stay directly comparable in the same evaluation matrix.
+these agents exist to exercise Vulnerable-Core-family Rulesets
+(``bytefray-rules-2-alpha1``, ``bytefray-rules-2-alpha11``, and, as of
+v2.0.0-beta1, the permanent ``bytefray-rules-2`` -- see
+``docs/V2_0_ALPHA_ARCHITECTURE.md`` and ``docs/V2_0_BETA1_PLAN.md``), not to
+join Bytefray's permanent default roster shown to every ``bytefray agents
+create``/Designer user regardless of which Ruleset they run.
+``reactive_core_defender`` (added for alpha.2,
+docs/V2_0_ALPHA2_REACTIVE_DEFENSE.md) is a distinct agent alongside the
+original ``core_defender``, not a replacement for it, so the two remain
+directly comparable in the same evaluation matrix. ``core_tracker`` (added
+for alpha.8, docs/V2_0_ALPHA8_PLACEMENT_AGNOSTIC_OFFENSE.md) is likewise a
+distinct, additive sibling of the original ``core_seeker`` -- a
+placement-agnostic offense benchmark, not a mutation of the
+historical-control attacker, so both stay directly comparable in the same
+evaluation matrix.
+
+Beta1 role (docs/V2_0_BETA1_PLAN.md): ``core_tracker`` is Ruleset-v2's
+reference *offense benchmark*, not a claim of canonical optimal attack
+strategy. ``claimer``, ``hunter``, ``core_defender``, and
+``reactive_core_defender`` remain important regression/reference
+strategies. The historical ``core_seeker`` remains a characterization
+fixture (its fixed, placement-dependent scan schedule is the documented
+subject of docs/V2_0_ALPHA6_CORE_SEEKER_TIMING.md/
+docs/V2_0_ALPHA7_SPATIAL_CHARACTERIZATION.md, not a benchmark to keep
+improving) and is retained, not removed.
 """
 
 from __future__ import annotations

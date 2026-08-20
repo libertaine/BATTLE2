@@ -161,7 +161,7 @@ def test_unknown_ruleset_id_on_match_request_fails_closed(tmp_path) -> None:
         max_ticks=3,
         replay_path=tmp_path / "run" / "replay.jsonl",
         verbose=False,
-        ruleset_id="bytefray-rules-2",  # never registered -- must not silently run as v1
+        ruleset_id="bytefray-rules-3",  # never registered -- must not silently run as v1
     )
     with pytest.raises(UnknownRulesetError):
         NativeMatchService().run(request)

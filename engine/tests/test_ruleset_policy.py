@@ -16,8 +16,11 @@ import pytest
 from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ALPHA1_ID,
+    BYTEFRAY_RULESET_V2_ID,
     RULESET_V1,
+    RULESET_V2,
     RULESET_V2_ALPHA1,
+    RULESET_V2_ALPHA11,
     RulesetPolicy,
     TerminationDecision,
     TerminationReason,
@@ -89,6 +92,35 @@ def test_v2_alpha1_ruleset_id_resolves_to_its_own_distinct_policy() -> None:
     assert policy.ruleset_id != RULESET_V1.ruleset_id
 
 
+def test_permanent_v2_ruleset_id_resolves_to_its_own_distinct_policy() -> None:
+    """v2.0.0-beta1's permanent identity: registered under its own explicit
+    key, distinct from -- and never aliased to or from -- Ruleset v1 or
+    either historical alpha identity (docs/V2_0_BETA1_PLAN.md).
+    """
+
+    policy = resolve_ruleset_policy(BYTEFRAY_RULESET_V2_ID)
+    assert policy is RULESET_V2
+    assert policy.ruleset_id == "bytefray-rules-2"
+    assert policy is not RULESET_V1
+    assert policy is not RULESET_V2_ALPHA1
+    assert policy is not RULESET_V2_ALPHA11
+    assert policy.ruleset_id not in {
+        RULESET_V1.ruleset_id,
+        RULESET_V2_ALPHA1.ruleset_id,
+        RULESET_V2_ALPHA11.ruleset_id,
+    }
+
+
+def test_permanent_v2_scheduling_and_termination_are_identical_to_v1() -> None:
+    states = [_FakeState("A"), _FakeState("B")]
+    calls: list[str] = []
+    RULESET_V2.run_scheduler(states, 2, lambda s, slot: calls.append(f"{s.name}{slot}"))
+    assert calls == ["A0", "A1", "B0", "B1"]
+    assert RULESET_V2.resolve_termination(
+        alive_count=1, tick=1, max_ticks=10
+    ) == TerminationDecision(terminated=True, reason=TerminationReason.LAST_AGENT_STANDING)
+
+
 def test_v2_alpha1_scheduling_and_termination_are_identical_to_v1() -> None:
     """The alpha changes core-capture mortality only -- scheduling order
     and the termination decision formula are the exact same shared
@@ -107,11 +139,12 @@ def test_v2_alpha1_scheduling_and_termination_are_identical_to_v1() -> None:
 @pytest.mark.parametrize(
     "unknown_id",
     [
-        "bytefray-rules-2",
+        "bytefray-rules-3",
         "unknown",
         "evaluation-rules-999",
         "evaluation-rules-1",
         "bytefray-rules-2-alpha2",
+        "bytefray-rules-2-alpha12",
         "",
     ],
 )
