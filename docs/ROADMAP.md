@@ -734,8 +734,28 @@ genuine Phase 1 defect (a false `planned_identity_inconsistent` health
 report on every 1v1-v2 artifact, caused by a stale evaluation-history
 rehash check) was found and fixed during this phase's own characterization.
 Multi-entrant behavior/capture aggregate analysis remains explicitly
-deferred to Phase 3. Phases 3-4 (multi-entrant analysis/strategic metrics,
-integrated qualification) remain planned.
+deferred to Phase 3.
+
+**Phase 3 (multi-entrant analysis & strategic metrics) is implementation-
+complete** on `v2.0-beta2-development`, not yet released — see
+[V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md](V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md).
+A new, entrant-symmetric analysis module (`evaluation_group_analysis.py`)
+replaces the Phase 2 "deferred" placeholder in both the live CLI and
+`evaluations show`: per-entrant outcome classification (winner/surviving-
+non-winner/eliminated, never collapsed to a flat win/loss), score/
+territory/kill metrics, capture attribution with a directed captor-to-
+victim interaction matrix, and seat/layout/seed sensitivity — computed
+with no candidate id as an input, so candidate-focused presentation is
+provably a pure selection over an already-symmetric result. Two real
+defects were found and fixed during this phase's own characterization: a
+silently-fabricated "differential" for group cells (now `None`, never a
+misleading number), and a capture-tick value that overstated when a
+non-terminal capture happened at N >= 3 (now withheld rather than wrong,
+with the underlying capture fact/attribution unaffected). Characterization
+against three 3-entrant, 5-seed rosters directly re-examined Phase 2's own
+"Core Tracker 2/54" finding, showing it reflected sample-size instability
+rather than a fixed rate. Phase 4 (strategic characterization) and Phase 5
+(integrated qualification) remain planned.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 

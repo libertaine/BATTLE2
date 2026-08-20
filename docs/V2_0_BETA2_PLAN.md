@@ -97,27 +97,56 @@ Multi-entrant behavior/capture aggregate analysis is deliberately deferred
 
 ## Phase 3 — Multi-Entrant Analysis & Strategic Metrics
 
-**Status: planned, not started.** Purpose: proper N-entrant behavior/
-capture aggregate analysis, building on Phase 2's roster/seat/layout
-identity rather than Phase 1's 1v1-shaped `evaluation_behavior.py`/
-`evaluation_capture.py` internals (both currently resolve a cell's subject
-via a 2-value orientation-to-slot mapping, meaningless for a group cell
-whose subject seat varies per cell — Phase 2 explicitly guards this rather
-than computing wrong data, deferring the real fix here).
+**Status: implementation complete, not yet released.** See
+`docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md` for the full design
+record and qualification report. Summary:
 
-- per-seat-aware Tier-2 result.json readers for `evaluation_behavior`/
-  `evaluation_capture`, replacing the orientation-based slot resolution
-  with `EvaluationCell.subject_seat`;
-- multi-entrant capture/behavior aggregate reporting in both the live CLI
-  and `evaluations show`, replacing the current "deferred" disclosure;
-- Designer evaluation-history/results consumers correctly disclose
-  multi-entrant methodology, mirroring Phase 1/2's "minimal compatibility
-  presentation adaptation" precedent rather than new complex controls;
-- evidence-driven evaluation of whether exhaustive N! seat-permutation
-  scheduling needs a balanced/rotation policy alternative before N grows
-  past 3 (Phase 2 §3/§17's disclosed, unsolved scaling boundary).
+- a new, entrant-symmetric sibling analysis module
+  (`evaluation_group_analysis.py`) — per-entrant outcome (winner/
+  surviving-non-winner/eliminated, never collapsed to a flat win/loss),
+  score/territory/kill metrics, capture attribution and a directed
+  captor-to-victim interaction matrix, seat/layout/seed sensitivity — all
+  computed with no candidate id as an input, so candidate designation is
+  provably presentation-only (`candidate_focused_view`, pure selection);
+- a real, previously-undiscovered defect fixed: `SubjectAggregate.score_
+  differential_avg`/`territory_differential_avg` were silently computed
+  for group cells as if the (nonexistent) single opponent's score were
+  zero, producing a number that looked like a real differential but
+  wasn't — now `None` for group scopes, unchanged for pairwise;
+- a second real defect found via this phase's own characterization and
+  fixed: capture-tick values were reported as the match's final tick
+  unconditionally, which only equals a specific capture's own tick when
+  that capture ended the match — at N >= 3 that is very often false (the
+  match keeps running with two-plus entrants alive); capture *facts* and
+  *attribution* stay accurate, only the untrustworthy tick value is now
+  withheld;
+- `evaluations show` (both live-CLI and historical-artifact paths) now
+  presents real per-entrant/seat/layout/interaction group analysis in
+  place of the "deferred" placeholder, gated behind the same opt-in
+  `--no-behavior` real-I/O discipline behavior/capture already use;
+- real characterization against three 3-entrant, 5-seed (90-cell) rosters,
+  including a direct re-examination of Phase 2's own "Core Tracker 2/54"
+  finding — the expanded sample shows a materially different, seat- and
+  seed-sensitive rate, demonstrating the original 3-seed sample was too
+  small to characterize it reliably;
+- Designer integration deliberately not attempted this phase (deferred,
+  scoped for a later follow-up) — the analysis/CLI/history layer was
+  completed and characterized first, per the milestone's own guardrail
+  against letting GUI work drive analysis architecture.
 
-## Phase 4 — Integrated Beta2 Qualification
+## Phase 4 — Strategic Characterization
+
+**Status: planned, not started.** Purpose: point Phase 3's new analysis
+instrument at real strategic questions with deliberately controlled
+experiments, informed directly by Phase 3's own characterization findings
+(`docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md` §25) — roster-
+composition effects/kingmaking, seat/layout bias generalization beyond
+three rosters, seed sensitivity, and a real-measurement revisit of the N!
+exhaustive-scheduling scaling estimate if an N=4/5 roster becomes needed.
+No alliances, teams, communication, fog of war, MARL, new Ruleset, or new
+Agent API instructions belong in this phase.
+
+## Phase 5 — Integrated Beta2 Qualification
 
 **Status: planned, not started.** Purpose: an integrated regression/
 qualification pass across every Beta2 phase together, mirroring Beta1's
@@ -127,12 +156,13 @@ smoke. No new feature work belongs in this phase.
 
 ---
 
-Additional Beta2 phases beyond the four above are not pre-planned; if
-evidence from Phase 3 qualification suggests the multi-entrant analysis
-scope needs a narrower or wider phase boundary than sketched here, that
-revision happens explicitly, the same way every other milestone in this
-project has been re-scoped from real qualification evidence rather than a
-fixed plan. (Phase 2's own plan sketch originally allotted four phases
-after Phase 1; Phase 2 absorbed the CLI-workflow scope originally
-earmarked for a separate phase, so this revision reflects what was
-actually built, not a re-guess.)
+Additional Beta2 phases beyond the five above are not pre-planned; if
+evidence from a later phase's qualification suggests the remaining scope
+needs a narrower or wider phase boundary than sketched here, that revision
+happens explicitly, the same way every other milestone in this project has
+been re-scoped from real qualification evidence rather than a fixed plan.
+(Phase 2's own plan sketch originally allotted four phases after Phase 1;
+Phase 2 absorbed the CLI-workflow scope originally earmarked for a
+separate phase. Phase 3's own findings are what introduced this revision's
+new Phase 4 — "Integrated Beta2 Qualification" moved to Phase 5 rather
+than being dropped.)

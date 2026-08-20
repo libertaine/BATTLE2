@@ -59,6 +59,44 @@ Phase 1's own identity payload) -- a verification bug only; no persisted
 [docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md)
 for the full design record.
 
+### Multi-entrant analysis & strategic metrics (v2.0.0-beta2 Phase 3)
+
+Replaces Phase 2's "deferred" multi-entrant analysis placeholder with a
+new, entrant-symmetric analysis module (`battle_engine.
+evaluation_group_analysis`), in both the live CLI (`bytefray agents
+evaluate --group`) and `evaluations show`:
+
+- per-entrant outcome classification -- winner, surviving non-winner, and
+  eliminated are three distinct states, never collapsed into one "loss"
+  bucket the way the existing candidate-oriented outcome field does;
+- score, territory, and kill/death metrics for every roster entrant, not
+  only the designated candidate;
+- capture attribution generalized to N entrants, plus a new directed
+  captor-to-victim interaction matrix, disclosing unattributable captures
+  honestly rather than guessing;
+- seat, layout, and seed sensitivity per entrant, with a transparent
+  winner-rate/survival-rate range measure (never an opaque composite
+  score);
+- computed with no candidate id as an input -- candidate-focused
+  presentation is a pure selection over an already-symmetric result, so
+  changing which entrant is "the candidate" never changes any entrant's
+  own numbers.
+
+Also fixes two real defects found during this phase's own
+characterization: `agents evaluate --group`'s aggregate summary was
+silently computing a "differential" for group cells as if the (nonexistent
+single) opponent's score/territory were zero -- now correctly `None` for
+a group scope, never a misleading number (pairwise evaluations are
+unaffected). Capture-tick values were reported as the match's own final
+tick unconditionally, which only reflects a specific capture's real tick
+when that capture ended the match -- at 3+ entrants a capture very often
+does not end the match, so the tick is now withheld rather than wrong
+whenever it cannot be trusted; the capture's occurrence and attribution
+are unaffected. See
+[docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md](docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md)
+for the full design record, including a direct re-examination of Phase 2's
+own "Core Tracker" win-rate finding against a larger sample.
+
 ## [2.0.0-beta1] - 2026-08-20
 
 ### Ruleset v2 (Vulnerable Core)
