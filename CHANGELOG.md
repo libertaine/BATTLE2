@@ -2,6 +2,100 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [2.0.0-beta1] - 2026-08-20
+
+### Ruleset v2 (Vulnerable Core)
+
+Introduces `bytefray-rules-2`, a second, permanently registered gameplay
+identity alongside the frozen `bytefray-rules-1`, resolving the eleven-
+experiment `v2.0.0-alpha.1`-`alpha.11` research program:
+
+- Each entrant now has a **Vulnerable Core**: a fixed-size, contiguous
+  region anchored at its own start address. An entrant dies the moment it
+  owns zero of its own core cells, checked once per tick after that tick's
+  action blocks and before scoring, with capture attribution from the final
+  ownership-removing write when unambiguous.
+- Core cells are **observably seeded** with a public beacon byte
+  (`CORE_BEACON_BYTE = 0xCE`) instead of blank, and a living entrant's own
+  core is maintained back to blank whenever damaged -- reachable only
+  through an ordinary `READ`, with no privileged Agent API metadata.
+  Maintenance never restores ownership or repairs beacon damage on a
+  captured core.
+- Territory, scoring, scheduling, and capture-timing formulas are otherwise
+  byte-identical to Ruleset v1; none were retuned for this beta.
+- **Agent API v1 is retained unchanged** -- there is no Agent API v2 in this
+  release.
+- Ruleset-v2 gameplay is **Python-runtime supported only**. Requesting a VM
+  entrant under `bytefray-rules-2` fails closed before execution, with no
+  partial run/replay/result artifact written; the native VM path is
+  unaffected and continues to run `bytefray-rules-1`.
+- Core Tracker (the Ruleset-v2 reference offense benchmark) gained a
+  minimal self-knowledge filter so it no longer wastes actions probing and
+  assaulting its own already-owned core beacon; no other reference agent or
+  constant changed.
+
+See [docs/RULES_V2.md](docs/RULES_V2.md) and
+[docs/V2_0_BETA1_PLAN.md](docs/V2_0_BETA1_PLAN.md) for the full semantic
+contract, and
+[docs/V2_0_ALPHA_RESEARCH_SUMMARY.md](docs/V2_0_ALPHA_RESEARCH_SUMMARY.md)
+for the closed research program this beta promotes.
+
+### Compatibility
+
+- Ruleset v1 remains available and unchanged, and stays the **default**
+  Ruleset for every command when `--ruleset` is omitted during this beta
+  transition.
+- The historical alpha identities (`bytefray-rules-2-alpha1`,
+  `bytefray-rules-2-alpha11`) remain independently executable with their
+  own exact historical semantics -- `bytefray-rules-2` is registered under
+  its own key and is never aliased to or from them.
+- Every result and replay persists its exact originating Ruleset identity;
+  historical v1 and alpha artifacts remain fully readable. The replay
+  schema is unchanged (still `battle2.replay` v3).
+- `agents evaluate` remains implicitly Ruleset-v1-only in this beta; no
+  `--ruleset` flag is exposed there.
+
+### CLI / product execution
+
+- `--ruleset {bytefray-rules-1,bytefray-rules-2}` is now explicit CLI
+  surface on `bytefray run`, `agents test`, and `tournament`, defaulting to
+  `bytefray-rules-1` when omitted.
+- An authoritative, fail-closed runtime-kind check rejects any VM entrant
+  requested under `bytefray-rules-2` before execution begins, with a clear
+  error and zero artifacts written; `bytefray-rules-1` and the historical
+  alpha identities keep their exact prior VM behavior.
+
+### Replay / Replay Viewer
+
+- Replay sessions now derive per-entrant alive/dead status and, under
+  Ruleset v2, core integrity/capture/attribution directly from the
+  canonical replay's reconstructed ownership -- never from arena byte
+  content -- with no replay schema change.
+- The interactive Replay Viewer's window is now tiled into a top HUD band
+  (match header plus one status card per entrant), an unobstructed middle
+  arena band, and a bottom footer band (playback controls, a compact
+  status/event message, and the territory-history graph). Ruleset v1 shows
+  no core field; Ruleset v2 shows core integrity, capture, and attribution
+  alongside score/territory/kills. The card row supports two- and
+  three-entrant matches.
+
+### Scope boundaries
+
+Beta1 does **not** yet include full Ruleset-v2 evaluation methodology
+(order/placement/seed balancing), a Designer Ruleset-v2 workflow, VM
+Ruleset-v2 gameplay parity, or a fully productized 3-way evaluation/CLI
+workflow. These are planned for later betas -- see
+[docs/V2_0_BETA1_PLAN.md](docs/V2_0_BETA1_PLAN.md#8-boundaries-to-later-betarc-releases).
+
+Two disclosed, non-blocking items carry forward from qualification and are
+not addressed in this beta: a pre-existing, cosmetic packaging gap in the
+unified CLI dispatcher's runtime taskbar-icon lookup (predates Beta1); and
+omitting `--a-start`/`--b-start` under `--ruleset bytefray-rules-2` can
+produce a confusing but mechanically correct immediate unattributed core
+capture, since core placement is start-address-sensitive. See
+[docs/V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md](docs/V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md)
+for the full qualification record.
+
 ## [1.6.0] - 2026-08-18
 
 ### Evaluation Scale & Analysis

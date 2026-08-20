@@ -667,10 +667,10 @@ semantic contract (see [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)):
 
 ## v2.0.0-beta1 — Ruleset v2 Integration
 
-**Status: in development.** Converts the evidence-backed
-`bytefray-rules-2-alpha11` candidate into a supported, compatibility-honest
-product ruleset. See [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md) for the full
-scope. Purpose:
+**Status: implementation and qualification complete; publication pending.**
+Converts the evidence-backed `bytefray-rules-2-alpha11` candidate into a
+supported, compatibility-honest product ruleset. See
+[V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md) for the full scope. Purpose:
 
 - freeze the candidate gameplay semantics validated by alpha.11;
 - establish the permanent `bytefray-rules-2` compatibility identity,
@@ -682,6 +682,17 @@ scope. Purpose:
   (Core Tracker's self-core false-positive);
 - begin first visible v2 presentation integration only after the semantic
   foundation above is complete.
+
+Phases 1 (semantic identity), 2 (product execution integration), 3 (replay
+v2 semantics), 4 (Replay Viewer HUD separation), and 5 (integrated
+qualification across Windows/Linux, source/wheel/frozen builds, and
+v1/v2/VM-rejection execution) are all complete on
+`v2.0-beta1-development` — see
+[V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md](V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md)
+for the full qualification record and GO decision. Release preparation,
+tagging, and publication are tracked as a separate, later step; this
+section will be updated to **shipped** once the `v2.0.0-beta1` GitHub
+Release is actually published.
 
 ## v2.0.0-beta2 — Evaluation & Multi-Entrant Methodology
 

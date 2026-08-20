@@ -127,10 +127,17 @@ pip install -e ".[designer]" # optional PySide6 designer
 
 ## 📦 Downloads
 
-**Current release:** [Bytefray v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0).
+**Stable release:** [Bytefray v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0).
 Earlier downloads are historical and have been superseded.
 
-Choose one of the options below:
+**Beta prerelease:** `v2.0.0-beta1` (Ruleset v2 / Vulnerable Core) —
+publication pending; see [CHANGELOG.md](CHANGELOG.md#200-beta1---2026-08-20)
+for what's new. It is not a replacement for the stable v1.6.0 downloads
+below. Once published, its downloads will be listed on the
+[Releases page](https://github.com/libertaine/Bytefray/releases), tagged
+`v2.0.0-beta1` and marked as a prerelease.
+
+Choose one of the stable-release options below:
 
 | Type | File | Description |
 |------|------|--------------|
