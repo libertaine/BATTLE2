@@ -74,6 +74,65 @@ BYTEFRAY_RULESET_ID = "bytefray-rules-1"
 defined in `battle_engine.rules`. See [RULES.md](RULES.md) for the full
 Ruleset v1 contract and its bump policy.
 
+## Ruleset v2 (beta)
+
+`v2.0.0-beta1` introduces a second Ruleset identity:
+
+```python
+BYTEFRAY_RULESET_V2_ID = "bytefray-rules-2"
+```
+
+defined in `battle_engine.ruleset_policy`, resolved through the same
+fail-closed `resolve_ruleset_policy` seam as every other identity. See
+[RULES_V2.md](RULES_V2.md) for the full Ruleset v2 gameplay contract and
+`docs/V2_0_BETA1_PLAN.md`/`docs/V2_0_RULESET_V2_CANDIDATE.md` for the
+evidence behind it.
+
+- **Status: beta candidate semantic identity**, introduced during 2.0 beta
+  development from the v2.0 alpha research program's evidence-backed
+  result. It is not claimed as permanently immutable forever the way
+  Ruleset v1's contract is — a beta or RC qualification pass could still
+  find reason to revise it before a final 2.0 release, though no such
+  revision is expected without new evidence.
+- **Agent API version is unaffected.** Ruleset v2 is a gameplay-semantics
+  identity; Agent API v1 (`battle_engine.agent_api.AGENT_API_VERSION == 1`)
+  remains the supported Python programming contract for both Ruleset v1 and
+  Ruleset v2. Ruleset identity and Agent API version are independent
+  compatibility axes (see the table above) — bumping one never implies
+  bumping the other.
+- **The same Agent API v1 Python agent source may execute under more than
+  one compatible Ruleset.** Nothing in the loading/lifecycle contract,
+  `Observation`, or `AgentAction` changed; an agent written against
+  `docs/AGENT_API_V1.md` runs unmodified whether the match resolves
+  `bytefray-rules-1` or `bytefray-rules-2` (the only behavioral difference
+  is what the shared arena does around it, not what the agent is allowed to
+  do).
+- **Runtime support: Python-runtime gameplay only.** `bytefray-rules-2`
+  dispatches successfully on the native VM path (the policy resolves, since
+  scheduling/termination are identical to Ruleset v1 there too), but
+  Vulnerable Core and core observability are implemented only in
+  `battle_engine.python_runtime`/`supervised_runtime`. **VM parity is not
+  claimed** — a VM match run under `bytefray-rules-2` has no core mechanic
+  at all, exactly as already true for `bytefray-rules-2-alpha1`/`-alpha11`.
+- **Artifacts record the exact Ruleset.** Every native result/replay written
+  under Ruleset v2 persists the literal `"bytefray-rules-2"` string in its
+  `ruleset_id` field (`ResultEnvelope`/`ReplayHeader`), exactly like every
+  other registered identity — see "Persisted Ruleset identity on native
+  result/replay artifacts" above, which applies unchanged to this identity
+  (it required no new plumbing: `ruleset_id` was already generic).
+- **Alpha Ruleset artifacts remain distinct historical experiment
+  identities.** `bytefray-rules-2-alpha1` and `bytefray-rules-2-alpha11` are
+  **not** aliased to `bytefray-rules-2` in either direction —
+  `rules._RULESET_ALIASES` gains no entry for any of the three. Even though
+  `bytefray-rules-2` shares its exact behavioral implementation with
+  `bytefray-rules-2-alpha11` (the evidence being promoted is intentionally
+  identical at promotion time — see
+  `engine/tests/test_ruleset_v2_promotion_equivalence.py`), the three
+  identities dispatch, hash into `canonical_match_id`, and persist
+  separately, so no historical alpha artifact can ever be silently
+  reinterpreted as a permanent Ruleset-v2 artifact, and evaluation
+  comparison/resume both continue to fail closed across any pair of them.
+
 ## Historical alias: evaluation-rules-1 ↔ bytefray-rules-1
 
 `bytefray.evaluation`'s `EVALUATION_RULES_COMPATIBILITY_ID` (wire field

@@ -8,9 +8,11 @@ around one question: *what exactly does `bytefray-rules-1` mean, and what
 kind of change would require a new Ruleset identity?*
 
 It is not a description of Redcode/pMARS (see "Implementation details"
-below), and it does not define any future ruleset — see
+below), and it does not define Ruleset v2 or any later ruleset — see
+[RULES_V2.md](RULES_V2.md) for the beta `bytefray-rules-2` contract
+introduced in `v2.0.0-beta1`, and
 [FUTURE_PLANS.md](FUTURE_PLANS.md)'s "Future simulation / combat research"
-section for gameplay ideas that would require a Ruleset v2 or later.
+section for gameplay ideas that would require a still-later ruleset.
 
 ## The Ruleset identity
 
@@ -372,10 +374,12 @@ value, does not.
   `docs/specs/evaluation_history.md` and `docs/specs/agent_evaluation.md`.
 - **Redcode/pMARS** — see "Implementation details" below; pMARS matches do
   not execute under Ruleset v1 at all.
-- **Mixed VM/Python matches, security sandboxing, replication, and
-  corruptible Python-core designs** — not implemented; see
-  [FUTURE_PLANS.md](FUTURE_PLANS.md) for research-stage ideas that could
-  eventually require a Ruleset v2.
+- **Mixed VM/Python matches, security sandboxing, and replication** — not
+  implemented; see [FUTURE_PLANS.md](FUTURE_PLANS.md) for research-stage
+  ideas that could eventually require a still-later ruleset. **Corruptible
+  Python-core designs** are implemented, but under Ruleset v2
+  (`bytefray-rules-2`, `v2.0.0-beta1`), not Ruleset v1 — see
+  [RULES_V2.md](RULES_V2.md).
 
 ---
 

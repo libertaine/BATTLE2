@@ -165,6 +165,7 @@ abbreviated.
 | Debugging agents: trace, inspect, diverge, timeouts | [docs/AGENT_LAB.md](docs/AGENT_LAB.md) |
 | Agent API v1 contract | [docs/AGENT_API_V1.md](docs/AGENT_API_V1.md) |
 | Bytefray Ruleset v1 (gameplay semantics) | [docs/RULES.md](docs/RULES.md) |
+| Bytefray Ruleset v2 beta (gameplay semantics) | [docs/RULES_V2.md](docs/RULES_V2.md) |
 | Result schema | [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md) |
 | Replay schema | [docs/REPLAY_SCHEMA.md](docs/REPLAY_SCHEMA.md) |
 | Headless tournaments | [docs/TOURNAMENTS.md](docs/TOURNAMENTS.md) |
