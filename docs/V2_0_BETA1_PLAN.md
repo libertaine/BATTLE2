@@ -266,15 +266,29 @@ diff) — this phase changed only `battle_client` (one additive
 rendering/layout is unchanged; the Phase-4 integration seam is documented,
 not implemented.
 
-### Phase 4 — First visible v2 presentation (next)
+**Phase 4 (Replay Viewer HUD separation) is complete** — see
+[V2_0_BETA1_PHASE4_REPLAY_HUD.md](V2_0_BETA1_PHASE4_REPLAY_HUD.md) for the
+full record. Summary: the interactive Pygame Replay Viewer's window is now
+tiled into three non-overlapping bands — a top HUD band (match header + one
+status card per entrant), an unobstructed middle arena band, and a bottom
+footer band (playback/tick, a compact status/event message, controls, and
+the relocated territory-history graph) — via the new, Pygame-free
+`battle_client.hud_layout` module (geometry + text formatting, directly
+testable without a window). Entrant status (alive/dead, Ruleset-v2 core
+integrity/capture/attribution, score, territory, kills) is read entirely
+from `battle_client.replay_status.get_entrant_statuses` (the Phase-3 status
+model); the renderer derives no Ruleset semantics itself. Ruleset v1 shows
+no core field; Ruleset v2 shows core integrity/capture/attribution with
+score/territory/kills kept visually distinct from life state. The card row
+is N-entrant generic (verified for two and three entrants, no two-slot
+assumption). The default arena viewport size is unchanged
+(`960x600`); only the total window grows by the two bands' fixed height
+(`160px`) to make room for them. No gameplay, replay-schema, or evaluation
+change — `engine/src/battle_engine` has an empty diff for this phase.
+Agent Designer visual work remains explicitly deferred (not started this
+phase — see that document's "Beta1 Phase-5 boundary" section).
 
-- Replay Viewer HUD separation: a dedicated entrant/status band, core
-  health/status, alive/dead, kills/captures, and an unobstructed
-  battlefield view.
-- Agent Designer: a restrained v2 presentation improvement, or a branded
-  empty state if a fuller integration isn't yet justified.
-
-### Phase 5 — Beta1 integrated qualification
+### Phase 5 — Beta1 integrated qualification (next)
 
 - Ruleset identity, v1 compatibility, v2 execution, reference agents, and
   replay/result integrity all qualified together.
