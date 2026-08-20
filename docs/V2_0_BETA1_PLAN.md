@@ -288,12 +288,34 @@ change — `engine/src/battle_engine` has an empty diff for this phase.
 Agent Designer visual work remains explicitly deferred (not started this
 phase — see that document's "Beta1 Phase-5 boundary" section).
 
-### Phase 5 — Beta1 integrated qualification (next)
+**Phase 5 (integrated qualification) is complete** — see
+[V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md](V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md)
+for the full record. Summary: the complete Beta1 feature set (Phases 1–4)
+was qualified as one integrated product slice — Ruleset identity, v1
+regression, v2 execution (native service, source CLI, installed wheel, and
+frozen Windows executables), VM/unsupported-runtime rejection, replay/HUD
+correctness (real SDL-dummy-driver renders of fresh engine-executed
+replays), the evaluation and Designer/Agent-Lab boundaries, reference
+agents, and performance sanity, on both Windows and Linux (WSL2 Ubuntu). One
+stale documentation contradiction was found and fixed (`README.md`'s
+roadmap table still called Ruleset v2 an undesigned research boundary); two
+non-blocking, pre-existing/disclosed items were found and deliberately left
+unfixed (a cosmetic packaging gap in the unified dispatcher's runtime icon
+lookup, predating Beta1; and a UX rough edge where the CLI's pre-existing
+`--a-start`/`--b-start=0` defaults produce an immediate but correctly-computed
+unattributed capture under v2 if a user omits distinct placements). No
+release-blocking defect was found and no code required a correctness fix.
+**Result: GO for a separate `2.0.0-beta1` release-preparation and
+publication task** — see that document's decision section for the exact
+remaining release-prep gates (version/release metadata, installer lifecycle
+qualification, and the ROADMAP "shipped" update, none of which belong to
+this qualification phase).
 
-- Ruleset identity, v1 compatibility, v2 execution, reference agents, and
-  replay/result integrity all qualified together.
-- Wheel/frozen packaging paths qualified as appropriate.
-- Beta release readiness assessment.
+## Beta1 status
+
+Phases 1–5 are complete. Beta1 implementation and integrated qualification
+are done. Release preparation, tagging, packaging for publication, and
+merge/push are a separate, later task — not part of this plan.
 
 ## 8. Boundaries to later beta/RC releases
 
