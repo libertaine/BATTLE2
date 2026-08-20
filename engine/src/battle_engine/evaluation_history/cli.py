@@ -7,9 +7,15 @@ import json
 import sys
 from pathlib import Path
 
-from battle_engine.agent_evaluation import ORIENTATION_MODE_CANDIDATE_FIRST_ONLY, methodology_lines
+from battle_engine.agent_evaluation import (
+    ORIENTATION_MODE_CANDIDATE_FIRST_ONLY,
+    is_ruleset_v2_methodology,
+    methodology_lines,
+    resolved_arena_alignment_mode,
+)
 from battle_engine.evaluation_analysis import EvidenceState, paired_evidence_from_verdicts
 from battle_engine.evaluation_behavior import BehaviorProfile, analyze_behavior
+from battle_engine.evaluation_capture import analyze_capture
 
 from .behavior_adapter import cell_refs_for_behavior
 from .comparison import align
@@ -106,16 +112,33 @@ def _cmd_show(args: argparse.Namespace) -> int:
         if not args.no_behavior
         else None
     )
+    # v2.0.0-beta2 Phase 1: capture/core evidence is a Ruleset-v2-only
+    # concept (Sec Capture) -- computed only when this artifact's own
+    # recorded rules_compatibility_id resolves to v2, never for a v1
+    # artifact (whose entrants never carry a "core_captured" termination
+    # reason anyway, but there is no reason to pay the read for a
+    # methodology that never varies it).
+    rules_id = summary.rules_compatibility_id.value
+    capture = (
+        analyze_capture(summary.candidate_id, summary.baseline_id, cell_refs_for_behavior(summary))
+        if not args.no_behavior and isinstance(rules_id, str) and is_ruleset_v2_methodology(rules_id)
+        else None
+    )
 
     if args.json:
         data = summary.to_json()
         data["verified"] = verified
         data["verify_error"] = verify_error
         data["behavior"] = behavior.to_json() if behavior is not None else None
+        data["capture"] = capture.to_json() if capture is not None else None
         print(json.dumps(data, indent=2, sort_keys=True))
     else:
         _print_show(
-            summary, verified=verified if args.verify else None, verify_error=verify_error, behavior=behavior
+            summary,
+            verified=verified if args.verify else None,
+            verify_error=verify_error,
+            behavior=behavior,
+            capture=capture,
         )
 
     if args.verify and not verified:
@@ -123,7 +146,9 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
-def _print_show(summary, *, verified: bool | None, verify_error: str | None, behavior=None) -> None:
+def _print_show(
+    summary, *, verified: bool | None, verify_error: str | None, behavior=None, capture=None
+) -> None:
     print(f"evaluation_id: {summary.evaluation_id}")
     print(f"schema: {summary.schema.schema} v{summary.schema.schema_version}")
     print(f"path: {summary.location.evaluation_json_path}")
@@ -145,13 +170,23 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None, beh
     # schema-4 evaluation's disclosure from a pre-v0.9 artifact's certain
     # recovery.
     orientation_mode_value = summary.orientation_mode.value or ORIENTATION_MODE_CANDIDATE_FIRST_ONLY
-    for line in methodology_lines(orientation_mode_value):
+    arena_alignment_value = summary.arena_alignment_mode.value or resolved_arena_alignment_mode(False)
+    for line in methodology_lines(orientation_mode_value, arena_alignment_mode=arena_alignment_value):
         print(line)
     print(
         f"  orientation_mode: {orientation_mode_value} ({summary.orientation_mode.confidence.value})  "
         f"arena_alignment_mode: {summary.arena_alignment_mode.value or 'unknown'} "
         f"({summary.arena_alignment_mode.confidence.value})"
     )
+    # v2.0.0-beta2 Phase 1 (Sec Show): the distinct placement ids actually
+    # observed across this artifact's own cells -- derived from the cells
+    # themselves, never re-stated as a separate stored summary field, so it
+    # can never drift from what the cells actually recorded.
+    placement_values = sorted(
+        {cell.placement.value for cell in summary.cells if cell.placement.value is not None}
+    )
+    if placement_values:
+        print(f"placements: {', '.join(placement_values)} ({len(placement_values)})")
     codes = ", ".join(code.value for code in summary.health.codes) or "unknown"
     print(f"health: {codes}")
     for detail in summary.health.detail:
@@ -196,6 +231,8 @@ def _print_show(summary, *, verified: bool | None, verify_error: str | None, beh
     _print_analysis(summary)
     if behavior is not None:
         _print_behavior(behavior)
+    if capture is not None:
+        _print_capture_history(capture)
     _print_execution_contexts(summary)
     _print_agent_revisions(summary)
     if verified is not None:
@@ -288,6 +325,32 @@ def _behavior_profile_line(label: str, profile: BehaviorProfile) -> str:
         f"avg={_fmt_percent(avg.mean)} retention={_fmt_fraction_pct(retention.mean)}]  "
         f"kills={_fmt_rate(kills.mean)}/match deaths={_fmt_rate(deaths.mean)}/match"
     )
+
+
+def _fmt_capture_pct(value: float | None) -> str:
+    return f"{100.0 * value:.0f}%" if value is not None else "n/a"
+
+
+def _print_capture_aggregate(label: str, aggregate) -> None:
+    print(f"  {label}: caused={aggregate.captures_caused}/{aggregate.available_count} "
+          f"({_fmt_capture_pct(aggregate.capture_rate_caused)})  "
+          f"suffered={aggregate.captures_suffered}/{aggregate.available_count} "
+          f"({_fmt_capture_pct(aggregate.capture_rate_suffered)})  "
+          f"survival={_fmt_capture_pct(aggregate.survival_rate)}")
+    if aggregate.capture_ticks:
+        print(f"    capture tick: mean={aggregate.mean_capture_tick:.1f} median={aggregate.median_capture_tick:.1f}")
+
+
+def _print_capture_history(capture) -> None:
+    """v2.0.0-beta2 Phase 1 (Sec Show): capture/core evidence, kept in its
+    own section -- never merged into ``analysis:``/``behavior:`` above
+    (Phase 1M: capture is distinct from both win/loss and behavior).
+    """
+
+    print("capture/core evidence:")
+    _print_capture_aggregate(f"candidate ({capture.candidate_id})", capture.candidate_overall)
+    if capture.baseline_overall is not None:
+        _print_capture_aggregate(f"baseline ({capture.baseline_id})", capture.baseline_overall)
 
 
 def _print_behavior(behavior) -> None:
