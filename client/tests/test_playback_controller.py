@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
-
 import pytest
+from battle_client.hud_layout import format_match_header_lines, format_playback_line
 from battle_client.player import SPEEDS, PlaybackController
 from battle_client.renderers.pygame_renderer import (
     KeyAction,
-    build_hud_lines,
     dispatch_key,
 )
+from battle_client.replay_status import get_entrant_statuses
 from battle_client.session import ReplaySession
 from battle_engine.replay import (
     AgentState,
@@ -65,59 +64,6 @@ def _sparse_session(tmp_path):
     ticks = [TickSnapshot(t, agents=(_agent("A", pc=t),)) for t in (0, 5, 9)]
     replay_path = tmp_path / "sparse.jsonl"
     write_replay(replay_path, [header, *ticks])
-    session = ReplaySession()
-    session.load(replay_path)
-    return session
-
-
-def _python_spec(root, name, source):
-    from battle_engine.agents import resolve_agent
-
-    directory = root / "agents" / name
-    directory.mkdir(parents=True)
-    (directory / "agent.yaml").write_text(
-        json.dumps(
-            {
-                "kind": "python", "api_version": 1, "entrypoint": "agent.py:create_agent",
-                "name": name, "display": name.title(), "version": "1.0",
-            }
-        ),
-        encoding="utf-8",
-    )
-    (directory / "agent.py").write_text(source, encoding="utf-8")
-    return resolve_agent(root, name)
-
-
-NOP_SOURCE = """
-from battle_engine.agent_api import ActionKind, AgentAction
-
-class Agent:
-    def reset(self, context):
-        pass
-
-    def act(self, observation):
-        return AgentAction(ActionKind.NOP)
-
-def create_agent():
-    return Agent()
-"""
-
-
-def _python_session(tmp_path):
-    from battle_engine.config import Config
-    from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
-
-    entrants = (
-        MatchEntrant.python("A", "a", 0, _python_spec(tmp_path, "a", NOP_SOURCE)),
-        MatchEntrant.python("B", "b", 4, _python_spec(tmp_path, "b", NOP_SOURCE)),
-    )
-    replay_path = tmp_path / "python_replay.jsonl"
-    NativeMatchService().run(
-        MatchRequest(
-            Config(arena_size=32, instr_per_tick=1, seed=1),
-            entrants, max_ticks=2, replay_path=replay_path, verbose=False,
-        )
-    )
     session = ReplaySession()
     session.load(replay_path)
     return session
@@ -336,70 +282,72 @@ def test_play_at_final_tick_restarts_and_plays(tmp_path):
 
 # ---------------------------------------------------------------------------
 # HUD content
+#
+# Beta1 Phase 4 replaced the single flat ``build_hud_lines`` text blob with
+# band-based rendering (top HUD + footer) that formats over the Phase-3
+# ``battle_client.replay_status`` status model -- see
+# ``battle_client.hud_layout``/``docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md``.
+# These tests exercise the same pure formatting functions the renderer's
+# footer/header drawing calls, with the tick/status/speed/winner facts read
+# straight off ``session``/``controller`` exactly like the renderer does.
+# The old low-level VM/Python runtime-diagnostics line (``pc=``/``cpu=``/
+# ``region=`` vs. ``ctrl=``/``actions=``) was a deliberate Phase-4 scoping
+# decision -- not part of the Phase-3 status model or the new entrant
+# card's field list -- and is no longer part of the default HUD; see
+# docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md §4 for the rationale.
 # ---------------------------------------------------------------------------
 def test_hud_shows_tick_final_tick_status_and_speed(tmp_path):
     session = _five_tick_session(tmp_path)
     controller = PlaybackController(session, playing=False)
-    lines = build_hud_lines(session, controller)
-    joined = "\n".join(lines)
-    assert "Tick 0 / 4" in joined
-    assert "PAUSED" in joined
-    assert "speed 1x" in joined
+    line = format_playback_line(
+        tick=session.current_tick, final_tick=session.final_tick,
+        status_label="PAUSED", speed=controller.speed,
+    )
+    assert "Tick 0/4" in line
+    assert "PAUSED" in line
+    assert "speed 1x" in line
 
 
 def test_hud_shows_playing_status(tmp_path):
     session = _five_tick_session(tmp_path)
     controller = PlaybackController(session, playing=True)
-    assert "PLAYING" in "\n".join(build_hud_lines(session, controller))
+    line = format_playback_line(
+        tick=session.current_tick, final_tick=session.final_tick,
+        status_label="PLAYING", speed=controller.speed,
+    )
+    assert "PLAYING" in line
 
 
 def test_hud_omits_winner_until_a_terminal_result_exists(tmp_path):
     session = _five_tick_session(tmp_path, with_result=False)
-    controller = PlaybackController(session, playing=False)
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "Winner" not in joined
+    _line1, line2 = format_match_header_lines(
+        ruleset_label="bytefray-rules-1", runtime_kind="vm", arena_size=8, entrant_count=2,
+        winner=session.winner, termination_reason=session.termination_reason,
+        result_available=session.result is not None,
+    )
+    assert line2 == ""
 
 
 def test_hud_shows_winner_and_termination_regardless_of_cursor_position(tmp_path):
     session = _five_tick_session(tmp_path, with_result=True)
-    controller = PlaybackController(session, playing=False)
     # Winner/termination come from the terminal record, independent of
     # where playback currently is -- check at tick 0, not just at the end.
     assert session.current_tick == 0
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "Winner: A" in joined
-    assert "Termination: tick_limit" in joined
+    _line1, line2 = format_match_header_lines(
+        ruleset_label="bytefray-rules-1", runtime_kind="vm", arena_size=8, entrant_count=2,
+        winner=session.winner, termination_reason=session.termination_reason,
+        result_available=session.result is not None,
+    )
+    assert "Winner: A" in line2
+    assert "Termination: tick_limit" in line2
 
 
-def test_hud_vm_agent_line_labels_pc_cpu_and_region(tmp_path):
-    session = _five_tick_session(tmp_path)
-    controller = PlaybackController(session, playing=False)
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "pc=0" in joined
-    assert "cpu=1" in joined
-    assert "ctrl=" not in joined
-    assert "actions=" not in joined
-
-
-def test_hud_python_agent_line_does_not_use_vm_labels(tmp_path):
-    session = _python_session(tmp_path)
-    controller = PlaybackController(session, playing=False)
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "ctrl=" in joined
-    assert "actions=" in joined
-    # Python's degenerate (0, 0) region must never be presented as a real
-    # code footprint.
-    assert "region=n/a" in joined
-    assert "region=[0, 0]" not in joined
-    assert " pc=" not in joined
-
-
-def test_hud_agent_line_reflects_alive_dead_status(tmp_path):
+def test_hud_agent_status_reflects_alive_dead(tmp_path):
     session = _five_tick_session(tmp_path)
     controller = PlaybackController(session, playing=False)
     controller.jump_to_end()
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "A (alpha)  alive" in joined
+    statuses = {status.agent_id: status for status in get_entrant_statuses(session)}
+    assert statuses["A"].alive is True
 
 
 def test_hud_stays_correct_after_seeking(tmp_path):
@@ -407,8 +355,11 @@ def test_hud_stays_correct_after_seeking(tmp_path):
     controller = PlaybackController(session, playing=False)
     controller.step_forward()
     controller.step_forward()
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "Tick 2 / 4" in joined
+    line = format_playback_line(
+        tick=session.current_tick, final_tick=session.final_tick,
+        status_label="PAUSED", speed=controller.speed,
+    )
+    assert "Tick 2/4" in line
 
 
 # ---------------------------------------------------------------------------

@@ -3,14 +3,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from battle_client.analysis import SelectedCellInfo, collect_match_events, selected_cell_info
+from battle_client.analysis import SelectedCellInfo, collect_match_events
+from battle_client.hud_layout import calculate_layout
 from battle_client.player import PlaybackController
 from battle_client.renderers.pygame_renderer import (
     ACTIVITY_WINDOW_TICKS,
+    HELP_TEXT,
+    HUD_CHAR_WIDTH_PX,
     PygameRenderer,
-    _event_section_start,
     activity_intensity,
-    build_hud_lines,
     choose_initial_window_scale,
     downsample_series,
     format_event_line,
@@ -21,6 +22,7 @@ from battle_client.renderers.pygame_renderer import (
     select_history_window,
     territory_graph_points,
 )
+from battle_client.replay_status import get_entrant_statuses
 from battle_client.session import ReplaySession, ReplayState
 from battle_engine.replay import (
     AgentEvent,
@@ -300,7 +302,10 @@ def test_configure_window_uses_display_margin_and_preferred_viewport():
 
     assert renderer._display_safe_bounds == (1728, 972)
     assert renderer.scale == 30
-    assert set_mode_calls == [((960, 480), 1)]
+    # Beta1 Phase 4: the window is the arena (960x480, unchanged) plus the
+    # fixed-height top HUD and footer bands (100 + 60 = 160px) -- see
+    # hud_layout.TOP_BAND_HEIGHT/FOOTER_HEIGHT.
+    assert set_mode_calls == [((960, 640), 1)]
     # The source checkout ships assets/branding/bytefray-icon.png, so this
     # runs for real (not mocked) -- see get_branding_icon_path.
     assert len(set_icon_calls) == 1
@@ -329,14 +334,18 @@ def test_fit_to_display_can_enlarge_and_shrink(monkeypatch):
     resize_calls = []
     monkeypatch.setattr(renderer, "_resize_window", lambda: resize_calls.append(renderer.scale))
 
+    # Beta1 Phase 4: the display-safe bounds (1728, 972) are reduced by the
+    # fixed top HUD/footer band heights (160px) before scale-fitting, so
+    # the arena's own fit scale is 50 here, not the pre-Phase-4 54 (which
+    # fit the *whole* display, arena included, to the grid).
     renderer.scale = 4
     renderer._fit_to_display()
-    assert renderer.scale == 54
+    assert renderer.scale == 50
 
     renderer.scale = 100
     renderer._fit_to_display()
-    assert renderer.scale == 54
-    assert resize_calls == [54, 54]
+    assert renderer.scale == 50
+    assert resize_calls == [50, 50]
 
 
 def test_manual_rescale_moves_one_step_and_respects_display_limit(monkeypatch):
@@ -351,9 +360,12 @@ def test_manual_rescale_moves_one_step_and_respects_display_limit(monkeypatch):
     renderer._rescale(-1)
     assert resize_calls == [31, 30]
 
-    renderer.scale = 54
+    # 50 is the arena's own display-safe limit here (see
+    # test_fit_to_display_can_enlarge_and_shrink) -- already at it, so one
+    # more +1 step clamps rather than moves.
+    renderer.scale = 50
     renderer._rescale(1)
-    assert renderer.scale == 54
+    assert renderer.scale == 50
     assert resize_calls == [31, 30]
 
 
@@ -583,92 +595,394 @@ def test_resolve_event_click_empty_ticks_is_a_safe_no_op():
 
 
 # ---------------------------------------------------------------------------
-# _event_section_start
+# Beta1 Phase 4: PygameRenderer._draw_top_band / _draw_footer integration.
+#
+# These exercise the *actual* renderer methods (not a hand-rolled
+# reimplementation) end to end, through the real Phase-3 status model
+# (get_entrant_statuses), using minimal fakes for the low-level Pygame
+# primitives (Surface/font/draw) -- the same "mock the display, drive the
+# real code" convention this file already established for window sizing
+# (_display_stub) and cell selection (_FakeScreen), and the governing
+# task's own explicit preference for geometry/formatting-level testing over
+# pixel-perfect screenshot testing (see docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md).
 # ---------------------------------------------------------------------------
-def test_event_section_start_locates_the_marker():
-    lines = ["a", "b", "Recent events:", "  T002 kill: B by A"]
-    assert _event_section_start(lines) == 3
+class _FakeSurface:
+    def __init__(self, size=(0, 0)):
+        self._size = size
+
+    def fill(self, color):
+        pass
+
+    def blit(self, source, pos):
+        pass
+
+    def get_size(self):
+        return self._size
+
+    def get_width(self):
+        return self._size[0]
+
+    def get_height(self):
+        return self._size[1]
+
+    def get_rect(self):
+        return (0, 0, *self._size)
 
 
-def test_event_section_start_absent_returns_none():
-    assert _event_section_start(["a", "b"]) is None
+class _FakeFont:
+    """Records every string it was asked to render, so a test can assert on
+    HUD *content* without needing real glyph rasterization.
+    """
+
+    def __init__(self):
+        self.rendered: list[str] = []
+
+    def render(self, text, antialias, color):
+        self.rendered.append(text)
+        return _FakeSurface((len(text) * 7, 13))
 
 
-# ---------------------------------------------------------------------------
-# build_hud_lines: territory + recent-events integration
-# ---------------------------------------------------------------------------
-def test_hud_shows_territory_distinct_from_score(tmp_path):
-    session = _events_session(tmp_path)
-    while not session.at_end:
-        session.step_forward()
-    controller = PlaybackController(session, playing=False)
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "territory=3/10 (30.0%)" in joined
-    assert "territory=0/10 (0.0%)" in joined
-    assert "territory=2/10 (20.0%)" in joined
-    # score= and territory= must remain distinct tokens, never merged.
-    assert "score=2  territory=3/10" in joined
+class _FakeDraw:
+    def rect(self, surface, color, rect, width=0):
+        pass
+
+    def line(self, surface, color, start, end):
+        pass
+
+    def lines(self, surface, color, closed, points, width=1):
+        pass
+
+    def circle(self, surface, color, center, radius, width=0):
+        pass
 
 
-def test_hud_shows_recent_events_section_after_agent_lines_before_winner(tmp_path):
-    session = _events_session(tmp_path)
-    while not session.at_end:
-        session.step_forward()
-    controller = PlaybackController(session, playing=False)
-    lines = build_hud_lines(session, controller)
-    events_index = lines.index("Recent events:")
-    winner_index = next(i for i, line in enumerate(lines) if line.startswith("Winner:"))
-    agent_index = next(i for i, line in enumerate(lines) if line.startswith("A (alpha)"))
-    assert agent_index < events_index < winner_index
-    assert "T002 kill: B by A" in lines[events_index + 1]
-    assert "T004 death: C" in lines[events_index + 2]
+class _FakePygame:
+    def __init__(self):
+        self.draw = _FakeDraw()
+        self.SRCALPHA = 1
+
+    def Surface(self, size, flags=0):
+        return _FakeSurface(size)
+
+    def Rect(self, x, y, w, h):
+        return (x, y, w, h)
 
 
-def test_hud_omits_recent_events_section_when_there_are_none(tmp_path):
+def _band_renderer(window_size, entrant_count, *, arena_size=32):
+    renderer = PygameRenderer()
+    renderer.pg = _FakePygame()
+    renderer.screen = _FakeSurface(window_size)
+    renderer.hud_font = _FakeFont()
+    renderer.font = _FakeFont()
+    renderer.arena = arena_size
+    renderer.grid_cols, renderer.grid_rows = renderer._resolve_grid_dims(arena_size)
+    renderer._entrant_count = entrant_count
+    renderer._layout = calculate_layout(window_size, entrant_count)
+    return renderer
+
+
+def _core_seed_diff(agent_id, start, arena_size):
+    """Tick-0 ``MemoryDiff`` record(s) a real ``seed_core_ownership`` call
+    would produce for one entrant -- mirrors ``test_replay_status.py``'s
+    own helper of the same purpose (duplicated per that module's own
+    documented convention of not sharing fixtures across test files).
+    """
+    from battle_engine.python_runtime import CORE_BEACON_BYTE, core_addresses
+
+    addresses = core_addresses(start, arena_size)
+    runs: list[tuple[int, int]] = []
+    for address in addresses:
+        if runs and runs[-1][0] + runs[-1][1] == address:
+            runs[-1] = (runs[-1][0], runs[-1][1] + 1)
+        else:
+            runs.append((address, 1))
+    return tuple(
+        MemoryDiff(address=a, length=length, owner=agent_id, values=(CORE_BEACON_BYTE,) * length)
+        for a, length in runs
+    )
+
+
+def _v2_header(entrants, *, arena_size):
+    from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+
+    return ReplayHeader(
+        MatchConfiguration(arena_size=arena_size),
+        {agent_id: agent_id.title() for agent_id in entrants},
+        runtime_kind="python",
+        ruleset_id=BYTEFRAY_RULESET_V2_ID,
+        entrants=tuple({"agent_id": a, "name": a.title()} for a in entrants),
+    )
+
+
+def _load(tmp_path, name, records):
+    path = tmp_path / name
+    write_replay(path, records)
+    session = ReplaySession()
+    session.load(path)
+    return session
+
+
+def _v2_two_entrant_session(tmp_path, *, unattributed=False):
+    """A- and B-owned non-overlapping cores (arena 32: A at 0, B at 16).
+    Tick 0: both healthy. Tick 1: B damages 3 of A's cells. Tick 2: B takes
+    A's remaining 5 cells -- A's core reaches 0/8 and is captured.
+    """
+    header = _v2_header(("A", "B"), arena_size=32)
+    tick0 = TickSnapshot(
+        0,
+        agents=(_agent("A"), _agent("B")),
+        score={"A": 10, "B": 5},
+        memory_diffs=_core_seed_diff("A", 0, 32) + _core_seed_diff("B", 16, 32),
+    )
+    tick1 = TickSnapshot(
+        1,
+        agents=(_agent("A"), _agent("B")),
+        score={"A": 10, "B": 5},
+        memory_diffs=(MemoryDiff(address=0, length=3, owner="B", values=(9, 9, 9)),),
+    )
+    killer = None if unattributed else "B"
+    event = KillDeathEvent("death" if unattributed else "kill", "A", killer)
+    tick2 = TickSnapshot(
+        2,
+        agents=(
+            AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured"),
+            _agent("B"),
+        ),
+        score={"A": 10, "B": 8},
+        memory_diffs=(MemoryDiff(address=3, length=5, owner="B", values=(9, 9, 9, 9, 9)),),
+        events=(event,),
+    )
+    name = "v2_unattributed.jsonl" if unattributed else "v2_capture.jsonl"
+    return _load(tmp_path, name, [header, tick0, tick1, tick2])
+
+
+def _v2_three_entrant_session(tmp_path):
+    """Three non-overlapping healthy cores in a 48-cell arena."""
+    header = _v2_header(("A", "B", "C"), arena_size=48)
+    tick0 = TickSnapshot(
+        0,
+        agents=(_agent("A"), _agent("B"), _agent("C")),
+        score={"A": 1, "B": 2, "C": 3},
+        memory_diffs=(
+            _core_seed_diff("A", 0, 48) + _core_seed_diff("B", 16, 48) + _core_seed_diff("C", 32, 48)
+        ),
+    )
+    return _load(tmp_path, "v2_three_entrant.jsonl", [header, tick0])
+
+
+def test_top_band_renders_v1_entrants_with_no_core_field(tmp_path):
     session = _no_events_session(tmp_path)
     controller = PlaybackController(session, playing=False)
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "Recent events:" not in joined
+    renderer = _band_renderer((960, 700), entrant_count=1, arena_size=8)
+    renderer._match_events = []
+    renderer._ruleset_label = "bytefray-rules-1"
+
+    renderer._draw_top_band(controller)  # must not raise
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "Alive" in rendered
+    assert "Core" not in rendered
 
 
-def test_hud_recent_events_reflects_cursor_position_not_only_final_tick(tmp_path):
-    session = _events_session(tmp_path)
-    session.step_forward()  # tick 1: before either event
+def test_top_band_renders_v2_healthy_and_damaged_core(tmp_path):
+    session = _v2_two_entrant_session(tmp_path)
     controller = PlaybackController(session, playing=False)
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "Recent events:" not in joined
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=32)
+    renderer._match_events = collect_match_events(session)
+    renderer._ruleset_label = "bytefray-rules-2"
 
-    session.step_forward()  # tick 2: the kill has happened
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "T002 kill: B by A" in joined
-    assert "T004 death: C" not in joined
+    renderer._draw_top_band(controller)
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "Core 8/8" in rendered  # B, healthy
+
+    session.step_forward()  # tick 1: A damaged to 5/8
+    renderer.hud_font = _FakeFont()
+    renderer._draw_top_band(controller)
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "Core 5/8" in rendered
 
 
-def test_hud_accepts_precomputed_match_events_without_rescanning(tmp_path):
-    session = _events_session(tmp_path)
+def test_top_band_renders_v2_capture_with_attribution(tmp_path):
+    session = _v2_two_entrant_session(tmp_path)
     while not session.at_end:
         session.step_forward()
     controller = PlaybackController(session, playing=False)
-    precomputed = collect_match_events(session)
-    joined = "\n".join(build_hud_lines(session, controller, match_events=precomputed))
-    assert "T002 kill: B by A" in joined
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=32)
+    renderer._match_events = collect_match_events(session)
+    renderer._ruleset_label = "bytefray-rules-2"
+
+    renderer._draw_top_band(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "CAPTURED" in rendered
+    assert "Core 0/8" in rendered
+    assert "by B" in rendered
 
 
-@pytest.mark.parametrize("build_session", [_events_session, _python_session])
-def test_hud_renders_without_crashing_for_vm_and_python_replays(tmp_path, build_session):
+def test_top_band_unattributed_capture_shows_no_fake_killer(tmp_path):
+    session = _v2_two_entrant_session(tmp_path, unattributed=True)
+    while not session.at_end:
+        session.step_forward()
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=32)
+    renderer._match_events = collect_match_events(session)
+    renderer._ruleset_label = "bytefray-rules-2"
+
+    renderer._draw_top_band(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "CAPTURED" in rendered
+    assert " by " not in rendered
+
+
+def test_top_band_renders_three_entrants_all_represented(tmp_path):
+    session = _v2_three_entrant_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=3, arena_size=48)
+    renderer._match_events = collect_match_events(session)
+    renderer._ruleset_label = "bytefray-rules-2"
+
+    renderer._draw_top_band(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "A" in rendered and "B" in rendered and "C" in rendered
+    assert rendered.count("Core 8/8") == 3
+
+
+@pytest.mark.parametrize(
+    "build_session",
+    [
+        _events_session,
+        _python_session,
+        _python_forfeit_session,
+        _v2_two_entrant_session,
+        _v2_three_entrant_session,
+    ],
+)
+def test_bands_render_without_crashing_for_every_replay_kind(tmp_path, build_session):
     session = build_session(tmp_path)
     controller = PlaybackController(session, playing=False)
-    lines = build_hud_lines(session, controller)
-    assert lines  # non-empty, no exception
+    entrant_count = len(get_entrant_statuses(session, match_events=()))
+    renderer = _band_renderer((960, 700), entrant_count=entrant_count, arena_size=session.header.config.arena_size)
+    renderer._match_events = collect_match_events(session)
+    renderer._ruleset_label = "unknown"
+
+    renderer._draw_top_band(controller)
+    renderer._draw_footer(controller)  # must not raise
 
 
-def test_hud_python_forfeit_event_shows_reason_not_vm_wording(tmp_path):
-    session = _python_forfeit_session(tmp_path)
+def test_footer_shows_tick_playback_and_controls(tmp_path):
+    session = _no_events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=1, arena_size=8)
+    renderer._match_events = []
+
+    renderer._draw_footer(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "Tick 0" in rendered
+    assert "PAUSED" in rendered
+    # The controls line is deterministically truncated to the footer's own
+    # text column width (Phase 4H) rather than rendered at full length, so
+    # only its (stable) prefix is guaranteed present -- see
+    # test_footer_controls_line_truncates_to_its_column_width below for the
+    # truncation behavior itself.
+    assert HELP_TEXT.split("  ")[0] in rendered
+
+
+def test_footer_controls_line_truncates_to_its_column_width(tmp_path):
+    """A real screenshot smoke (docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md's
+    manual/headful pass) caught the controls line running under the
+    territory graph panel before this truncation existed -- the footer's
+    own text column width must always bound what gets rendered.
+    """
+    session = _no_events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=1, arena_size=8)
+    renderer._match_events = []
+
+    renderer._draw_footer(controller)
+
+    controls_rendered = renderer.hud_font.rendered[-1]
+    _tx, _ty, tw, _th = renderer._layout.footer_text_rect
+    assert len(controls_rendered) <= max(6, tw // HUD_CHAR_WIDTH_PX)
+    assert len(controls_rendered) < len(HELP_TEXT)
+
+
+def test_footer_shows_most_recent_event_and_is_clickable(tmp_path):
+    session = _events_session(tmp_path)
     while not session.at_end:
         session.step_forward()
     controller = PlaybackController(session, playing=False)
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "forfeit: A (agent_action_failed)" in joined
+    renderer = _band_renderer((960, 700), entrant_count=3, arena_size=10)
+    renderer._match_events = collect_match_events(session)
+
+    renderer._draw_footer(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "T004 death: C" in rendered  # most recent of the two events
+    assert renderer._event_panel_ticks == (4,)
+    assert renderer._event_panel_origin is not None
+
+
+def test_footer_shows_idle_message_when_no_events(tmp_path):
+    session = _no_events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=1, arena_size=8)
+    renderer._match_events = []
+
+    renderer._draw_footer(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "No recent events" in rendered
+    assert renderer._event_panel_ticks == ()
+
+
+def test_footer_shows_selected_cell_instead_of_event_when_selected(tmp_path):
+    session = _events_session(tmp_path)
+    while not session.at_end:
+        session.step_forward()
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=3, arena_size=10)
+    renderer._match_events = collect_match_events(session)
+    renderer._selected_address = 0
+
+    renderer._draw_footer(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "Selected cell:" in rendered
+    assert "addr=0" in rendered
+    # The selected-cell readout takes the message slot, so it is not
+    # click-to-seek like an event line.
+    assert renderer._event_panel_ticks == ()
+
+
+# ---------------------------------------------------------------------------
+# Beta1 Phase 4: _handle_click is arena-rect aware once a layout exists.
+# ---------------------------------------------------------------------------
+def test_handle_click_translates_into_arena_local_coordinates(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=10)
+
+    ax, ay, _aw, _ah = renderer._layout.arena_rect
+    # A click a few pixels inside the arena band's top-left corner should
+    # resolve to arena address 0, even though the arena no longer starts at
+    # window (0, 0) -- see hud_layout.TOP_BAND_HEIGHT.
+    renderer._handle_click(controller, (ax + 1, ay + 1))
+
+    assert renderer._selected_address == 0
+
+
+def test_handle_click_above_the_arena_band_does_not_select_a_cell(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=10)
+    renderer._selected_address = 5
+
+    renderer._handle_click(controller, (10, 10))  # inside the top HUD band
+
+    assert renderer._selected_address == 5  # unchanged
 
 
 # ---------------------------------------------------------------------------
@@ -794,30 +1108,6 @@ def test_format_inspector_lines_recently_changed_defaults_to_false():
     info = SelectedCellInfo(address=1, byte_value=1, owner="A", occupant=None)
     line = format_inspector_lines(info)[1]
     assert "recently changed" not in line
-
-
-# ---------------------------------------------------------------------------
-# build_hud_lines: selected-cell inspector integration
-# ---------------------------------------------------------------------------
-def test_hud_shows_selected_cell_between_agent_lines_and_events(tmp_path):
-    session = _events_session(tmp_path)
-    while not session.at_end:
-        session.step_forward()
-    controller = PlaybackController(session, playing=False)
-    selected = selected_cell_info(session.current_state, 0)
-    lines = build_hud_lines(session, controller, selected=selected)
-
-    inspector_index = lines.index("Selected cell:")
-    events_index = lines.index("Recent events:")
-    agent_index = next(i for i, line in enumerate(lines) if line.startswith("A (alpha)"))
-    assert agent_index < inspector_index < events_index
-
-
-def test_hud_omits_selected_cell_section_when_nothing_selected(tmp_path):
-    session = _no_events_session(tmp_path)
-    controller = PlaybackController(session, playing=False)
-    joined = "\n".join(build_hud_lines(session, controller))
-    assert "Selected cell:" not in joined
 
 
 # ---------------------------------------------------------------------------
