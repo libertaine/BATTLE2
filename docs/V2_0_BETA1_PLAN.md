@@ -251,13 +251,22 @@ exact prior VM behavior; `agents evaluate` remains implicitly v1-only, with
 no accidental v2 evaluation exposed. No gameplay semantic changed; the
 permanent-v2 promotion-equivalence corpus passes unmodified.
 
-### Phase 3 — Replay v2 semantics (next)
+**Phase 3 (replay v2 semantics & status-model preparation) is complete** —
+see [V2_0_BETA1_PHASE3_REPLAY_SEMANTICS.md](V2_0_BETA1_PHASE3_REPLAY_SEMANTICS.md)
+for the full record. Summary: `battle_client.replay_status.
+get_entrant_statuses` derives per-entrant alive/dead status, Ruleset-v2
+core integrity/capture/attribution, and existing score/territory/kill
+facts entirely from the already-canonical `battle2.replay` v3 artifact —
+including each Python entrant's own core-anchor address, recovered from
+tick-0 `memory_diffs` rather than added as a new persisted field. No
+replay schema bump. Core integrity is derived strictly from reconstructed
+ownership, never byte content. `battle_engine` source is untouched (empty
+diff) — this phase changed only `battle_client` (one additive
+`ReplaySession` method, one new domain module) and tests. HUD
+rendering/layout is unchanged; the Phase-4 integration seam is documented,
+not implemented.
 
-- Core status/capture events surfaced in replay-derived data.
-- HUD/status-model preparation (data only — no rendering yet).
-- Preserve v1 replay behavior unchanged throughout.
-
-### Phase 4 — First visible v2 presentation
+### Phase 4 — First visible v2 presentation (next)
 
 - Replay Viewer HUD separation: a dedicated entrant/status band, core
   health/status, alive/dead, kills/captures, and an unobstructed
