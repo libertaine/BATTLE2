@@ -40,6 +40,7 @@ from battle_engine.replay import (
     AgentState,
     EngineEvent,
     MatchResult,
+    MemoryDiff,
     ReplayHeader,
     RuntimeKind,
     TickSnapshot,
@@ -236,6 +237,25 @@ class ReplaySession:
         if index is None:
             raise ReplaySessionError(f"no tick {tick} in this replay")
         return self._ticks[index].events
+
+    def memory_diffs_at_tick(self, tick: int) -> tuple[MemoryDiff, ...]:
+        """The raw, per-write ``MemoryDiff`` records published for ``tick``.
+
+        Mirrors :meth:`events_at_tick`: a non-mutating lookup of one
+        recorded tick's own data, independent of the session's playback
+        cursor. Unlike ``current_state.owners`` (final ownership after
+        every diff up to the cursor has been merged), this preserves each
+        individual write's own ``owner`` in the order it actually
+        happened -- including a write later overwritten within the same
+        tick -- which is what lets a caller recover which addresses one
+        specific entrant itself wrote to at a given tick (for example,
+        tick 0's core-seeding writes; see ``battle_client.replay_status``).
+        """
+        self._require_loaded()
+        index = self._tick_index.get(tick)
+        if index is None:
+            raise ReplaySessionError(f"no tick {tick} in this replay")
+        return self._ticks[index].memory_diffs
 
     # ---------- playback ----------
 
