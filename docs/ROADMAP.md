@@ -754,8 +754,28 @@ non-terminal capture happened at N >= 3 (now withheld rather than wrong,
 with the underlying capture fact/attribution unaffected). Characterization
 against three 3-entrant, 5-seed rosters directly re-examined Phase 2's own
 "Core Tracker 2/54" finding, showing it reflected sample-size instability
-rather than a fixed rate. Phase 4 (strategic characterization) and Phase 5
-(integrated qualification) remain planned.
+rather than a fixed rate.
+
+**Phase 4 (strategic characterization) is implementation-complete** on
+`v2.0-beta2-development`, not yet released — see
+[V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md).
+An 11-roster, 990-cell pre-registered corpus pointed Phase 3's analysis
+instrument at real strategic questions. Headline finding: Claimer's
+Phase-3 100%-win-rate result was matchup-specific, not universal — its
+win rate ranges 36.7%-100% depending on roster composition, collapsing
+whenever dedicated search-based offense (Core Tracker/Core Seeker) is
+present, the same counter-strategy alpha.10/alpha.11 already established.
+A real, reproducible kingmaking-like effect (a passive defender inheriting
+33-46% of wins from a fight it never joins) and a real pairwise-vs-group
+divergence (Core Tracker beats Claimer and Hunter individually but not
+together) were both found and explained. A real, consistent global seat
+bias (~18pp across the corpus, plausibly last-write-wins-driven) was
+disclosed but does not overwhelm strategic differences and is already
+neutralized per-entrant by the existing exhaustive-permutation
+methodology. No engine/scheduler/scoring/agent code was changed.
+**Strategic assessment: proceed with documented concerns** — no Ruleset
+revision recommended before Beta2 qualification. Phase 5 (integrated
+qualification) remains planned.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 

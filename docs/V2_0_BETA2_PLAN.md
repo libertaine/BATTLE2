@@ -136,15 +136,41 @@ record and qualification report. Summary:
 
 ## Phase 4 — Strategic Characterization
 
-**Status: planned, not started.** Purpose: point Phase 3's new analysis
-instrument at real strategic questions with deliberately controlled
-experiments, informed directly by Phase 3's own characterization findings
-(`docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md` §25) — roster-
-composition effects/kingmaking, seat/layout bias generalization beyond
-three rosters, seed sensitivity, and a real-measurement revisit of the N!
-exhaustive-scheduling scaling estimate if an N=4/5 roster becomes needed.
-No alliances, teams, communication, fog of war, MARL, new Ruleset, or new
-Agent API instructions belong in this phase.
+**Status: implementation complete, not yet released.** See
+`docs/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md` for the full
+research record. Summary:
+
+- an 11-roster, 990-cell pre-registered primary corpus (plus 3 pairwise
+  1v1 controls) pointed Phase 3's analysis instrument at Phase 3's own
+  open questions — Claimer's Matrix-A dominance, third-party/kingmaking
+  effects, seat/layout/seed sensitivity, directed capture interactions,
+  and pairwise-vs-group divergence;
+- **Claimer's apparent dominance was matchup-specific, not universal**:
+  its win rate ranges 36.7%-100% depending on roster composition,
+  collapsing sharply whenever a dedicated search-based offense agent
+  (Core Tracker/Core Seeker) is present — the same counter-strategy
+  alpha.10/alpha.11 already established, confirmed still working under
+  Beta2's own methodology at a larger sample;
+- a real, reproducible kingmaking-like effect: a passive defensive third
+  entrant wins 33-46% of matches purely by outlasting whichever of two
+  active rivals a search agent eliminates, without attacking anything
+  itself — and a real pairwise-vs-group divergence: Core Tracker beats
+  both Claimer and Hunter individually in 1v1 but does not dominate
+  either when facing them simultaneously;
+- a real, consistent global seat bias (~18pp win-rate spread from seat A
+  to seat C across the whole corpus, most plausibly last-write-wins-
+  driven) was found and disclosed — real, but not large enough to
+  overwhelm strategic differences, and already neutralized at the
+  per-entrant level by the existing exhaustive-permutation methodology;
+- a tick-budget methodology difference from alpha.11's own 1v1
+  measurements was found and explained (not a defect — every within-
+  corpus comparison in this phase used one consistent tick budget);
+- no engine, scheduler, scoring, or agent code was changed — this was a
+  pure characterization phase, and the one instrumentation audit
+  performed found no defect.
+
+**`STRATEGIC ASSESSMENT: PROCEED WITH DOCUMENTED CONCERNS`** — no
+Ruleset revision is recommended before Beta2 qualification.
 
 ## Phase 5 — Integrated Beta2 Qualification
 
@@ -152,7 +178,11 @@ Agent API instructions belong in this phase.
 qualification pass across every Beta2 phase together, mirroring Beta1's
 own Phase 5 — full test suite, Ruff, mypy, `git diff --check`, a real
 source-tree smoke, and (if packaging modules changed) an isolated-wheel
-smoke. No new feature work belongs in this phase.
+smoke. No new feature work belongs in this phase. Phase 4's own
+documented-but-non-blocking concerns (roster-composition effects at
+larger scale, a mechanistic confirmation of the seat-bias hypothesis,
+further kingmaking/non-transitivity search) carry forward as future
+research, not as Phase 5 requirements.
 
 ---
 
