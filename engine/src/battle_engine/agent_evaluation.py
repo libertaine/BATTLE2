@@ -1361,24 +1361,47 @@ def build_matrix(
                         # ordinal) so two cells differing only by
                         # orientation are guaranteed distinct even if the
                         # ordinal derivation ever changed (v0.9 Phase 6,
-                        # Sec 9/W.1). `placement_id` joins it for the exact
-                        # same reason (Phase 1F): a v1-methodology request
-                        # never varies placement, so this is a no-op there
-                        # (every cell shares "fixed") -- only meaningful,
-                        # and only ever exercised, under v2 methodology.
-                        schedule_id = stable_id(
-                            "evaluation-cell",
-                            {
-                                "evaluation_id": evaluation_id,
-                                "role": role,
-                                "subject_id": subject_id,
-                                "opponent_id": opponent_id,
-                                "seed": seed,
-                                "orientation": orientation,
-                                "placement_id": placement_id,
-                                "ordinal": ordinal,
-                            },
-                        )
+                        # Sec 9/W.1).
+                        #
+                        # H5 (Beta2 Phase 4.1 correction): `placement_id`
+                        # does NOT unconditionally join this payload the way
+                        # `orientation` does. `orientation` was already part
+                        # of the pre-Beta2 (v0.9 Phase 6) historical v1
+                        # schedule_id recipe -- see the pre-Beta2 source at
+                        # 2076576, whose payload here is exactly
+                        # {evaluation_id, role, subject_id, opponent_id,
+                        # seed, orientation, ordinal}. `placement_id` is new
+                        # in this phase; unlike `condition_fingerprint`'s
+                        # sibling "placement" sub-key just below (added only
+                        # `if placement is not None`), it was previously
+                        # added here unconditionally -- "every v1 cell
+                        # shares the constant 'fixed'" does not make this a
+                        # hash no-op the way it would for the cell's own
+                        # *value*: a hash payload with an extra key present
+                        # (even holding a constant) differs from one where
+                        # that key is absent entirely. That silently changed
+                        # every v1 schedule_id relative to a pre-Beta2
+                        # artifact resumed under this build (evaluation_id/
+                        # condition_fingerprint were unaffected, since
+                        # neither's payload construction has this defect),
+                        # so a legacy v1 artifact lost schedule-id resume
+                        # continuity and re-executed its entire matrix.
+                        # Restored by mirroring `condition_fingerprint`'s
+                        # own "conditionally add, never for v1" discipline:
+                        # `placement_id` joins this payload only when
+                        # `placement` is not `None` (v2 methodology).
+                        schedule_id_payload: dict[str, Any] = {
+                            "evaluation_id": evaluation_id,
+                            "role": role,
+                            "subject_id": subject_id,
+                            "opponent_id": opponent_id,
+                            "seed": seed,
+                            "orientation": orientation,
+                            "ordinal": ordinal,
+                        }
+                        if placement is not None:
+                            schedule_id_payload["placement_id"] = placement_id
+                        schedule_id = stable_id("evaluation-cell", schedule_id_payload)
                         label = (
                             f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
                             f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}"

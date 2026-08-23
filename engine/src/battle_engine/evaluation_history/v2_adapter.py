@@ -288,6 +288,26 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
     opponent_revisions_raw = agent_revisions.get("opponents")
     opponent_revisions: list[Any] = opponent_revisions_raw if isinstance(opponent_revisions_raw, list) else []
 
+    # H2 (Beta2 Phase 4.1): whether this whole artifact is a multi-entrant
+    # ("group") evaluation -- the authoritative recorded methodology
+    # discriminator (schema_version 6 *and* the explicit "group": true
+    # sibling field, mirroring EvaluationSummary.group's own recovery
+    # pattern), never inferred indirectly from cell content. A group cell's
+    # "opponent_id" is a display label only (see AdaptedCell's own
+    # docstring) -- for a self-play roster (candidate, candidate, opponent)
+    # that label degenerates to exactly the one distinct non-candidate
+    # agent id, which then happens to equal a real entry in opponent_ids.
+    # Code below that used to *infer* "this must be a pairwise cell" from
+    # that label successfully resolving against opponent_ids_list (a bare
+    # `try/except ValueError`) was therefore silently wrong for exactly
+    # that self-play shape: it fell through into pairwise-shaped identity/
+    # condition-fingerprint reconstruction for a cell that was never
+    # pairwise, producing a false CONDITION_FINGERPRINT_INCONSISTENT (and a
+    # bogus pairwise opponent_identity) on every cell of an otherwise-
+    # healthy artifact. `is_group` replaces every such inference with the
+    # one authoritative fact.
+    is_group = version in _GROUP_AWARE_VERSIONS and data.get("group") is True
+
     opponent_ids_list_raw = data.get("opponent_ids", [])
     opponent_ids_list: list[Any] = opponent_ids_list_raw if isinstance(opponent_ids_list_raw, list) else []
     cells = []
@@ -297,27 +317,36 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         opponent_identity = ConfidenceValue.unknown()
         opponent_agent_revision_id = ConfidenceValue.unknown()
         opponent_agent_revision_error = ConfidenceValue.unknown()
-        try:
-            # Same ordered-list, first-occurrence-position correlation
-            # "opponent_identity" already uses -- safe for duplicate/self-
-            # play opponent occurrences because every position for the same
-            # opponent_id was populated from the identical, once-per-agent-
-            # id dict (agent_evaluation._resolve_revision_results resolves
-            # one _RevisionPlanEntry per distinct agent_id, exactly as
-            # agent_identity() does for planned_identities).
-            idx = opponent_ids_list.index(raw.get("opponent_id"))
-            if idx < len(opponent_identities):
-                opponent_identity = ConfidenceValue.recorded(opponent_identities[idx])
-            if idx < len(opponent_revisions):
-                opponent_revision_entry = opponent_revisions[idx]
-                opponent_agent_revision_id = _agent_revision_field(
-                    opponent_revision_entry, "agent_revision_id"
-                )
-                opponent_agent_revision_error = _agent_revision_field(
-                    opponent_revision_entry, "agent_revision_error", allow_none=True
-                )
-        except ValueError:
-            pass
+        # H2 (Beta2 Phase 4.1): a group cell's "opponent_id" is a joined
+        # display label (e.g. "opp_a+opp_b", or -- self-play -- exactly the
+        # one distinct non-candidate agent id), never a real per-cell
+        # opponent -- it must never be resolved against opponent_ids_list
+        # to assign a pairwise opponent identity/revision, since for a
+        # self-play roster that label can legitimately equal a real
+        # opponent_ids_list entry and would silently misattribute that
+        # opponent's identity to a group cell.
+        if not is_group:
+            try:
+                # Same ordered-list, first-occurrence-position correlation
+                # "opponent_identity" already uses -- safe for duplicate/self-
+                # play opponent occurrences because every position for the same
+                # opponent_id was populated from the identical, once-per-agent-
+                # id dict (agent_evaluation._resolve_revision_results resolves
+                # one _RevisionPlanEntry per distinct agent_id, exactly as
+                # agent_identity() does for planned_identities).
+                idx = opponent_ids_list.index(raw.get("opponent_id"))
+                if idx < len(opponent_identities):
+                    opponent_identity = ConfidenceValue.recorded(opponent_identities[idx])
+                if idx < len(opponent_revisions):
+                    opponent_revision_entry = opponent_revisions[idx]
+                    opponent_agent_revision_id = _agent_revision_field(
+                        opponent_revision_entry, "agent_revision_id"
+                    )
+                    opponent_agent_revision_error = _agent_revision_field(
+                        opponent_revision_entry, "agent_revision_error", allow_none=True
+                    )
+            except ValueError:
+                pass
         schedule_ids.append(raw["schedule_id"])
         context_id = raw.get("execution_context_id")
         if isinstance(context_id, str) and context_id:
@@ -649,14 +678,27 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             occurrence = raw.get("condition_occurrence_index")
             if not isinstance(occurrence, int) or isinstance(occurrence, bool):
                 continue
-            # v2.0.0-beta2 Phase 2: a group cell (raw["opponent_id"] is a
-            # joined display label, never a real opponent id -- see
-            # AdaptedCell's own docstring) is not verifiable through this
-            # opponent-indexed path at all; skipped here rather than
-            # producing a false CONDITION_FINGERPRINT_INCONSISTENT. See the
-            # design doc's "analysis compatibility" section for why this
-            # narrower verification gap (never a false positive, only
-            # reduced coverage) is an accepted Phase 2 scope boundary.
+            # v2.0.0-beta2 Phase 2 (H2 fix, Beta2 Phase 4.1): a group cell
+            # (raw["opponent_id"] is a joined display label, never a real
+            # opponent id -- see AdaptedCell's own docstring) is not
+            # verifiable through this opponent-indexed pairwise path at
+            # all; skipped here rather than producing a false
+            # CONDITION_FINGERPRINT_INCONSISTENT. See the design doc's
+            # "analysis compatibility" section for why this narrower
+            # verification gap (never a false positive, only reduced
+            # coverage) is an accepted Phase 2 scope boundary.
+            #
+            # Gated on the authoritative `is_group` fact, never on whether
+            # the label happens to resolve against opponent_ids_list -- a
+            # self-play roster (candidate, candidate, opponent) degenerates
+            # this label to exactly the one distinct non-candidate agent
+            # id, which *does* resolve, so the previous `try/except
+            # ValueError` skip silently fell through into this pairwise
+            # payload for every cell of an otherwise-healthy self-play
+            # artifact (found via a real 9-cell self-play group artifact
+            # during Phase 4.1 review remediation).
+            if is_group:
+                continue
             try:
                 idx = opponent_ids_list.index(raw.get("opponent_id"))
             except ValueError:
@@ -757,6 +799,22 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         group = ConfidenceValue.recovered(False)
         roster_agent_ids = ConfidenceValue.recovered(())
 
+    # MEDIUM-1 (Beta2 Phase 4.1): non-candidate roster member content
+    # identity, for group comparison's own use (comparison.py's
+    # `_condition_key` group branch) -- the identical "planned_identities.
+    # opponents", index-aligned-with-opponent_ids_list source
+    # `opponent_identity` already draws its own per-cell identity from
+    # above, just built once per summary instead of once per cell (a group
+    # evaluation's roster/opponents list is constant across every cell of
+    # one artifact). Only ever populated for a real group artifact whose
+    # "opponents" list is at least as long as "opponent_ids" -- anything
+    # short of that (malformed/partial) stays honestly UNKNOWN rather than
+    # a partially-populated dict.
+    if is_group and opponent_ids_list and len(opponent_identities) >= len(opponent_ids_list):
+        roster_identities = ConfidenceValue.recorded(dict(zip(opponent_ids_list, opponent_identities)))
+    else:
+        roster_identities = ConfidenceValue.unknown()
+
     return EvaluationSummary(
         location=location,
         schema=schema,
@@ -793,6 +851,7 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
         arena_alignment_mode=arena_alignment_mode,
         group=group,
         roster_agent_ids=roster_agent_ids,
+        roster_identities=roster_identities,
         analysis=analysis,
     )
 

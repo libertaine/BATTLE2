@@ -64,12 +64,26 @@ a capture frequently does *not* end the match (two or more entrants can
 remain alive afterward), so the match keeps running to the tick budget
 under ``tick_limit`` -- reporting ``ticks`` as that capture's tick would
 overstate it, often by hundreds of ticks (found via this phase's own
-characterization runs, not merely hypothesized). ``capture_tick``/
-``capture_tick_caused`` are therefore populated only when
-``termination_reason`` confirms the capture was terminal; the fact of the
-capture itself (``captured``, ``captor_of``, every rate in
-``EntrantSummary``) is unaffected and always reported when known -- only
-the numeric tick is withheld when it cannot be trusted.
+characterization runs, not merely hypothesized).
+
+Beta2 Phase 4.1 (H3): an alive-count-driven ``termination_reason`` alone
+only proves the match's *last* death happened at ``ticks`` -- at N >= 3,
+two or more entrants can die over the course of a match (e.g. B at tick 50,
+C at tick 900, match ends at 900), and this Tier-2 read (aggregate
+``result.json`` fields only, never a per-tick replay log) has no way to
+tell which death was the terminal one once more than one occurred. The
+trust rule is therefore narrower than "the match ended by alive-count":
+victim-side ``capture_tick`` is populated only when ``total_deaths == 1``
+for the whole cell -- i.e. only when this capture is provably the one and
+only death, and therefore provably the terminal event -- in addition to
+``termination_reason`` confirming an alive-count end. Directed
+``capture_tick_caused`` was already this conservative for an independent
+reason (``_resolve_group_captors`` itself only ever attributes a captor
+when ``total_deaths == 1``, see its own docstring), so this is not a new
+restriction there, only made explicit. The fact of the capture itself
+(``captured``, ``captor_of``, every rate in ``EntrantSummary``) is
+unaffected by any of this and always reported when known -- only the
+numeric tick is withheld when it cannot be trusted.
 
 Deferred (see the design doc's "analysis compatibility" / "remaining
 limitations" sections): full per-tick directed kill/capture event logs
@@ -308,7 +322,23 @@ def load_group_cell_records(ref: GroupCellRef) -> tuple[EntrantCellRecord, ...]:
         return _unavailable("one or more seats missing from result")
 
     winner = envelope.winner
-    capture_tick_known = envelope.termination_reason in _ALIVE_COUNT_TERMINATED
+    # H3 (Beta2 Phase 4.1): `envelope.termination_reason` alone only proves
+    # the match's *last* death happened at `envelope.ticks` -- at N>=3 a
+    # non-terminal death (one that leaves two or more entrants alive) can
+    # precede it by an arbitrary number of ticks, and this Tier-2 (aggregate
+    # `result.json` fields only, no per-tick replay log) read has no way to
+    # tell which death was the terminal one when more than one occurred.
+    # `total_deaths == 1` is the only case this data can prove is terminal:
+    # exactly one entrant died, so it must be the one whose death satisfied
+    # `_ALIVE_COUNT_TERMINATED`. `_resolve_group_captors` already applies
+    # this identical single-death restriction to captor attribution (see its
+    # own docstring), so `capture_tick_caused` below is already conservative
+    # for the same reason -- this mirrors that same bound for victim-side
+    # `capture_tick`.
+    total_deaths = sum(1 for e in envelope.entrants if e.get("alive") is False)
+    capture_tick_known = (
+        envelope.termination_reason in _ALIVE_COUNT_TERMINATED and total_deaths == 1
+    )
     scores = {seat: float(envelope.score.get(seat, 0)) for seat in expected_seats}
     ranked_seats = sorted(expected_seats, key=lambda s: (-scores[s], s))
     rank_by_seat = {seat: index + 1 for index, seat in enumerate(ranked_seats)}

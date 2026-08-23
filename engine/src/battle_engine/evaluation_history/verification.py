@@ -16,6 +16,7 @@ from typing import Any
 from battle_engine.agent_evaluation import (
     ORIENTATION_CANDIDATE_FIRST,
     physical_slots_for_orientation,
+    seat_label,
 )
 from battle_engine.agent_revisions import agent_revisions_root, verify_revision
 from battle_engine.agent_test import OPPONENT_SLOT, TESTED_AGENT_SLOT
@@ -96,6 +97,19 @@ def verify_cell(
     per-entrant metadata (H1: now including ``entry_point``/
     ``local_source_fingerprint``, not just source_sha256/api_version/
     agent_version).
+
+    H1 (Beta2 Phase 4.1): a group (multi-entrant, N>=3, ``cell.seat_agent_
+    ids`` non-empty) cell is verified through the identical checks above,
+    generalized rather than skipped -- expected physical entrant order
+    becomes ``seat_label(0..N-1)`` (never the fixed pairwise ``(A, B)``),
+    and the subject's physical seat is looked up from the cell's own
+    recorded seat assignment (mirroring ``EvaluationCell.subject_seat``'s
+    first-occurrence convention for self-play) rather than from an
+    orientation axis a group cell never has. There is no single well-
+    defined "opponent slot" for N>=3, so the opponent-identity cross-check
+    is skipped for a group cell -- its ``opponent_identity`` is always
+    ``UNKNOWN`` regardless (see ``v2_adapter.py``'s own H2 fix), so this
+    changes no outcome, only makes the group case explicit.
 
     ``subject_identity`` is the candidate/baseline identity ``ConfidenceValue``
     from the owning summary appropriate to ``cell.subject_role`` -- passed
@@ -206,13 +220,27 @@ def verify_cell(
             f"cell match_id {cell.match_id!r}",
         )
 
+    # H1 (Beta2 Phase 4.1): a group (multi-entrant, N>=3) cell's physical
+    # entrant order is seat_label(0..N-1), not the fixed 2-entrant (A, B)
+    # pair -- mirrors agent_evaluation._resumed_cell_mismatch's identical
+    # generalization for the live resume path exactly (Sec Identity, Beta2
+    # Phase 2). `cell.seat_agent_ids` (recorded seat assignment, RECORDED
+    # for a real schema-6 cell) is the source of truth for N here, not
+    # `_EXPECTED_ENTRANT_ORDER`, which stays reserved for the pairwise case.
+    group_seats = cell.seat_agent_ids.value or ()
+    is_group_cell = bool(group_seats)
+    expected_entrant_order = (
+        tuple(seat_label(index) for index in range(len(group_seats)))
+        if is_group_cell
+        else _EXPECTED_ENTRANT_ORDER
+    )
     entrant_order = tuple(str(entry.get("agent_id")) for entry in envelope.entrants)
-    if entrant_order != _EXPECTED_ENTRANT_ORDER:
+    if entrant_order != expected_entrant_order:
         return CellVerificationOutcome(
             cell.schedule_id,
             True,
             False,
-            f"entrant order {entrant_order} does not match expected {_EXPECTED_ENTRANT_ORDER}",
+            f"entrant order {entrant_order} does not match expected {expected_entrant_order}",
         )
 
     actual_seed = envelope.reproducibility.get("seed")
@@ -231,8 +259,36 @@ def verify_cell(
     # practice (every adapter recovers/records a concrete value -- Sec
     # L.2), but a defensive `candidate_first` fallback keeps this function
     # total rather than raising on a hand-built/malformed fixture.
-    orientation = cell.orientation.value or ORIENTATION_CANDIDATE_FIRST
-    subject_slot, opponent_slot = physical_slots_for_orientation(orientation)
+    #
+    # H1 (Beta2 Phase 4.1): a group cell has no orientation axis at all --
+    # `physical_slots_for_orientation` (a fixed A/B pairing) must never be
+    # consulted for one. Its subject's physical seat instead comes from the
+    # cell's own recorded seat assignment, exactly mirroring
+    # `EvaluationCell.subject_seat`/`agent_evaluation._cell_from_envelope_
+    # group`'s identical live-run convention: the first (lowest-index) seat
+    # `cell.subject_id` occupies (self-play, a duplicate agent id in the
+    # roster, resolves to that same first occurrence there too -- Sec
+    # Identity). There is no single well-defined "opponent slot" for N>=3,
+    # so `opponent_slot` stays `None` and the opponent-identity cross-check
+    # below is skipped for a group cell (its `opponent_identity` is always
+    # `UNKNOWN` for a group cell regardless -- see H2/v2_adapter.py -- so
+    # this changes no outcome, only makes the group case explicit rather
+    # than accidental).
+    if is_group_cell:
+        try:
+            subject_slot = seat_label(group_seats.index(cell.subject_id))
+        except ValueError:
+            return CellVerificationOutcome(
+                cell.schedule_id,
+                True,
+                False,
+                f"subject {cell.subject_id!r} is not present in the cell's own recorded "
+                f"seat assignment {group_seats!r}",
+            )
+        opponent_slot = None
+    else:
+        orientation = cell.orientation.value or ORIENTATION_CANDIDATE_FIRST
+        subject_slot, opponent_slot = physical_slots_for_orientation(orientation)
 
     winner = envelope.winner
     expected_outcome = (
@@ -266,7 +322,11 @@ def verify_cell(
             f"{cell.subject_role} identity fields {subject_mismatched} do not match the recorded plan",
         )
 
-    opponent_mismatched = _identity_mismatch(envelope.entrants, opponent_slot, cell.opponent_identity)
+    opponent_mismatched = (
+        _identity_mismatch(envelope.entrants, opponent_slot, cell.opponent_identity)
+        if opponent_slot is not None
+        else []
+    )
     if opponent_mismatched:
         return CellVerificationOutcome(
             cell.schedule_id,

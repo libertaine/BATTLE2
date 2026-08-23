@@ -18,6 +18,7 @@ from battle_engine.evaluation_group_analysis import (
     GroupCellRef,
     analyze_group,
     candidate_focused_view,
+    entrant_summary,
     interaction_matrix,
     layout_sensitivity,
     load_group_cell_records,
@@ -289,6 +290,121 @@ def test_capture_unattributed_when_two_deaths_same_cell(tmp_path: Path):
     records = {r.agent_id: r for r in load_group_cell_records(_ref(path))}
     assert records["a"].captor_of == ()
     assert records["c"].captured is True
+    # H3 (Beta2 Phase 4.1): two deaths occurred in this cell -- "c"'s own
+    # termination_reason is alive-count-driven, but that alone does not
+    # prove "c" died at the final tick rather than earlier, since "b" also
+    # died. The captured *fact* stays known; the tick must not be guessed.
+    assert records["c"].capture_tick is None
+
+
+def test_multi_death_non_terminal_victim_capture_tick_withheld(tmp_path: Path):
+    """H3 (Beta2 Phase 4.1): the independent review's exact reproduction --
+    at N>=3, a non-terminal capture (B, at tick 50) must never be reported
+    with the final match tick (900, when C's later death actually ended the
+    match) just because the match as a whole ended by alive-count. Only the
+    provably-terminal death (the only one when total_deaths==1) may trust
+    ``ticks`` as its own tick; with two deaths in this cell neither victim's
+    timing is provable from Tier-2 evidence, so both must be withheld."""
+
+    path = tmp_path / "result.json"
+    _write_group_result(
+        path,
+        ticks=900,
+        winner="A",
+        termination_reason="last_agent_standing",
+        entrants=[
+            _entrant("A", "a", alive=True, score=20, kills=2),
+            _entrant(
+                "B", "b", alive=False, score=1,
+                termination_reason=CORE_CAPTURED_TERMINATION_REASON, deaths=1,
+            ),
+            _entrant(
+                "C", "c", alive=False, score=5,
+                termination_reason=CORE_CAPTURED_TERMINATION_REASON, deaths=1,
+            ),
+        ],
+    )
+    records = {r.agent_id: r for r in load_group_cell_records(_ref(path))}
+    assert records["b"].captured is True
+    assert records["c"].captured is True
+    # Neither victim's tick may be fabricated from the final match tick --
+    # the earlier, non-terminal death (B, at the real tick 50) must not
+    # receive capture_tick=900 (B must NOT receive capture_tick = 900).
+    assert records["b"].capture_tick is None
+    assert records["c"].capture_tick is None
+    # Aggregate kill counts alone cannot say which of the two deaths "a"
+    # (kills=2) is credited with landing last -- captor attribution stays
+    # unambiguous-only, i.e. unattributed here too.
+    assert records["a"].captor_of == ()
+
+
+def test_single_death_terminal_capture_tick_trusted(tmp_path: Path):
+    """H3 (Beta2 Phase 4.1): the narrowed trust rule is not merely more
+    conservative everywhere -- when a cell truly has exactly one death (the
+    only case Tier-2 evidence can prove is terminal), the tick is still
+    reported, at the smallest N this module's own logic operates on (N=2;
+    production ``--group`` runs never schedule N=2 -- see
+    ``EvaluationService._validate`` -- but ``load_group_cell_records``
+    itself is N-generic and this proves its single-death path is intact)."""
+
+    path = tmp_path / "result.json"
+    _write_group_result(
+        path,
+        ticks=80,
+        winner="A",
+        termination_reason="last_agent_standing",
+        entrants=[
+            _entrant("A", "a", alive=True, score=20, kills=1),
+            _entrant(
+                "B", "b", alive=False, score=5,
+                termination_reason=CORE_CAPTURED_TERMINATION_REASON, deaths=1,
+            ),
+        ],
+    )
+    ref = _ref(path, roster_agent_ids=("a", "b"), seat_agent_ids=("a", "b"))
+    records = {r.agent_id: r for r in load_group_cell_records(ref)}
+    assert records["a"].captor_of == ("b",)
+    assert records["a"].capture_tick_caused == 80
+    assert records["b"].captured is True
+    assert records["b"].capture_tick == 80
+
+
+def test_capture_tick_mean_median_exclude_unknown_values(tmp_path: Path):
+    """H3 (Beta2 Phase 4.1): a withheld (None) capture_tick must never be
+    treated as 0 or coerced into the final tick for mean/median -- it is
+    simply excluded from the sample, same as entrant_summary/interaction_
+    matrix already do for any other None evidence field."""
+
+    known = tmp_path / "known.json"
+    _write_group_result(
+        known,
+        ticks=80,
+        winner="A",
+        entrants=[
+            _entrant("A", "a", alive=True, score=20, kills=1),
+            _entrant("B", "b", alive=True, score=10),
+            _entrant("C", "c", alive=False, score=5, termination_reason=CORE_CAPTURED_TERMINATION_REASON, deaths=1),
+        ],
+    )
+    unknown = tmp_path / "unknown.json"
+    _write_group_result(
+        unknown,
+        ticks=900,
+        winner="A",
+        termination_reason="last_agent_standing",
+        entrants=[
+            _entrant("A", "a", alive=True, score=20, kills=2),
+            _entrant("B", "b", alive=False, score=1, termination_reason=CORE_CAPTURED_TERMINATION_REASON, deaths=1),
+            _entrant("C", "c", alive=False, score=5, termination_reason=CORE_CAPTURED_TERMINATION_REASON, deaths=1),
+        ],
+    )
+    records = list(load_group_cell_records(_ref(known, schedule_id="s1")))
+    records += list(load_group_cell_records(_ref(unknown, schedule_id="s2")))
+    summary = entrant_summary("c", "all", records)
+    # Only the "known" cell's tick (80) contributes -- the "unknown" cell's
+    # withheld tick is excluded, never averaged in as 0 or 900.
+    assert summary.capture_tick_suffered.n == 1
+    assert summary.capture_tick_suffered.mean == 80
 
 
 def test_capture_without_recorded_kill_is_unattributed(tmp_path: Path):

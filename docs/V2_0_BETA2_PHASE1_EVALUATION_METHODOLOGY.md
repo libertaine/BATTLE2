@@ -343,17 +343,27 @@ every change designed so a v1-methodology request's hash payload is
   already included `"entry"` unconditionally). Two Python matches differing
   only by start address silently collided on `match_id` before this fix.
   Fixed by adding `"start": entrant.start` to the Python metadata dict
-  **only when `entrant.start != 0`** — every historical Python match ever
-  run used `start=0` for both entrants, so this key's absence at `start=0`
-  keeps every historical Python `match_id`/`result_id`/`replay_id`
-  byte-for-byte unchanged. The one place this *did* require refreshing a
-  pinned golden value is `test_ruleset_v1_equivalence.py`'s own
-  intentionally-non-zero-start Python fixtures (`slot * 19`/`slot * 2048`)
-  — see that file's updated `EXPECTED` entries and their explanatory
-  comment for the full before/after accounting; every non-identity fact in
-  that golden corpus (winner, termination reason, ticks, score, per-agent
-  behavior) is unchanged, proving this is a pure identity fix, never a
-  gameplay change.
+  **only when `entrant.start != 0`**, so this key's absence at `start=0`
+  keeps every historical **start=0** Python `match_id`/`result_id`/
+  `replay_id` byte-for-byte unchanged. **Correction (Beta2 Phase 4.1):**
+  this is not true of every historical Python match unconditionally — a
+  non-zero Python start was always reachable (`bytefray run --a-start/
+  --b-start`, and every tournament entrant past the first via
+  `tournament_cli`'s own `index * spacing` placement), and this phase's own
+  golden-value note below is direct evidence of that: a real historical
+  non-zero-start Python `match_id` had to exist for refreshing it to be
+  necessary. For every match that genuinely ran at `start=0`, the identity
+  is unchanged; for one that did not, this is a deliberate, one-time
+  identity transition — see [COMPATIBILITY.md](COMPATIBILITY.md)'s
+  "Placement" note for the full, corrected compatibility statement and its
+  tournament-resume consequence. The one place this *did* require
+  refreshing a pinned golden value is `test_ruleset_v1_equivalence.py`'s
+  own intentionally-non-zero-start Python fixtures (`slot * 19`/
+  `slot * 2048`) — see that file's updated `EXPECTED` entries and their
+  explanatory comment for the full before/after accounting; every
+  non-identity fact in that golden corpus (winner, termination reason,
+  ticks, score, per-agent behavior) is unchanged, proving this is a pure
+  identity fix, never a gameplay change.
 - **`compare_candidate_baseline`** grouping key gained `placement_id`
   alongside `(opponent_id, seed, orientation)` — a v2 candidate's
   `opposed` cell now only ever pairs against a baseline's `opposed` cell,

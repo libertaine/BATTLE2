@@ -259,7 +259,11 @@ def _arena_alignment_id(summary: EvaluationSummary) -> str | None:
 
 
 def _condition_key(
-    cell: AdaptedCell, conditions_fp: str | None, rules_id: str | None, arena_alignment_id: str | None
+    cell: AdaptedCell,
+    conditions_fp: str | None,
+    rules_id: str | None,
+    arena_alignment_id: str | None,
+    roster_identities: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[Any, ...] | None:
     """Sec 14: excludes candidate identity by construction; unknowns never align."""
 
@@ -281,6 +285,39 @@ def _condition_key(
             return None
         if cell.layout_id.confidence == FieldConfidence.UNKNOWN:
             return None
+        # MEDIUM-1 (Beta2 Phase 4.1): mirrors the pairwise branch's own
+        # opponent-content-identity guarantee below ("same opponent id,
+        # edited opponent source" must not strict-match) -- restored for
+        # group comparison by including every NON-candidate roster
+        # member's own content identity (source_sha256/entry_point/
+        # api_version/local_source_fingerprint), keyed by agent_id. The
+        # candidate's (`cell.subject_id`'s) own content is deliberately
+        # excluded, exactly like the pairwise branch excludes the
+        # candidate/baseline's identity by construction -- a candidate
+        # implementation change with an unchanged non-candidate roster must
+        # stay directly comparable. Self-play (`cell.subject_id` occupying
+        # more than one seat) is unambiguous here: it is excluded by agent
+        # id, not by seat, so it is excluded exactly once regardless of how
+        # many seats it occupies. `roster_identities` unknown (None) fails
+        # this cell closed (never aligns) rather than silently comparing
+        # under an unverifiable roster.
+        if roster_identities is None:
+            return None
+        non_focal_ids = sorted(set(cell.roster.value) - {cell.subject_id})
+        non_focal_identity: list[tuple[Any, ...]] = []
+        for agent_id in non_focal_ids:
+            identity = roster_identities.get(agent_id)
+            if identity is None:
+                return None
+            non_focal_identity.append(
+                (
+                    agent_id,
+                    identity.get("source_sha256"),
+                    identity.get("entry_point"),
+                    identity.get("api_version"),
+                    identity.get("local_source_fingerprint"),
+                )
+            )
         return (
             "group",
             tuple(cell.roster.value),
@@ -290,6 +327,7 @@ def _condition_key(
             arena_alignment_id,
             tuple(cell.seat_agent_ids.value or ()),
             cell.layout_id.value,
+            tuple(non_focal_identity),
         )
     if cell.opponent_identity.confidence == FieldConfidence.UNKNOWN:
         return None
@@ -435,6 +473,8 @@ def _align_cell_sets(
     deep_verified: bool = False,
     left_context_by_id: dict[str, dict[str, Any]] | None = None,
     right_context_by_id: dict[str, dict[str, Any]] | None = None,
+    left_roster_identities: dict[str, dict[str, Any]] | None = None,
+    right_roster_identities: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[
     list[ComparisonRow],
     list[AdaptedCell],

@@ -7,7 +7,11 @@ import os
 from pathlib import Path
 
 import pytest
-from battle_engine.agent_evaluation import EvaluationRequest, EvaluationService
+from battle_engine.agent_evaluation import (
+    BYTEFRAY_RULESET_V2_ID,
+    EvaluationRequest,
+    EvaluationService,
+)
 from battle_engine.evaluation_history import adapt_any
 from battle_engine.evaluation_history.models import ArtifactPathEscapeError, resolve_contained_path
 from battle_engine.evaluation_history.verification import verify_cell, verify_summary
@@ -238,6 +242,149 @@ def test_verify_ineligible_cells_are_skipped_not_counted(tmp_path: Path):
     assert verification.verified_count == 0
     # Zero eligible cells must never read as "verified" (no vacuous true).
     assert verification.all_eligible_verified is False
+
+
+# ---------------------------------------------------------------------------
+# H1 (Beta2 Phase 4.1): group (multi-entrant, N>=3) deep verification.
+#
+# Before this fix, `verify_cell` hardcoded `entrant_order == ("A", "B")`
+# and pairwise orientation logic -- a real group evaluation's cells (any
+# entrant_order of length != 2) were rejected outright regardless of
+# whether they were actually valid, producing `eligible_count=18,
+# verified_count=0` for a real 3-entrant group evaluation. See
+# verification.py's own H1 comments for the generalized model.
+# ---------------------------------------------------------------------------
+
+
+def _write_nop_agent(root: Path, name: str) -> None:
+    _write_python_agent(root, name)
+
+
+def _run_group_v2(tmp_path: Path, *, opponent_ids=("opp_a", "opp_b"), **overrides) -> Path:
+    _write_nop_agent(tmp_path, "candidate")
+    for opponent_id in dict.fromkeys(opponent_ids):
+        _write_nop_agent(tmp_path, opponent_id)
+    defaults = {
+        "candidate_id": "candidate",
+        "opponent_ids": opponent_ids,
+        "seeds": (1,),
+        "output_dir": tmp_path / "eval-out",
+        "ticks": 15,
+        "data_root": tmp_path,
+        "both_orientations": False,
+        "ruleset_id": BYTEFRAY_RULESET_V2_ID,
+        "group": True,
+    }
+    defaults.update(overrides)
+    result = EvaluationService().run(EvaluationRequest(**defaults))
+    return result.state_path
+
+
+def test_verify_summary_passes_for_a_healthy_group_artifact(tmp_path: Path):
+    """3-entrant roster (candidate, opp_a, opp_b): 3 layouts x 3! seat
+    assignments x 1 seed = 18 cells -- the independent review's exact
+    reproduction shape (`eligible_count=18, verified_count=0` pre-fix)."""
+
+    state_path = _run_group_v2(tmp_path)
+    summary = adapt_any(state_path)
+    assert summary.group.value is True
+
+    _, verification = verify_summary(summary)
+    assert verification.eligible_count == 18
+    assert verification.verified_count == 18
+    assert verification.all_eligible_verified is True
+
+
+def test_verify_group_candidate_in_non_a_seat_verifies_correctly(tmp_path: Path):
+    """A cell where the candidate occupies seat B or C (not the always-A
+    pairwise assumption) must still verify -- proves subject-seat
+    resolution comes from the cell's own recorded seat assignment, not a
+    fixed slot."""
+
+    state_path = _run_group_v2(tmp_path)
+    summary = adapt_any(state_path)
+    non_a_cells = [
+        cell
+        for cell in summary.cells
+        if cell.is_scored and cell.seat_agent_ids.value and cell.seat_agent_ids.value[0] != "candidate"
+    ]
+    assert non_a_cells, "fixture must include at least one non-A-seat candidate cell"
+
+    _, verification = verify_summary(summary)
+    verified_ids = {outcome.schedule_id for outcome in verification.outcomes if outcome.verified}
+    for cell in non_a_cells:
+        assert cell.schedule_id in verified_ids
+
+
+def test_verify_detects_corrupt_group_entrant_order(tmp_path: Path):
+    state_path = _run_group_v2(tmp_path)
+    summary = adapt_any(state_path)
+    cell = next(c for c in summary.cells if c.is_scored)
+    result_path = summary.location.directory / cell.artifact_dir / "result.json"
+    data = json.loads(result_path.read_text(encoding="utf-8"))
+    data["entrants"] = list(reversed(data["entrants"]))
+    result_path.write_text(json.dumps(data), encoding="utf-8")
+
+    _, verification = verify_summary(summary)
+    failure = next(o for o in verification.outcomes if o.schedule_id == cell.schedule_id)
+    assert failure.verified is False
+    assert "entrant order" in (failure.error or "")
+
+
+def test_verify_detects_corrupt_group_match_identity_fails_closed(tmp_path: Path):
+    state_path = _run_group_v2(tmp_path)
+    data = json.loads(state_path.read_text(encoding="utf-8"))
+    scored_cell = next(c for c in data["cells"] if c.get("status") == "completed")
+    scored_cell["match_id"] = "evaluation-match_deadbeefdeadbeefdeadbeef"
+    state_path.write_text(json.dumps(data), encoding="utf-8")
+    summary = adapt_any(state_path)
+
+    _, verification = verify_summary(summary)
+    assert verification.verified_count < verification.eligible_count
+    failure = next(o for o in verification.outcomes if o.schedule_id == scored_cell["schedule_id"])
+    assert "match_id" in (failure.error or "")
+
+
+def test_verify_detects_corrupt_group_result_replay_digest_fails_closed(tmp_path: Path):
+    state_path = _run_group_v2(tmp_path)
+    summary = adapt_any(state_path)
+    cell = next(c for c in summary.cells if c.is_scored)
+    replay_path = summary.location.directory / cell.artifact_dir / "replay.jsonl"
+    with replay_path.open("a", encoding="utf-8") as handle:
+        handle.write("\n")
+
+    _, verification = verify_summary(summary)
+    failure = next(o for o in verification.outcomes if o.schedule_id == cell.schedule_id)
+    assert failure.verified is False
+    assert "replay verification failed" in (failure.error or "")
+
+
+def test_existing_pairwise_deep_verification_still_uses_pairwise_entrant_order(tmp_path: Path):
+    """A pairwise (non-group) v2 artifact must still verify through the
+    unchanged (A, B) path -- generalization must never leak into or alter
+    ordinary pairwise verification."""
+
+    state_path = _run_v2(tmp_path)
+    summary = adapt_any(state_path)
+    assert summary.cells[0].seat_agent_ids.value in ((), None)
+    _, verification = verify_summary(summary)
+    assert verification.eligible_count == 1
+    assert verification.verified_count == 1
+
+
+def test_verify_summary_passes_for_a_healthy_n4_group_artifact(tmp_path: Path):
+    """Cheap N=4 coverage: 3 layouts x 4! seat assignments x 1 seed = 72
+    cells -- proves the generalized verification model is not merely
+    N=3-shaped."""
+
+    state_path = _run_group_v2(tmp_path, opponent_ids=("opp_a", "opp_b", "opp_c"))
+    summary = adapt_any(state_path)
+    assert summary.group.value is True
+
+    _, verification = verify_summary(summary)
+    assert verification.eligible_count == 72
+    assert verification.verified_count == 72
+    assert verification.all_eligible_verified is True
 
 
 # ---------------------------------------------------------------------------

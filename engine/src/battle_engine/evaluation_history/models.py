@@ -467,6 +467,20 @@ class EvaluationSummary:
     # -- purely a convenience for `evaluations show`/`list` disclosure.
     group: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
     roster_agent_ids: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # MEDIUM-1 (Beta2 Phase 4.1): content identity (source_sha256/
+    # entry_point/api_version/local_source_fingerprint) for every non-
+    # candidate roster member, keyed by agent_id -- ``dict[str, dict]``,
+    # built once per summary (a group evaluation's roster is constant
+    # across every cell) from the same recorded "planned_identities.
+    # opponents" list ``AdaptedCell.opponent_identity`` already draws its
+    # own (per-cell, pairwise-only) identity from. Restores, for group
+    # comparison, the same guarantee pairwise comparison's own
+    # ``opponent_identity``-keyed ``_condition_key`` already provides:
+    # "same roster IDs, changed non-candidate source" must not strict-
+    # match. ``UNKNOWN`` whenever it cannot be reconstructed (v1/v4/v5
+    # artifacts, which never had a group roster at all) -- never a guessed
+    # or partially-populated dict.
+    roster_identities: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
     # v1.6 Phase 4 (docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md): derived, never
     # persisted -- computed by the v1/v2 adapters from the same
     # ``real_cells`` they already reconstruct for
@@ -511,6 +525,7 @@ class EvaluationSummary:
             "arena_alignment_mode": self.arena_alignment_mode.to_json(),
             "group": self.group.to_json(),
             "roster_agent_ids": self.roster_agent_ids.to_json(),
+            "roster_identities": self.roster_identities.to_json(),
             "analysis": self.analysis.to_json() if self.analysis is not None else None,
         }
 

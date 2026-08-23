@@ -171,9 +171,36 @@ compatibility guarantees hold:
 Placement (`EvaluationPlacement`/each cell's `subject_start`/
 `opponent_start`) is a new, additive identity axis. `match_service.
 canonical_match_id`'s Python-entrant metadata now includes `"start"`
-whenever a Python entrant's start address is non-zero — additive: every
-historical Python match ever run used `start=0` for both entrants, so this
-never changes a historical `match_id`/`result_id`/`replay_id`.
+whenever a Python entrant's start address is non-zero. This key's
+*absence* at `start=0` keeps every historical **start=0** Python
+`match_id`/`result_id`/`replay_id` byte-for-byte unchanged — but it is
+**not** an unconditionally no-op addition for every historical Python
+match, and it is not true that every historical Python match ever ran at
+`start=0`. Non-zero Python starts have always been reachable: explicit
+`bytefray run --a-start/--b-start/--c-start`, and — more consequentially —
+every tournament entrant past the first, since `bytefray tournament`
+(`tournament_cli`) has always placed entrant `index` at
+`index * (arena_size // entrant_count)`, nonzero for every index but 0.
+For any such non-zero-start Python match, this is a **deliberate,
+one-time identity transition** (the same kind of transition
+`canonical_match_id`'s own docstring documents for the earlier addition of
+`BYTEFRAY_RULESET_ID`), not a silently-safe additive fix:
+
+- A Python `match_id`/`result_id`/`replay_id` computed by a pre-`v2.0.0-
+  beta2` build for a non-zero-start entrant differs from what this build
+  now computes for the identical inputs.
+- Resuming a pre-Beta2 tournament artifact that used non-zero starts under
+  Beta2 can therefore report `resumed_result_mismatch` — the artifact's
+  own recorded `match_id` no longer matches the id `tournament_service`
+  re-derives for the same scheduled match. This is the intended, fail-
+  closed outcome (`tournament_service._resumed_result_mismatch` refuses to
+  silently trust a result it cannot recompute the identity of), never a
+  silent misattribution — see `TournamentService.run`'s `--retry-failed`
+  handling for how such a match is re-executed rather than left
+  `corrupted` indefinitely.
+- `bytefray run` (single ad hoc matches, not resumed against prior state)
+  is unaffected in practice: a non-zero `--a-start`/`--b-start` match
+  simply gets a new, correctly start-sensitive identity going forward.
 
 ## Multi-entrant ("group") evaluation methodology (v2.0.0-beta2 Phase 2)
 

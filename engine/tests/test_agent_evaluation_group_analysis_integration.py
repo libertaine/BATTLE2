@@ -32,6 +32,7 @@ from battle_engine.evaluation_group_analysis import (
 )
 from battle_engine.evaluation_history.discovery import adapt_any
 from battle_engine.evaluation_history.group_adapter import group_cell_refs
+from battle_engine.evaluation_history.models import FieldConfidence, HealthCode
 
 NOP_ACTION = "AgentAction(ActionKind.NOP)"
 HALT_ACTION = "AgentAction(ActionKind.HALT)"
@@ -155,6 +156,74 @@ def test_evaluations_show_json_includes_group_analysis_for_v6_artifact(tmp_path:
     analysis = analyze_group(summary.roster_agent_ids.value or (), refs)
     assert len(analysis.entrant_summaries) == 3
     assert analysis.available_cells == analysis.cells_analyzed
+
+
+# ---------------------------------------------------------------------------
+# H2 (Beta2 Phase 4.1): self-play roster (candidate appears more than once)
+# must not be falsely flagged unhealthy. The independent review found a real
+# 9-cell self-play group artifact (roster candidate/candidate/opponent)
+# reporting CONDITION_FINGERPRINT_INCONSISTENT on every cell -- traced to
+# v2_adapter.py inferring "this must be a pairwise cell, resolve its
+# opponent identity" from the group cell's joined display label happening
+# to equal a real opponent_ids entry, which is exactly what a self-play
+# roster's label degenerates to (see v2_adapter.py's own H2 comments).
+# ---------------------------------------------------------------------------
+
+
+def test_self_play_candidate_duplicated_group_artifact_is_healthy(tmp_path: Path):
+    _write_nop_agent(tmp_path, "candidate")
+    _write_nop_agent(tmp_path, "opponent")
+    # roster_agent_ids = (candidate_id, *opponent_ids) = (candidate,
+    # candidate, opponent) -- candidate occupies two of the three seats.
+    result = EvaluationService().run(_request(tmp_path, opponent_ids=("candidate", "opponent")))
+
+    summary = adapt_any(result.state_path)
+    assert summary.group.value is True
+    assert summary.health.codes == (HealthCode.HEALTHY,)
+    assert HealthCode.CONDITION_FINGERPRINT_INCONSISTENT not in summary.health.codes
+
+    scored_cells = [cell for cell in summary.cells if cell.is_scored]
+    assert scored_cells
+    for cell in scored_cells:
+        assert cell.verify_error is None
+        # No bogus pairwise opponent identity: a group cell's opponent_id is
+        # a display label only, never a real per-cell opponent, so its
+        # opponent_identity must stay UNKNOWN, never silently populated from
+        # whichever opponent_ids entry the label happened to string-match.
+        assert cell.opponent_identity.confidence == FieldConfidence.UNKNOWN
+        # The duplicate roster entry itself must still be represented.
+        assert cell.roster.value.count("candidate") == 2
+
+    refs = group_cell_refs(summary)
+    assert len(refs) == len(scored_cells)
+    analysis = analyze_group(summary.roster_agent_ids.value or (), refs)
+    assert {s.agent_id for s in analysis.entrant_summaries} == {"candidate", "opponent"}
+    view = candidate_focused_view(analysis, "candidate")
+    assert view.candidate is not None
+
+
+def test_self_play_opponent_duplicated_group_artifact_is_healthy(tmp_path: Path):
+    _write_nop_agent(tmp_path, "candidate")
+    _write_nop_agent(tmp_path, "opponent")
+    # roster_agent_ids = (candidate, opponent, opponent) -- the *opponent*
+    # occupies two of the three seats this time, the opposite duplication
+    # shape from the test above.
+    result = EvaluationService().run(_request(tmp_path, opponent_ids=("opponent", "opponent")))
+
+    summary = adapt_any(result.state_path)
+    assert summary.group.value is True
+    assert summary.health.codes == (HealthCode.HEALTHY,)
+    assert HealthCode.CONDITION_FINGERPRINT_INCONSISTENT not in summary.health.codes
+
+    scored_cells = [cell for cell in summary.cells if cell.is_scored]
+    assert scored_cells
+    for cell in scored_cells:
+        assert cell.opponent_identity.confidence == FieldConfidence.UNKNOWN
+        assert cell.roster.value.count("opponent") == 2
+
+    refs = group_cell_refs(summary)
+    analysis = analyze_group(summary.roster_agent_ids.value or (), refs)
+    assert {s.agent_id for s in analysis.entrant_summaries} == {"candidate", "opponent"}
 
 
 def test_pairwise_v5_artifact_group_adapter_returns_no_refs(tmp_path: Path):

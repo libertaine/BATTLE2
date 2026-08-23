@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from battle_engine.agents import resolve_agent
 from battle_engine.config import Config
 from battle_engine.core import NOP, enc
-from battle_engine.match_service import MatchEntrant
+from battle_engine.match_service import MatchEntrant, MatchRequest, canonical_match_id
 from battle_engine.replay import MatchConfiguration, ReplayHeader, write_replay
 from battle_engine.result_model import ReplayReference, ResultEnvelope
 from battle_engine.tournament_cli import _print_result
@@ -296,6 +298,88 @@ def test_resumed_result_mismatch_accepts_a_genuinely_matching_result(tmp_path):
     assert _resumed_result_mismatch(
         envelope, _scheduled(("A", "B"), seed=5), replay_path, "match_x"
     ) is None
+
+
+def _write_python_agent(root: Path, name: str) -> None:
+    directory = root / "agents" / name
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {"kind": "python", "api_version": 1, "entrypoint": "agent.py:create_agent", "version": "1.0"}
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        "from battle_engine.agent_api import ActionKind, AgentAction\n"
+        "class Agent:\n"
+        "    def reset(self, context): pass\n"
+        "    def act(self, observation): return AgentAction(ActionKind.NOP)\n"
+        "def create_agent(): return Agent()\n",
+        encoding="utf-8",
+    )
+
+
+def test_resumed_result_mismatch_fails_closed_for_pre_beta2_nonzero_start_recipe(tmp_path):
+    """H4 (Beta2 Phase 4.1): Beta2 made a Python entrant's start address
+    identity-bearing in ``canonical_match_id`` (previously omitted from the
+    hash entirely, regardless of its actual value) -- a deliberate,
+    documented identity transition (see docs/COMPATIBILITY.md's "Placement"
+    note). Every tournament entrant past the first has always executed at a
+    non-zero start (``tournament_cli``'s own ``index * spacing`` formula),
+    so a pre-Beta2 tournament artifact for such an entrant has a recorded
+    ``match_id`` that no longer matches what Beta2 recomputes for the
+    identical scheduled match. This proves that mismatch fails closed
+    (``resumed_result_mismatch``) on resume rather than silently trusting a
+    result whose real start it never recorded -- exactly the
+    ``tournament_service`` resume path (see ``TournamentService.run``'s own
+    ``_resumed_result_mismatch`` call site)."""
+
+    root = tmp_path / "root"
+    _write_python_agent(root, "runner")
+    spec = resolve_agent(root, "runner")
+
+    # entrant "B" at start=32 -- exactly what a real 2-agent tournament's
+    # index*spacing formula would assign it (index 1 * spacing 32).
+    real_entrants = (
+        MatchEntrant.python("A", "runner", 0, spec),
+        MatchEntrant.python("B", "runner", 32, spec),
+    )
+    base_request = MatchRequest(
+        config=Config(arena_size=64, instr_per_tick=1),
+        entrants=real_entrants,
+        max_ticks=2,
+        replay_path=tmp_path / "replay.jsonl",
+    )
+    expected_match_id = canonical_match_id(base_request)  # Beta2 recipe: includes "start"
+
+    # The pre-Beta2 recipe never included "start" in the hash at all -- for
+    # THE SAME real match (B genuinely started at 32), it produced the
+    # identical id a start=0 request would. Reproducing that historical
+    # value therefore means computing it against the historical payload
+    # shape (no "start" key), not against a different, imaginary match.
+    historical_shape_entrants = (
+        MatchEntrant.python("A", "runner", 0, spec),
+        MatchEntrant.python("B", "runner", 0, spec),
+    )
+    historical_match_id = canonical_match_id(replace(base_request, entrants=historical_shape_entrants))
+    assert historical_match_id != expected_match_id
+
+    replay_path = tmp_path / "replay.jsonl"
+    write_replay(
+        replay_path,
+        [ReplayHeader(MatchConfiguration(64), match_id=historical_match_id, result_id="result_x")],
+    )
+    digest = hashlib.sha256(replay_path.read_bytes()).hexdigest()
+    envelope = replace(
+        _envelope(["A", "B"], seed=5, replay=ReplayReference("r", digest, "replay.jsonl")),
+        match_id=historical_match_id,
+    )
+
+    reason = _resumed_result_mismatch(
+        envelope, _scheduled(("A", "B"), seed=5), replay_path, expected_match_id
+    )
+    assert reason is not None
+    assert "match ID" in reason
 
 
 def test_resumed_result_mismatch_detects_ruleset_id_divergence(tmp_path):

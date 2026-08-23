@@ -657,12 +657,28 @@ def canonical_match_id(request: MatchRequest) -> str:
             # agent_evaluation.EvaluationPlacement), so two match requests
             # differing only by start must not share match_id. Included
             # only when non-default (unlike the "vm" branch's unconditional
-            # "entry" key above) so this stays a purely additive identity
-            # fix: every existing Python match_id ever computed used
-            # start=0 for both entrants (agent_test/tournament_service have
-            # never varied it before this phase), so this key's absence at
-            # start=0 keeps every historical Python match_id, result_id,
-            # and replay_id byte-for-byte unchanged. See docs/COMPATIBILITY.md.
+            # "entry" key above) so this key's absence at start=0 keeps
+            # every historical *start=0* Python match_id, result_id, and
+            # replay_id byte-for-byte unchanged.
+            #
+            # H4 (Beta2 Phase 4.1 correction): this is NOT a no-op for every
+            # historical Python match -- non-zero Python starts are not a
+            # historical impossibility this key's gating retroactively
+            # avoids disturbing. `bytefray run --a-start/--b-start/
+            # --c-start` and `tournament_cli`'s own `index * spacing`
+            # entrant-placement formula (every tournament entrant past the
+            # first) have both always been able to produce one. For such a
+            # match, this is a deliberate, one-time identity transition --
+            # the same kind `canonical_match_id`'s own docstring already
+            # documents for adding `BYTEFRAY_RULESET_ID` -- not an
+            # unconditionally-safe additive fix: a pre-Beta2 match_id/
+            # result_id/replay_id computed for a non-zero-start Python
+            # entrant differs from what this build now computes for the
+            # identical inputs. See docs/COMPATIBILITY.md's "Placement"
+            # note for the full, corrected compatibility statement and its
+            # resume consequence (`tournament_service._resumed_result_
+            # mismatch` fails closed on the mismatch rather than silently
+            # trusting the stale id).
             if entrant.start != 0:
                 metadata["start"] = entrant.start
         entrant_identities.append(

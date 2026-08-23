@@ -301,6 +301,44 @@ def test_canonical_match_identity_differs_across_all_four_rulesets(tmp_path) -> 
     assert len(set(ids.values())) == 4
 
 
+def test_canonical_match_identity_differs_by_python_entrant_start(tmp_path) -> None:
+    """H4 (Beta2 Phase 4.1): a Python entrant's start address is a genuine
+    gameplay-relevant identity input (match_service.canonical_match_id's
+    own H1 comment) -- the same agent/spec at a different start must
+    produce a different canonical match_id. This is the deliberate,
+    documented v2.0.0-beta2 Phase 1 identity transition: non-zero Python
+    starts are not a historical impossibility (`bytefray run --a-start/
+    --b-start`, and every tournament entrant past the first via
+    `tournament_cli`'s own spacing formula, have always been able to
+    produce one) -- see docs/COMPATIBILITY.md's corrected "Placement" note
+    and test_tournament_service.py's resume-compatibility coverage for the
+    fail-closed consequence this has for a pre-Beta2 non-zero-start
+    tournament artifact resumed under Beta2.
+    """
+
+    from battle_engine.agents import resolve_agent
+
+    zero_start = (
+        _python_entrant(tmp_path, "idle_a", NOP_SOURCE, slot="A", start=0),
+        _python_entrant(tmp_path, "idle_b", NOP_SOURCE, slot="B", start=0),
+    )
+    # Same on-disk agents as zero_start (never re-written -- _write_agent
+    # would fail on a duplicate directory), only "idle_a"'s start differs.
+    non_zero_start = (
+        MatchEntrant.python("A", "idle_a", 2048, resolve_agent(tmp_path, "idle_a")),
+        MatchEntrant.python("B", "idle_b", 0, resolve_agent(tmp_path, "idle_b")),
+    )
+    zero_id = canonical_match_id(_request(tmp_path, zero_start, ruleset_id=V2, max_ticks=3))
+    non_zero_id = canonical_match_id(
+        _request(tmp_path, non_zero_start, ruleset_id=V2, max_ticks=3)
+    )
+    assert zero_id != non_zero_id
+
+    # Re-deriving the id for the identical zero-start request is stable --
+    # confirms the difference above is genuinely start-driven, not incidental.
+    assert zero_id == canonical_match_id(_request(tmp_path, zero_start, ruleset_id=V2, max_ticks=3))
+
+
 # ---------------------------------------------------------------------------
 # Cross-Ruleset resume/comparison fail closed against the new identity
 # ---------------------------------------------------------------------------
