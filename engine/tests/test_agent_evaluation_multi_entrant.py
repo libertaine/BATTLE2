@@ -27,10 +27,14 @@ from battle_engine.agent_evaluation import (
     EvaluationRequest,
     EvaluationSeatAssignment,
     EvaluationService,
+    all_subject_aggregates,
     build_matrix,
     enumerate_seat_assignments,
     seat_label,
     standard_layouts,
+)
+from battle_engine.agent_evaluation import (
+    main as evaluation_main,
 )
 from battle_engine.config import Config
 from battle_engine.evaluation_history.comparison import align
@@ -113,6 +117,24 @@ def test_group_rejects_baseline(three_agents: Path):
     _write_nop_agent(three_agents, "baseline_agent")
     with pytest.raises(EvaluationConfigurationError):
         EvaluationService().run(_request(three_agents, baseline_id="baseline_agent"))
+
+
+@pytest.mark.parametrize("orientation_flag", ["--single-orientation", "--both-orientations"])
+def test_group_cli_rejects_pairwise_orientation_flags(orientation_flag: str, capsys):
+    code = evaluation_main(
+        [
+            "candidate",
+            "--opponents",
+            "opp_a,opp_b",
+            "--ruleset",
+            BYTEFRAY_RULESET_V2_ID,
+            "--group",
+            orientation_flag,
+            "--dry-run",
+        ]
+    )
+    assert code == 2
+    assert "cannot be combined with --group" in capsys.readouterr().err
 
 
 def test_non_group_v2_evaluation_unaffected_by_group_field_existing(three_agents: Path):
@@ -497,6 +519,56 @@ def test_identical_group_evaluations_align_cleanly(three_agents: Path):
     assert not aligned.unmatched_right
     assert not aligned.changed_condition
     assert not aligned.ambiguous_duplicate_groups
+
+
+def test_same_group_roster_with_changed_opponent_source_does_not_strict_align(three_agents: Path):
+    left = EvaluationService().run(
+        _request(three_agents, output_dir=three_agents / "left", seeds=(1,))
+    )
+    opponent_source = three_agents / "agents" / "opp_a" / "agent.py"
+    opponent_source.write_text(
+        opponent_source.read_text(encoding="utf-8").replace(NOP_ACTION, "AgentAction(ActionKind.HALT)"),
+        encoding="utf-8",
+    )
+    right = EvaluationService().run(
+        _request(three_agents, output_dir=three_agents / "right", seeds=(1,))
+    )
+
+    aligned = align(adapt_any(left.state_path), adapt_any(right.state_path))
+    assert not aligned.rows
+    assert aligned.denominators.condition_intersection == 0
+    assert aligned.ambiguous_duplicate_groups
+
+
+def test_changed_candidate_source_with_unchanged_group_opponents_remains_comparable(
+    three_agents: Path,
+):
+    left = EvaluationService().run(
+        _request(three_agents, output_dir=three_agents / "left", seeds=(1,))
+    )
+    candidate_source = three_agents / "agents" / "candidate" / "agent.py"
+    candidate_source.write_text(
+        candidate_source.read_text(encoding="utf-8").replace(NOP_ACTION, "AgentAction(ActionKind.HALT)"),
+        encoding="utf-8",
+    )
+    right = EvaluationService().run(
+        _request(three_agents, output_dir=three_agents / "right", seeds=(1,))
+    )
+
+    aligned = align(adapt_any(left.state_path), adapt_any(right.state_path))
+    assert aligned.candidate_diff is not None
+    assert len(aligned.rows) == 18
+    assert not aligned.unmatched_left
+    assert not aligned.unmatched_right
+
+
+def test_empty_group_orientation_scope_has_unknown_differentials(three_agents: Path):
+    result = EvaluationService().run(_request(three_agents, seeds=(1,)))
+    aggregates = all_subject_aggregates("candidate", None, result.cells)
+    empty = next(row for row in aggregates if row.orientation_scope == "opponent_first")
+    assert empty.matches_played == 0
+    assert empty.score_differential_avg is None
+    assert empty.territory_differential_avg is None
 
 
 def test_different_roster_group_evaluations_do_not_align(three_agents: Path):

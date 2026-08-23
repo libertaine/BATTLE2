@@ -30,6 +30,7 @@ from battle_engine.evaluation_group_analysis import (
     group_cell_ref_from_evaluation_cell,
     load_group_cell_records,
 )
+from battle_engine.evaluation_history.cli import main as evaluations_main
 from battle_engine.evaluation_history.discovery import adapt_any
 from battle_engine.evaluation_history.group_adapter import group_cell_refs
 from battle_engine.evaluation_history.models import FieldConfidence, HealthCode
@@ -170,7 +171,7 @@ def test_evaluations_show_json_includes_group_analysis_for_v6_artifact(tmp_path:
 # ---------------------------------------------------------------------------
 
 
-def test_self_play_candidate_duplicated_group_artifact_is_healthy(tmp_path: Path):
+def test_self_play_candidate_duplicated_group_artifact_is_healthy(tmp_path: Path, capsys):
     _write_nop_agent(tmp_path, "candidate")
     _write_nop_agent(tmp_path, "opponent")
     # roster_agent_ids = (candidate_id, *opponent_ids) = (candidate,
@@ -198,8 +199,35 @@ def test_self_play_candidate_duplicated_group_artifact_is_healthy(tmp_path: Path
     assert len(refs) == len(scored_cells)
     analysis = analyze_group(summary.roster_agent_ids.value or (), refs)
     assert {s.agent_id for s in analysis.entrant_summaries} == {"candidate", "opponent"}
+    assert analysis.roster_multiplicity == {"candidate": 2, "opponent": 1}
+    assert analysis.to_json()["rate_denominator_unit"] == "physical_entrant_instance"
+    assert analysis.to_json()["duplicate_logical_agent_ids"] == ["candidate"]
     view = candidate_focused_view(analysis, "candidate")
     assert view.candidate is not None
+    assert view.candidate_multiplicity == 2
+    assert view.legacy_subject_outcome_ambiguous is True
+    assert view.to_json()["rate_denominator_unit"] == "physical_entrant_instance"
+
+    code = evaluations_main(["show", str(result.state_path.parent)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "legacy candidate outcome aggregate: suppressed" in out
+    assert "candidate logical outcome: ambiguous" in out
+    assert "per physical entrant instance" in out
+
+
+def test_distinct_roster_presentation_has_no_self_play_warning(tmp_path: Path, capsys):
+    _write_nop_agent(tmp_path, "candidate")
+    _write_nop_agent(tmp_path, "opp_a")
+    _write_nop_agent(tmp_path, "opp_b")
+    result = EvaluationService().run(_request(tmp_path))
+
+    code = evaluations_main(["show", str(result.state_path.parent)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "legacy candidate outcome aggregate: suppressed" not in out
+    assert "candidate logical outcome: ambiguous" not in out
+    assert "per physical entrant instance" not in out
 
 
 def test_self_play_opponent_duplicated_group_artifact_is_healthy(tmp_path: Path):

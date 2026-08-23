@@ -407,6 +407,45 @@ def test_capture_tick_mean_median_exclude_unknown_values(tmp_path: Path):
     assert summary.capture_tick_suffered.mean == 80
 
 
+def test_second_self_play_candidate_instance_winner_is_presented_per_instance(tmp_path: Path):
+    """M2: a logical candidate occupying A and B has no single cell-level
+    outcome when B wins. Raw seat evidence stays authoritative and the
+    candidate-facing derived view discloses its two-instance denominator.
+    """
+
+    path = tmp_path / "result.json"
+    _write_group_result(
+        path,
+        ticks=80,
+        winner="B",
+        entrants=[
+            _entrant("A", "candidate", alive=False, score=1),
+            _entrant("B", "candidate", alive=True, score=20),
+            _entrant("C", "opponent", alive=False, score=5),
+        ],
+    )
+    ref = _ref(
+        path,
+        roster_agent_ids=("candidate", "candidate", "opponent"),
+        seat_agent_ids=("candidate", "candidate", "opponent"),
+    )
+    records = load_group_cell_records(ref)
+    by_seat = {record.seat: record for record in records}
+    assert by_seat["A"].agent_id == by_seat["B"].agent_id == "candidate"
+    assert by_seat["A"].outcome == EntrantOutcome.ELIMINATED
+    assert by_seat["B"].outcome == EntrantOutcome.WINNER
+
+    analysis = analyze_group(("candidate", "candidate", "opponent"), (ref,))
+    candidate = analysis.summary_for("candidate")
+    assert candidate is not None
+    assert candidate.winner.successes == 1
+    assert candidate.winner.trials == 2
+    view = candidate_focused_view(analysis, "candidate")
+    assert view.candidate_multiplicity == 2
+    assert view.legacy_subject_outcome_ambiguous is True
+    assert view.to_json()["rate_denominator_unit"] == "physical_entrant_instance"
+
+
 def test_capture_without_recorded_kill_is_unattributed(tmp_path: Path):
     path = tmp_path / "result.json"
     _write_group_result(
