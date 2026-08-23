@@ -1587,7 +1587,7 @@ def aggregate_cells(
     is_group_scope = any(cell.is_group for cell in own)
     score_differential_avg: float | None
     territory_differential_avg: float | None
-    if is_group_scope:
+    if is_group_scope or played == 0:
         score_differential_avg = None
         territory_differential_avg = None
     else:
@@ -4059,8 +4059,17 @@ def _print_group_analysis(result: EvaluationResult, request: EvaluationRequest) 
         return
     analysis = analyze_group(request.roster_agent_ids, scored_refs)
     view = candidate_focused_view(analysis, request.candidate_id)
+    if view.legacy_subject_outcome_ambiguous:
+        print(
+            "  candidate logical outcome: ambiguous in legacy cell summaries; "
+            f"{view.candidate_multiplicity} physical candidate instances occupy each cell"
+        )
+        print("  rates below use physical entrant instances as their denominator")
     if view.candidate is not None:
-        _print_entrant_summary(f"candidate ({request.candidate_id}) overall", view.candidate)
+        label = f"candidate ({request.candidate_id}) overall"
+        if view.candidate_multiplicity > 1:
+            label += " [per physical entrant instance]"
+        _print_entrant_summary(label, view.candidate)
     if view.candidate_seat_sensitivity is not None:
         print("  by seat:")
         for seat_summary in view.candidate_seat_sensitivity.by_seat:
@@ -4102,6 +4111,13 @@ def _print_result(result: EvaluationResult, request: EvaluationRequest) -> None:
     print(alignment_line)
     for aggregate in result.aggregates:
         if aggregate.orientation_scope != "all":
+            continue
+        if request.group and request.roster_agent_ids.count(aggregate.subject_id) > 1:
+            print(f"[{aggregate.subject_role}] {aggregate.subject_id}")
+            print(
+                "  legacy candidate outcome aggregate: suppressed because this logical "
+                "agent occupies multiple physical seats"
+            )
             continue
         _print_aggregate(aggregate)
         # v2.0.0-beta2 Phase 2: orientation is not a meaningful axis for a
@@ -4240,6 +4256,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        if args.group and (args.single_orientation or args.both_orientations):
+            raise EvaluationConfigurationError(
+                "--single-orientation/--both-orientations cannot be combined with --group; "
+                "group mode enumerates seat assignments instead of the pairwise orientation axis."
+            )
         if args.opponents is not None:
             opponent_ids = parse_opponents(args.opponents)
         elif preset is not None and preset.opponent_ids is not None:

@@ -258,6 +258,15 @@ def _arena_alignment_id(summary: EvaluationSummary) -> str | None:
     return summary.arena_alignment_mode.value
 
 
+def _roster_identities(summary: EvaluationSummary) -> dict[str, dict[str, Any]] | None:
+    """Return fully recorded group roster identities, or fail closed."""
+
+    if summary.roster_identities.confidence == FieldConfidence.UNKNOWN:
+        return None
+    value = summary.roster_identities.value
+    return value if isinstance(value, dict) else None
+
+
 def _condition_key(
     cell: AdaptedCell,
     conditions_fp: str | None,
@@ -485,12 +494,24 @@ def _align_cell_sets(
 ]:
     left_by_key: dict[tuple[Any, ...], list[AdaptedCell]] = {}
     for cell in left_cells:
-        key = _condition_key(cell, left_conditions_fp, left_rules_id, left_arena_alignment_id)
+        key = _condition_key(
+            cell,
+            left_conditions_fp,
+            left_rules_id,
+            left_arena_alignment_id,
+            left_roster_identities,
+        )
         if key is not None:
             left_by_key.setdefault(key, []).append(cell)
     right_by_key: dict[tuple[Any, ...], list[AdaptedCell]] = {}
     for cell in right_cells:
-        key = _condition_key(cell, right_conditions_fp, right_rules_id, right_arena_alignment_id)
+        key = _condition_key(
+            cell,
+            right_conditions_fp,
+            right_rules_id,
+            right_arena_alignment_id,
+            right_roster_identities,
+        )
         if key is not None:
             right_by_key.setdefault(key, []).append(cell)
 
@@ -671,6 +692,8 @@ def align(
     left_rules, right_rules = _rules_id(left), _rules_id(right)
     left_arena, right_arena = _arena_alignment_id(left), _arena_alignment_id(right)
     left_contexts, right_contexts = _context_by_id(left), _context_by_id(right)
+    left_roster_identities = _roster_identities(left)
+    right_roster_identities = _roster_identities(right)
 
     rows, unmatched_left, unmatched_right, changed_condition, anomalies, ambiguous_groups = (
         _align_cell_sets(
@@ -686,6 +709,8 @@ def align(
             deep_verified=deep_verified,
             left_context_by_id=left_contexts,
             right_context_by_id=right_contexts,
+            left_roster_identities=left_roster_identities,
+            right_roster_identities=right_roster_identities,
         )
     )
 
@@ -720,6 +745,8 @@ def align(
             deep_verified=deep_verified,
             left_context_by_id=left_contexts,
             right_context_by_id=right_contexts,
+            left_roster_identities=left_roster_identities,
+            right_roster_identities=right_roster_identities,
         )
         control_rows = tuple(control_result[0])
         # A verified baseline-control claim ("the same baseline diverged

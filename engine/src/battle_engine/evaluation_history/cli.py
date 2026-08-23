@@ -252,6 +252,14 @@ def _print_show(
     for aggregate in summary.aggregates_recomputed:
         if aggregate.orientation_scope != "all":
             continue
+        roster_values = summary.roster_agent_ids.value or ()
+        if summary.group.value is True and roster_values.count(aggregate.subject_id) > 1:
+            print(f"[{aggregate.subject_role}] {aggregate.subject_id}")
+            print(
+                "    legacy candidate outcome aggregate: suppressed because this logical "
+                "agent occupies multiple physical seats"
+            )
+            continue
         print(f"[{aggregate.subject_role}] {aggregate.subject_id}  win_rate={aggregate.win_rate_display}")
         candidate_first = next(
             (
@@ -437,9 +445,18 @@ def _print_group_analysis_history(candidate_id: str, analysis) -> None:
 
     print("group analysis:")
     print(f"  cells analyzed: {analysis.available_cells}/{analysis.cells_analyzed}")
+    candidate_multiplicity = analysis.roster_multiplicity.get(candidate_id, 0)
+    if candidate_multiplicity > 1:
+        print(
+            "  candidate logical outcome: ambiguous in legacy cell summaries; "
+            f"{candidate_multiplicity} physical candidate instances occupy each cell"
+        )
+        print("  rates below use physical entrant instances as their denominator")
     print("  entrant summary:")
     for entrant in analysis.entrant_summaries:
         marker = " (candidate)" if entrant.agent_id == candidate_id else ""
+        if analysis.roster_multiplicity.get(entrant.agent_id, 0) > 1:
+            marker += " [per physical entrant instance]"
         _print_entrant_summary_row(f"{entrant.agent_id}{marker}", entrant)
     for seat_view in analysis.seat_sensitivity:
         if seat_view.winner_rate_range is None:

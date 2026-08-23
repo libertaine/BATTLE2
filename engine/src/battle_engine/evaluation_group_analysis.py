@@ -772,9 +772,23 @@ class GroupAnalysis:
     def summary_for(self, agent_id: str) -> EntrantSummary | None:
         return next((s for s in self.entrant_summaries if s.agent_id == agent_id), None)
 
+    @property
+    def roster_multiplicity(self) -> dict[str, int]:
+        """Physical entrant instances per logical agent id in each cell."""
+
+        return {
+            agent_id: self.roster_agent_ids.count(agent_id)
+            for agent_id in dict.fromkeys(self.roster_agent_ids)
+        }
+
     def to_json(self) -> dict[str, Any]:
         return {
             "roster_agent_ids": list(self.roster_agent_ids),
+            "roster_multiplicity": self.roster_multiplicity,
+            "duplicate_logical_agent_ids": [
+                agent_id for agent_id, count in self.roster_multiplicity.items() if count > 1
+            ],
+            "rate_denominator_unit": "physical_entrant_instance",
             "cells_analyzed": self.cells_analyzed,
             "available_cells": self.available_cells,
             "entrant_summaries": [s.to_json() for s in self.entrant_summaries],
@@ -830,6 +844,8 @@ def analyze_group(roster_agent_ids: Sequence[str], refs: Sequence[GroupCellRef])
 @dataclass(frozen=True)
 class CandidateGroupView:
     candidate_id: str
+    candidate_multiplicity: int
+    legacy_subject_outcome_ambiguous: bool
     candidate: EntrantSummary | None
     candidate_seat_sensitivity: SeatSensitivity | None
     candidate_layout_sensitivity: LayoutSensitivity | None
@@ -839,6 +855,9 @@ class CandidateGroupView:
     def to_json(self) -> dict[str, Any]:
         return {
             "candidate_id": self.candidate_id,
+            "candidate_multiplicity": self.candidate_multiplicity,
+            "rate_denominator_unit": "physical_entrant_instance",
+            "legacy_subject_outcome_ambiguous": self.legacy_subject_outcome_ambiguous,
             "candidate": self.candidate.to_json() if self.candidate is not None else None,
             "candidate_seat_sensitivity": (
                 self.candidate_seat_sensitivity.to_json() if self.candidate_seat_sensitivity is not None else None
@@ -867,6 +886,8 @@ def candidate_focused_view(analysis: GroupAnalysis, candidate_id: str) -> Candid
 
     return CandidateGroupView(
         candidate_id=candidate_id,
+        candidate_multiplicity=analysis.roster_multiplicity.get(candidate_id, 0),
+        legacy_subject_outcome_ambiguous=analysis.roster_multiplicity.get(candidate_id, 0) > 1,
         candidate=analysis.summary_for(candidate_id),
         candidate_seat_sensitivity=next(
             (s for s in analysis.seat_sensitivity if s.agent_id == candidate_id), None
