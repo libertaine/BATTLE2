@@ -4,6 +4,28 @@ This changelog records notable user- and developer-visible changes to Bytefray.
 
 ## [Unreleased]
 
+### Beta2 pre-qualification remediation (Phase 4.1)
+
+- Deep verification now supports healthy N-entrant group cells (including
+  candidates outside seat A and N=4) while retaining pairwise checks.
+- Self-play group artifacts no longer fabricate a pairwise opponent
+  identity or report false condition-fingerprint inconsistency.
+- Multi-death group analysis withholds victim capture timing unless the
+  aggregate evidence proves the victim died at the trusted terminal event.
+- Historical v1 evaluation `schedule_id` values are restored exactly;
+  Ruleset-v2 pairwise placement and group layout/seat identity remain
+  significant and unchanged.
+- Group comparison now permits candidate implementation changes but refuses
+  strict alignment when a non-candidate roster member's content identity
+  changed.
+- Duplicate/self-play group presentation discloses per-physical-instance
+  denominators and suppresses the ambiguous first-seat legacy candidate
+  outcome aggregate. Group mode now rejects pairwise-only orientation
+  switches.
+- Non-zero Python entrant starts remain canonical-match-identity inputs;
+  the documented pre-Beta2 tournament resume consequence is a fail-closed
+  `resumed_result_mismatch` followed by retry/re-execution.
+
 ### Ruleset-v2 1v1 evaluation methodology (v2.0.0-beta2 Phase 1)
 
 `bytefray agents evaluate` gains an explicit `--ruleset {bytefray-rules-1,

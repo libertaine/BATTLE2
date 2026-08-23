@@ -227,6 +227,51 @@ inconsistent` on every Phase-1-produced artifact. This was a
 *verification* bug only — no persisted `evaluation_id`/`schedule_id`/
 `match_id` was ever actually wrong, and none was rewritten by the fix.
 
+### Beta2 Phase 4.1 pre-qualification compatibility corrections
+
+An independent pre-qualification review found two different historical-
+identity cases that require different policies:
+
+- **Historical v1 evaluation schedule identity is preserved.** Schema/
+  identity v4 keeps the pre-Beta2 `schedule_id` payload exactly; the new
+  `placement_id` key is present only for placement-aware v5 cells. For the
+  fixed historical golden used by Phase 4.1, `evaluation_id` is
+  `evaluation-v2_0677e78d27642c3c6f8fa62f`, `schedule_id` is
+  `evaluation-cell_08c9393822c99186c03001ef`, and
+  `condition_fingerprint` is
+  `evaluation-condition_3fba859dabbcf03c7cb6048a`, matching commit
+  `2076576`. Completed v1 cells with that identity resume normally.
+- **Non-zero Python match starts deliberately transition.** Start is real
+  gameplay input and remains part of canonical match identity whenever it
+  is non-zero. Pre-Beta2 artifacts could contain non-zero starts through
+  explicit `bytefray run --a-start/--b-start/...` flags and tournament
+  spacing, so their `match_id`, and consequently `result_id`/`replay_id`,
+  can differ under Beta2. An old tournament resume fails closed as
+  `resumed_result_mismatch`; retry/re-execution is required. This is not
+  silent corruption and no broad migration alias is provided.
+
+Stored identity generations remain v4 (historical v1), v5 (Ruleset-v2
+pairwise), and v6 (Ruleset-v2 group). Phase 4.1 changes group comparison's
+*adapted, derived* metadata so non-candidate roster content participates in
+the comparison key; it does not alter stored v6 `evaluation_id`,
+`schedule_id`, or `condition_fingerprint` payloads.
+
+Duplicate/self-play group execution and stored physical-seat evidence are
+valid. Candidate-focused presentation now discloses logical-agent
+multiplicity and labels rates as per physical entrant instance; when the
+candidate occupies multiple seats, the first-occurrence legacy cell
+`outcome` aggregate is suppressed as an ambiguous logical-candidate view.
+The raw per-seat records remain authoritative and unchanged.
+
+Group artifacts retain `EffectiveConditions.subject_slot="A"`,
+`opponent_slot="B"`, and `entrant_order=["A", "B"]` as historical
+pairwise compatibility sentinels. Group verification, comparison, and
+analysis must not interpret them as N-entrant seat metadata; the recorded
+`roster_agent_ids`, `seat_agent_ids`, layouts, and canonical nested result
+entrants are authoritative. Removing or generalizing the sentinels is
+deferred to a future identity/schema version because they are currently
+identity-bearing.
+
 ## Historical alias: evaluation-rules-1 ↔ bytefray-rules-1
 
 `bytefray.evaluation`'s `EVALUATION_RULES_COMPATIBILITY_ID` (wire field

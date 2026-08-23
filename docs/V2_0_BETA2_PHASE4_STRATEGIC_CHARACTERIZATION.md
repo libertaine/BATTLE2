@@ -107,13 +107,14 @@ defender: expansion 100%, capture 0%"), now at a larger sample (90 vs.
 
 The moment a real search-based offense agent (`core_tracker`/
 `core_seeker`) is present, Claimer's margin collapses: 44.4% vs. 45.6%
-(core_defender, essentially tied) in one roster, and a clear **third**
-in win-rate ranking within its own strongest 2v1 configuration
-(`claimer_coretracker_hunter`: claimer 36.7%, hunter 33.3%, core_tracker
-30.0% — genuinely three-way contested, no entrant close to dominant).
-Claimer never falls to *weak* (it is always at least tied for the top
-spot), but "always at least matched" is a materially different, weaker
-claim than "90/90" suggested in isolation — this directly confirms
+(core_defender, essentially tied) in one roster, and only a narrow raw
+lead in `claimer_coretracker_hunter` (claimer 36.7%, hunter 33.3%, core
+tracker 30.0%). The three estimates are statistically indistinguishable
+at this sample size: their intervals overlap, so the evidence supports a
+three-way contest rather than a meaningful first/second/third ordering.
+Claimer never falls to *weak* (it remains close to the raw leader in every
+tested roster), but that is a materially different, weaker claim than
+"90/90" suggested in isolation — this directly confirms
 alpha.11's own finding (§11 there): "pure expansion is no longer
 near-universal — `claimer` 1v1 98.4% → 60.9%."
 
@@ -420,18 +421,19 @@ within-corpus comparison in this document (all of §4-§15) uses the same
 
 ## 17. Strategic diversity assessment
 
-- **Multiple viable archetypes**: yes. Every one of the six agents wins
-  the *most* of any entrant in at least one tested roster: Claimer (6 of
+- **Multiple viable archetypes**: yes. Five of the six agents have the
+  highest raw win rate in at least one tested roster: Claimer (5 of
   its 7 rosters), Hunter (`claimer_hunter_reactive`,
-  `claimer_coretracker_hunter` tied), Core Defender
+  and near-tied in `claimer_coretracker_hunter`), Core Defender
   (`claimer_coretracker_coredefender`, near-tied with Claimer), Reactive
   Core Defender (`claimer_coretracker_reactive`, `coredefender_reactive_
-  coreseeker`), Core Tracker (none outright — its best result is a
+  coreseeker`), and Core Seeker (`reactive_hunter_coreseeker`
+  tied at 50.0%, `hunter_coretracker_coreseeker` at 41.1%). Core Tracker
+  has none outright — its best result is a
   three-way near-tie at 33.3% in `hunter_coretracker_coreseeker`, still
   consistent with alpha.11's own finding that search-based offense pays a
-  real opportunity cost), and Core Seeker (`reactive_hunter_coreseeker`
-  tied at 50.0%, `hunter_coretracker_coreseeker` at 41.1%, its own best
-  results). Both search agents are also the *decisive* factor (highest
+  real opportunity cost. Both search agents are nevertheless the
+  *decisive* factor (highest
   `caused` rate) in every roster they join (§5/§7), a form of strategic
   value distinct from raw win rate.
 - **Counter-strategies**: yes, one clear one (§5) — dedicated search
@@ -454,8 +456,12 @@ result was matchup-specific, not roster-independent. Across the 7 Claimer
 rosters in this corpus, its win rate ranges from 100% (no offense
 present) to 36.7% (against two independent active rivals) — a 63pp
 spread driven entirely by roster composition. It is the strongest or
-co-strongest strategy in every tested roster (never dominated), which is
-worth continued monitoring as the roster pool grows, but it is not a
+co-strongest strategy only when statistical overlap, rather than raw
+rank, is the intended meaning: Hunter has the higher raw rate in
+`claimer_hunter_reactive`, and Core Defender narrowly leads in
+`claimer_coretracker_coredefender`, but the corresponding intervals
+overlap. That persistent statistical competitiveness is worth continued
+monitoring as the roster pool grows, but it is not a
 "solved game" by the standard this phase used (§17's five criteria):
 counter-strategies exist and work, and its dominance is conditional, not
 universal.
@@ -471,9 +477,14 @@ zero-survivor score-fallback rule (a dead entrant *can* legitimately win
 only when literally every entrant is dead, per alpha.4.1's own documented
 semantics). **Zero anomalies found** — no zero-survivor match occurred in
 this corpus, and no `EntrantCellRecord` contradicted its own `alive`/
-`outcome` fields. No instrumentation defect was found or fixed in this
-phase; Phase 3's own two defects (differential fabrication, capture-tick
-overstatement) remain fixed and were not touched.
+`outcome` fields. No instrumentation defect was found or fixed *during
+this phase*. A later independent pre-qualification review found that
+Phase 3's capture-tick repair was incomplete for multi-death last-agent-
+standing matches: victim-side timing could still inherit the final match
+tick even when that victim died earlier. Phase 4.1 corrected that
+boundary. This Phase 4 analysis used capture occurrence/rate and
+attribution, not victim-side capture-tick aggregates, so the correction
+does not change any strategic conclusion or require a corpus rerun.
 
 ## 20. Factorial scaling
 
@@ -502,12 +513,17 @@ merely to validate the existing estimate.
 
 ## 22. Reproducibility
 
-`runs/research_v2_beta2_phase4/matrix_config.json` records every roster's
-exact candidate/opponents/methodology; `run_corpus.py`/`analyze_corpus.py`
-reproduce the full corpus and every table in this document by construction
-(both call the production `agent_evaluation.main`/`evaluation_group_
-analysis.analyze_group` entry points directly — no separate research
-logic). One headline result was independently rerun and diffed
+At the time of the study, retained local research artifacts under
+`runs/research_v2_beta2_phase4/` included `matrix_config.json`,
+`run_corpus.py`, `analyze_corpus.py`, and the generated results. The
+configuration recorded every roster's exact candidate/opponents/
+methodology, and the scripts called the production `agent_evaluation.main`
+and `evaluation_group_analysis.analyze_group` entry points directly.
+Those `runs/` inputs were intentionally untracked research data, however,
+so a clean repository checkout alone is not a complete durable
+reproduction bundle; this document is the durable evidence summary and
+the retained local artifacts provide the stronger reproduction path where
+available. One headline result was independently rerun and diffed
 field-by-field: `claimer_coretracker_coredefender` produced an identical
 `evaluation_id`, identical cell count, and byte-identical
 `(schedule_id, match_id, outcome, score_subject)` for every one of its 90
@@ -517,10 +533,11 @@ corpus.
 
 ## 23. Compatibility and regression
 
-No production code was changed in this phase (§19: no defect found, so
-nothing to fix). v1, pairwise v2, group v6 identity/resume/comparison,
-and Phase 3's own analysis module are therefore unaffected by
-construction — verified by the unmodified full regression suite (§24).
+No production code was changed during Phase 4 itself. The later Phase 4.1
+review did identify verification, compatibility, comparison, timing, and
+presentation defects in the surrounding evaluation tooling; its fixes and
+identity evidence are recorded separately in
+`V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md`.
 
 ## 24. Tests and quality
 
@@ -563,8 +580,9 @@ Listed in the final report delivered alongside this document.
 
 **Important but non-blocking:**
 
-- Claimer remains the strongest or co-strongest strategy in every tested
-  roster (§18) — worth continued monitoring, particularly as the roster
+- Claimer remains statistically indistinguishable from the raw leader in
+  every tested roster even where it does not rank first by the point
+  estimate (§18) — worth continued monitoring, particularly as the roster
   pool grows or new archetypes are added, but not currently evidence of a
   solved game.
 - The global seat bias (§11, ~18pp A-to-C spread, plausibly last-write-
@@ -603,10 +621,11 @@ expansion, confirmed under Beta2's own methodology); genuine multi-agent-
 specific structure not reducible to pairwise duels (§14); context
 sensitivity that is roster-specific rather than universal (§10-§13); no
 single strategy approaching a "solved game" by this phase's own five
-criteria (§17); no correctness defect found in either the engine or the
-Phase 1-3 instrumentation this research depended on (§19). Evidence for
+criteria (§17); and Phase 4.1 confirmed that its later timing correction
+does not affect the occurrence/rate evidence this research used (§19).
+Evidence for
 documenting rather than declaring unconditional success: Claimer's
-persistent (if conditional) top-or-co-top standing across every roster,
+persistent statistical overlap with the raw leader across every roster,
 the real and only-plausibly-explained global seat bias, and the
 kingmaking dynamic's potential to make win rate a less-than-fully-
 informative signal on its own in future, larger-scale strategic work.

@@ -774,8 +774,16 @@ disclosed but does not overwhelm strategic differences and is already
 neutralized per-entrant by the existing exhaustive-permutation
 methodology. No engine/scheduler/scoring/agent code was changed.
 **Strategic assessment: proceed with documented concerns** — no Ruleset
-revision recommended before Beta2 qualification. Phase 5 (integrated
-qualification) remains planned.
+revision recommended before Beta2 qualification.
+
+**Phase 4.1 (pre-qualification review remediation) is complete** on
+`v2.0-beta2-development`, not yet released — see
+[V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md](V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md).
+It closes five high-severity review findings, restores historical v1
+schedule resume identity, documents the deliberate non-zero-start Python
+match-identity transition, makes group verification/comparison/self-play
+presentation truthful, and leaves stored v4/v5/v6 identity generations
+unchanged. Phase 5 (integrated qualification) remains planned.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 

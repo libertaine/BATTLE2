@@ -172,6 +172,22 @@ research record. Summary:
 **`STRATEGIC ASSESSMENT: PROCEED WITH DOCUMENTED CONCERNS`** — no
 Ruleset revision is recommended before Beta2 qualification.
 
+## Phase 4.1 — Pre-Qualification Review Remediation
+
+**Status: complete, ready to enter Phase 5.** See
+`docs/V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md` for the
+recovery record and qualification evidence. An independent review found
+five high-severity compatibility/correctness gaps after Phase 4. Phase 4.1
+repaired group deep verification, self-play artifact health, conservative
+multi-death capture timing, historical v1 schedule identity, group
+comparison content identity, and duplicate/self-play presentation. It
+also documented the deliberate start-aware Python match-identity
+transition, retained v4/v5/v6 stored identities without a schema bump,
+rejected pairwise orientation flags in group mode, and corrected the Phase
+4 research prose/provenance boundary. The Phase 4 strategic assessment is
+unchanged and its corpus did not require rerunning because no simulation
+outcome or statistic used by that assessment changed.
+
 ## Phase 5 — Integrated Beta2 Qualification
 
 **Status: planned, not started.** Purpose: an integrated regression/
