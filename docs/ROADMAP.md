@@ -700,11 +700,11 @@ for the published assets and notes. Next planned milestone: **v2.0.0-beta2
 
 ## v2.0.0-beta2 — Evaluation & Multi-Entrant Methodology
 
-**Status: qualified for release, not yet published.** Purpose: Ruleset-v2
-evaluation methodology (order/placement/seed balancing per alpha.11's own
-requirements), scheduler/order balancing tooling, multi-entrant
-evaluation/productization decisions, and core/capture metrics as
-first-class evaluation outputs. See
+**Status: implementation and qualification complete; publication pending.**
+Purpose: Ruleset-v2 evaluation methodology (order/placement/seed balancing
+per alpha.11's own requirements), scheduler/order balancing tooling,
+multi-entrant evaluation/productization decisions, and core/capture metrics
+as first-class evaluation outputs. See
 [V2_0_BETA2_PLAN.md](V2_0_BETA2_PLAN.md) for the phase breakdown.
 
 **Phase 1 (Ruleset-v2 1v1 evaluation methodology) is implementation-
@@ -795,9 +795,10 @@ group workflows passed; N=3/N=4, self-play, verification, comparison, and
 worker determinism passed; and the canonical qualification finished with
 1,877 passed, 14 skipped, 2 deselected, clean Ruff, clean engine/client
 mypy, and clean diff checks. No release blocker or strategic-corpus rerun
-is required. This is a qualification decision only: the Beta2 package
-version bump, merge, tag, push, artifacts, and GitHub prerelease remain a
-separate release-preparation/publication task.
+is required. Release preparation identifies the package as `2.0.0b2` and
+the public version as `v2.0.0-beta2`; final artifacts, merge, tag, push, and
+GitHub prerelease publication remain pending until the release-workflow
+gates pass.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 

@@ -7,6 +7,11 @@ branch lineage). It is not a roadmap duplicate — see `docs/ROADMAP.md` for
 shipped-milestone history and `docs/V2_0_BETA1_PLAN.md` for the prior
 milestone this one builds on.
 
+**Release status: implementation and qualification complete; publication
+pending.** Release preparation identifies the package as `2.0.0b2` and
+the public prerelease as `v2.0.0-beta2`; final artifacts, tag, and GitHub
+publication are handled by the separate release workflow.
+
 Beta1 froze Ruleset v2's gameplay semantics and integrated it into
 supported execution/product boundaries, but deliberately left `agents
 evaluate` v1-only, with no scheduler-order/placement/seed balancing and no
@@ -190,7 +195,7 @@ outcome or statistic used by that assessment changed.
 
 ## Phase 5 — Integrated Beta2 Qualification
 
-**Status: complete; qualified for release, not published.** See
+**Status: complete; qualified for release, publication pending.** See
 `docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md` for the evidence and
 release decision. The integrated pass re-established v4/v5/v6 identity,
 resume, verification, comparison, self-play, generic-N, pairwise, history,
@@ -201,10 +206,10 @@ or release blocker was required or found. Phase 4's documented concerns
 of the seat-bias hypothesis, and further kingmaking/non-transitivity
 search) carry forward as future research rather than release blockers.
 
-**Release decision: QUALIFIED FOR V2.0.0-BETA2 RELEASE.** Publication,
-including the package-version update, final release-artifact build, merge,
-tag, push, and GitHub prerelease, remains a separate release-preparation
-task.
+**Release decision: QUALIFIED FOR V2.0.0-BETA2 RELEASE.** The release-only
+version and documentation preparation is complete. Final artifact builds,
+merge, tag, push, and GitHub prerelease publication remain pending until
+their release-workflow gates pass.
 
 ---
 

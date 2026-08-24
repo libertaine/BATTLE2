@@ -2,9 +2,9 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
-## [Unreleased]
+## [2.0.0-beta2] - 2026-08-23
 
-### Beta2 integrated qualification (Phase 5)
+### Integrated qualification
 
 - Qualified the combined v1/v4, Ruleset-v2 pairwise/v5, and Ruleset-v2
   group/v6 evaluation surfaces for `v2.0.0-beta2` release preparation;
@@ -17,20 +17,17 @@ This changelog records notable user- and developer-visible changes to Bytefray.
   workflows through evaluation discovery/show/JSON/deep verification and
   identical-run comparison; invalid group/methodology combinations fail
   explicitly with exit 2.
-- Built `bytefray-2.0.0b1-py3-none-any.whl` through the canonical isolated
-  build, validated its contents, installed it into a fresh environment
-  outside the checkout, and completed/deep-verified an installed 18-cell
-  group evaluation. The Beta2 version bump remains release-preparation
-  scope.
+- Validated source and isolated-package workflows outside the checkout,
+  including an installed 18-cell group evaluation and deep verification.
 - Final qualification: 1,893 collected; 1,877 passed; 14 skipped; 2
   deselected; zero failures/errors; Ruff clean; mypy clean for 73 engine
   and 12 client files; diff checks clean. No release blocker remains and
   Phase 4's strategic corpus does not require rerunning.
-- Release decision: **qualified for v2.0.0-beta2 release, not published**.
+- Release decision: **qualified for v2.0.0-beta2 release**.
   See
   [docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md](docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md).
 
-### Beta2 pre-qualification remediation (Phase 4.1)
+### Verification and compatibility hardening
 
 - Deep verification now supports healthy N-entrant group cells (including
   candidates outside seat A and N=4) while retaining pairwise checks.
@@ -52,7 +49,7 @@ This changelog records notable user- and developer-visible changes to Bytefray.
   the documented pre-Beta2 tournament resume consequence is a fail-closed
   `resumed_result_mismatch` followed by retry/re-execution.
 
-### Ruleset-v2 1v1 evaluation methodology (v2.0.0-beta2 Phase 1)
+### Ruleset-v2 pairwise evaluation methodology
 
 `bytefray agents evaluate` gains an explicit `--ruleset {bytefray-rules-1,
 bytefray-rules-2}` selector. Omitted (or explicit `bytefray-rules-1`) runs
@@ -82,7 +79,7 @@ identity version 4 exactly as before. See
 [docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md)
 for the full design record.
 
-### Multi-entrant evaluation model (v2.0.0-beta2 Phase 2)
+### Multi-entrant evaluation
 
 `bytefray agents evaluate` gains `--group`: fields the candidate together
 with every `--opponents` entry as one N-entrant roster per cell (standard
@@ -91,11 +88,9 @@ one-cell-per-opponent matrix. Requires `--ruleset bytefray-rules-2` and at
 least two `--opponents`; every non-`--group` evaluation is byte-for-byte
 unaffected. Reuses the engine's own already-N-entrant-generic winner
 resolution unchanged -- no new winner-resolution logic was written. Uses a
-third additive schema/identity version (6), leaving v1 (4) and Phase 1's
-1v1 v2 (5) unchanged. Multi-entrant behavior/capture aggregate analysis is
-explicitly deferred (both the live CLI and `evaluations show` disclose
-this rather than compute misleading per-opponent metrics for a 3+ entrant
-match).
+third additive schema/identity version (6), leaving v1 (4) and pairwise v2
+(5) unchanged. Group artifacts feed the symmetric analysis described
+below rather than misleading pairwise per-opponent metrics.
 
 Also fixes a Phase 1 defect discovered during this phase's own
 characterization: `evaluations show`/`list`/`compare`'s artifact-health
@@ -107,7 +102,7 @@ Phase 1's own identity payload) -- a verification bug only; no persisted
 [docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md)
 for the full design record.
 
-### Multi-entrant analysis & strategic metrics (v2.0.0-beta2 Phase 3)
+### Symmetric group strategic analysis
 
 Replaces Phase 2's "deferred" multi-entrant analysis placeholder with a
 new, entrant-symmetric analysis module (`battle_engine.
@@ -144,6 +139,42 @@ are unaffected. See
 [docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md](docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md)
 for the full design record, including a direct re-examination of Phase 2's
 own "Core Tracker" win-rate finding against a larger sample.
+
+### Strategic characterization
+
+- An 11-roster, 990-cell pre-registered corpus found that Claimer's earlier
+  apparent dominance is strongly roster-dependent rather than universal;
+  dedicated search offense remains an effective counter-strategy.
+- A reproducible kingmaking-like effect and pairwise-versus-group
+  divergence demonstrate why group win rate is not a complete strategic
+  descriptor.
+- A real global seat bias was measured, while exhaustive permutation keeps
+  each entrant's aggregate exposure balanced across seats.
+- No Ruleset, scheduler, scoring, or strategic-agent behavior was changed.
+  The release assessment remains `PROCEED WITH DOCUMENTED CONCERNS`, not a
+  claim that multi-entrant strategy is solved or fully balanced.
+
+### Compatibility and beta limitations
+
+- Methodology identity domains are explicit and unchanged: historical v1
+  uses schema/identity v4, Ruleset-v2 pairwise uses v5, and Ruleset-v2 group
+  uses v6. Historical v1 schedule identity was restored exactly; no schema
+  bump occurred during review remediation or integrated qualification.
+- Canonical Python match identity now includes non-zero entrant start
+  positions. Historical non-zero-start match/result/replay IDs can differ,
+  and an old tournament resumed across this boundary can fail closed with
+  `resumed_result_mismatch` and require retry/re-execution. Historical
+  zero-start identity remains compatible.
+- Self-play execution and raw physical-seat evidence are supported, while
+  the stored candidate `EvaluationCell.outcome` retains first-occurrence
+  semantics; presentation discloses multiplicity and per-instance rates.
+- Group evaluation identity can depend on opponent CLI ordering; exhaustive
+  seat permutations scale factorially; legacy pairwise sentinels remain in
+  group effective conditions; and aggregate-only capture timing stays
+  conservative when the exact death tick cannot be proven.
+- Large-N sampling/rotation, central identity-payload construction, and
+  currently insignificant O(n²) unattributed-interaction processing remain
+  future work rather than beta release blockers.
 
 ## [2.0.0-beta1] - 2026-08-20
 
