@@ -700,15 +700,15 @@ for the published assets and notes. Next planned milestone: **v2.0.0-beta2
 
 ## v2.0.0-beta2 — Evaluation & Multi-Entrant Methodology
 
-**Status: implementation and qualification complete; publication pending.**
-Purpose: Ruleset-v2 evaluation methodology (order/placement/seed balancing
+**Status: shipped.** `v2.0.0-beta2` is tagged and published as a GitHub
+prerelease. Purpose: Ruleset-v2 evaluation methodology
+(order/placement/seed balancing
 per alpha.11's own requirements), scheduler/order balancing tooling,
 multi-entrant evaluation/productization decisions, and core/capture metrics
 as first-class evaluation outputs. See
 [V2_0_BETA2_PLAN.md](V2_0_BETA2_PLAN.md) for the phase breakdown.
 
-**Phase 1 (Ruleset-v2 1v1 evaluation methodology) is implementation-
-complete** on `v2.0-beta2-development`, not yet released — see
+**Phase 1 (Ruleset-v2 1v1 evaluation methodology) is complete** — see
 [V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md).
 `agents evaluate` gains an explicit `--ruleset {bytefray-rules-1,
 bytefray-rules-2}` selector; the historical v1 methodology is preserved
@@ -720,8 +720,7 @@ score/behavior. Every gameplay-relevant dimension (Ruleset, order,
 placement, seed, ticks) now enters canonical evaluation/schedule identity;
 resume and comparison fail closed across any methodology change.
 
-**Phase 2 (multi-entrant evaluation model) is implementation-complete** on
-`v2.0-beta2-development`, not yet released — see
+**Phase 2 (multi-entrant evaluation model) is complete** — see
 [V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md).
 A generic entrant/seat/permutation/layout model replaces 1v1-only
 vocabulary where a true seat model is needed, without touching Phase 1's
@@ -737,8 +736,7 @@ rehash check) was found and fixed during this phase's own characterization.
 Multi-entrant behavior/capture aggregate analysis remains explicitly
 deferred to Phase 3.
 
-**Phase 3 (multi-entrant analysis & strategic metrics) is implementation-
-complete** on `v2.0-beta2-development`, not yet released — see
+**Phase 3 (multi-entrant analysis & strategic metrics) is complete** — see
 [V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md](V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md).
 A new, entrant-symmetric analysis module (`evaluation_group_analysis.py`)
 replaces the Phase 2 "deferred" placeholder in both the live CLI and
@@ -757,8 +755,7 @@ against three 3-entrant, 5-seed rosters directly re-examined Phase 2's own
 "Core Tracker 2/54" finding, showing it reflected sample-size instability
 rather than a fixed rate.
 
-**Phase 4 (strategic characterization) is implementation-complete** on
-`v2.0-beta2-development`, not yet released — see
+**Phase 4 (strategic characterization) is complete** — see
 [V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md).
 An 11-roster, 990-cell pre-registered corpus pointed Phase 3's analysis
 instrument at real strategic questions. Headline finding: Claimer's
@@ -777,8 +774,7 @@ methodology. No engine/scheduler/scoring/agent code was changed.
 **Strategic assessment: proceed with documented concerns** — no Ruleset
 revision recommended before Beta2 qualification.
 
-**Phase 4.1 (pre-qualification review remediation) is complete** on
-`v2.0-beta2-development`, not yet released — see
+**Phase 4.1 (pre-qualification review remediation) is complete** — see
 [V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md](V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md).
 It closes five high-severity review findings, restores historical v1
 schedule resume identity, documents the deliberate non-zero-start Python
@@ -795,10 +791,13 @@ group workflows passed; N=3/N=4, self-play, verification, comparison, and
 worker determinism passed; and the canonical qualification finished with
 1,877 passed, 14 skipped, 2 deselected, clean Ruff, clean engine/client
 mypy, and clean diff checks. No release blocker or strategic-corpus rerun
-is required. Release preparation identifies the package as `2.0.0b2` and
-the public version as `v2.0.0-beta2`; final artifacts, merge, tag, push, and
-GitHub prerelease publication remain pending until the release-workflow
-gates pass.
+is required. Release preparation and publication qualified the wheel,
+source distribution, portable Windows build, and Windows installer (full
+install/upgrade/uninstall lifecycle) against release commit `b580ad2`; the
+annotated `v2.0.0-beta2` tag and GitHub prerelease publish that exact commit.
+See the
+[v2.0.0-beta2 release](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta2)
+for the published assets and notes.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 

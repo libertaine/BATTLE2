@@ -70,7 +70,7 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 1.4.1 | Designer Agent-Selection Fix | Released — fixes Simple and Advanced match launch when an agent's display name differs from its canonical discovery ID, with realistic end-to-end GUI regression coverage. No gameplay or stable-contract change. |
 | 1.5.0 | Architecture Evolution Readiness | Released — a fail-closed Ruleset-v1 policy/dispatch seam, one shared sequential-quota scheduler, centralized Ruleset-v1 termination resolution, and entrant identity separated from resolved match inputs and mutable execution state, all directly verified equivalent to v1.4.1 Ruleset-v1 behavior. Still exactly one execution state per entrant; no gameplay, Agent API, Ruleset ID, or schema change. |
 | 1.6.0 | Evaluation Scale & Analysis | Released — bounded local parallel evaluation (`--workers N`) via a pool of long-lived worker subprocesses, reusable/reproducible evaluation presets, Wilson-interval and exact paired significance analysis, and derived behavior-profile analytics (survival, write activity, territory, kill interaction), all fully derived from existing evaluation artifacts with worker count and preset identity confirmed not to affect `evaluation_id` or any per-cell result. Larger experimental matrices and replay indexing remain deferred, not yet warranted by evidence. |
-| 2.0.0-beta2 | Evaluation & Multi-Entrant Methodology | Qualification complete; publication pending — Ruleset-v2 evaluation now balances pairwise placement/order/seed conditions and supports generic multi-entrant group matrices, symmetric per-entrant strategic analysis, deep verification, comparison, self-play disclosure, and deterministic resume across explicit v4/v5/v6 methodology identities. Ruleset v1, Ruleset-v2 gameplay, and Agent API v1 are unchanged. See [docs/ROADMAP.md](docs/ROADMAP.md). |
+| 2.0.0-beta2 | Evaluation & Multi-Entrant Methodology | Released (beta) — Ruleset-v2 evaluation now balances pairwise placement/order/seed conditions and supports generic multi-entrant group matrices, symmetric per-entrant strategic analysis, deep verification, comparison, self-play disclosure, and deterministic resume across explicit v4/v5/v6 methodology identities. Ruleset v1, Ruleset-v2 gameplay, and Agent API v1 are unchanged. Published as a prerelease; not yet the stable 2.0 line. See [docs/ROADMAP.md](docs/ROADMAP.md). |
 | 2.x | Further Gameplay / Rules Research | Research boundary beyond the Ruleset-v2 program above — possible multi-unit entrants, replication, communication, richer attack/resource semantics, and Agent API v2; no detailed design commitment yet. |
 
 **Future plans:** substantial ideas are deliberately kept behind explicit
@@ -130,23 +130,18 @@ pip install -e ".[designer]" # optional PySide6 designer
 **Stable release:** [Bytefray v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0).
 Earlier downloads are historical and have been superseded.
 
-**Beta prerelease:** `v2.0.0-beta2` (Evaluation & Multi-Entrant
-Methodology) — publication pending; see
-[CHANGELOG.md](CHANGELOG.md#200-beta2---2026-08-23) for what's new. It is
-not a replacement for the stable v1.6.0 downloads below. Once published,
-its downloads will be listed on the
-[Releases page](https://github.com/libertaine/Bytefray/releases), tagged
-`v2.0.0-beta2` and marked as a prerelease.
-
-Previous beta downloads (`v2.0.0-beta1`):
+**Beta prerelease:** [Bytefray v2.0.0-beta2](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta2)
+(Evaluation & Multi-Entrant Methodology) — see
+[CHANGELOG.md](CHANGELOG.md#200-beta2---2026-08-23) for what's new. It is a
+prerelease, not a replacement for the stable v1.6.0 downloads below.
 
 | Type | File | Description |
 |------|------|--------------|
-| 🧰 **Windows installer** | [Bytefray-Setup-2.0.0-beta1.exe](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta1/Bytefray-Setup-2.0.0-beta1.exe) | Installs under `C:\Program Files\Bytefray` |
-| 💼 **Portable Windows applications** | [bytefray-2.0.0-beta1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta1/bytefray-2.0.0-beta1-windows.zip) | Complete onedir layouts for all four executables |
-| 🐍 **Python wheel** | [bytefray-2.0.0b1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta1/bytefray-2.0.0b1-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
-| 📦 **Source archive** | [bytefray-2.0.0b1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta1/bytefray-2.0.0b1.tar.gz) | Source distribution for Python/package workflows |
-| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta1/SHA256SUMS.txt) | SHA-256 values for the beta1 assets above |
+| 🧰 **Windows installer** | [Bytefray-Setup-2.0.0-beta2.exe](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta2/Bytefray-Setup-2.0.0-beta2.exe) | Installs under `C:\Program Files\Bytefray` |
+| 💼 **Portable Windows applications** | [bytefray-2.0.0-beta2-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta2/bytefray-2.0.0-beta2-windows.zip) | Complete onedir layouts for all four executables |
+| 🐍 **Python wheel** | [bytefray-2.0.0b2-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta2/bytefray-2.0.0b2-py3-none-any.whl) | Pure Python 3.10–3.13 package; does not contain pMARS |
+| 📦 **Source archive** | [bytefray-2.0.0b2.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta2/bytefray-2.0.0b2.tar.gz) | Source distribution for Python/package workflows |
+| 🔐 **Checksums** | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta2/SHA256SUMS.txt) | SHA-256 values for the beta2 assets above |
 
 Choose one of the stable-release options below:
 
