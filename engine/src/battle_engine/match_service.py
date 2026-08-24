@@ -26,6 +26,7 @@ from battle_engine.python_runtime import (
     PythonRuntimeResult,
     RuntimeDiagnostic,
     TerminationReason,
+    core_addresses,
     derive_agent_seed,
 )
 from battle_engine.replay import (
@@ -45,7 +46,11 @@ from battle_engine.result_model import (
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.ruleset_policy import RulesetPolicy, resolve_ruleset_policy
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ID,
+    RulesetPolicy,
+    resolve_ruleset_policy,
+)
 from battle_engine.supervised_runtime import SupervisedPythonEntrantController
 from battle_engine.telemetry import JSONLSink, NullSummarySink
 
@@ -255,6 +260,73 @@ class RulesetRuntimeUnsupportedError(ValueError):
             stage="configuration",
             message=message,
         )
+
+
+class OverlappingCoreError(ValueError):
+    """Two or more entrants' permanent Ruleset-v2 vulnerable cores overlap.
+
+    RC2's engine-side fail-closed guard for v2.0.0-rc1's release-blocking
+    defect: under the permanent identity (``bytefray-rules-2`` only -- never
+    the historical ``bytefray-rules-2-alpha1``/``-alpha11`` identities, whose
+    pre-existing unguarded execution semantics this deliberately leaves
+    untouched), every entrant's ``CORE_SIZE``-wide core window
+    (``python_runtime.core_addresses``, using ordinary modular arena
+    wraparound) must be disjoint from every other entrant's. Raised by
+    ``NativeMatchService.run`` before any entrant executes and before any
+    replay/result artifact is written, so this is the one authoritative gate
+    every caller -- CLI, Designer, tests, and any future programmatic
+    ``MatchRequest`` construction -- passes through, regardless of whether
+    the overlapping starts arrived explicitly or via placement defaults.
+    """
+
+    code = "ruleset_v2_overlapping_cores"
+
+    def __init__(self, ruleset_id: str, overlapping_pairs: Iterable[tuple[str, str]]):
+        pairs = tuple(overlapping_pairs)
+        described = ", ".join(f"{a} and {b}" for a, b in pairs)
+        message = (
+            f"Ruleset {ruleset_id!r} requires non-overlapping entrant cores; "
+            f"entrants {described} overlap at their configured starts."
+        )
+        super().__init__(message)
+        self.ruleset_id = ruleset_id
+        self.overlapping_pairs = pairs
+        self.diagnostic = RuntimeDiagnostic(
+            code=self.code,
+            stage="configuration",
+            message=message,
+        )
+
+
+def _validate_v2_core_placement(
+    ruleset_policy: RulesetPolicy,
+    entrants: tuple[MatchEntrant, ...],
+    arena_size: int,
+) -> None:
+    """Fail closed before execution if permanent Ruleset-v2 cores overlap.
+
+    Scoped to exactly ``BYTEFRAY_RULESET_V2_ID`` -- the permanent product
+    identity this RC2 guard exists to protect (see :class:`OverlappingCoreError`).
+    Every other Ruleset identity, including the historical vulnerable-core
+    alpha identities, is unaffected: this function returns immediately for
+    them, exactly as it did not exist before this fix.
+    """
+
+    if ruleset_policy.ruleset_id != BYTEFRAY_RULESET_V2_ID:
+        return
+
+    windows = [
+        (entrant.agent_id, frozenset(core_addresses(entrant.start, arena_size)))
+        for entrant in entrants
+    ]
+    overlapping_pairs = [
+        (agent_a, agent_b)
+        for index, (agent_a, cells_a) in enumerate(windows)
+        for agent_b, cells_b in windows[index + 1 :]
+        if cells_a & cells_b
+    ]
+    if overlapping_pairs:
+        raise OverlappingCoreError(ruleset_policy.ruleset_id, overlapping_pairs)
 
 
 def _resolve_ruleset_id(request: MatchRequest) -> str:
@@ -976,6 +1048,16 @@ class NativeMatchService:
         if unsupported_kinds:
             raise RulesetRuntimeUnsupportedError(ruleset_policy.ruleset_id, unsupported_kinds)
 
+        # RC2 fail-closed guard (v2.0.0-rc1's release-blocking defect): an
+        # invalid permanent-Ruleset-v2 request whose entrants' vulnerable
+        # cores overlap must never silently seed core ownership in entrant
+        # order and eliminate an earlier entrant before its first action.
+        # Fires here -- after composition/runtime-kind validation, before
+        # either runtime is invoked and before any replay/result artifact
+        # exists at ``replay_path`` -- for every caller, not only ones that
+        # went through CLI/Designer default-placement resolution.
+        _validate_v2_core_placement(ruleset_policy, request.entrants, request.config.arena_size)
+
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
         if "python" in kinds:
@@ -1001,6 +1083,7 @@ __all__ = [
     "NativeAgentResult",
     "NativeMatchResult",
     "NativeMatchService",
+    "OverlappingCoreError",
     "PythonMatchExecutionError",
     "RulesetRuntimeUnsupportedError",
     "RuntimeDiagnostic",

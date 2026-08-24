@@ -73,6 +73,7 @@ from battle_engine.match_service import (
     canonical_match_id,
 )
 from battle_engine.paths import contained_path, get_data_root
+from battle_engine.placement import spread_seat_starts
 from battle_engine.project_info import get_project_info
 from battle_engine.replay import ReplayHeader, iter_replay
 from battle_engine.result_model import (
@@ -445,7 +446,7 @@ def standard_layouts(entrant_count: int, arena_size: int | None = None) -> tuple
     gap = size // entrant_count
     half_gap = gap // 2
     return (
-        EvaluationLayout("spread", tuple((i * gap) % size for i in range(entrant_count))),
+        EvaluationLayout("spread", spread_seat_starts(entrant_count, size)),
         EvaluationLayout(
             "spread-shifted", tuple((i * gap + half_gap) % size for i in range(entrant_count))
         ),

@@ -210,6 +210,12 @@ def test_resolve_agent_applies_per_agent_env_json_to_builtin_construction(
     monkeypatch.delenv("BYTEFRAY_AGENT_A_PARAMS_JSON", raising=False)
 
     args = parse_args(["--a-type", "writer", "--b-type", "writer"])
+    # ``_resolve_agent`` requires an already-resolved (never ``None``) start;
+    # ``main()`` normally resolves it via ``resolve_direct_match_starts``
+    # before calling ``_resolve_agent`` -- this test calls it directly, so it
+    # must resolve the omitted start itself (Ruleset v1's omitted-start
+    # default remains 0, unaffected by this test's builtin-params focus).
+    args.a_start = 0
     common_kwargs = {"offset": 1, "byte": 1}
 
     baseline_code, name, start, python_spec = _resolve_agent(

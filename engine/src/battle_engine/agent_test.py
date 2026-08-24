@@ -50,6 +50,7 @@ from battle_engine.match_service import (
     UnsupportedMatchCompositionError,
 )
 from battle_engine.paths import get_data_root, get_resource_root
+from battle_engine.placement import resolve_direct_match_starts
 from battle_engine.python_runtime import (
     PythonEntrantInitializationError,
     RuntimeDiagnostic,
@@ -236,22 +237,33 @@ def test_agent(
     resource_root: Path | None = None,
     run_dir: Path | None = None,
     ruleset_id: str | None = None,
-    agent_start: int = 0,
-    opponent_start: int = 0,
+    agent_start: int | None = None,
+    opponent_start: int | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     """Run one short, real development match for ``agent_id``.
 
     ``ruleset_id``/``agent_start``/``opponent_start`` are v2.0.0-alpha.1's
     additive selectors (see ``docs/V2_0_ALPHA_ARCHITECTURE.md`` Sec 6):
     ``ruleset_id`` defaults to ``None`` (``MatchRequest``'s own default,
-    resolving to the frozen Ruleset v1 identity), and both start addresses
-    default to ``0`` -- the exact literal values every existing caller
-    already passes today via the hardcoded
-    ``MatchEntrant.python(..., 0, ...)`` construction this replaces. Every
-    existing caller leaves all three at their defaults and sees
-    byte-for-byte unchanged behavior, including both entrants still
-    starting at the identical shared address ``0``; only alpha-experiment
-    callers (this module's own evaluation tooling) pass distinct values.
+    resolving to the frozen Ruleset v1 identity). Both start addresses
+    default to ``None`` (omitted), resolved via
+    :func:`battle_engine.placement.resolve_direct_match_starts` exactly as
+    ``bytefray run``'s own CLI resolves omitted ``--a-start``/``--b-start``
+    (v2.0.0-rc2; see that function's docstring): under Ruleset v1 an
+    omitted start still resolves to ``0`` -- the exact literal value every
+    existing caller already saw via the historical hardcoded
+    ``MatchEntrant.python(..., 0, ...)`` construction this replaces, so
+    every caller that leaves both at their defaults under Ruleset v1 sees
+    byte-for-byte unchanged behavior. Under the permanent Ruleset v2
+    identity, an omitted start instead resolves to a deterministic,
+    non-overlapping two-seat spread layout -- v2.0.0-rc1 shipped this
+    function with a same-address ``0``/``0`` default that collapsed both
+    entrants' vulnerable cores onto one window under Ruleset v2, exactly
+    the release-blocking defect ``bytefray run`` had; this is that same fix
+    applied to this function's own independent default. This module's own
+    evaluation tooling (``battle_engine.agent_evaluation``) always passes
+    explicit, already-non-overlapping start values for both parameters and
+    is unaffected either way.
 
     Returns a :class:`DevelopmentTestOutcome` for any completed match
     (win/loss/tie/forfeit/death/tick-limit -- all exit ``0`` at the CLI
@@ -320,8 +332,8 @@ def _test_agent(
     resource_root: Path | None,
     run_dir: Path | None = None,
     ruleset_id: str | None = None,
-    agent_start: int = 0,
-    opponent_start: int = 0,
+    agent_start: int | None = None,
+    opponent_start: int | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = resource_root or get_resource_root()
@@ -374,11 +386,22 @@ def _test_agent(
 
     replay_path = run_dir / "replay.jsonl"
     trace_path = (run_dir / "trace.jsonl") if trace else None
+    match_config = Config(seed=effective_seed)
+    effective_agent_start, effective_opponent_start = resolve_direct_match_starts(
+        ruleset_id=ruleset_id,
+        arena_size=match_config.arena_size,
+        entrant_count=2,
+        supplied_starts=[agent_start, opponent_start],
+    )
     request = MatchRequest(
-        config=Config(seed=effective_seed),
+        config=match_config,
         entrants=(
-            MatchEntrant.python(TESTED_AGENT_SLOT, agent_id, agent_start, tested_spec),
-            MatchEntrant.python(OPPONENT_SLOT, opponent_name, opponent_start, opponent_spec),
+            MatchEntrant.python(
+                TESTED_AGENT_SLOT, agent_id, effective_agent_start, tested_spec
+            ),
+            MatchEntrant.python(
+                OPPONENT_SLOT, opponent_name, effective_opponent_start, opponent_spec
+            ),
         ),
         max_ticks=effective_ticks,
         replay_path=replay_path,

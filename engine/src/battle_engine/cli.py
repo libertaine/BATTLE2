@@ -15,11 +15,13 @@ from battle_engine.match_service import (
     MatchEntrant,
     MatchRequest,
     NativeMatchService,
+    OverlappingCoreError,
     PythonMatchExecutionError,
     RulesetRuntimeUnsupportedError,
     UnsupportedMatchCompositionError,
 )
 from battle_engine.paths import get_data_root
+from battle_engine.placement import resolve_direct_match_starts
 from battle_engine.pmars import PMarsError, run_pmars
 from battle_engine.python_runtime import PythonEntrantInitializationError
 from battle_engine.result_model import ResultEnvelope, stable_id, write_json_atomic
@@ -236,10 +238,14 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         help="List discovered agents under /agents and exit",
     )
 
-    # Entry positions
-    p.add_argument("--a-start", type=int, default=0)
-    p.add_argument("--b-start", type=int, default=0)
-    p.add_argument("--c-start", type=int, default=0)
+    # Entry positions. ``None`` means the caller omitted the flag -- distinct
+    # from an explicit ``0`` -- so effective placement can be resolved
+    # per-Ruleset (see ``battle_engine.placement.resolve_direct_match_starts``,
+    # called in ``main()`` before agents are resolved) instead of always
+    # defaulting to address 0.
+    p.add_argument("--a-start", type=int, default=None)
+    p.add_argument("--b-start", type=int, default=None)
+    p.add_argument("--c-start", type=int, default=None)
 
     # Common agent params
     p.add_argument(
@@ -599,6 +605,30 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     env_spec, spec_dir = _load_agents_spec_from_env()
 
+    # Resolve effective start addresses once, before any agent is built --
+    # builtin construction bakes ``start`` into the agent's own bytecode
+    # (``build_agent``), so the resolved value must be in place before
+    # ``_resolve_agent`` runs, not applied to its return value after the
+    # fact. ``args.c_start`` only participates when a C entrant was actually
+    # requested; an unused, un-omitted ``--c-start`` is otherwise inert (C
+    # never becomes a match entrant) and is left as the caller supplied it.
+    c_requested = bool(args.c_type) or bool(args.c_blob) or ("C" in env_spec)
+    entrant_count = 3 if c_requested else 2
+    supplied_starts = [args.a_start, args.b_start]
+    if c_requested:
+        supplied_starts.append(args.c_start)
+    resolved_starts = resolve_direct_match_starts(
+        ruleset_id=args.ruleset,
+        arena_size=cfg.arena_size,
+        entrant_count=entrant_count,
+        supplied_starts=supplied_starts,
+    )
+    args.a_start, args.b_start = resolved_starts[0], resolved_starts[1]
+    if c_requested:
+        args.c_start = resolved_starts[2]
+    elif args.c_start is None:
+        args.c_start = 0
+
     codeA, nameA, startA, pythonA = _resolve_agent(
         "A", env_spec, spec_dir, args, cfg, common_kwargs
     )
@@ -685,6 +715,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     except (
         UnsupportedMatchCompositionError,
         RulesetRuntimeUnsupportedError,
+        OverlappingCoreError,
         PythonEntrantInitializationError,
         PythonMatchExecutionError,
     ) as exc:
