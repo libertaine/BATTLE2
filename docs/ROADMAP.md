@@ -700,10 +700,11 @@ for the published assets and notes. Next planned milestone: **v2.0.0-beta2
 
 ## v2.0.0-beta2 — Evaluation & Multi-Entrant Methodology
 
-**Status: in development.** Purpose: Ruleset-v2 evaluation methodology
-(order/placement/seed balancing per alpha.11's own requirements),
-scheduler/order balancing tooling, multi-entrant evaluation/productization
-decisions, and core/capture metrics as first-class evaluation outputs. See
+**Status: qualified for release, not yet published.** Purpose: Ruleset-v2
+evaluation methodology (order/placement/seed balancing per alpha.11's own
+requirements), scheduler/order balancing tooling, multi-entrant
+evaluation/productization decisions, and core/capture metrics as
+first-class evaluation outputs. See
 [V2_0_BETA2_PLAN.md](V2_0_BETA2_PLAN.md) for the phase breakdown.
 
 **Phase 1 (Ruleset-v2 1v1 evaluation methodology) is implementation-
@@ -783,7 +784,20 @@ It closes five high-severity review findings, restores historical v1
 schedule resume identity, documents the deliberate non-zero-start Python
 match-identity transition, makes group verification/comparison/self-play
 presentation truthful, and leaves stored v4/v5/v6 identity generations
-unchanged. Phase 5 (integrated qualification) remains planned.
+unchanged.
+
+**Phase 5 (integrated qualification) is complete** on
+`v2.0-beta2-development` — see
+[V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md](V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md).
+Historical v1/v4, Ruleset-v2 pairwise/v5, and Ruleset-v2 group/v6
+identity and resume passed; source-tree CLI/history and isolated-wheel
+group workflows passed; N=3/N=4, self-play, verification, comparison, and
+worker determinism passed; and the canonical qualification finished with
+1,877 passed, 14 skipped, 2 deselected, clean Ruff, clean engine/client
+mypy, and clean diff checks. No release blocker or strategic-corpus rerun
+is required. This is a qualification decision only: the Beta2 package
+version bump, merge, tag, push, artifacts, and GitHub prerelease remain a
+separate release-preparation/publication task.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 

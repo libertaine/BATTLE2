@@ -4,6 +4,32 @@ This changelog records notable user- and developer-visible changes to Bytefray.
 
 ## [Unreleased]
 
+### Beta2 integrated qualification (Phase 5)
+
+- Qualified the combined v1/v4, Ruleset-v2 pairwise/v5, and Ruleset-v2
+  group/v6 evaluation surfaces for `v2.0.0-beta2` release preparation;
+  no schema/identity bump or production behavior change was needed.
+- Re-established all five Phase 4.1 high-severity regression gates,
+  historical v1 golden/resume compatibility, N=3/N=4 verification and
+  analysis, self-play disclosure, group comparison content protection,
+  interruption resume, and worker determinism.
+- Exercised real source-tree v1, v2 pairwise, and 18-cell v2 group CLI
+  workflows through evaluation discovery/show/JSON/deep verification and
+  identical-run comparison; invalid group/methodology combinations fail
+  explicitly with exit 2.
+- Built `bytefray-2.0.0b1-py3-none-any.whl` through the canonical isolated
+  build, validated its contents, installed it into a fresh environment
+  outside the checkout, and completed/deep-verified an installed 18-cell
+  group evaluation. The Beta2 version bump remains release-preparation
+  scope.
+- Final qualification: 1,893 collected; 1,877 passed; 14 skipped; 2
+  deselected; zero failures/errors; Ruff clean; mypy clean for 73 engine
+  and 12 client files; diff checks clean. No release blocker remains and
+  Phase 4's strategic corpus does not require rerunning.
+- Release decision: **qualified for v2.0.0-beta2 release, not published**.
+  See
+  [docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md](docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md).
+
 ### Beta2 pre-qualification remediation (Phase 4.1)
 
 - Deep verification now supports healthy N-entrant group cells (including

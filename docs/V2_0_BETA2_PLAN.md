@@ -174,7 +174,7 @@ Ruleset revision is recommended before Beta2 qualification.
 
 ## Phase 4.1 — Pre-Qualification Review Remediation
 
-**Status: complete, ready to enter Phase 5.** See
+**Status: complete.** See
 `docs/V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md` for the
 recovery record and qualification evidence. An independent review found
 five high-severity compatibility/correctness gaps after Phase 4. Phase 4.1
@@ -190,15 +190,21 @@ outcome or statistic used by that assessment changed.
 
 ## Phase 5 — Integrated Beta2 Qualification
 
-**Status: planned, not started.** Purpose: an integrated regression/
-qualification pass across every Beta2 phase together, mirroring Beta1's
-own Phase 5 — full test suite, Ruff, mypy, `git diff --check`, a real
-source-tree smoke, and (if packaging modules changed) an isolated-wheel
-smoke. No new feature work belongs in this phase. Phase 4's own
-documented-but-non-blocking concerns (roster-composition effects at
-larger scale, a mechanistic confirmation of the seat-bias hypothesis,
-further kingmaking/non-transitivity search) carry forward as future
-research, not as Phase 5 requirements.
+**Status: complete; qualified for release, not published.** See
+`docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md` for the evidence and
+release decision. The integrated pass re-established v4/v5/v6 identity,
+resume, verification, comparison, self-play, generic-N, pairwise, history,
+and CLI behavior; built and installed an isolated wheel; and completed the
+full test, Ruff, mypy, client, and diff-check gates. No production change
+or release blocker was required or found. Phase 4's documented concerns
+(roster-composition effects at larger scale, a mechanistic confirmation
+of the seat-bias hypothesis, and further kingmaking/non-transitivity
+search) carry forward as future research rather than release blockers.
+
+**Release decision: QUALIFIED FOR V2.0.0-BETA2 RELEASE.** Publication,
+including the package-version update, final release-artifact build, merge,
+tag, push, and GitHub prerelease, remains a separate release-preparation
+task.
 
 ---
 
