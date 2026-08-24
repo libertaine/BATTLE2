@@ -83,7 +83,10 @@ def test_loader_rejects_source_symlink_that_escapes_agent_directory(tmp_path):
     outside.write_text("do_not_show = True\n", encoding="utf-8")
     directory = tmp_path / "agent"
     directory.mkdir()
-    (directory / "agent.py").symlink_to(outside)
+    try:
+        (directory / "agent.py").symlink_to(outside)
+    except OSError:
+        pytest.skip("Symlink creation is not permitted in this environment.")
 
     source = load_agent_source(_row(directory, agent_id="agent"))
 
