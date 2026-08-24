@@ -2,9 +2,25 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
-## [Unreleased]
+## [2.0.0-beta3] - 2026-08-24
 
-### Beta3 workflow integration
+### Replay Viewer presentation
+
+- The entrant HUD now adapts across pairwise, 3/4-entrant, and compact 5+
+  entrant replays with stable non-color badges and readable roster cards.
+- Ordinary window resizing preserves the outer window dimensions while the
+  arena retains integer scaling; compact/expanded help and authoritative
+  terminal-state presentation make playback state clearer.
+
+### Agent Designer presentation
+
+- A Bytefray identity header, clearer Quick Match hierarchy, and real
+  content-replacing ready/live output states make startup and match progress
+  easier to understand.
+- Existing square-icon resources and accessible text/status cues are reused;
+  the interface degrades safely when optional branding is unavailable.
+
+### Multi-entrant workflow integration
 
 - Agent Designer evaluation now offers explicit Pairwise and Ruleset-v2 Group
   modes. Group mode selects a Focus agent plus 3+ entrant roster and previews
@@ -16,6 +32,9 @@ This changelog records notable user- and developer-visible changes to Bytefray.
 - Canonical group replays remain actionable. Pairwise-only Agent Lab reruns are
   disabled for group cells with an explicit explanation. Pairwise v4/v5 and
   group v6 artifact/schema/identity behavior is unchanged.
+- The cross-platform historical v1 identity fixture is now byte-stable under
+  both LF and CRLF checkouts; pinned identity values and production behavior
+  are unchanged.
 
 ## [2.0.0-beta2] - 2026-08-23
 

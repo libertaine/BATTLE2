@@ -801,8 +801,8 @@ for the published assets and notes.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 
-**Status: Phase 4 multi-entrant product integration complete; Beta3 remains in
-development.** The
+**Status: implementation complete; release preparation and integrated Phase 5
+qualification in progress. Beta3 is not yet published.** The
 [Beta3 product-presentation plan](V2_0_BETA3_PLAN.md) audits the shipped
 Replay Viewer, Agent Designer, multi-entrant workflows, test seams, and GUI
 resource packaging. Phase 2 now ships responsive detailed/compact entrant HUD
@@ -814,9 +814,9 @@ ready/log state whose matchup text follows the current authoritative selections.
 Phase 4 adds explicit Pairwise/Group evaluation modes, a canonical
 Ruleset-v2 roster/layout/seat-assignment preview, group-aware live and history
 presentation, and safe drill-down capabilities without changing methodology or
-artifacts. Remaining Beta3 work is integrated historical-artifact, GUI, and
-packaging qualification.
-Beta3 is not yet released; no gameplay, Agent API, schema, evaluation identity,
+artifacts. Phase 5 is qualifying the exact `2.0.0b3` source, wheel, frozen,
+portable, installer, and historical-artifact release candidate before any
+merge, tag, or publication. No gameplay, Agent API, schema, evaluation identity,
 or methodology change is planned.
 
 ## v2.0.0-rc1 — Release Qualification

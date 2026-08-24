@@ -6,7 +6,8 @@ This is the working plan for `v2.0.0-beta3`, on
 `v2.0.0-beta2` release. The Beta2 release branch and annotated tag both point
 to `b580ad2de025443bcb3c55735bdc837fc668a825`.
 
-**Release status: Phase 4 complete; Beta3 not released.** This document began
+**Release status: implementation complete; release preparation and integrated
+Phase 5 qualification in progress; Beta3 not published.** This document began
 as the Phase-1 product audit and now records the completed Replay Viewer,
 Agent Designer presentation, and multi-entrant product-integration phases. The
 qualified Beta2 engine, evaluation methodology, artifacts, and user data remain
@@ -549,8 +550,10 @@ packaging/environment qualification.
 **Deliverable:** no new feature design; qualify source, isolated wheel, Windows
 frozen/portable/installer GUI workflows, Replay Viewer 2/3/4+ entrant cases,
 Designer empty/content lifecycle, pairwise and group evaluation/history, and
-historical artifacts. Decide release readiness from evidence. Tagging,
-publication, and release actions require a separate explicit authorization.
+historical artifacts. Decide release readiness from evidence. The active Phase
+5 release task is explicitly authorized to merge, tag, and publish only after
+every mandatory source, package, frozen, installer, and compatibility gate
+passes.
 
 This five-phase sequence is proportionate; no additional phase is justified by
 the current architecture.

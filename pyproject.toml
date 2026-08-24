@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bytefray"
-version = "2.0.0b2"
+version = "2.0.0b3"
 description = "Bytefray: a programmable-agent arena, inspired by Core War, with deterministic VM and Python agents."
 readme = "README.md"
 requires-python = ">=3.10"

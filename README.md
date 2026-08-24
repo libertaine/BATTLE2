@@ -71,6 +71,7 @@ substitute for the detailed [CHANGELOG](CHANGELOG.md).
 | 1.5.0 | Architecture Evolution Readiness | Released — a fail-closed Ruleset-v1 policy/dispatch seam, one shared sequential-quota scheduler, centralized Ruleset-v1 termination resolution, and entrant identity separated from resolved match inputs and mutable execution state, all directly verified equivalent to v1.4.1 Ruleset-v1 behavior. Still exactly one execution state per entrant; no gameplay, Agent API, Ruleset ID, or schema change. |
 | 1.6.0 | Evaluation Scale & Analysis | Released — bounded local parallel evaluation (`--workers N`) via a pool of long-lived worker subprocesses, reusable/reproducible evaluation presets, Wilson-interval and exact paired significance analysis, and derived behavior-profile analytics (survival, write activity, territory, kill interaction), all fully derived from existing evaluation artifacts with worker count and preset identity confirmed not to affect `evaluation_id` or any per-cell result. Larger experimental matrices and replay indexing remain deferred, not yet warranted by evidence. |
 | 2.0.0-beta2 | Evaluation & Multi-Entrant Methodology | Released (beta) — Ruleset-v2 evaluation now balances pairwise placement/order/seed conditions and supports generic multi-entrant group matrices, symmetric per-entrant strategic analysis, deep verification, comparison, self-play disclosure, and deterministic resume across explicit v4/v5/v6 methodology identities. Ruleset v1, Ruleset-v2 gameplay, and Agent API v1 are unchanged. Published as a prerelease; not yet the stable 2.0 line. See [docs/ROADMAP.md](docs/ROADMAP.md). |
+| 2.0.0-beta3 | Product Presentation & Workflow | Release preparation in progress — responsive multi-entrant Replay Viewer presentation, clearer Designer startup states, and complete Pairwise/Group evaluation configuration, preview, results, and history workflows. No gameplay, Ruleset, Agent API, schema, or evaluation-identity change. See [docs/ROADMAP.md](docs/ROADMAP.md). |
 | 2.x | Further Gameplay / Rules Research | Research boundary beyond the Ruleset-v2 program above — possible multi-unit entrants, replication, communication, richer attack/resource semantics, and Agent API v2; no detailed design commitment yet. |
 
 **Future plans:** substantial ideas are deliberately kept behind explicit
@@ -130,10 +131,15 @@ pip install -e ".[designer]" # optional PySide6 designer
 **Stable release:** [Bytefray v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0).
 Earlier downloads are historical and have been superseded.
 
-**Beta prerelease:** [Bytefray v2.0.0-beta2](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta2)
-(Evaluation & Multi-Entrant Methodology) — see
-[CHANGELOG.md](CHANGELOG.md#200-beta2---2026-08-23) for what's new. It is a
-prerelease, not a replacement for the stable v1.6.0 downloads below.
+**Beta prerelease:** `v2.0.0-beta3` (Product Presentation & Workflow) —
+publication pending; see
+[CHANGELOG.md](CHANGELOG.md#200-beta3---2026-08-24) for what's new. It is
+not a replacement for the stable v1.6.0 downloads below. Once published,
+its downloads will be listed on the
+[Releases page](https://github.com/libertaine/Bytefray/releases), tagged
+`v2.0.0-beta3` and marked as a prerelease.
+
+Previous beta downloads (`v2.0.0-beta2`):
 
 | Type | File | Description |
 |------|------|--------------|
