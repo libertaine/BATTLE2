@@ -114,6 +114,8 @@ def test_ruleset_flag_omitted_defaults_to_v1(tmp_path):
     assert result.returncode == 0, result.stderr
     canonical = json.loads((replay.parent / "result.json").read_text())
     assert canonical["ruleset_id"] == "bytefray-rules-1"
+    header = json.loads(replay.read_text().splitlines()[0])
+    assert header["ruleset_id"] == "bytefray-rules-1"
 
 
 def test_ruleset_flag_explicit_v1(tmp_path):
@@ -129,6 +131,8 @@ def test_ruleset_flag_explicit_v1(tmp_path):
     assert result.returncode == 0, result.stderr
     canonical = json.loads((replay.parent / "result.json").read_text())
     assert canonical["ruleset_id"] == "bytefray-rules-1"
+    header = json.loads(replay.read_text().splitlines()[0])
+    assert header["ruleset_id"] == "bytefray-rules-1"
 
 
 def test_ruleset_flag_explicit_v2_python_succeeds(tmp_path, monkeypatch):
@@ -147,6 +151,8 @@ def test_ruleset_flag_explicit_v2_python_succeeds(tmp_path, monkeypatch):
     assert result.returncode == 0, result.stderr
     canonical = json.loads((replay.parent / "result.json").read_text())
     assert canonical["ruleset_id"] == "bytefray-rules-2"
+    header = json.loads(replay.read_text().splitlines()[0])
+    assert header["ruleset_id"] == "bytefray-rules-2"
 
 
 def test_ruleset_flag_explicit_v2_vm_fails_cleanly_with_no_artifacts(tmp_path):

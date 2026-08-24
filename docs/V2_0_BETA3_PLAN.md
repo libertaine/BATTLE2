@@ -145,8 +145,11 @@ Current presentation limits:
 
 ### 3.3 Agent Designer and Ruleset-v2 integration
 
-Simple and Advanced match setup still construct exactly two entrants through
-`RunConfig.a_type`/`b_type`; neither exposes a Ruleset selector. The current
+Simple and Advanced match setup construct exactly two entrants through
+`RunConfig.a_type`/`b_type`. They now expose a shared Ruleset selector: v2 is
+the recommended default for Python-vs-Python direct matches, while v1 remains
+available for legacy reproduction and is selected when VM/blob compatibility
+requires it. The current
 `Evaluate…` dialog exposes candidate, optional baseline, opponents, seeds,
 ticks, pairwise entrant orientation, and output, but it does not expose
 `--ruleset` or `--group`. Therefore the Designer cannot initiate the Beta2

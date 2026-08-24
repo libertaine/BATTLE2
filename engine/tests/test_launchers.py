@@ -179,6 +179,7 @@ def test_designer_match_arguments_preserve_simple_and_advanced_options(tmp_path)
         arena=512,
         a_type="alpha",
         b_type="beta",
+        ruleset_id="bytefray-rules-2",
         a_blob=a_blob,
         b_blob=b_blob,
         alive_w=0.25,
@@ -193,6 +194,7 @@ def test_designer_match_arguments_preserve_simple_and_advanced_options(tmp_path)
         "--arena", "512",
         "--a-type", "alpha",
         "--b-type", "beta",
+        "--ruleset", "bytefray-rules-2",
         "--a-blob", str(a_blob),
         "--b-blob", str(b_blob),
         "--alive-w", "0.25",
@@ -203,7 +205,12 @@ def test_designer_match_arguments_preserve_simple_and_advanced_options(tmp_path)
     ]
 
     assert "--a-blob" not in launchers.build_designer_match_arguments(
-        ticks=1, arena=64, a_type="alpha", b_type="beta", a_blob=""
+        ticks=1,
+        arena=64,
+        a_type="alpha",
+        b_type="beta",
+        ruleset_id="bytefray-rules-1",
+        a_blob="",
     )
 
 
@@ -214,6 +221,7 @@ def test_engine_runner_uses_shared_match_builder_and_preserves_config(monkeypatc
     config = engine_commands.RunConfig(
         a_type="alpha",
         b_type="beta",
+        ruleset_id="bytefray-rules-2",
         arena=256,
         ticks=40,
         alive_w=0.5,
@@ -233,6 +241,7 @@ def test_engine_runner_uses_shared_match_builder_and_preserves_config(monkeypatc
         "--replay", str(paths.replay_path),
         "--a-type", "alpha",
         "--b-type", "beta",
+        "--ruleset", "bytefray-rules-2",
         "--alive-w", "0.5",
         "--kill-w", "3.0",
         "--territory-w", "0.25",

@@ -48,6 +48,7 @@ from app.services.designer_workflows import (
     EVALUATION_MODE_PAIRWISE,
     DesignerEvaluationPlan,
     DesignerValidationError,
+    agent_kind,
     build_designer_evaluate_command,
     build_designer_evaluate_command_from_plan,
     build_designer_evaluation_plan,
@@ -60,6 +61,7 @@ from app.services.designer_workflows import (
     validate_homogeneous,
 )
 from app.services.engine import open_pygame_client_direct
+from app.services.ruleset_options import validate_designer_ruleset
 from app.views.advanced import AdvancedPanel
 from app.views.agent_package import (
     PackageDetailsDialog,
@@ -328,7 +330,8 @@ class AgentDesigner(QMainWindow):
             return
         try:
             validate_homogeneous((rowA, rowB))
-        except DesignerValidationError as exc:
+            validate_designer_ruleset(cfg.ruleset_id, {agent_kind(rowA), agent_kind(rowB)})
+        except (DesignerValidationError, ValueError) as exc:
             self.advanced.appendLog(f"[RunMatch] {exc}\n")
             QMessageBox.warning(self, "Unsupported Match", str(exc))
             return
@@ -343,6 +346,7 @@ class AgentDesigner(QMainWindow):
             arena=arena,
             a_type=a_type,
             b_type=b_type,
+            ruleset_id=cfg.ruleset_id,
             a_blob=getattr(rowA, "blob_path", None),
             b_blob=getattr(rowB, "blob_path", None),
             alive_w=alive_w,
@@ -454,7 +458,8 @@ class AgentDesigner(QMainWindow):
             return
         try:
             validate_homogeneous((rowA, rowB))
-        except DesignerValidationError as exc:
+            validate_designer_ruleset(cfg.ruleset_id, {agent_kind(rowA), agent_kind(rowB)})
+        except (DesignerValidationError, ValueError) as exc:
             self.simple.appendLog(f"[RunMatch] {exc}\n")
             QMessageBox.warning(self, "Unsupported Match", str(exc))
             return
@@ -472,6 +477,7 @@ class AgentDesigner(QMainWindow):
             arena=cfg.arena,
             a_type=a_type,
             b_type=b_type,
+            ruleset_id=cfg.ruleset_id,
             a_blob=getattr(rowA, "blob_path", None),
             b_blob=getattr(rowB, "blob_path", None),
         )

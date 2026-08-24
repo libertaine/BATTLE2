@@ -10,6 +10,7 @@ from subprocess import Popen
 from typing import Any
 
 from battle_engine.launchers import build_match_command, build_replay_command
+from battle_engine.rules import BYTEFRAY_RULESET_ID
 
 from app.services.osutil import DefaultPaths, pythonpath_separator
 
@@ -18,6 +19,7 @@ from app.services.osutil import DefaultPaths, pythonpath_separator
 class RunConfig:
     a_type: str
     b_type: str
+    ruleset_id: str = BYTEFRAY_RULESET_ID
     arena: int = 512
     ticks: int = 600
     alive_w: float | None = None
@@ -50,6 +52,7 @@ def build_engine_command(
         "--replay", str(paths.replay_path),
         "--a-type", cfg.a_type,
         "--b-type", cfg.b_type,
+        "--ruleset", cfg.ruleset_id,
     ]
     for flag, value in (
         ("--alive-w", cfg.alive_w),

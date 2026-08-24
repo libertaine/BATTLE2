@@ -74,6 +74,8 @@ def test_designer_panels_launch_starter_agents_by_discovery_id(
     assert captured["label"] == "RunMatch"
     assert _argument_value(captured["command"], "--a-type") == agent_a
     assert _argument_value(captured["command"], "--b-type") == agent_b
+    expected_ruleset = "bytefray-rules-2" if agent_a == "adaptive" else "bytefray-rules-1"
+    assert _argument_value(captured["command"], "--ruleset") == expected_ruleset
     assert "could not resolve agents" not in panel.log.toPlainText()
     designer.deleteLater()
 

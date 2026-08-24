@@ -316,11 +316,15 @@ speed control scales it at runtime rather than replacing it.
 same replay, unaffected by any of the above.
 
 The optional Designer uses the same supported commands. Its Simple and Advanced
-tabs can run VM-vs-VM or Python-vs-Python matches, show the canonical winner and
+tabs explicitly select the gameplay Ruleset and can run VM-vs-VM or
+Python-vs-Python matches, show the canonical winner and
 termination reason, and hand canonical replays to the existing viewer. Match
 selectors label each agent as `[Python]` or `[VM]` and disable incompatible
 Agent B choices once Agent A is selected, so mixed VM/Python selections are
 prevented in the UI as well as rejected explicitly by the backend.
+Ruleset v2 is the recommended default for Python direct matches; Ruleset v1
+remains available for legacy reproduction and is selected for VM/blob matches.
+Quick Match remains a two-entrant workflow; 3+ entrants use Group Evaluation.
 **Tools → Run Tournament…** opens
 a minimal homogeneous round-robin launcher; tournament artifacts are written to
 the selected directory. **Tools → Evaluation History…** opens a read-only

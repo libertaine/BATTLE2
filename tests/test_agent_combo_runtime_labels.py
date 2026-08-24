@@ -248,6 +248,11 @@ def test_simple_panel_disables_incompatible_b_and_emits_real_identifiers():
     assert len(captured) == 1
     assert captured[0].a_type == "claimer"
     assert captured[0].b_type == "hunter"
+    assert captured[0].ruleset_id == "bytefray-rules-2"
+
+    panel.ruleset.setCurrentIndex(panel.ruleset.findData("bytefray-rules-1"))
+    panel._emit_run()
+    assert captured[1].ruleset_id == "bytefray-rules-1"
 
 
 @pytest.mark.gui
@@ -274,6 +279,10 @@ def test_advanced_panel_matches_simple_panel_behavior(tmp_path):
     assert len(captured) == 1
     assert captured[0].a_type == "runner"
     assert captured[0].b_type == "runner"  # self-match: the only compatible B
+    assert captured[0].ruleset_id == "bytefray-rules-1"
+    v2_index = panel.ruleset.findData("bytefray-rules-2")
+    assert panel.ruleset.model().item(v2_index).isEnabled() is False
+    assert "required for VM/blob" in panel.rulesetExplanation.text()
 
 
 # ---------------------------------------------------------------------------

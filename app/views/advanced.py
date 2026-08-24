@@ -30,6 +30,11 @@ from app.widgets.agent_combo import (
     sync_compatible_b_choices,
 )
 from app.widgets.json_editor import JsonEditor
+from app.widgets.ruleset_combo import (
+    populate_ruleset_combo,
+    selected_ruleset_id,
+    sync_ruleset_choices,
+)
 
 
 class AdvancedPanel(QWidget):
@@ -57,6 +62,13 @@ class AdvancedPanel(QWidget):
         self.agentB = QComboBox()
         form.addRow("Agent A", self.agentA)
         form.addRow("Agent B", self.agentB)
+
+        self.ruleset = QComboBox()
+        populate_ruleset_combo(self.ruleset)
+        self.rulesetExplanation = QLabel()
+        self.rulesetExplanation.setWordWrap(True)
+        form.addRow("Ruleset", self.ruleset)
+        form.addRow("", self.rulesetExplanation)
 
         self.arena = QSpinBox()
         self.arena.setRange(64, 8192)
@@ -156,15 +168,23 @@ class AdvancedPanel(QWidget):
         self.btnChooseReplay.clicked.connect(self._choose_replay)
         self.btnOpenReplay.clicked.connect(self._open_replay_browser)
         self.agentA.currentIndexChanged.connect(self._on_agent_a_changed)
+        self.agentB.currentIndexChanged.connect(self._sync_ruleset)
 
     # API for MainWindow
     def setAgents(self, rows: list[AgentRow]) -> None:
         populate_agent_combo(self.agentA, rows)
         populate_agent_combo(self.agentB, rows)
         sync_compatible_b_choices(self.agentA, self.agentB)
+        self._sync_ruleset()
 
     def _on_agent_a_changed(self, _index: int) -> None:
         sync_compatible_b_choices(self.agentA, self.agentB)
+        self._sync_ruleset()
+
+    def _sync_ruleset(self, _index: int | None = None) -> None:
+        sync_ruleset_choices(
+            self.ruleset, self.agentA, self.agentB, self.rulesetExplanation
+        )
 
     def setBusy(self, busy: bool) -> None:
         for w in (
@@ -179,6 +199,7 @@ class AdvancedPanel(QWidget):
             self.territory_w,
             self.territory_bucket,
             self.seed,
+            self.ruleset,
         ):
             w.setEnabled(not busy)
         self.btnStop.setEnabled(busy)
@@ -232,6 +253,7 @@ class AdvancedPanel(QWidget):
         cfg = RunConfig(
             a_type=selected_agent_name(self.agentA) or "runner",
             b_type=selected_agent_name(self.agentB) or "writer",
+            ruleset_id=selected_ruleset_id(self.ruleset),
             arena=int(self.arena.value()),
             ticks=int(self.ticks.value()),
             alive_w=float(self.alive_w.value()),

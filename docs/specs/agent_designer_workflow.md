@@ -90,7 +90,7 @@ Traced end to end for both panels (`_on_simple_run`/`_on_advanced_run`,
 
 ```text
 SimplePanel/AdvancedPanel "Run Match" click
-  → panel emits runRequested(RunConfig)
+  → panel emits runRequested(RunConfig), including canonical ruleset_id
   → AgentDesigner._on_simple_run / _on_advanced_run
       → resolve AgentRow for each side via _resolve_agent_row
         (matches AgentRow.agent_id, with row.name only as a legacy-id fallback;
@@ -101,7 +101,8 @@ SimplePanel/AdvancedPanel "Run Match" click
         <root>/runs/_designer/<timestamp>-<uuid8>/ every call
       → match_artifact_paths(run_dir / "replay.jsonl")
           -> (result.json, replay.jsonl) siblings, by construction
-      → build_designer_match_arguments(...)   [battle_engine.launchers]
+      → build_designer_match_arguments(..., ruleset_id=...)
+          emits --ruleset <canonical-id>          [battle_engine.launchers]
       → build_match_command(arguments)        [battle_engine.launchers]
           - frozen: sibling battle2.exe run ...
           - source/dev: sys.executable -m battle_engine run ...

@@ -20,6 +20,11 @@ from app.widgets.agent_combo import (
     sync_compatible_b_choices,
 )
 from app.widgets.designer_presentation import MatchOutputView
+from app.widgets.ruleset_combo import (
+    populate_ruleset_combo,
+    selected_ruleset_id,
+    sync_ruleset_choices,
+)
 
 GRID_PRESETS = {
     "Small (256)": 256,
@@ -81,6 +86,15 @@ class SimplePanel(QWidget):
         ticks_label.setBuddy(self.ticks)
         grid.addWidget(ticks_label, 0, 3)
         grid.addWidget(self.ticks, 1, 3)
+        ruleset_label = QLabel("Ruleset")
+        self.ruleset = QComboBox()
+        populate_ruleset_combo(self.ruleset)
+        ruleset_label.setBuddy(self.ruleset)
+        grid.addWidget(ruleset_label, 2, 0)
+        grid.addWidget(self.ruleset, 3, 0, 1, 2)
+        self.rulesetExplanation = QLabel()
+        self.rulesetExplanation.setWordWrap(True)
+        grid.addWidget(self.rulesetExplanation, 3, 2, 1, 2)
         grid.setColumnStretch(0, 2)
         grid.setColumnStretch(1, 2)
         grid.setColumnStretch(2, 1)
@@ -127,6 +141,7 @@ class SimplePanel(QWidget):
         self.agentA.currentIndexChanged.connect(self._on_agent_a_changed)
         self.agentA.currentIndexChanged.connect(self._update_matchup_summary)
         self.agentB.currentIndexChanged.connect(self._update_matchup_summary)
+        self.agentB.currentIndexChanged.connect(self._sync_ruleset)
         self._update_matchup_summary()
 
     # API consumed by MainWindow
@@ -134,10 +149,17 @@ class SimplePanel(QWidget):
         populate_agent_combo(self.agentA, rows)
         populate_agent_combo(self.agentB, rows)
         sync_compatible_b_choices(self.agentA, self.agentB)
+        self._sync_ruleset()
         self._update_matchup_summary()
 
     def _on_agent_a_changed(self, _index: int) -> None:
         sync_compatible_b_choices(self.agentA, self.agentB)
+        self._sync_ruleset()
+
+    def _sync_ruleset(self, _index: int | None = None) -> None:
+        sync_ruleset_choices(
+            self.ruleset, self.agentA, self.agentB, self.rulesetExplanation
+        )
 
     def _update_matchup_summary(self, _index: int | None = None) -> None:
         self.output.set_matchup(self.agentA.currentText(), self.agentB.currentText())
@@ -150,6 +172,7 @@ class SimplePanel(QWidget):
             self.agentB,
             self.gridSize,
             self.ticks,
+            self.ruleset,
         ):
             w.setEnabled(not busy)
         self.btnStop.setEnabled(busy)
@@ -170,6 +193,7 @@ class SimplePanel(QWidget):
         cfg = RunConfig(
             a_type=selected_agent_name(self.agentA) or "runner",
             b_type=selected_agent_name(self.agentB) or "writer",
+            ruleset_id=selected_ruleset_id(self.ruleset),
             arena=arena,
             ticks=ticks,
         )

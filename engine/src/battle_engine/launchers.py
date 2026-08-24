@@ -90,6 +90,7 @@ def build_designer_match_arguments(
     arena: object,
     a_type: object,
     b_type: object,
+    ruleset_id: object,
     a_blob: object | None = None,
     b_blob: object | None = None,
     alive_w: object | None = None,
@@ -104,6 +105,7 @@ def build_designer_match_arguments(
         "--arena", str(arena),
         "--a-type", str(a_type),
         "--b-type", str(b_type),
+        "--ruleset", str(ruleset_id),
     ]
     for flag, value in (("--a-blob", a_blob), ("--b-blob", b_blob)):
         if value:
