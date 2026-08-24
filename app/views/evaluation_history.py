@@ -79,9 +79,11 @@ from app.services.evaluation_history_workflows import (
     format_agent_revision_text,
     format_comparison_text,
     format_evaluation_summary_text,
+    format_group_cell_condition,
     load_agent_revision,
     load_evaluation_summary,
     sorted_listing_entries,
+    summary_is_group,
 )
 
 _HISTORICAL_AGENT_LAB_TOOLTIP = (
@@ -136,15 +138,24 @@ def _list_row_label(entry: DiscoveredEvaluation) -> str:
     if summary is None:
         return f"UNREADABLE  {entry.location.evaluation_json_path}  [{codes}]"
     created = summary.created_at.value or f"(file mtime {entry.location.file_modified_at})"
+    if summary_is_group(summary):
+        roster = ",".join(summary.roster_agent_ids.value or ())
+        identity = f"mode=Group  focus={summary.candidate_id}  roster=[{roster}]"
+    else:
+        identity = f"candidate={summary.candidate_id}  baseline={summary.baseline_id or 'none'}"
     return (
-        f"{summary.evaluation_id}  schema=v{summary.schema.schema_version}  "
-        f"candidate={summary.candidate_id}  baseline={summary.baseline_id or 'none'}  "
+        f"{summary.evaluation_id}  schema=v{summary.schema.schema_version}  {identity}  "
         f"created={created}  lifecycle={summary.lifecycle_state.value}  health=[{codes}]  "
         f"cells={len(summary.cells)}/{summary.matrix_size}"
     )
 
 
-def _cell_row_label(cell: AdaptedCell) -> str:
+def _cell_row_label(cell: AdaptedCell, *, group: bool = False) -> str:
+    if group:
+        return (
+            f"{format_group_cell_condition(cell)}  status={cell.status} "
+            f"focus outcome={cell.outcome}"
+        )
     return (
         f"[{cell.subject_role}] {cell.subject_id} vs {cell.opponent_id} "
         f"seed={cell.seed}  status={cell.status} outcome={cell.outcome}  "
@@ -541,6 +552,7 @@ class EvaluationComparisonDialog(QDialog):
     def __init__(self, result, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._result = result
+        self._group_comparison = summary_is_group(result.left) or summary_is_group(result.right)
         self._active_left_cell: AdaptedCell | None = None
         self._active_right_cell: AdaptedCell | None = None
         self.setWindowTitle(
@@ -556,7 +568,13 @@ class EvaluationComparisonDialog(QDialog):
         summaryText.setMaximumHeight(220)
         layout.addWidget(summaryText)
 
-        layout.addWidget(QLabel("Per-opponent rows (right relative to left) — select to inspect"))
+        layout.addWidget(
+            QLabel(
+                "Comparable roster/layout/seat-assignment cells (right relative to left) — select to inspect"
+                if self._group_comparison
+                else "Per-opponent rows (right relative to left) — select to inspect"
+            )
+        )
         self.rowsList = QListWidget()
         for row in result.comparison.rows:
             left_cell = find_candidate_cell(result.left, row, side="left")
@@ -570,11 +588,23 @@ class EvaluationComparisonDialog(QDialog):
             delta = ""
             if row.left_score is not None and row.right_score is not None:
                 delta = f"  score: {row.left_score:g} -> {row.right_score:g} ({row.right_score - row.left_score:+g})"
-            label = (
-                f"{row.verdict.upper():<11} opponent={row.opponent_id} seed={row.seed}  "
-                f"orientation={orientation or 'unknown'}  "
-                f"left={row.left_outcome} right={row.right_outcome}{delta}"
-            )
+            if self._group_comparison:
+                condition_cell = right_cell or left_cell
+                condition = (
+                    format_group_cell_condition(condition_cell)
+                    if condition_cell is not None
+                    else f"seed={row.seed} condition=unresolved"
+                )
+                label = (
+                    f"{row.verdict.upper():<11} {condition}  "
+                    f"left focus={row.left_outcome} right focus={row.right_outcome}{delta}"
+                )
+            else:
+                label = (
+                    f"{row.verdict.upper():<11} opponent={row.opponent_id} seed={row.seed}  "
+                    f"orientation={orientation or 'unknown'}  "
+                    f"left={row.left_outcome} right={row.right_outcome}{delta}"
+                )
             if row.reproducibility_anomaly:
                 label += "  [REPRODUCIBILITY ANOMALY]"
             item = QListWidgetItem(label)
@@ -613,6 +643,10 @@ class EvaluationComparisonDialog(QDialog):
         actionsRow.addWidget(self.sideCombo)
         self.testAgentLabButton = QPushButton("Test in Agent Lab")
         self.testAgentLabButton.setToolTip(_HISTORICAL_AGENT_LAB_TOOLTIP)
+        if self._group_comparison:
+            self.testAgentLabButton.setToolTip(
+                "Agent Lab reruns only pairwise cells. Group cells remain available through Open Replay."
+            )
         self.testAgentLabButton.setEnabled(False)
         self.openReplayButton = QPushButton("Open Replay")
         self.openReplayButton.setEnabled(False)
@@ -638,12 +672,15 @@ class EvaluationComparisonDialog(QDialog):
         comparison = self._result.comparison
         entries: list[_GapEntry] = []
         for cell in comparison.unmatched_left:
+            condition = (
+                format_group_cell_condition(cell)
+                if summary_is_group(self._result.left)
+                else f"opponent={cell.opponent_id} seed={cell.seed} orientation={cell.orientation.value or 'unknown'}"
+            )
             entries.append(
                 _GapEntry(
                     label=(
-                        f"UNMATCHED (left only)   opponent={cell.opponent_id} "
-                        f"seed={cell.seed} orientation={cell.orientation.value or 'unknown'}  "
-                        f"status={cell.status}"
+                        f"UNMATCHED (left only)   {condition} status={cell.status}"
                     ),
                     left_cell=cell,
                     right_cell=None,
@@ -651,12 +688,15 @@ class EvaluationComparisonDialog(QDialog):
                 )
             )
         for cell in comparison.unmatched_right:
+            condition = (
+                format_group_cell_condition(cell)
+                if summary_is_group(self._result.right)
+                else f"opponent={cell.opponent_id} seed={cell.seed} orientation={cell.orientation.value or 'unknown'}"
+            )
             entries.append(
                 _GapEntry(
                     label=(
-                        f"UNMATCHED (right only)  opponent={cell.opponent_id} "
-                        f"seed={cell.seed} orientation={cell.orientation.value or 'unknown'}  "
-                        f"status={cell.status}"
+                        f"UNMATCHED (right only)  {condition} status={cell.status}"
                     ),
                     left_cell=None,
                     right_cell=cell,
@@ -664,17 +704,23 @@ class EvaluationComparisonDialog(QDialog):
                 )
             )
         for left_cell, right_cell in comparison.changed_condition:
+            if self._group_comparison:
+                condition_text = (
+                    f"left {format_group_cell_condition(left_cell)} status={left_cell.status}; "
+                    f"right {format_group_cell_condition(right_cell)} status={right_cell.status}  "
+                )
+            else:
+                condition_text = (
+                    f"opponent={left_cell.opponent_id} seed={left_cell.seed}  "
+                    f"left ticks={self._result.left.ticks} "
+                    f"orientation={left_cell.orientation.value or 'unknown'} status={left_cell.status}; "
+                    f"right ticks={self._result.right.ticks} "
+                    f"orientation={right_cell.orientation.value or 'unknown'} status={right_cell.status}  "
+                )
             entries.append(
                 _GapEntry(
                     label=(
-                        f"CHANGED CONDITION       opponent={left_cell.opponent_id} "
-                        f"seed={left_cell.seed}  "
-                        f"left ticks={self._result.left.ticks} "
-                        f"orientation={left_cell.orientation.value or 'unknown'} "
-                        f"status={left_cell.status}; "
-                        f"right ticks={self._result.right.ticks} "
-                        f"orientation={right_cell.orientation.value or 'unknown'} "
-                        f"status={right_cell.status}  "
+                        f"CHANGED CONDITION       {condition_text}"
                         "(effective conditions, rules, methodology, or opponent revision differ -- "
                         "not a like-for-like match)"
                     ),
@@ -710,17 +756,31 @@ class EvaluationComparisonDialog(QDialog):
         row = item.data(Qt.UserRole)
         left_cell = find_candidate_cell(self._result.left, row, side="left")
         right_cell = find_candidate_cell(self._result.right, row, side="right")
-        lines = [
-            f"opponent: {row.opponent_id}",
-            f"seed: {row.seed}",
-            (
-                "orientation: "
-                f"left={left_cell.orientation.value if left_cell is not None else 'unresolved'}  "
-                f"right={right_cell.orientation.value if right_cell is not None else 'unresolved'}"
-            ),
-            f"verdict: {row.verdict}" + (f"  ({row.reason})" if row.reason else ""),
-            f"left outcome: {row.left_outcome}   right outcome: {row.right_outcome}",
-        ]
+        if self._group_comparison:
+            condition_cell = right_cell or left_cell
+            lines = [
+                "condition: "
+                + (
+                    format_group_cell_condition(condition_cell)
+                    if condition_cell is not None
+                    else "unresolved"
+                ),
+                f"verdict: {row.verdict}" + (f"  ({row.reason})" if row.reason else ""),
+                f"left focus outcome: {row.left_outcome}   right focus outcome: {row.right_outcome}",
+                "Pairwise orientation: not applicable",
+            ]
+        else:
+            lines = [
+                f"opponent: {row.opponent_id}",
+                f"seed: {row.seed}",
+                (
+                    "orientation: "
+                    f"left={left_cell.orientation.value if left_cell is not None else 'unresolved'}  "
+                    f"right={right_cell.orientation.value if right_cell is not None else 'unresolved'}"
+                ),
+                f"verdict: {row.verdict}" + (f"  ({row.reason})" if row.reason else ""),
+                f"left outcome: {row.left_outcome}   right outcome: {row.right_outcome}",
+            ]
         if row.left_territory is not None or row.right_territory is not None:
             lines.append(f"territory: left={row.left_territory}  right={row.right_territory}")
         self.detailText.setPlainText("\n".join(lines))
@@ -793,7 +853,8 @@ class EvaluationComparisonDialog(QDialog):
             return
         orientation = cell.orientation.value
         self.testAgentLabButton.setEnabled(
-            orientation in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST)
+            not summary_is_group(summary)
+            and orientation in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST)
         )
         self.openReplayButton.setEnabled(
             (summary.location.directory / cell.artifact_dir / "replay.jsonl").is_file()
@@ -805,7 +866,10 @@ class EvaluationComparisonDialog(QDialog):
         if cell is None or summary is None:
             return
         orientation = cell.orientation.value
-        if orientation not in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST):
+        if summary_is_group(summary) or orientation not in (
+            ORIENTATION_CANDIDATE_FIRST,
+            ORIENTATION_OPPONENT_FIRST,
+        ):
             return
         self.testInAgentLabRequested.emit(
             cell.subject_id,
@@ -846,7 +910,7 @@ class EvaluationHistoryDialog(QDialog):
         self._data_root = data_root
         self._allow_restore = allow_restore
         self._entries: tuple[DiscoveredEvaluation, ...] = ()
-        self._current_summary = None
+        self._current_summary: EvaluationSummary | None = None
         self._current_verify_error: str | None = None
         self.setWindowTitle("Evaluation History")
         self.resize(1000, 680)
@@ -1006,9 +1070,14 @@ class EvaluationHistoryDialog(QDialog):
         )
         self._update_verify_status_label(verified, verify_error)
         for cell in summary.cells:
-            item = QListWidgetItem(_cell_row_label(cell))
+            item = QListWidgetItem(_cell_row_label(cell, group=summary_is_group(summary)))
             item.setData(Qt.UserRole, cell)
             self.cellsList.addItem(item)
+        self.testAgentLabButton.setToolTip(
+            "Agent Lab reruns only pairwise cells. Group cells remain available through Open Replay."
+            if summary_is_group(summary)
+            else _HISTORICAL_AGENT_LAB_TOOLTIP
+        )
         self.revisionButton.setEnabled(True)
         self.compareButton.setEnabled(True)
 
@@ -1038,6 +1107,8 @@ class EvaluationHistoryDialog(QDialog):
         orientation = cell.orientation.value if cell is not None else None
         self.testAgentLabButton.setEnabled(
             cell is not None
+            and self._current_summary is not None
+            and not summary_is_group(self._current_summary)
             and orientation in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST)
         )
         self.openReplayButton.setEnabled(
@@ -1049,7 +1120,10 @@ class EvaluationHistoryDialog(QDialog):
         if cell is None or self._current_summary is None:
             return
         orientation = cell.orientation.value
-        if orientation not in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST):
+        if summary_is_group(self._current_summary) or orientation not in (
+            ORIENTATION_CANDIDATE_FIRST,
+            ORIENTATION_OPPONENT_FIRST,
+        ):
             return
         # This signal starts a Designer-owned QProcess while the modal
         # History dialog itself remains open. Conservatively disable restore
@@ -1081,18 +1155,23 @@ class EvaluationHistoryDialog(QDialog):
             roles.append(
                 (f"candidate: {summary.candidate_id}", summary.candidate_id, summary.candidate_agent_revision_id.value)
             )
-        if summary.baseline_id is not None and summary.baseline_agent_revision_id.value:
+        if (
+            not summary_is_group(summary)
+            and summary.baseline_id is not None
+            and summary.baseline_agent_revision_id.value
+        ):
             roles.append(
                 (f"baseline: {summary.baseline_id}", summary.baseline_id, summary.baseline_agent_revision_id.value)
             )
-        seen: dict[str, str] = {}
-        for opponent_id in distinct_opponent_ids(summary):
-            for cell in summary.cells:
-                if cell.opponent_id == opponent_id and cell.opponent_agent_revision_id.value:
-                    seen[opponent_id] = cell.opponent_agent_revision_id.value
-                    break
-        for opponent_id, revision_id in seen.items():
-            roles.append((f"opponent: {opponent_id}", opponent_id, revision_id))
+        if not summary_is_group(summary):
+            seen: dict[str, str] = {}
+            for opponent_id in distinct_opponent_ids(summary):
+                for cell in summary.cells:
+                    if cell.opponent_id == opponent_id and cell.opponent_agent_revision_id.value:
+                        seen[opponent_id] = cell.opponent_agent_revision_id.value
+                        break
+            for opponent_id, revision_id in seen.items():
+                roles.append((f"opponent: {opponent_id}", opponent_id, revision_id))
 
         if not roles:
             QMessageBox.information(

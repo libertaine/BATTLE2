@@ -326,6 +326,16 @@ whether it still matches that agent's current source. **Help → About Bytefray*
 reports the installed version and the active Agent API, result, and replay
 schema versions.
 
+The Agent Development tab's **Evaluate…** dialog also exposes the two canonical
+evaluation shapes directly. Pairwise remains the default Candidate/Baseline/
+Opponent workflow. **Group (3+ entrants)** selects a Focus agent plus roster,
+locks evaluation to Ruleset v2, and previews the authoritative standard
+layouts, distinct seat assignments, seeds, and total cells before launch.
+Group results/history use roster/layout/seat terminology; canonical replays
+remain available, while the pairwise-only Agent Lab rerun action is disabled.
+See the [Agent Lab guide](docs/AGENT_LAB.md#group-evaluation-ruleset-v2) for the
+equivalent CLI command, factorial matrix growth, and self-play denominators.
+
 ---
 
 ## 🧠 Agent Formats & Execution Modes

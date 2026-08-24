@@ -2,6 +2,21 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [Unreleased]
+
+### Beta3 workflow integration
+
+- Agent Designer evaluation now offers explicit Pairwise and Ruleset-v2 Group
+  modes. Group mode selects a Focus agent plus 3+ entrant roster and previews
+  the exact canonical seeds, layouts, distinct seat assignments, and cells.
+- Live results, Evaluation History, and comparison drill-down now classify
+  schema-v6 group artifacts from their persisted methodology fact and use
+  roster/layout/seat-assignment terminology, including physical-instance
+  self-play denominators.
+- Canonical group replays remain actionable. Pairwise-only Agent Lab reruns are
+  disabled for group cells with an explicit explanation. Pairwise v4/v5 and
+  group v6 artifact/schema/identity behavior is unchanged.
+
 ## [2.0.0-beta2] - 2026-08-23
 
 ### Integrated qualification

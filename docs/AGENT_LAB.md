@@ -596,15 +596,44 @@ it discloses exactly what it covers, no more.
 
 ### In the Designer
 
-The Agent Development tab's **Evaluate…** button opens the same
-configuration options as the CLI — including the "Run both entrant
-orientations (recommended)" checkbox (checked by default; unchecking it is
-equivalent to the CLI's `--single-orientation`) — then shows results in a
-table with the same aggregate/comparison data described above, including
-each row's entrant orientation and the same methodology disclosure text.
-Selecting a cell enables **Test Candidate in Agent Lab** (reruns that exact
-cell through `agents test` and opens the Trace Inspector on it) and **Open
-Replay**.
+The Agent Development tab's **Evaluate…** dialog has two explicit modes:
+
+- **Pairwise** is the existing default. It retains Candidate, optional
+  Baseline, Opponents, and the recommended both-orientations control.
+- **Group (3+ entrants)** uses Ruleset v2 and labels the persisted candidate
+  role as the **Focus agent**. Select at least two additional roster members;
+  the read-only preview then shows the exact canonical seeds, standard
+  layouts, distinct seat assignments, and cell count that will execute.
+
+Pairwise results retain Candidate/Opponent/orientation language and allow an
+exact **Test in Agent Lab** rerun. Group results instead show Roster, Layout,
+and Seat assignment. Their canonical **Open Replay** action remains available,
+but Agent Lab rerun is disabled because `agents test` has a pairwise-only
+signature and cannot faithfully reproduce a multi-entrant cell.
+
+### Group evaluation (Ruleset v2)
+
+Run three or more agents together in every cell with:
+
+```bash
+bytefray agents evaluate focus_agent --ruleset bytefray-rules-2 --group \
+  --opponents roster_agent_b,roster_agent_c --seeds 1,2,3
+```
+
+Here all three physical entrants share each match. The Focus designation is a
+presentation aid; group analysis remains symmetric across the roster. Standard
+layouts vary starting placement, while exhaustive seat assignments generalize
+pairwise entrant order. Matrix size is `seeds × 3 layouts × distinct seat
+assignments`, so it grows factorially for fully distinct rosters (18 cells per
+seed at N=3, 72 at N=4, and 360 at N=5). Duplicate identifiers are supported
+for self-play and reduce the number of distinct permutations. In that case,
+winner/survival/capture rates use **physical entrant instances** as their
+denominator; Bytefray does not invent one logical outcome for multiple seats.
+
+Rerun the same command with the same output directory to resume verified
+completed cells. Evaluation History reads the persisted group classification
+and uses roster/layout/seat wording for schema-v6 artifacts while retaining
+historical pairwise v4/v5 presentation.
 
 ### Evaluation history (v0.7)
 

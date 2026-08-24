@@ -801,7 +801,7 @@ for the published assets and notes.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 
-**Status: Phase 3 Agent Designer presentation complete; Beta3 remains in
+**Status: Phase 4 multi-entrant product integration complete; Beta3 remains in
 development.** The
 [Beta3 product-presentation plan](V2_0_BETA3_PLAN.md) audits the shipped
 Replay Viewer, Agent Designer, multi-entrant workflows, test seams, and GUI
@@ -811,8 +811,11 @@ window dimensions, compact discoverable help, and stronger authoritative
 terminal-state presentation. Phase 3 adds a compact square-icon identity
 header, clearer native Quick Match hierarchy, and a real content-replacing
 ready/log state whose matchup text follows the current authoritative selections.
-Remaining Beta3 work integrates Ruleset-v2 group evaluation into product-facing
-workflows and finishes with historical-artifact and packaging qualification.
+Phase 4 adds explicit Pairwise/Group evaluation modes, a canonical
+Ruleset-v2 roster/layout/seat-assignment preview, group-aware live and history
+presentation, and safe drill-down capabilities without changing methodology or
+artifacts. Remaining Beta3 work is integrated historical-artifact, GUI, and
+packaging qualification.
 Beta3 is not yet released; no gameplay, Agent API, schema, evaluation identity,
 or methodology change is planned.
 

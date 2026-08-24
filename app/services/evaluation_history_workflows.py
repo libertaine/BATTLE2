@@ -32,6 +32,7 @@ from battle_engine.agent_revisions import (
     read_manifest,
     verify_revision,
 )
+from battle_engine.evaluation_group_analysis import GroupAnalysis, analyze_group
 from battle_engine.evaluation_history import (
     AdaptedCell,
     AlignedComparison,
@@ -46,8 +47,33 @@ from battle_engine.evaluation_history import (
     discover,
     verify_summary,
 )
+from battle_engine.evaluation_history.group_adapter import group_cell_refs
 
 from app.services.designer_workflows import DesignerValidationError
+
+
+def summary_is_group(summary: EvaluationSummary) -> bool:
+    """Authoritative persisted methodology classification for presentation."""
+
+    return summary.group.value is True
+
+
+def group_analysis_for_summary(summary: EvaluationSummary) -> GroupAnalysis | None:
+    if not summary_is_group(summary):
+        return None
+    roster = tuple(summary.roster_agent_ids.value or ())
+    return analyze_group(roster, group_cell_refs(summary))
+
+
+def format_group_cell_condition(cell: AdaptedCell) -> str:
+    seats = tuple(cell.seat_agent_ids.value or ())
+    seat_text = ", ".join(
+        f"{chr(ord('A') + index)}={agent_id}" for index, agent_id in enumerate(seats)
+    )
+    return (
+        f"layout={cell.layout_id.value or 'unknown'} seed={cell.seed} "
+        f"seats=[{seat_text or 'unknown'}]"
+    )
 
 
 def discover_evaluation_listing(*, roots: tuple[Path, ...] = ()) -> ArtifactListing:
@@ -310,8 +336,15 @@ def format_evaluation_summary_text(
     lines.append(f"evaluation_id: {summary.evaluation_id}")
     lines.append(f"schema: {summary.schema.schema} v{summary.schema.schema_version}")
     lines.append(f"path: {summary.location.evaluation_json_path}")
-    lines.append(f"candidate: {summary.candidate_id}  baseline: {summary.baseline_id or 'none'}")
-    lines.append(f"opponents: {', '.join(summary.opponent_ids)}")
+    is_group = summary_is_group(summary)
+    if is_group:
+        roster = tuple(summary.roster_agent_ids.value or ())
+        lines.append("mode: Group")
+        lines.append(f"focus agent: {summary.candidate_id}")
+        lines.append(f"roster: {', '.join(roster)} ({len(roster)} physical entrants)")
+    else:
+        lines.append(f"candidate: {summary.candidate_id}  baseline: {summary.baseline_id or 'none'}")
+        lines.append(f"opponents: {', '.join(summary.opponent_ids)}")
     lines.append(f"seeds: {', '.join(str(s) for s in summary.seeds)}  ticks: {summary.ticks}")
     lines.append(
         f"lifecycle: {summary.lifecycle_state.value} ({summary.lifecycle_state.confidence.value})  "
@@ -323,12 +356,26 @@ def format_evaluation_summary_text(
         f"({summary.rules_compatibility_id.confidence.value})"
     )
     orientation_mode_value = summary.orientation_mode.value or ORIENTATION_MODE_CANDIDATE_FIRST_ONLY
-    lines.extend(methodology_lines(orientation_mode_value))
-    lines.append(
-        f"  orientation_mode: {orientation_mode_value} ({summary.orientation_mode.confidence.value})  "
-        f"arena_alignment_mode: {summary.arena_alignment_mode.value or 'unknown'} "
-        f"({summary.arena_alignment_mode.confidence.value})"
-    )
+    if is_group:
+        lines.append(
+            "seat assignment: exhaustive distinct roster permutations; pairwise orientation does not apply"
+        )
+        lines.append(
+            f"arena_alignment_mode: {summary.arena_alignment_mode.value or 'unknown'} "
+            f"({summary.arena_alignment_mode.confidence.value})"
+        )
+    else:
+        lines.extend(
+            methodology_lines(
+                orientation_mode_value,
+                arena_alignment_mode=summary.arena_alignment_mode.value or "unknown",
+            )
+        )
+        lines.append(
+            f"  orientation_mode: {orientation_mode_value} ({summary.orientation_mode.confidence.value})  "
+            f"arena_alignment_mode: {summary.arena_alignment_mode.value or 'unknown'} "
+            f"({summary.arena_alignment_mode.confidence.value})"
+        )
     codes = ", ".join(code.value for code in summary.health.codes) or "unknown"
     lines.append(f"health: {codes}")
     for detail in summary.health.detail:
@@ -340,8 +387,24 @@ def format_evaluation_summary_text(
         status_counts[cell.status] = status_counts.get(cell.status, 0) + 1
     lines.append("cell status counts: " + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())))
 
+    if is_group:
+        group_analysis = group_analysis_for_summary(summary)
+        if group_analysis is not None:
+            lines.append(
+                f"group analysis: {group_analysis.available_cells}/{group_analysis.cells_analyzed} "
+                "cells available; rate denominator=physical entrant instance"
+            )
+            for entrant in group_analysis.entrant_summaries:
+                role = "focus" if entrant.agent_id == summary.candidate_id else "roster"
+                multiplicity = group_analysis.roster_multiplicity.get(entrant.agent_id, 0)
+                lines.append(
+                    f"[{role}] {entrant.agent_id} x{multiplicity}  "
+                    f"winner={entrant.winner.successes}/{entrant.winner.trials}  "
+                    f"survival={entrant.survival.successes}/{entrant.survival.trials}  "
+                    f"physical_samples={entrant.available_count}"
+                )
     for aggregate in summary.aggregates_recomputed:
-        if aggregate.orientation_scope != "all":
+        if is_group or aggregate.orientation_scope != "all":
             continue
         lines.append(f"[{aggregate.subject_role}] {aggregate.subject_id}  win_rate={aggregate.win_rate_display}")
         candidate_first = next(
@@ -415,13 +478,13 @@ def _format_agent_revisions_lines(summary: EvaluationSummary) -> list[str]:
     lines = ["agent revisions:"]
     lines.append(
         _line(
-            "candidate",
+            "focus" if summary_is_group(summary) else "candidate",
             summary.candidate_agent_revision_id,
             summary.candidate_agent_revision_error,
             summary.candidate_revision_verification,
         )
     )
-    if summary.baseline_id is not None:
+    if summary.baseline_id is not None and not summary_is_group(summary):
         lines.append(
             _line(
                 "baseline",
@@ -430,6 +493,9 @@ def _format_agent_revisions_lines(summary: EvaluationSummary) -> list[str]:
                 summary.baseline_revision_verification,
             )
         )
+    if summary_is_group(summary):
+        lines.append("  roster members: revision ids are not exposed by the historical group adapter")
+        return lines
     seen_opponents: dict[str, AdaptedCell] = {}
     for cell in summary.cells:
         if cell.opponent_id not in seen_opponents:
@@ -454,10 +520,14 @@ def format_comparison_text(result: EvaluationComparisonResult) -> str:
     selectable, verdict-highlighted list widget instead of flat text)."""
 
     left, right, comparison = result.left, result.right, result.comparison
+    group_comparison = summary_is_group(left) or summary_is_group(right)
     lines: list[str] = []
     lines.append(f"orientation: {comparison.orientation}")
-    lines.append(f"left:  {left.evaluation_id}  candidate={left.candidate_id}")
-    lines.append(f"right: {right.evaluation_id}  candidate={right.candidate_id}")
+    role_word = "focus" if group_comparison else "candidate"
+    lines.append(f"left:  {left.evaluation_id}  {role_word}={left.candidate_id}")
+    lines.append(f"right: {right.evaluation_id}  {role_word}={right.candidate_id}")
+    if group_comparison:
+        lines.append("comparison unit: roster/layout/seat-assignment/seed condition")
 
     if result.fully_verified:
         lines.append("evidence: deep-verified (Verify)")
@@ -475,11 +545,11 @@ def format_comparison_text(result: EvaluationComparisonResult) -> str:
         )
 
     if comparison.candidate_changed:
-        lines.append("candidate identity: DIFFERENT CANDIDATES (logical id changed)")
+        lines.append(f"{role_word} identity: DIFFERENT LOGICAL IDS")
     elif comparison.candidate_diff:
-        lines.append(f"candidate identity changed: {comparison.candidate_diff}")
+        lines.append(f"{role_word} identity changed: {comparison.candidate_diff}")
     else:
-        lines.append("candidate identity: unchanged (or unknown on one side)")
+        lines.append(f"{role_word} identity: unchanged (or unknown on one side)")
 
     baseline = comparison.baseline_context
     lines.append(f"baseline: {baseline.identity_status}")
@@ -525,21 +595,45 @@ def format_comparison_gaps_text(comparison: AlignedComparison) -> str:
     the main summary) are enough for the common case."""
 
     lines: list[str] = []
+    is_group = any(
+        cell.roster.value
+        for cell in (*comparison.unmatched_left, *comparison.unmatched_right)
+    ) or any(
+        left.roster.value or right.roster.value for left, right in comparison.changed_condition
+    )
     if comparison.unmatched_left:
         lines.append(f"unmatched (left only, {len(comparison.unmatched_left)}):")
         for cell in comparison.unmatched_left:
-            lines.append(f"  - opponent={cell.opponent_id} seed={cell.seed} status={cell.status}")
+            condition = (
+                format_group_cell_condition(cell)
+                if is_group
+                else f"opponent={cell.opponent_id} seed={cell.seed}"
+            )
+            lines.append(f"  - {condition} status={cell.status}")
     if comparison.unmatched_right:
         lines.append(f"unmatched (right only, {len(comparison.unmatched_right)}):")
         for cell in comparison.unmatched_right:
-            lines.append(f"  - opponent={cell.opponent_id} seed={cell.seed} status={cell.status}")
+            condition = (
+                format_group_cell_condition(cell)
+                if is_group
+                else f"opponent={cell.opponent_id} seed={cell.seed}"
+            )
+            lines.append(f"  - {condition} status={cell.status}")
     if comparison.changed_condition:
         lines.append(f"changed condition ({len(comparison.changed_condition)}):")
         for left_cell, right_cell in comparison.changed_condition:
+            condition = (
+                format_group_cell_condition(left_cell)
+                if is_group
+                else f"opponent={left_cell.opponent_id} seed={left_cell.seed}"
+            )
+            differing_dimension = (
+                "effective conditions, rules, methodology, or roster revision differ"
+                if is_group
+                else "effective conditions, rules, methodology, or opponent revision differ"
+            )
             lines.append(
-                f"  - opponent={left_cell.opponent_id} seed={left_cell.seed}  "
-                "effective conditions, rules, methodology, or opponent revision differ "
-                "(not a like-for-like comparison)"
+                f"  - {condition}  {differing_dimension} (not a like-for-like comparison)"
             )
     if comparison.ambiguous_duplicate_groups:
         lines.append(

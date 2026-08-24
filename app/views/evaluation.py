@@ -25,6 +25,7 @@ from battle_engine.agent_evaluation import (
     ORIENTATION_MODE_BOTH,
     ORIENTATION_OPPONENT_FIRST,
     methodology_lines,
+    seat_label,
 )
 from battle_engine.evaluation_analysis import EvaluationAnalysis, EvidenceState
 from battle_engine.evaluation_behavior import BehaviorAnalysis
@@ -52,9 +53,13 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.designer_workflows import (
+    EVALUATION_MODE_GROUP,
+    EVALUATION_MODE_PAIRWISE,
+    DesignerValidationError,
     EvaluationCellPresentation,
     EvaluationComparisonPresentation,
     EvaluationPresentation,
+    build_designer_evaluation_plan,
 )
 
 
@@ -76,6 +81,7 @@ class EvaluationDialog(QDialog):
         default_candidate: str | None,
         default_output: Path,
         presets: dict[str, EvaluationPreset] | None = None,
+        data_root: Path | None = None,
         parent: QWidget | None = None,
     ) -> None:
         """``python_agents`` is ``(display name, discovery id)`` pairs.
@@ -100,18 +106,26 @@ class EvaluationDialog(QDialog):
         self.setWindowTitle("Evaluate")
         self._agents = list(python_agents)
         self._presets = dict(presets) if presets else {}
+        self._data_root = data_root
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
+        self.modeCombo = QComboBox()
+        self.modeCombo.addItem("Pairwise", EVALUATION_MODE_PAIRWISE)
+        self.modeCombo.addItem("Group (3+ entrants)", EVALUATION_MODE_GROUP)
+        form.addRow("Evaluation mode", self.modeCombo)
+
         if self._presets:
+            self.presetLabel = QLabel("Preset")
             self.presetCombo = QComboBox()
             self.presetCombo.addItem("(none)", None)
             for name in sorted(self._presets):
                 self.presetCombo.addItem(name, name)
             self.presetCombo.currentIndexChanged.connect(self._on_preset_selected)
-            form.addRow("Preset", self.presetCombo)
+            form.addRow(self.presetLabel, self.presetCombo)
         else:
+            self.presetLabel = None
             self.presetCombo = None
 
         self.candidateCombo = QComboBox()
@@ -121,17 +135,25 @@ class EvaluationDialog(QDialog):
             index = self.candidateCombo.findData(default_candidate)
             if index >= 0:
                 self.candidateCombo.setCurrentIndex(index)
-        form.addRow("Candidate", self.candidateCombo)
+        self.candidateLabel = QLabel("Candidate")
+        form.addRow(self.candidateLabel, self.candidateCombo)
 
         self.baselineCombo = QComboBox()
         self.baselineCombo.addItem("(none)", None)
         for display, agent_id in self._agents:
             self.baselineCombo.addItem(display, agent_id)
-        form.addRow("Baseline", self.baselineCombo)
+        self.baselineLabel = QLabel("Baseline")
+        form.addRow(self.baselineLabel, self.baselineCombo)
+
+        self.rulesetLabel = QLabel("Ruleset")
+        self.rulesetValue = QLabel("bytefray-rules-2 (required for group evaluation)")
+        self.rulesetValue.setAccessibleName("Group evaluation ruleset")
+        form.addRow(self.rulesetLabel, self.rulesetValue)
 
         layout.addLayout(form)
 
-        layout.addWidget(QLabel("Opponents (select one or more)"))
+        self.opponentsLabel = QLabel("Opponents (select one or more)")
+        layout.addWidget(self.opponentsLabel)
         self.opponentsList = QListWidget()
         self.opponentsList.setSelectionMode(QAbstractItemView.ExtendedSelection)
         for display, agent_id in self._agents:
@@ -163,6 +185,22 @@ class EvaluationDialog(QDialog):
         self.bothOrientationsCheck.setChecked(True)
         layout.addWidget(self.bothOrientationsCheck)
 
+        self.groupMethodologyLabel = QLabel(
+            "Group mode fields the focus agent and selected roster members together. "
+            "Every distinct seat assignment is scheduled; pairwise orientation does not apply."
+        )
+        self.groupMethodologyLabel.setWordWrap(True)
+        self.groupMethodologyLabel.setAccessibleName("Group seat assignment methodology")
+        layout.addWidget(self.groupMethodologyLabel)
+
+        self.previewLabel = QLabel("Authoritative matrix preview")
+        self.previewText = QPlainTextEdit()
+        self.previewText.setReadOnly(True)
+        self.previewText.setAccessibleName("Authoritative group evaluation matrix preview")
+        self.previewText.setMaximumHeight(170)
+        layout.addWidget(self.previewLabel)
+        layout.addWidget(self.previewText)
+
         output_row = QHBoxLayout()
         self.outputEdit = QLineEdit(str(default_output))
         choose = QPushButton("Choose…")
@@ -174,11 +212,72 @@ class EvaluationDialog(QDialog):
         layout.addLayout(form2)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Ok).setText("Run")
+        self.runButton = buttons.button(QDialogButtonBox.Ok)
+        self.runButton.setText("Run")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        self.resize(560, 520)
+        self.modeCombo.currentIndexChanged.connect(self._on_mode_changed)
+        self.candidateCombo.currentIndexChanged.connect(self._update_group_preview)
+        self.baselineCombo.currentIndexChanged.connect(self._update_group_preview)
+        self.opponentsList.itemSelectionChanged.connect(self._update_group_preview)
+        self.seedsEdit.textChanged.connect(self._update_group_preview)
+        self.seedRangeEdit.textChanged.connect(self._update_group_preview)
+        self.ticksSpin.valueChanged.connect(self._update_group_preview)
+        self.outputEdit.textChanged.connect(self._update_group_preview)
+        self._on_mode_changed()
+        self.resize(620, 720)
+
+    def _on_mode_changed(self) -> None:
+        group = self.mode() == EVALUATION_MODE_GROUP
+        self.candidateLabel.setText("Focus agent" if group else "Candidate")
+        self.baselineLabel.setVisible(not group)
+        self.baselineCombo.setVisible(not group)
+        self.rulesetLabel.setVisible(group)
+        self.rulesetValue.setVisible(group)
+        self.opponentsLabel.setText(
+            "Roster members (select at least two; focus is included automatically)"
+            if group
+            else "Opponents (select one or more)"
+        )
+        self.bothOrientationsCheck.setVisible(not group)
+        self.groupMethodologyLabel.setVisible(group)
+        self.previewLabel.setVisible(group)
+        self.previewText.setVisible(group)
+        if self.presetCombo is not None:
+            self.presetCombo.setVisible(not group)
+        if self.presetLabel is not None:
+            self.presetLabel.setVisible(not group)
+        self._update_group_preview()
+
+    def _update_group_preview(self) -> None:
+        if self.mode() != EVALUATION_MODE_GROUP:
+            self.runButton.setEnabled(True)
+            self.previewText.clear()
+            return
+        if self._data_root is None:
+            self.previewText.setPlainText("Matrix preview unavailable: no data root was supplied.")
+            self.runButton.setEnabled(False)
+            return
+        try:
+            plan = build_designer_evaluation_plan(
+                candidate_id=self.candidate_id(),
+                baseline_id=None,
+                opponent_ids=self.opponent_ids(),
+                seeds_text=self.seeds_text(),
+                seed_range_text=self.seed_range_text(),
+                ticks=self.ticks(),
+                output_dir=self.output_path(),
+                data_root=self._data_root,
+                both_orientations=True,
+                mode=EVALUATION_MODE_GROUP,
+            )
+        except (DesignerValidationError, OSError) as exc:
+            self.previewText.setPlainText(f"Configuration invalid: {exc}")
+            self.runButton.setEnabled(False)
+            return
+        self.previewText.setPlainText(plan.preview_text())
+        self.runButton.setEnabled(True)
 
     def _on_preset_selected(self) -> None:
         """Populate fields for display -- never binding, always overridable.
@@ -220,14 +319,19 @@ class EvaluationDialog(QDialog):
             self.bothOrientationsCheck.setChecked(preset.orientation == PRESET_ORIENTATION_BOTH)
 
     def preset_name(self) -> str | None:
-        if self.presetCombo is None:
+        if self.presetCombo is None or self.mode() == EVALUATION_MODE_GROUP:
             return None
         return self.presetCombo.currentData()
+
+    def mode(self) -> str:
+        return str(self.modeCombo.currentData())
 
     def candidate_id(self) -> str:
         return self.candidateCombo.currentData()
 
     def baseline_id(self) -> str | None:
+        if self.mode() == EVALUATION_MODE_GROUP:
+            return None
         return self.baselineCombo.currentData()
 
     def opponent_ids(self) -> tuple[str, ...]:
@@ -243,6 +347,8 @@ class EvaluationDialog(QDialog):
         return self.ticksSpin.value()
 
     def both_orientations(self) -> bool:
+        if self.mode() == EVALUATION_MODE_GROUP:
+            return True
         return self.bothOrientationsCheck.isChecked()
 
     def output_path(self) -> Path:
@@ -322,6 +428,48 @@ def _behavior_summary_line(behavior: BehaviorAnalysis) -> str:
     return "behavior: " + "  |  ".join(parts)
 
 
+def _seat_assignment_text(agent_ids: tuple[str, ...]) -> str:
+    return ", ".join(f"{seat_label(index)}={agent_id}" for index, agent_id in enumerate(agent_ids))
+
+
+def _group_summary_lines(presentation: EvaluationPresentation) -> tuple[str, ...]:
+    analysis = presentation.group_analysis
+    if analysis is None:
+        return ("Group analysis: no scored cells are available yet.",)
+    lines = [
+        (
+            f"Group analysis: {analysis.available_cells}/{analysis.cells_analyzed} cells available; "
+            "rates use physical entrant instances."
+        )
+    ]
+    focus = analysis.summary_for(presentation.candidate_id)
+    ordered = ([focus] if focus is not None else []) + [
+        summary
+        for summary in analysis.entrant_summaries
+        if summary.agent_id != presentation.candidate_id
+    ]
+    for summary in ordered:
+        role = "Focus" if summary.agent_id == presentation.candidate_id else "Roster"
+        winner_rate = (
+            f"{summary.winner.successes}/{summary.winner.trials} "
+            f"({100.0 * (summary.winner.rate or 0.0):.0f}%)"
+            if summary.winner.trials
+            else "0/0 (n/a)"
+        )
+        survival_rate = (
+            f"{summary.survival.successes}/{summary.survival.trials} "
+            f"({100.0 * (summary.survival.rate or 0.0):.0f}%)"
+            if summary.survival.trials
+            else "0/0 (n/a)"
+        )
+        multiplicity = analysis.roster_multiplicity.get(summary.agent_id, 0)
+        lines.append(
+            f"[{role}] {summary.agent_id} ×{multiplicity}: winner={winner_rate}; "
+            f"survival={survival_rate}; physical samples={summary.available_count}"
+        )
+    return tuple(lines)
+
+
 def _find_cell(
     presentation: EvaluationPresentation, schedule_id: str
 ) -> EvaluationCellPresentation | None:
@@ -350,26 +498,47 @@ class EvaluationResultsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        orientation_line, alignment_line = methodology_lines(presentation.orientation_mode)
-        header = QLabel(
-            f"evaluation: {presentation.evaluation_id}\n"
-            f"candidate: {presentation.candidate_id}\n"
-            f"baseline: {presentation.baseline_id or 'none'}\n"
-            f"ticks: {presentation.ticks}\n"
-            f"{orientation_line}\n"
-            f"{alignment_line}"
-        )
+        if presentation.group:
+            header_text = (
+                f"evaluation: {presentation.evaluation_id}\n"
+                f"mode: Group\n"
+                f"focus agent: {presentation.candidate_id}\n"
+                f"roster: {', '.join(presentation.roster_agent_ids)}\n"
+                f"ruleset: {presentation.rules_compatibility_id or 'unknown'}\n"
+                f"ticks: {presentation.ticks}\n"
+                f"Arena alignment: {presentation.arena_alignment_mode}"
+            )
+        else:
+            orientation_line, alignment_line = methodology_lines(
+                presentation.orientation_mode,
+                arena_alignment_mode=presentation.arena_alignment_mode,
+            )
+            header_text = (
+                f"evaluation: {presentation.evaluation_id}\n"
+                f"candidate: {presentation.candidate_id}\n"
+                f"baseline: {presentation.baseline_id or 'none'}\n"
+                f"ticks: {presentation.ticks}\n"
+                f"{orientation_line}\n"
+                f"{alignment_line}"
+            )
+        header = QLabel(header_text)
         header.setWordWrap(True)
         layout.addWidget(header)
 
-        for aggregate in presentation.aggregates:
-            layout.addWidget(
-                QLabel(
-                    f"[{aggregate.subject_role}] {aggregate.subject_id}: "
-                    f"{aggregate.wins}W {aggregate.losses}L {aggregate.ties}T "
-                    f"({aggregate.matches_played} played)"
+        if presentation.group:
+            for line in _group_summary_lines(presentation):
+                summary_label = QLabel(line)
+                summary_label.setWordWrap(True)
+                layout.addWidget(summary_label)
+        else:
+            for aggregate in presentation.aggregates:
+                layout.addWidget(
+                    QLabel(
+                        f"[{aggregate.subject_role}] {aggregate.subject_id}: "
+                        f"{aggregate.wins}W {aggregate.losses}L {aggregate.ties}T "
+                        f"({aggregate.matches_played} played)"
+                    )
                 )
-            )
         if presentation.analysis is not None:
             evidence_label = QLabel(_evidence_summary_line(presentation.analysis))
             evidence_label.setWordWrap(True)
@@ -396,11 +565,18 @@ class EvaluationResultsDialog(QDialog):
                 self.resultsList.addItem(item)
         else:
             for cell in presentation.cells:
-                label = (
-                    f"[{cell.subject_role}] {cell.subject_id} vs {cell.opponent_id} "
-                    f"seed={cell.seed}  status={cell.status} outcome={cell.outcome}"
-                )
-                if show_orientation:
+                if presentation.group:
+                    label = (
+                        f"layout={cell.layout_id} seed={cell.seed}  "
+                        f"seats: {_seat_assignment_text(cell.seat_agent_ids)}  "
+                        f"status={cell.status} focus outcome={cell.outcome}"
+                    )
+                else:
+                    label = (
+                        f"[{cell.subject_role}] {cell.subject_id} vs {cell.opponent_id} "
+                        f"seed={cell.seed}  status={cell.status} outcome={cell.outcome}"
+                    )
+                if show_orientation and not presentation.group:
                     label += f"  orientation={cell.orientation}"
                 item = QListWidgetItem(label)
                 item.setData(Qt.UserRole, cell)
@@ -414,6 +590,10 @@ class EvaluationResultsDialog(QDialog):
         actions = QHBoxLayout()
         self.btnTestAgentLab = QPushButton("Test in Agent Lab")
         self.btnTestAgentLab.setEnabled(False)
+        if presentation.group:
+            self.btnTestAgentLab.setToolTip(
+                "Agent Lab reruns only pairwise cells. Group cells must be inspected via their canonical replay."
+            )
         self.btnOpenReplay = QPushButton("Open Replay")
         self.btnOpenReplay.setEnabled(False)
         actions.addWidget(self.btnTestAgentLab)
@@ -458,19 +638,33 @@ class EvaluationResultsDialog(QDialog):
             if payload.rerun_baseline:
                 lines.append(f"rerun baseline:  {payload.rerun_baseline}")
         else:
-            lines = [
-                f"subject: [{payload.subject_role}] {payload.subject_id}",
-                f"opponent: {payload.opponent_id}",
-                f"seed: {payload.seed}",
-                f"orientation: {payload.orientation}",
-                f"status: {payload.status}",
-                f"outcome: {payload.outcome}",
-                f"score: subject={payload.score_subject} opponent={payload.score_opponent}",
-            ]
+            if self._presentation.group:
+                lines = [
+                    f"focus agent: {payload.subject_id}",
+                    f"roster: {', '.join(payload.roster_agent_ids)}",
+                    f"layout: {payload.layout_id}",
+                    f"seat assignment: {_seat_assignment_text(payload.seat_agent_ids)}",
+                    f"seat starts: {', '.join(str(value) for value in payload.seat_starts)}",
+                    f"seed: {payload.seed}",
+                    f"status: {payload.status}",
+                    f"focus outcome: {payload.outcome}",
+                    "Agent Lab rerun: unavailable for multi-entrant cells",
+                ]
+            else:
+                lines = [
+                    f"subject: [{payload.subject_role}] {payload.subject_id}",
+                    f"opponent: {payload.opponent_id}",
+                    f"seed: {payload.seed}",
+                    f"orientation: {payload.orientation}",
+                    f"status: {payload.status}",
+                    f"outcome: {payload.outcome}",
+                    f"score: subject={payload.score_subject} opponent={payload.score_opponent}",
+                ]
         self.detailText.setPlainText("\n".join(lines))
         cell = self._candidate_cell(payload)
         self.btnTestAgentLab.setEnabled(
             cell is not None
+            and not self._presentation.group
             and cell.orientation in (ORIENTATION_CANDIDATE_FIRST, ORIENTATION_OPPONENT_FIRST)
         )
         self.btnOpenReplay.setEnabled(
@@ -491,7 +685,7 @@ class EvaluationResultsDialog(QDialog):
         if payload is None:
             return
         cell = self._candidate_cell(payload)
-        if cell is None or cell.orientation not in (
+        if self._presentation.group or cell is None or cell.orientation not in (
             ORIENTATION_CANDIDATE_FIRST,
             ORIENTATION_OPPONENT_FIRST,
         ):

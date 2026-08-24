@@ -13,20 +13,32 @@ from battle_engine.agent_evaluation import (
     EVALUATION_ARENA_ALIGNMENT_MODE,
     ORIENTATION_CANDIDATE_FIRST,
     ORIENTATION_MODE_CANDIDATE_FIRST_ONLY,
+    STANDARD_V2_SEEDS,
+    EvaluationCell,
     EvaluationConfigurationError,
+    EvaluationRequest,
+    EvaluationService,
+    build_matrix,
     parse_opponents,
     parse_seed_list,
     parse_seed_range,
     read_evaluation,
     rerun_command,
 )
+from battle_engine.config import Config
 from battle_engine.evaluation_analysis import EvaluationAnalysis
 from battle_engine.evaluation_analysis import analyze as analyze_evaluation
 from battle_engine.evaluation_behavior import BehaviorAnalysis, cell_ref_from_evaluation_cell
 from battle_engine.evaluation_behavior import analyze_behavior as analyze_behavior_evaluation
+from battle_engine.evaluation_group_analysis import (
+    GroupAnalysis,
+    analyze_group,
+    group_cell_ref_from_evaluation_cell,
+)
 from battle_engine.evaluation_history.models import evaluation_cells_from_raw
 from battle_engine.launchers import build_agents_command, build_tournament_command
 from battle_engine.result_model import read_result
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
 
 from app.services.agent_catalog import AgentRow
 
@@ -183,6 +195,164 @@ def read_tournament_presentation(state_path: Path) -> TournamentPresentation:
 # Agent Evaluation (v0.6) -- see docs/specs/agent_evaluation.md Sec 13
 # ---------------------------------------------------------------------------
 
+EVALUATION_MODE_PAIRWISE = "pairwise"
+EVALUATION_MODE_GROUP = "group"
+
+
+@dataclass(frozen=True)
+class DesignerEvaluationPlan:
+    """One canonical, validated Designer evaluation plan.
+
+    The preview and launched CLI command are projections of this same
+    ``EvaluationRequest``/matrix.  Scheduling remains entirely owned by
+    ``battle_engine.agent_evaluation.build_matrix``.
+    """
+
+    request: EvaluationRequest
+    evaluation_id: str
+    matrix: tuple[EvaluationCell, ...]
+
+    @property
+    def mode(self) -> str:
+        return EVALUATION_MODE_GROUP if self.request.group else EVALUATION_MODE_PAIRWISE
+
+    @property
+    def layout_ids(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(cell.layout_id for cell in self.matrix if cell.layout_id))
+
+    @property
+    def seat_assignment_count(self) -> int:
+        return len({cell.seat_agent_ids for cell in self.matrix if cell.seat_agent_ids})
+
+    def preview_text(self) -> str:
+        request = self.request
+        if not request.group:
+            return f"Pairwise matrix: {len(self.matrix)} cells"
+        roster = request.roster_agent_ids
+        multiplicity = {agent_id: roster.count(agent_id) for agent_id in dict.fromkeys(roster)}
+        duplicate_note = ", ".join(
+            f"{agent_id} ×{count}" for agent_id, count in multiplicity.items() if count > 1
+        )
+        lines = [
+            f"Focus agent: {request.candidate_id}",
+            f"Roster ({len(roster)} physical entrants): {', '.join(roster)}",
+            f"Ruleset: {request.resolved_rules_compatibility_id}",
+            f"Seeds ({len(request.seeds)}): {', '.join(str(seed) for seed in request.seeds)}",
+            f"Layouts ({len(self.layout_ids)}): {', '.join(self.layout_ids)}",
+            f"Distinct seat assignments: {self.seat_assignment_count}",
+            f"Planned cells: {len(self.matrix)}",
+            f"Tick limit per cell: {request.ticks}",
+        ]
+        if duplicate_note:
+            lines.append(
+                "Self-play multiplicity: "
+                + duplicate_note
+                + " (rates use physical entrant instances)"
+            )
+        if len(self.matrix) >= 300:
+            lines.append("Large exhaustive matrix: execution may take substantial time.")
+        return "\n".join(lines)
+
+
+def _designer_evaluation_seeds(
+    *, seeds_text: str, seed_range_text: str, ruleset_id: str | None
+) -> tuple[int, ...]:
+    if seeds_text.strip() and seed_range_text.strip():
+        raise DesignerValidationError("Use either explicit seeds or a seed range, not both.")
+    try:
+        if seeds_text.strip():
+            return parse_seed_list(seeds_text)
+        if seed_range_text.strip():
+            return parse_seed_range(seed_range_text)
+    except EvaluationConfigurationError as exc:
+        raise DesignerValidationError(str(exc)) from exc
+    return STANDARD_V2_SEEDS if ruleset_id == BYTEFRAY_RULESET_V2_ID else (Config().seed,)
+
+
+def build_designer_evaluation_plan(
+    *,
+    candidate_id: str,
+    baseline_id: str | None,
+    opponent_ids: Iterable[str],
+    seeds_text: str,
+    seed_range_text: str,
+    ticks: int,
+    output_dir: Path,
+    data_root: Path,
+    both_orientations: bool = True,
+    mode: str = EVALUATION_MODE_PAIRWISE,
+) -> DesignerEvaluationPlan:
+    """Validate and build the exact matrix the Designer will execute."""
+
+    if mode not in (EVALUATION_MODE_PAIRWISE, EVALUATION_MODE_GROUP):
+        raise DesignerValidationError(f"Unsupported evaluation mode: {mode!r}.")
+    candidate = candidate_id.strip()
+    if not candidate:
+        raise DesignerValidationError("Focus agent is required." if mode == EVALUATION_MODE_GROUP else "Candidate is required.")
+    baseline = baseline_id.strip() if baseline_id else None
+    opponents = tuple(opponent_ids)
+    ruleset_id = BYTEFRAY_RULESET_V2_ID if mode == EVALUATION_MODE_GROUP else None
+    if mode == EVALUATION_MODE_GROUP and len(opponents) < 2:
+        raise DesignerValidationError(
+            "Group evaluation requires at least two roster members in addition to the focus agent."
+        )
+    seeds = _designer_evaluation_seeds(
+        seeds_text=seeds_text, seed_range_text=seed_range_text, ruleset_id=ruleset_id
+    )
+    output = output_dir.expanduser().resolve()
+    if output.exists() and not output.is_dir():
+        raise DesignerValidationError("Evaluation output must be a directory.")
+    try:
+        parse_opponents(",".join(opponents))
+        specs, evaluation_id = EvaluationService().preflight(
+            candidate_id=candidate,
+            opponent_ids=opponents,
+            seeds=seeds,
+            baseline_id=baseline,
+            ticks=ticks,
+            data_root=data_root,
+            both_orientations=both_orientations,
+            ruleset_id=ruleset_id,
+            group=mode == EVALUATION_MODE_GROUP,
+        )
+    except EvaluationConfigurationError as exc:
+        raise DesignerValidationError(str(exc)) from exc
+    request = EvaluationRequest(
+        candidate_id=candidate,
+        opponent_ids=opponents,
+        seeds=seeds,
+        output_dir=output,
+        baseline_id=baseline,
+        ticks=ticks,
+        data_root=data_root,
+        both_orientations=both_orientations,
+        ruleset_id=ruleset_id,
+        group=mode == EVALUATION_MODE_GROUP,
+    )
+    # Specs are intentionally passed through: the preview matrix is the
+    # same fully validated plan shape run() will construct, not a Qt-side
+    # estimate. Conditions do not affect matrix cardinality/axes.
+    matrix = build_matrix(request, evaluation_id, specs=specs)
+    return DesignerEvaluationPlan(request=request, evaluation_id=evaluation_id, matrix=matrix)
+
+
+def build_designer_evaluate_command_from_plan(
+    plan: DesignerEvaluationPlan, *, preset_name: str | None = None
+) -> list[str]:
+    request = plan.request
+    arguments = [request.candidate_id, "--opponents", ",".join(request.opponent_ids)]
+    if request.baseline_id:
+        arguments.extend(("--baseline", request.baseline_id))
+    arguments.extend(("--seeds", ",".join(str(seed) for seed in request.seeds)))
+    arguments.extend(("--ticks", str(request.ticks), "--output", str(request.output_dir)))
+    if request.group:
+        arguments.extend(("--ruleset", BYTEFRAY_RULESET_V2_ID, "--group"))
+    elif not request.both_orientations:
+        arguments.append("--single-orientation")
+    if preset_name and not request.group:
+        arguments.extend(("--preset", preset_name))
+    return build_agents_command("evaluate", arguments)
+
 
 def build_designer_evaluate_command(
     *,
@@ -279,6 +449,14 @@ class EvaluationCellPresentation:
     # perspective-correct (subject/opponent) even when the physical
     # match roles were swapped.
     orientation: str = ORIENTATION_CANDIDATE_FIRST
+    roster_agent_ids: tuple[str, ...] = ()
+    seat_agent_ids: tuple[str, ...] = ()
+    layout_id: str = ""
+    seat_starts: tuple[int, ...] = ()
+
+    @property
+    def is_group(self) -> bool:
+        return bool(self.roster_agent_ids)
 
 
 @dataclass(frozen=True)
@@ -331,6 +509,12 @@ class EvaluationPresentation:
     # lives in Qt/UI code. `None` only when the artifact has zero scored
     # cells.
     behavior: BehaviorAnalysis | None = None
+    # Beta3 Phase 4: authoritative persisted methodology classification.
+    # Never inferred from labels/orientation sentinels in the Qt layer.
+    group: bool = False
+    roster_agent_ids: tuple[str, ...] = ()
+    rules_compatibility_id: str | None = None
+    group_analysis: GroupAnalysis | None = None
 
 
 def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
@@ -366,6 +550,10 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
             score_subject=cell.get("score_subject"),
             score_opponent=cell.get("score_opponent"),
             orientation=str(cell.get("orientation", ORIENTATION_CANDIDATE_FIRST)),
+            roster_agent_ids=tuple(str(value) for value in (cell.get("roster_agent_ids") or ())),
+            seat_agent_ids=tuple(str(value) for value in (cell.get("seat_agent_ids") or ())),
+            layout_id=str(cell.get("layout_id", "")),
+            seat_starts=tuple(int(value) for value in (cell.get("seat_starts") or ())),
         )
         for cell in data.get("cells", ())
     )
@@ -417,16 +605,29 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
     )
     raw_cells = list(data.get("cells", ()))
     real_cells = evaluation_cells_from_raw(raw_cells, base_dir) if raw_cells else ()
-    analysis = analyze_evaluation(candidate_id, baseline_id, real_cells) if real_cells else None
-    behavior = (
-        analyze_behavior_evaluation(
-            candidate_id,
-            baseline_id,
-            [cell_ref_from_evaluation_cell(cell) for cell in real_cells if cell.is_scored],
+    is_group = data.get("group") is True
+    roster_agent_ids = tuple(str(value) for value in (data.get("roster_agent_ids") or ()))
+    if is_group:
+        group_refs = tuple(
+            group_cell_ref_from_evaluation_cell(cell)
+            for cell in real_cells
+            if cell.is_group and cell.is_scored
         )
-        if real_cells
-        else None
-    )
+        group_analysis = analyze_group(roster_agent_ids, group_refs)
+        analysis = None
+        behavior = None
+    else:
+        group_analysis = None
+        analysis = analyze_evaluation(candidate_id, baseline_id, real_cells) if real_cells else None
+        behavior = (
+            analyze_behavior_evaluation(
+                candidate_id,
+                baseline_id,
+                [cell_ref_from_evaluation_cell(cell) for cell in real_cells if cell.is_scored],
+            )
+            if real_cells
+            else None
+        )
 
     return EvaluationPresentation(
         evaluation_id=str(data.get("evaluation_id", "")),
@@ -441,4 +642,12 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
         arena_alignment_mode=str(data.get("arena_alignment_mode", EVALUATION_ARENA_ALIGNMENT_MODE)),
         analysis=analysis,
         behavior=behavior,
+        group=is_group,
+        roster_agent_ids=roster_agent_ids,
+        rules_compatibility_id=(
+            str(data.get("rules_compatibility_id"))
+            if data.get("rules_compatibility_id") is not None
+            else None
+        ),
+        group_analysis=group_analysis,
     )

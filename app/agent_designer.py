@@ -45,8 +45,12 @@ from app.services.agent_workflows import (
     build_validation_presentation,
 )
 from app.services.designer_workflows import (
+    EVALUATION_MODE_PAIRWISE,
+    DesignerEvaluationPlan,
     DesignerValidationError,
     build_designer_evaluate_command,
+    build_designer_evaluate_command_from_plan,
+    build_designer_evaluation_plan,
     build_designer_tournament_command,
     match_artifact_paths,
     new_match_run_directory,
@@ -686,34 +690,28 @@ class AgentDesigner(QMainWindow):
         executes), the identical safety boundary the CLI's own preflight
         already relies on (docs/specs/evaluation_history.md Sec 17).
         """
-        from battle_engine.agent_evaluation import (
-            EvaluationConfigurationError,
-            EvaluationService,
-            parse_seed_list,
-            parse_seed_range,
+        plan = self._build_evaluation_plan(
+            dialog, self.data_root / "runs" / "evaluations"
         )
-        from battle_engine.config import Config
+        return self.data_root / "runs" / "evaluations" / plan.evaluation_id
 
-        seeds_text = dialog.seeds_text().strip()
-        seed_range_text = dialog.seed_range_text().strip()
-        try:
-            if seeds_text:
-                seeds = parse_seed_list(seeds_text)
-            elif seed_range_text:
-                seeds = parse_seed_range(seed_range_text)
-            else:
-                seeds = (Config().seed,)
-            _specs, evaluation_id = EvaluationService().preflight(
-                candidate_id=dialog.candidate_id(),
-                opponent_ids=dialog.opponent_ids(),
-                seeds=seeds,
-                baseline_id=dialog.baseline_id(),
-                ticks=dialog.ticks(),
-                data_root=self.data_root,
-            )
-        except EvaluationConfigurationError as exc:
-            raise DesignerValidationError(str(exc)) from exc
-        return self.data_root / "runs" / "evaluations" / evaluation_id
+    def _build_evaluation_plan(
+        self, dialog: EvaluationDialog, output_dir: Path
+    ) -> DesignerEvaluationPlan:
+        mode_getter = getattr(dialog, "mode", None)
+        mode = mode_getter() if callable(mode_getter) else EVALUATION_MODE_PAIRWISE
+        return build_designer_evaluation_plan(
+            candidate_id=dialog.candidate_id(),
+            baseline_id=dialog.baseline_id(),
+            opponent_ids=dialog.opponent_ids(),
+            seeds_text=dialog.seeds_text(),
+            seed_range_text=dialog.seed_range_text(),
+            ticks=dialog.ticks(),
+            output_dir=output_dir,
+            data_root=self.data_root,
+            both_orientations=dialog.both_orientations(),
+            mode=mode,
+        )
 
     def _on_evaluation_history(self) -> None:
         """Open the Evaluation History browser.
@@ -827,6 +825,7 @@ class AgentDesigner(QMainWindow):
             default_candidate=default_candidate,
             default_output=placeholder_output,
             presets=presets,
+            data_root=self.data_root,
             parent=self,
         )
         if not dialog.exec():
@@ -841,17 +840,25 @@ class AgentDesigner(QMainWindow):
                 return
 
         try:
-            command = build_designer_evaluate_command(
-                candidate_id=dialog.candidate_id(),
-                baseline_id=dialog.baseline_id(),
-                opponent_ids=dialog.opponent_ids(),
-                seeds_text=dialog.seeds_text(),
-                seed_range_text=dialog.seed_range_text(),
-                ticks=dialog.ticks(),
-                output_dir=output_dir,
-                both_orientations=dialog.both_orientations(),
-                preset_name=dialog.preset_name(),
-            )
+            mode_getter = getattr(dialog, "mode", None)
+            mode = mode_getter() if callable(mode_getter) else EVALUATION_MODE_PAIRWISE
+            if mode == EVALUATION_MODE_PAIRWISE:
+                # Preserve the historical pairwise command surface exactly,
+                # including preset/default resolution in the CLI.
+                command = build_designer_evaluate_command(
+                    candidate_id=dialog.candidate_id(),
+                    baseline_id=dialog.baseline_id(),
+                    opponent_ids=dialog.opponent_ids(),
+                    seeds_text=dialog.seeds_text(),
+                    seed_range_text=dialog.seed_range_text(),
+                    ticks=dialog.ticks(),
+                    output_dir=output_dir,
+                    both_orientations=dialog.both_orientations(),
+                    preset_name=dialog.preset_name(),
+                )
+            else:
+                plan = self._build_evaluation_plan(dialog, output_dir)
+                command = build_designer_evaluate_command_from_plan(plan)
         except (DesignerValidationError, OSError) as exc:
             QMessageBox.warning(self, "Invalid Evaluation", str(exc))
             return

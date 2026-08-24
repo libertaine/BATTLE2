@@ -6,10 +6,11 @@ This is the working plan for `v2.0.0-beta3`, on
 `v2.0.0-beta2` release. The Beta2 release branch and annotated tag both point
 to `b580ad2de025443bcb3c55735bdc837fc668a825`.
 
-**Release status: Phase 3 complete; Beta3 not released.** This document began
-as the Phase-1 product audit and now records the completed Replay Viewer and
-Agent Designer presentation phases. The qualified Beta2 engine, evaluation
-methodology, artifacts, and user data remain unchanged.
+**Release status: Phase 4 complete; Beta3 not released.** This document began
+as the Phase-1 product audit and now records the completed Replay Viewer,
+Agent Designer presentation, and multi-entrant product-integration phases. The
+qualified Beta2 engine, evaluation methodology, artifacts, and user data remain
+unchanged.
 
 > Beta3 presents the qualified game and evaluation workflows more clearly.
 > It does not redesign the game or its evidence model.
@@ -469,6 +470,14 @@ Phase-4 acceptance:
 - pairwise v4/v5 and group v6 artifacts remain readable and unchanged;
 - focused service, Qt, engine presentation, and documentation tests pass.
 
+Phase-4 source qualification passed 7 new canonical planner/execution tests,
+5 new display-backed integration tests, the 191-test Qt corpus (the literal
+`python3` Windows lifecycle case run separately from the 190-test batch), and
+the canonical 1,904-test headless suite with 14 expected skips and 2 expected
+deselections. Repository-wide Ruff and the required engine/client mypy checks
+also passed. Wheel, frozen, portable, installer, and Linux/Xvfb qualification
+remain Phase-5 gates as planned.
+
 ## 8. Packaging and resource decisions
 
 Existing committed assets are:
@@ -529,11 +538,11 @@ frozen, installer, and Linux/Xvfb execution remain Phase-5 integrated gates.
 
 ### Phase 4 — Multi-Entrant Product Integration & Documentation
 
-**Deliverable:** group-evaluation configuration/preview and group-aware
+**Status: complete. Deliverable:** group-evaluation configuration/preview and group-aware
 results/history/tutorial language. **Acceptance:** the Phase-4 criteria in
-§7.3. If inspection shows that evaluation results and history cannot be safely
-landed together, split implementation into 4A configuration/run and 4B
-presentation/docs, but keep one product outcome and one qualification gate.
+§7.3 are implemented together through the canonical planner, schema-v6 history
+adapter, and capability-gated drill-down actions. Phase 5 owns integrated
+packaging/environment qualification.
 
 ### Phase 5 — Integrated Beta3 Qualification & Release Decision
 
