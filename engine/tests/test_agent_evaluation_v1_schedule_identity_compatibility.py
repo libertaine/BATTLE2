@@ -57,7 +57,12 @@ AGENT_SOURCE = (
     "def create_agent(): return Agent()\n"
 )
 
-# Pinned literals: computed once against the fixed AGENT_SOURCE bytes below
+# Fixed historical fixture bytes. The pinned identities below were generated
+# from this CRLF representation, so write_bytes() is intentional: replacing it
+# with platform-native text writing would make the golden test OS-dependent.
+AGENT_SOURCE_BYTES = AGENT_SOURCE.replace("\n", "\r\n").encode("utf-8")
+
+# Pinned literals: computed once against the fixed AGENT_SOURCE_BYTES below
 # (deterministic -- source_sha256/local_source_fingerprint are content
 # hashes of AGENT_SOURCE itself) and against the historical recipe
 # reconstructed from commit 2076576. A future change to any key in the v1
@@ -79,7 +84,7 @@ def _write_agent(root: Path, name: str) -> None:
         ),
         encoding="utf-8",
     )
-    (directory / "agent.py").write_text(AGENT_SOURCE, encoding="utf-8")
+    (directory / "agent.py").write_bytes(AGENT_SOURCE_BYTES)
 
 
 def _v1_request(tmp_path: Path) -> EvaluationRequest:
@@ -104,6 +109,8 @@ def test_v1_identity_matches_pre_beta2_historical_recipe(tmp_path: Path) -> None
 
     _write_agent(tmp_path, "candidate")
     _write_agent(tmp_path, "opponent")
+
+    assert (tmp_path / "agents" / "candidate" / "agent.py").read_bytes() == AGENT_SOURCE_BYTES
 
     candidate_spec = resolve_agent(tmp_path, "candidate")
     opponent_spec = resolve_agent(tmp_path, "opponent")
