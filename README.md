@@ -85,7 +85,7 @@ bytefray design
 ## Replay Viewer
 
 <p align="center">
-  <img src="docs/screenshots/replay-viewer.png" alt="Bytefray Replay Viewer showing a paused multi-entrant match, responsive entrant status, and territory history" width="640">
+  <img src="docs/screenshots/replay-viewer.png" alt="Bytefray Replay Viewer showing a paused multi-entrant match, responsive entrant status, and territory history" width="800">
 </p>
 
 The Pygame Replay Viewer reconstructs the arena directly from a canonical
