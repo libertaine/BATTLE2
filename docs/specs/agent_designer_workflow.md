@@ -480,6 +480,12 @@ select/create agent
 This matches `docs/AGENT_AUTHORING.md`'s documented author workflow
 (create → validate → test → replay → modify → repeat) with no reordering.
 
+The Agent Development tab also displays the selected Python agent's current
+`agent.py` and `agent.yaml` in a read-only source viewer. It reads those two
+files from the exact catalog-discovered `AgentRow.path` on selection and
+catalog refresh; it does not parse, import, execute, or write agent source.
+Editing remains external in Beta3 through **Open Folder**.
+
 ## 7. Proposed UI structure
 
 ### 7.1 Placement: a new top-level tab, not a repurposed "Agent Params"

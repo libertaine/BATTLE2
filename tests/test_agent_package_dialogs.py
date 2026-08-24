@@ -554,6 +554,12 @@ def test_designer_import_agent_package_full_round_trip_and_refreshes_catalog(mon
         assert designer.development.selectedAgentRow() is not None
         assert designer.development.selectedAgentRow().agent_id == "myagent"
         assert designer.development.selectedAgentRow().name == "Friendly Imported Name"
+        assert designer.development.pythonSource.toPlainText() == (
+            designer_root / "agents" / "myagent" / "agent.py"
+        ).read_text(encoding="utf-8")
+        assert designer.development.manifestSource.toPlainText() == (
+            designer_root / "agents" / "myagent" / "agent.yaml"
+        ).read_text(encoding="utf-8")
     finally:
         designer.deleteLater()
 

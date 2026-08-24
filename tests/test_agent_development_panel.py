@@ -93,6 +93,8 @@ def test_new_agent_dialog_success_refreshes_and_selects(monkeypatch, tmp_path):
         assert designer.development.agentCombo.currentText() == "shiny_agent"
         assert designer.development.selectedAgentRow() is not None
         assert designer.development.btnOpenFolder.isEnabled() is True
+        assert "def create_agent" in designer.development.pythonSource.toPlainText()
+        assert "kind: python" in designer.development.manifestSource.toPlainText()
     finally:
         designer.deleteLater()
 

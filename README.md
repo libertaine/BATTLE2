@@ -411,7 +411,10 @@ The Agent Designer's **Agent Development** tab brings the CLI's
 create → validate → test → inspect → replay agent-authoring loop into the
 GUI: New Agent, Validate, Development Test (with Opponent/Seed/Ticks/
 Timeout options), Open Replay, and Inspect Trace (opens the read-only
-Trace Inspector dialog over that test's `trace.jsonl`). See the
+Trace Inspector dialog over that test's `trace.jsonl`). The selected Python
+agent's current `agent.py` and `agent.yaml` are also available in a read-only
+source viewer. Editing remains external in Beta3; use **Open Folder** to modify
+agent files. See the
 [Agent Authoring Guide](docs/AGENT_AUTHORING.md) and
 [Agent Lab](docs/AGENT_LAB.md) for details.
 

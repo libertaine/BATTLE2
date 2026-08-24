@@ -32,6 +32,7 @@ from battle_engine.agent_scaffold import (
 from battle_engine.agent_test import DEFAULT_AGENT_TIMEOUT, DEFAULT_TICKS
 from battle_engine.config import Config
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -41,13 +42,16 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from app.services.agent_catalog import AgentRow
+from app.services.agent_source import load_agent_source
 from app.services.agent_workflows import DevelopmentTestPresentation, ValidationPresentation
 
 _INVALID_STYLE = "color: #b00020;"
@@ -161,6 +165,7 @@ class AgentDevelopmentPanel(QWidget):
 
     def __init__(self, catalog=None) -> None:  # catalog kept for parity with other panels
         super().__init__()
+        self._catalog = catalog
         self._rows: list[AgentRow] = []
         self._busy = False
         self._current_agent_id: str | None = None
@@ -192,6 +197,30 @@ class AgentDevelopmentPanel(QWidget):
         header_row.addWidget(self.btnOpenFolder)
         header_row.addWidget(self.btnExportAgent)
         root.addWidget(header)
+
+        source = QGroupBox("Source")
+        source_layout = QVBoxLayout(source)
+        source_hint = QLabel(
+            "Source is read-only in Beta3. Use Open Folder to edit the agent externally."
+        )
+        source_hint.setWordWrap(True)
+        source_layout.addWidget(source_hint)
+        self.sourceTabs = QTabWidget()
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        self.pythonSource = QPlainTextEdit()
+        self.manifestSource = QPlainTextEdit()
+        for viewer in (self.pythonSource, self.manifestSource):
+            viewer.setReadOnly(True)
+            viewer.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+            viewer.setFont(fixed_font)
+            viewer.setToolTip(
+                "Source is read-only in Beta3. Use Open Folder to edit externally."
+            )
+        self.sourceTabs.addTab(self.pythonSource, "agent.py")
+        self.sourceTabs.addTab(self.manifestSource, "agent.yaml")
+        self.sourceTabs.setMinimumHeight(180)
+        source_layout.addWidget(self.sourceTabs)
+        root.addWidget(source)
 
         validation = QGroupBox("Validation")
         validation_layout = QVBoxLayout(validation)
@@ -578,6 +607,10 @@ class AgentDevelopmentPanel(QWidget):
     def _on_combo_changed(self, _index: int | None = None) -> None:
         self._update_enablement()
         row = self.selectedAgentRow()
+        agents_root = self._catalog.agents_dir() if self._catalog is not None else None
+        source = load_agent_source(row, agents_root=agents_root)
+        self.pythonSource.setPlainText(source.python_text)
+        self.manifestSource.setPlainText(source.manifest_text)
         agent_id = _agent_row_id(row) if row is not None else None
         changed = agent_id != self._current_agent_id
         self._current_agent_id = agent_id
