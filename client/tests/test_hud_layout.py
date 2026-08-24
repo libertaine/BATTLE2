@@ -10,18 +10,24 @@ replay semantics by hand -- per the governing task's Phase 4T guidance.
 
 from __future__ import annotations
 
-from itertools import pairwise
+from itertools import combinations
 
 from battle_client.hud_layout import (
     FOOTER_GRAPH_MIN_WINDOW_WIDTH,
     FOOTER_HEIGHT,
+    MAX_TOP_BAND_FRACTION,
+    MIN_USEFUL_ARENA_HEIGHT,
+    MIN_VIEWER_SIZE,
     TOP_BAND_HEIGHT,
     calculate_layout,
     format_entrant_card_lines,
     format_entrant_stats_line,
     format_entrant_status_line,
+    format_help_lines,
     format_match_header_lines,
     format_playback_line,
+    format_terminal_state_line,
+    integer_scale_to_fit,
     truncate_with_ellipsis,
 )
 from battle_client.replay_status import CoreStatus, EntrantReplayStatus
@@ -146,16 +152,18 @@ def test_three_entrant_cards_tile_left_to_right_in_order():
     assert xs == sorted(xs)
 
 
-def test_entrant_card_rects_tile_exactly_to_window_width():
-    for count in (1, 2, 3, 4, 5):
+def test_entrant_card_rects_stay_inside_hud_and_never_overlap():
+    for count in (1, 2, 3, 4, 5, 8):
         layout = calculate_layout((900, 700), count)
         cards = layout.entrant_card_rects
         assert len(cards) == count
-        last_x, last_w = cards[-1][0], cards[-1][2]
-        assert last_x + last_w <= layout.window_size[0]
-        # No overlap between consecutive cards (a gutter is expected).
-        for left, right in pairwise(cards):
-            assert left[0] + left[2] <= right[0]
+        for x, y, width, height in cards:
+            assert 0 <= x <= layout.window_size[0]
+            assert x + width <= layout.window_size[0]
+            assert 0 <= y <= layout.top_band_height
+            assert y + height <= layout.top_band_height
+        for left, right in combinations(cards, 2):
+            assert not _overlaps(left, right)
 
 
 def test_entrant_count_below_one_is_clamped_to_one_card():
@@ -203,6 +211,102 @@ def test_footer_graph_shown_at_or_above_min_window_width():
     assert layout.footer_graph_rect[2] > 0
     assert layout.footer_graph_rect[3] > 0
     assert not _overlaps(layout.footer_graph_rect, layout.footer_text_rect)
+
+
+# ---------------------------------------------------------------------------
+# Beta3 Phase 2: responsive cards, HUD cap, and centered integer arena
+# ---------------------------------------------------------------------------
+def test_supported_minimum_is_derived_from_detailed_cards_footer_and_arena():
+    layout = calculate_layout(MIN_VIEWER_SIZE, 2, (64, 64))
+
+    assert MIN_VIEWER_SIZE == (640, 480)
+    assert layout.card_mode == "detailed"
+    assert (layout.card_columns, layout.card_rows) == (2, 1)
+    assert all(card[2] >= 300 for card in layout.entrant_card_rects)
+    assert layout.footer_height == FOOTER_HEIGHT
+    assert layout.arena_viewport_rect[3] >= MIN_USEFUL_ARENA_HEIGHT
+
+
+def test_three_entrant_layout_reflows_between_wide_and_minimum_windows():
+    wide = calculate_layout((960, 640), 3, (32, 16))
+    minimum = calculate_layout(MIN_VIEWER_SIZE, 3, (32, 16))
+
+    assert (wide.card_mode, wide.card_columns, wide.card_rows) == ("detailed", 3, 1)
+    assert (minimum.card_mode, minimum.card_columns, minimum.card_rows) == (
+        "detailed",
+        2,
+        2,
+    )
+
+
+def test_four_entrant_layout_is_one_row_wide_and_two_by_two_at_minimum():
+    wide = calculate_layout((960, 640), 4, (32, 16))
+    minimum = calculate_layout(MIN_VIEWER_SIZE, 4, (32, 16))
+
+    assert (wide.card_mode, wide.card_columns, wide.card_rows) == ("detailed", 4, 1)
+    assert (minimum.card_mode, minimum.card_columns, minimum.card_rows) == (
+        "detailed",
+        2,
+        2,
+    )
+
+
+def test_five_plus_entrants_use_dense_compact_roster_grid():
+    five = calculate_layout(MIN_VIEWER_SIZE, 5, (32, 16))
+    twelve = calculate_layout(MIN_VIEWER_SIZE, 12, (32, 16))
+
+    assert (five.card_mode, five.card_columns, five.card_rows) == ("compact", 3, 2)
+    assert twelve.card_mode == "compact"
+    assert twelve.card_columns == 4
+    assert twelve.card_rows == 3
+    assert len(twelve.entrant_card_rects) == 12
+
+
+def test_hud_height_is_capped_and_preserves_useful_arena_at_supported_size():
+    layout = calculate_layout(MIN_VIEWER_SIZE, 20, (64, 64))
+    proportional_cap = int(MIN_VIEWER_SIZE[1] * MAX_TOP_BAND_FRACTION)
+
+    assert layout.top_band_height <= proportional_cap
+    assert layout.arena_viewport_rect[3] >= MIN_USEFUL_ARENA_HEIGHT
+    assert layout.top_band_height + layout.arena_viewport_rect[3] + layout.footer_height == 480
+
+
+def test_centered_arena_uses_largest_uniform_integer_scale():
+    layout = calculate_layout((1000, 700), 3, (32, 16))
+    vx, vy, vw, vh = layout.arena_viewport_rect
+    ax, ay, aw, ah = layout.arena_rect
+
+    assert layout.arena_scale == integer_scale_to_fit(32, 16, (vw, vh))
+    assert aw == 32 * layout.arena_scale
+    assert ah == 16 * layout.arena_scale
+    assert ax == vx + (vw - aw) // 2
+    assert ay == vy + (vh - ah) // 2
+    assert not _overlaps(layout.arena_rect, layout.header_rect)
+    assert not _overlaps(layout.arena_rect, layout.footer_text_rect)
+
+
+def test_preferred_manual_scale_is_centered_and_capped_to_viewport():
+    small = calculate_layout((960, 640), 2, (32, 16), preferred_arena_scale=4)
+    too_large = calculate_layout((960, 640), 2, (32, 16), preferred_arena_scale=100)
+
+    assert small.arena_scale == 4
+    assert small.arena_rect[2:] == (128, 64)
+    assert too_large.arena_scale == integer_scale_to_fit(
+        32, 16, too_large.arena_viewport_rect[2:]
+    )
+
+
+def test_below_minimum_window_remains_bounded_and_non_overlapping():
+    layout = calculate_layout((320, 180), 8, (64, 64))
+
+    assert layout.window_size == (320, 180)
+    assert layout.top_band_height <= int(180 * MAX_TOP_BAND_FRACTION)
+    assert layout.arena_viewport_rect[3] >= 0
+    for rect in (*layout.entrant_card_rects, layout.arena_rect, layout.footer_text_rect):
+        x, y, width, height = rect
+        assert 0 <= x <= 320 and x + width <= 320
+        assert 0 <= y <= 180 and y + height <= 180
+    assert not _overlaps(layout.arena_rect, layout.footer_text_rect)
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +454,40 @@ def test_short_name_is_not_truncated():
     assert lines[0] == "CLAIMER"
 
 
+def test_recorded_order_badge_provides_non_color_identity_beyond_four():
+    status = _status(agent_id="E", name="fifth entrant", order=4)
+    lines = format_entrant_card_lines(status, ordinal=5, mode="compact", max_chars=40)
+
+    assert lines[0].startswith("#5 E")
+    assert "FIFTH ENTRANT" in lines[0]
+    assert "Alive" in lines[1]
+
+
+def test_compact_card_deliberately_keeps_token_and_text_state_when_narrow():
+    status = _status(agent_id="entrant-five", name="A very long fifth entrant")
+    identity, state = format_entrant_card_lines(
+        status, ordinal=5, mode="compact", max_chars=12
+    )
+
+    assert len(identity) <= 12
+    assert identity.startswith("#5")
+    assert state == "Alive"
+
+
+def test_compact_help_fits_minimum_footer_text_column_and_expands_to_two_lines():
+    layout = calculate_layout(MIN_VIEWER_SIZE, 2, (64, 64))
+    max_chars = layout.footer_text_rect[2] // 7
+    compact = format_help_lines(expanded=False)
+    expanded = format_help_lines(expanded=True)
+
+    assert len(compact) == 1
+    assert len(compact[0]) <= max_chars
+    assert "? controls" in compact[0]
+    assert len(expanded) == 2
+    # Expanded help replaces the graph, so it has the full window text width.
+    assert all(len(line) <= (MIN_VIEWER_SIZE[0] - 12) // 7 for line in expanded)
+
+
 # ---------------------------------------------------------------------------
 # truncate_with_ellipsis
 # ---------------------------------------------------------------------------
@@ -415,7 +553,26 @@ def test_match_header_second_line_shows_winner_and_termination():
         result_available=True,
     )
     assert "Winner: A" in line2
-    assert "last_agent_standing" in line2
+    assert "MATCH COMPLETE" in line2
+    assert "last agent standing" in line2
+
+
+def test_terminal_state_helper_distinguishes_draw_without_inventing_winner():
+    line = format_terminal_state_line(
+        winner=None,
+        termination_reason="tick_limit",
+        result_available=True,
+    )
+    assert line == "MATCH COMPLETE — Draw / tie — tick limit"
+
+
+def test_terminal_state_helper_is_blank_without_authoritative_result():
+    assert (
+        format_terminal_state_line(
+            winner="A", termination_reason="last_agent_standing", result_available=False
+        )
+        == ""
+    )
 
 
 def test_match_header_distinguishes_v1_from_v2_label():

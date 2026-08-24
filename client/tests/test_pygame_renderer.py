@@ -369,6 +369,62 @@ def test_manual_rescale_moves_one_step_and_respects_display_limit(monkeypatch):
     assert resize_calls == [31, 30]
 
 
+def test_ordinary_resize_preserves_requested_outer_dimensions():
+    set_mode_calls = []
+    renderer = PygameRenderer()
+    renderer.pg = SimpleNamespace(
+        display=SimpleNamespace(
+            set_mode=lambda size, flags: set_mode_calls.append((size, flags))
+            or _FakeSurface(size),
+            set_caption=lambda title: None,
+        ),
+        RESIZABLE=1,
+    )
+    renderer.grid_cols, renderer.grid_rows = 32, 16
+    renderer._entrant_count = 4
+
+    renderer._handle_window_resize((777, 555))
+
+    assert set_mode_calls == [((777, 555), 1)]
+    assert renderer.screen.get_size() == (777, 555)
+    assert renderer._layout.window_size == (777, 555)
+    assert renderer._layout.arena_scale == renderer.scale
+    assert renderer._layout.arena_rect[2] == 32 * renderer.scale
+    assert renderer._layout.arena_rect[3] == 16 * renderer.scale
+
+
+def test_below_supported_minimum_resize_is_honored_and_bounded():
+    renderer = PygameRenderer()
+    renderer.pg = SimpleNamespace(
+        display=SimpleNamespace(
+            set_mode=lambda size, flags: _FakeSurface(size),
+            set_caption=lambda title: None,
+        ),
+        RESIZABLE=1,
+    )
+    renderer.grid_cols, renderer.grid_rows = 64, 64
+    renderer._entrant_count = 8
+
+    renderer._handle_window_resize((420, 300))
+
+    assert renderer.screen.get_size() == (420, 300)
+    assert renderer._layout.window_size == (420, 300)
+    ax, ay, aw, ah = renderer._layout.arena_rect
+    assert 0 <= ax and ax + aw <= 420
+    assert 0 <= ay and ay + ah <= 300
+
+
+def test_manual_scale_window_uses_supported_minimum_and_responsive_chrome():
+    renderer = PygameRenderer()
+    renderer.grid_cols, renderer.grid_rows = 32, 16
+    renderer._entrant_count = 4
+
+    assert renderer._window_size_for_scale(4) == (640, 480)
+    width, height = renderer._window_size_for_scale(30)
+    assert width == 960
+    assert height > 16 * 30  # responsive top HUD + footer are outside arena
+
+
 # ---------------------------------------------------------------------------
 # format_event_line
 #
@@ -677,7 +733,11 @@ def _band_renderer(window_size, entrant_count, *, arena_size=32):
     renderer.arena = arena_size
     renderer.grid_cols, renderer.grid_rows = renderer._resolve_grid_dims(arena_size)
     renderer._entrant_count = entrant_count
-    renderer._layout = calculate_layout(window_size, entrant_count)
+    renderer._layout = calculate_layout(
+        window_size,
+        entrant_count,
+        (renderer.grid_cols, renderer.grid_rows),
+    )
     return renderer
 
 
@@ -770,6 +830,21 @@ def _v2_three_entrant_session(tmp_path):
     return _load(tmp_path, "v2_three_entrant.jsonl", [header, tick0])
 
 
+def _many_entrant_session(tmp_path, entrant_count=6):
+    entrants = tuple(chr(ord("A") + index) for index in range(entrant_count))
+    header = ReplayHeader(
+        MatchConfiguration(arena_size=64),
+        {agent_id: f"entrant-{agent_id.lower()}" for agent_id in entrants},
+        runtime_kind="vm",
+    )
+    tick0 = TickSnapshot(
+        0,
+        agents=tuple(_agent(agent_id, pc=index) for index, agent_id in enumerate(entrants)),
+        score={agent_id: index for index, agent_id in enumerate(entrants)},
+    )
+    return _load(tmp_path, "many_entrants.jsonl", [header, tick0])
+
+
 def test_top_band_renders_v1_entrants_with_no_core_field(tmp_path):
     session = _no_events_session(tmp_path)
     controller = PlaybackController(session, playing=False)
@@ -849,6 +924,37 @@ def test_top_band_renders_three_entrants_all_represented(tmp_path):
     assert rendered.count("Core 8/8") == 3
 
 
+def test_top_band_renders_compact_high_entrant_roster_with_text_badges(tmp_path):
+    session = _many_entrant_session(tmp_path, entrant_count=6)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((640, 480), entrant_count=6, arena_size=64)
+    renderer._match_events = []
+    renderer._ruleset_label = "bytefray-rules-1"
+
+    assert renderer._layout.card_mode == "compact"
+    renderer._draw_top_band(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    for ordinal, agent_id in enumerate("ABCDEF", start=1):
+        assert f"#{ordinal} {agent_id}" in rendered
+    assert rendered.count("Alive") == 6
+
+
+def test_top_band_emphasizes_authoritative_terminal_result(tmp_path):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((640, 480), entrant_count=3, arena_size=10)
+    renderer._match_events = collect_match_events(session)
+    renderer._ruleset_label = "bytefray-rules-1"
+
+    renderer._draw_top_band(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "MATCH COMPLETE" in rendered
+    assert "Winner: A" in rendered
+    assert "last agent standing" in rendered
+
+
 @pytest.mark.parametrize(
     "build_session",
     [
@@ -890,12 +996,8 @@ def test_footer_shows_tick_playback_and_controls(tmp_path):
     assert HELP_TEXT.split("  ")[0] in rendered
 
 
-def test_footer_controls_line_truncates_to_its_column_width(tmp_path):
-    """A real screenshot smoke (docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md's
-    manual/headful pass) caught the controls line running under the
-    territory graph panel before this truncation existed -- the footer's
-    own text column width must always bound what gets rendered.
-    """
+def test_compact_footer_help_fits_its_column_without_truncation(tmp_path):
+    """Beta3's compact hint remains bounded without looking broken."""
     session = _no_events_session(tmp_path)
     controller = PlaybackController(session, playing=False)
     renderer = _band_renderer((960, 700), entrant_count=1, arena_size=8)
@@ -906,7 +1008,31 @@ def test_footer_controls_line_truncates_to_its_column_width(tmp_path):
     controls_rendered = renderer.hud_font.rendered[-1]
     _tx, _ty, tw, _th = renderer._layout.footer_text_rect
     assert len(controls_rendered) <= max(6, tw // HUD_CHAR_WIDTH_PX)
-    assert len(controls_rendered) < len(HELP_TEXT)
+    assert controls_rendered == HELP_TEXT
+    assert not controls_rendered.endswith("…")
+
+
+def test_expanded_help_replaces_event_and_graph_without_covering_arena(tmp_path, monkeypatch):
+    session = _events_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((640, 480), entrant_count=3, arena_size=10)
+    renderer._match_events = collect_match_events(session)
+    renderer.help_visible = True
+    graph_rects = []
+    monkeypatch.setattr(
+        renderer,
+        "_draw_footer_graph",
+        lambda state, rect: graph_rects.append(rect),
+    )
+
+    renderer._draw_footer(controller)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "Home/End first/last" in rendered
+    assert "? close" in rendered
+    assert renderer._event_panel_ticks == ()
+    assert graph_rects == [(0, 0, 0, 0)]
+    assert not any(line.endswith("…") for line in renderer.hud_font.rendered[-2:])
 
 
 def test_footer_shows_most_recent_event_and_is_clickable(tmp_path):

@@ -801,15 +801,18 @@ for the published assets and notes.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 
-**Status: Phase 1 audit/design complete; implementation planned.** The
+**Status: Phase 2 Replay Viewer presentation complete; Beta3 remains in
+development.** The
 [Beta3 product-presentation plan](V2_0_BETA3_PLAN.md) audits the shipped
 Replay Viewer, Agent Designer, multi-entrant workflows, test seams, and GUI
-resource packaging. Planned implementation refines the Replay Viewer's
-already-separated HUD/arena layout, adds restrained Designer first-launch
-polish, integrates Ruleset-v2 group evaluation into product-facing workflows,
-and finishes with historical-artifact and packaging qualification. Beta3 is
-not yet implemented or released; no gameplay, Agent API, schema, evaluation
-identity, or methodology change is planned.
+resource packaging. Phase 2 now ships responsive detailed/compact entrant HUD
+layouts, centered integer arena scaling that preserves ordinary requested
+window dimensions, compact discoverable help, and stronger authoritative
+terminal-state presentation. Remaining Beta3 work adds restrained Designer
+first-launch polish, integrates Ruleset-v2 group evaluation into product-facing
+workflows, and finishes with historical-artifact and packaging qualification.
+Beta3 is not yet released; no gameplay, Agent API, schema, evaluation identity,
+or methodology change is planned.
 
 ## v2.0.0-rc1 — Release Qualification
 

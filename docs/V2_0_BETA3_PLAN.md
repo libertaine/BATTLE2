@@ -6,9 +6,10 @@ This is the working plan for `v2.0.0-beta3`, on
 `v2.0.0-beta2` release. The Beta2 release branch and annotated tag both point
 to `b580ad2de025443bcb3c55735bdc837fc668a825`.
 
-**Release status: planned, not implemented or released.** This document is
-the Phase-1 product audit and implementation design. It does not change the
-qualified Beta2 engine, evaluation methodology, artifacts, or user data.
+**Release status: Phase 2 complete; Beta3 not released.** This document began
+as the Phase-1 product audit and now records the completed Replay Viewer
+presentation phase. The qualified Beta2 engine, evaluation methodology,
+artifacts, and user data remain unchanged.
 
 > Beta3 presents the qualified game and evaluation workflows more clearly.
 > It does not redesign the game or its evidence model.
@@ -221,7 +222,30 @@ The first six rows define Beta3. The no-argument viewer and direct N-entrant
 Quick Match are optional only if the required phases finish with clear evidence
 and without widening the architecture.
 
-## 5. Replay Viewer target architecture (Phase 2)
+## 5. Replay Viewer target architecture (Phase 2 — complete)
+
+Phase 2 implemented this architecture in the existing
+`battle_client.hud_layout`/`PygameRenderer` seam. The resolved presentation
+decisions are:
+
+- **supported minimum:** 640x480; below-minimum OS sizes are still honored and
+  render bounded/clipped rather than snapping, overlapping, or crashing;
+- **HUD allocation:** at most 35% of window height and, at supported sizes,
+  additionally bounded to preserve a 256-pixel useful arena viewport;
+- **entrant layout:** two entrants use one detailed row; three/four use a
+  detailed row when wide and a balanced two-row grid at minimum width;
+  five-plus use a two-line compact multi-column roster whose columns increase
+  when necessary to stay within the HUD cap;
+- **non-color identity:** every card carries a recorded-order badge (`#1`,
+  `#2`, …) beside the real agent id/name, so fifth and later entrants do not
+  depend on the four-color palette;
+- **resize:** ordinary resize preserves the requested outer dimensions,
+  derives the remaining viewport, and centers the largest fitting integer-
+  scaled arena; deliberate zoom/fit commands retain their window-sizing role;
+- **help/end state:** compact help fits the normal footer and `?` temporarily
+  replaces footer detail/graph with the full controls; authoritative terminal
+  results receive a high-contrast `MATCH COMPLETE` winner/draw line without a
+  modal or winner recomputation.
 
 ### 5.1 Structure
 
@@ -306,7 +330,15 @@ use a modal or full-screen celebration.
 - help and terminal presentation are readable at the minimum supported window;
 - existing replay seek, selection, spatial overlays, Ruleset-v1/v2 status, and
   headless operation remain unchanged;
-- focused client tests, Ruff, client mypy, and the Linux GUI smoke pass.
+- focused client tests, Ruff, client mypy, and the available host GUI smoke
+  pass; Linux/Xvfb remains an environment-specific Phase-5 gate when Linux is
+  available.
+
+Phase-2 qualification passed 187 focused HUD/renderer/playback tests, 292
+client tests, and the canonical full suite (1,897 passed, 14 skipped, 2
+deselected). Repository-wide Ruff, engine/client mypy, and two display-backed
+Pygame smokes passed on Windows. Linux/Xvfb and frozen/installer qualification
+remain Phase-5 environment gates; no Linux result is inferred from Windows.
 
 ## 6. Agent Designer polish direction (Phase 3)
 
@@ -456,9 +488,10 @@ validate and commit on the Beta3 branch.
 
 ### Phase 2 — Replay Viewer HUD & Arena Presentation
 
-**Deliverable:** responsive bands/cards, resize behavior, compact help, and
-terminal-state emphasis on the existing renderer architecture. **Acceptance:**
-the Phase-2 criteria in §5.5.
+**Status: complete. Deliverable:** responsive bands/cards, viewport-preserving
+resize behavior, compact/expanded help, and terminal-state emphasis on the
+existing renderer architecture. **Acceptance:** the Phase-2 criteria in §5.5
+passed; Linux/Xvfb and final frozen packaging remain Phase-5 gates.
 
 ### Phase 3 — Agent Designer / Application Visual Polish
 

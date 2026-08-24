@@ -60,15 +60,19 @@ from battle_client.analysis import (
 )
 from battle_client.hud_layout import (
     CARD_LINE_HEIGHT,
+    COMPACT_HELP_TEXT,
     FOOTER_HEIGHT,
     FOOTER_LINE_HEIGHT,
     HEADER_LINE_HEIGHT,
-    TOP_BAND_HEIGHT,
+    MIN_VIEWER_SIZE,
+    CardMode,
     ViewerLayout,
     calculate_layout,
     format_entrant_card_lines,
+    format_help_lines,
     format_match_header_lines,
     format_playback_line,
+    integer_scale_to_fit,
     truncate_with_ellipsis,
 )
 from battle_client.player import PlaybackController
@@ -138,6 +142,7 @@ DIM_TEXT_COLOR: tuple[int, int, int] = (150, 150, 155)
 STATUS_ALIVE_COLOR: tuple[int, int, int] = (120, 220, 140)
 STATUS_DEAD_COLOR: tuple[int, int, int] = (225, 100, 100)
 STATUS_CAPTURED_COLOR: tuple[int, int, int] = (235, 150, 70)
+TERMINAL_TEXT_COLOR: tuple[int, int, int] = (255, 220, 120)
 # Rough monospace glyph width for the HUD font, used only to convert a
 # card's pixel width into a character budget for deterministic truncation
 # (see hud_layout.truncate_with_ellipsis) -- an estimate, not a font metric
@@ -145,32 +150,10 @@ STATUS_CAPTURED_COLOR: tuple[int, int, int] = (235, 150, 70)
 # never correctness (see test_hud_layout.py's truncation tests).
 HUD_CHAR_WIDTH_PX = 7
 
-HELP_TEXT = (
-    "Space play/pause  Right/Left step  Shift+Right/Left seek 10  "
-    "Home/End first/last  +/- speed  [/] zoom  0 fit  T trails  "
-    "click event to seek  click cell to inspect  Esc/Q quit"
-)
-
-
-def integer_scale_to_fit(
-    grid_cols: int,
-    grid_rows: int,
-    bounds: tuple[int, int],
-) -> int:
-    """Largest positive integer cell scale fitting ``bounds``.
-
-    A one-pixel scale is the irreducible fallback when given degenerate
-    dimensions or a display smaller than the logical arena grid.  Real
-    supported displays are larger than Bytefray's maximum arena grid, but
-    keeping the helper total prevents zero-sized Pygame windows when a
-    display backend briefly reports unusable dimensions.
-    """
-
-    cols = max(1, int(grid_cols))
-    rows = max(1, int(grid_rows))
-    width = max(1, int(bounds[0]))
-    height = max(1, int(bounds[1]))
-    return max(1, min(width // cols, height // rows))
+# Compatibility import surface for tests/consumers that historically imported
+# the footer help text from this module. Beta3 makes it deliberately compact;
+# the full two-line help panel is toggled with ``?``.
+HELP_TEXT = COMPACT_HELP_TEXT
 
 
 def choose_initial_window_scale(
@@ -413,6 +396,7 @@ class KeyAction:
 
     quit_requested: bool = False
     toggle_trails: bool = False
+    toggle_help: bool = False
     rescale: int = 0  # +1/-1 window scale step
     fit_to_display: bool = False
 
@@ -451,6 +435,10 @@ def dispatch_key(
         return KeyAction(rescale=1)
     elif key == pg.K_t:
         return KeyAction(toggle_trails=True)
+    elif key == getattr(pg, "K_QUESTION", -1) or (
+        key == getattr(pg, "K_SLASH", -2) and shift
+    ):
+        return KeyAction(toggle_help=True)
     elif key == pg.K_0:
         return KeyAction(fit_to_display=True)
     return KeyAction()
@@ -486,6 +474,7 @@ class PygameRenderer:
         # Purely visual, transient state -- never authoritative. Cleared on
         # any non-linear tick change (see _advance_transient_effects).
         self.trails_enabled = True
+        self.help_visible = False
         self._trail_points: dict[str, list[tuple[int, int]]] = {}
         self._flash: dict[tuple[int, int], tuple[tuple[int, int, int], int]] = {}
         self._last_rendered_tick: int | None = None
@@ -507,10 +496,10 @@ class PygameRenderer:
         self._event_panel_size: tuple[int, int] | None = None
         self._event_panel_ticks: tuple[int, ...] = ()
 
-        # Beta1 Phase 4: the current window's HUD/arena/footer band geometry
+        # The current window's responsive HUD/arena/footer geometry
         # (battle_client.hud_layout.calculate_layout), recomputed whenever
         # the window is (re)configured or resized -- never per-frame, since
-        # it depends only on window size and entrant count, neither of
+        # it depends only on window size, grid, and entrant count, none of
         # which changes between resizes. ``None`` before the first
         # _configure_window() call (e.g. in a unit test that never called
         # run()) -- every geometry-consuming method below falls back to
@@ -669,27 +658,62 @@ class PygameRenderer:
             pygame.quit()
 
     def _window_size_for_scale(self, scale: int) -> tuple[int, int]:
-        """The total window size for arena cell ``scale``: the arena's own
-        ``grid_cols*scale`` by ``grid_rows*scale`` pixel size, plus the
-        fixed-height top HUD and footer bands (Beta1 Phase 4) -- see
-        ``battle_client.hud_layout.TOP_BAND_HEIGHT``/``FOOTER_HEIGHT``.
+        """Supported outer size for a deliberate manual/initial scale.
+
+        The 640x480 minimum keeps ordinary launches useful, while the HUD
+        height is measured from the same responsive layout helper used for
+        rendering rather than copied as another fixed constant.
         """
-        return (
-            self.grid_cols * scale,
-            TOP_BAND_HEIGHT + self.grid_rows * scale + FOOTER_HEIGHT,
+
+        arena_w = self.grid_cols * scale
+        arena_h = self.grid_rows * scale
+        width = max(MIN_VIEWER_SIZE[0], arena_w)
+        probe = calculate_layout(
+            (width, MIN_VIEWER_SIZE[1]),
+            self._entrant_count,
+            (self.grid_cols, self.grid_rows),
+            preferred_arena_scale=scale,
         )
+        height = max(
+            MIN_VIEWER_SIZE[1], probe.top_band_height + arena_h + FOOTER_HEIGHT
+        )
+        return width, height
 
     def _arena_display_bounds(self) -> tuple[int, int]:
-        """The display-safe bounds available to the *arena* alone: the
-        full display-safe bounds (``_display_bounds``) minus the fixed HUD/
-        footer band heights, so scale-fitting logic (``integer_scale_to_
-        fit``/``choose_initial_window_scale``, both left otherwise
-        unchanged -- see docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md) sizes the
-        arena to the space it will actually occupy, never the whole
-        display.
-        """
+        """Display-safe bounds available to the responsive arena viewport."""
         bounds = self._display_bounds()
-        return (bounds[0], max(1, bounds[1] - TOP_BAND_HEIGHT - FOOTER_HEIGHT))
+        layout = calculate_layout(
+            bounds, self._entrant_count, (self.grid_cols, self.grid_rows)
+        )
+        return layout.arena_viewport_rect[2], layout.arena_viewport_rect[3]
+
+    def _clamp_window_to_display(self, size: tuple[int, int]) -> tuple[int, int]:
+        display_w, display_h = self._display_bounds()
+        return min(max(1, int(size[0])), display_w), min(max(1, int(size[1])), display_h)
+
+    def _apply_window_size(
+        self,
+        size: tuple[int, int],
+        *,
+        preferred_scale: int | None = None,
+    ) -> None:
+        """Set exactly ``size`` and recompute presentation inside it.
+
+        Ordinary resize callers pass no preferred scale, selecting the
+        largest fitting integer scale. Manual zoom callers pass their chosen
+        scale and intentionally resize the outer window around it.
+        """
+
+        requested = max(1, int(size[0])), max(1, int(size[1]))
+        self.screen = self.pg.display.set_mode(requested, self.pg.RESIZABLE)
+        self.pg.display.set_caption(self.title)
+        self._layout = calculate_layout(
+            requested,
+            self._entrant_count,
+            (self.grid_cols, self.grid_rows),
+            preferred_arena_scale=preferred_scale,
+        )
+        self.scale = self._layout.arena_scale
 
     def _configure_window(self) -> None:
         pg = self.pg
@@ -705,12 +729,13 @@ class PygameRenderer:
         icon_path = get_branding_icon_path()
         if icon_path is not None:
             pg.display.set_icon(pg.image.load(str(icon_path)))
-        self.screen = pg.display.set_mode(window_size, pg.RESIZABLE)
-        pg.display.set_caption(self.title)
+        self._apply_window_size(
+            self._clamp_window_to_display(window_size),
+            preferred_scale=self.scale,
+        )
         self.grid_surf = pg.Surface((self.grid_cols, self.grid_rows))
         self.font = pg.font.SysFont("consolas", 14)
         self.hud_font = pg.font.SysFont("consolas", 13)
-        self._layout = calculate_layout(window_size, self._entrant_count)
 
     def _display_bounds(self) -> tuple[int, int]:
         if self._display_safe_bounds is not None:
@@ -726,19 +751,25 @@ class PygameRenderer:
         return self._display_safe_bounds
 
     def _resize_window(self) -> None:
-        size = self._window_size_for_scale(self.scale)
-        self.screen = self.pg.display.set_mode(size, self.pg.RESIZABLE)
-        self.pg.display.set_caption(self.title)
-        self._layout = calculate_layout(size, self._entrant_count)
+        """Deliberate zoom/fit resize around the current integer scale."""
+
+        size = self._clamp_window_to_display(self._window_size_for_scale(self.scale))
+        self._apply_window_size(size, preferred_scale=self.scale)
+
+    def _handle_window_resize(self, size: tuple[int, int]) -> None:
+        """Honor an ordinary OS resize without snapping to arena geometry."""
+
+        self._apply_window_size(size)
 
     def _fit_to_display(self) -> None:
         fit_scale = integer_scale_to_fit(
             self.grid_cols, self.grid_rows, self._arena_display_bounds()
         )
-        old = self.scale
         self.scale = fit_scale
-        if self.scale != old:
-            self._resize_window()
+        # ``0 fit`` is an explicit window-sizing command: restore the ideal
+        # outer geometry even if an arbitrary resize already happens to use
+        # the same integer arena scale.
+        self._resize_window()
 
     def _rescale(self, change: int) -> None:
         """Apply one manual integer scale step within display-safe bounds."""
@@ -770,19 +801,15 @@ class PygameRenderer:
                         break
                     if action.toggle_trails:
                         self.trails_enabled = not self.trails_enabled
+                    if action.toggle_help:
+                        self.help_visible = not self.help_visible
                     if action.rescale:
                         self._rescale(action.rescale)
                     if action.fit_to_display:
                         self._fit_to_display()
                 elif event.type in (pg.VIDEORESIZE, getattr(pg, "WINDOWRESIZED", 32769)):
                     w, h = getattr(event, "size", self.screen.get_size())
-                    arena_bounds = (w, max(1, h - TOP_BAND_HEIGHT - FOOTER_HEIGHT))
-                    new_scale = integer_scale_to_fit(
-                        self.grid_cols, self.grid_rows, arena_bounds
-                    )
-                    if new_scale != self.scale:
-                        self.scale = new_scale
-                        self._resize_window()
+                    self._handle_window_resize((w, h))
                 elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
                     self._handle_click(controller, event.pos)
             if not running:
@@ -1127,14 +1154,16 @@ class PygameRenderer:
         session = controller.session
         state = session.current_state
 
-        band_rect = self.pg.Rect(0, 0, layout.window_size[0], TOP_BAND_HEIGHT)
+        band_height = layout.top_band_height
+        band_rect = self.pg.Rect(0, 0, layout.window_size[0], band_height)
         self.pg.draw.rect(self.screen, PANEL_BG, band_rect)
-        self.pg.draw.line(
-            self.screen,
-            PANEL_BORDER,
-            (0, TOP_BAND_HEIGHT - 1),
-            (layout.window_size[0], TOP_BAND_HEIGHT - 1),
-        )
+        if band_height > 0:
+            self.pg.draw.line(
+                self.screen,
+                PANEL_BORDER,
+                (0, band_height - 1),
+                (layout.window_size[0], band_height - 1),
+            )
 
         statuses = get_entrant_statuses(session, state=state, match_events=self._match_events)
 
@@ -1152,22 +1181,41 @@ class PygameRenderer:
         for index, text in enumerate(header_lines):
             if not text:
                 continue
+            color = TERMINAL_TEXT_COLOR if index == 1 and session.result is not None else TEXT_COLOR
             rendered = self.hud_font.render(
-                truncate_with_ellipsis(text, header_max_chars), True, TEXT_COLOR
+                truncate_with_ellipsis(text, header_max_chars), True, color
             )
-            self.screen.blit(rendered, (hx + 6, hy + index * HEADER_LINE_HEIGHT))
+            line_y = hy + index * HEADER_LINE_HEIGHT
+            if line_y + HEADER_LINE_HEIGHT <= hy + layout.header_rect[3]:
+                self.screen.blit(rendered, (hx + 6, line_y))
 
-        for status, rect in zip(statuses, layout.entrant_card_rects):
-            self._draw_entrant_card(status, rect)
+        for ordinal, (status, rect) in enumerate(
+            zip(statuses, layout.entrant_card_rects), start=1
+        ):
+            self._draw_entrant_card(status, rect, ordinal=ordinal, mode=layout.card_mode)
 
-    def _draw_entrant_card(self, status: EntrantReplayStatus, rect: tuple[int, int, int, int]) -> None:
-        """One entrant's status card (name / status+core / stats), entirely
+    def _draw_entrant_card(
+        self,
+        status: EntrantReplayStatus,
+        rect: tuple[int, int, int, int],
+        *,
+        ordinal: int,
+        mode: CardMode,
+    ) -> None:
+        """One entrant's responsive status card, entirely
         formatted by ``battle_client.hud_layout.format_entrant_card_lines``
         -- this method only chooses colors and blit positions.
         """
-        cx, cy, cw, _ch = rect
+        cx, cy, cw, ch = rect
+        if cw <= 0 or ch <= 0:
+            return
         max_chars = max(6, cw // HUD_CHAR_WIDTH_PX)
-        name_line, status_line, stats_line = format_entrant_card_lines(status, max_chars=max_chars)
+        lines = format_entrant_card_lines(
+            status,
+            max_chars=max_chars,
+            ordinal=ordinal,
+            mode="compact" if mode == "compact" else "detailed",
+        )
 
         if status.core is not None and status.core.captured:
             status_color = STATUS_CAPTURED_COLOR
@@ -1177,9 +1225,14 @@ class PygameRenderer:
             status_color = STATUS_DEAD_COLOR
         name_color = AGENT_COLORS.get(status.agent_id, DEFAULT_AGENT_COLOR)
 
-        for index, (text, color) in enumerate(
-            ((name_line, name_color), (status_line, status_color), (stats_line, DIM_TEXT_COLOR))
-        ):
+        colors = (
+            (name_color, status_color, DIM_TEXT_COLOR)
+            if mode == "detailed"
+            else (name_color, status_color)
+        )
+        for index, (text, color) in enumerate(zip(lines, colors)):
+            if (index + 1) * CARD_LINE_HEIGHT > ch:
+                break
             rendered = self.hud_font.render(text, True, color)
             self.screen.blit(rendered, (cx, cy + index * CARD_LINE_HEIGHT))
 
@@ -1200,8 +1253,8 @@ class PygameRenderer:
         session = controller.session
         state = session.current_state
 
-        footer_y = layout.window_size[1] - FOOTER_HEIGHT
-        band_rect = self.pg.Rect(0, footer_y, layout.window_size[0], FOOTER_HEIGHT)
+        footer_y = layout.window_size[1] - layout.footer_height
+        band_rect = self.pg.Rect(0, footer_y, layout.window_size[0], layout.footer_height)
         self.pg.draw.rect(self.screen, PANEL_BG, band_rect)
         self.pg.draw.line(self.screen, PANEL_BORDER, (0, footer_y), (layout.window_size[0], footer_y))
 
@@ -1236,12 +1289,27 @@ class PygameRenderer:
             self._event_panel_size = None
             self._event_panel_ticks = ()
 
-        # Deterministic truncation (never dynamic font shrinking -- Phase
-        # 4H) so a long controls string can never visually run past its own
-        # column and under the graph panel drawn just to its right.
+        if self.help_visible:
+            # Expanded help replaces the event/status line and graph rather
+            # than becoming a permanent panel or covering the arena.
+            lines = (line1, *format_help_lines(expanded=True))
+            tw = max(0, layout.window_size[0] - 2 * tx)
+            self._event_panel_origin = None
+            self._event_panel_size = None
+            self._event_panel_ticks = ()
+            graph_rect = (0, 0, 0, 0)
+        else:
+            lines = (line1, line2, *format_help_lines(expanded=False))
+            graph_rect = layout.footer_graph_rect
+
+        # Deterministic truncation keeps even undersized platform windows
+        # bounded. At the supported 640px minimum, both compact and expanded
+        # help variants fit their intended columns without ellipsis.
         max_chars = max(6, tw // HUD_CHAR_WIDTH_PX)
-        for index, text in enumerate((line1, line2, HELP_TEXT)):
+        for index, text in enumerate(lines):
+            if (index + 1) * FOOTER_LINE_HEIGHT > layout.footer_height:
+                break
             rendered = self.hud_font.render(truncate_with_ellipsis(text, max_chars), True, TEXT_COLOR)
             self.screen.blit(rendered, (tx, ty + index * FOOTER_LINE_HEIGHT))
 
-        self._draw_footer_graph(state, layout.footer_graph_rect)
+        self._draw_footer_graph(state, graph_rect)

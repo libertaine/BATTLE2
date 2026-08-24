@@ -27,25 +27,42 @@ Two governing rules, both enforced by construction here:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from battle_client.replay_status import EntrantReplayStatus
 
 Rect = tuple[int, int, int, int]  # (x, y, w, h), pixels
 
 # ---------------------------------------------------------------------------
-# Fixed band geometry. All heights are constants, independent of window size
-# or arena scale -- this is what guarantees the arena band's height is
-# always exactly ``window_height - TOP_BAND_HEIGHT - FOOTER_HEIGHT`` with no
-# possibility of a negative-height or overlapping band (see
-# ``calculate_layout``).
+# Responsive band/card geometry (Beta3 Phase 2).
 # ---------------------------------------------------------------------------
 HEADER_LINE_HEIGHT = 18
 HEADER_LINES = 2  # match identity line, winner/termination line
 CARD_LINE_HEIGHT = 16
-CARD_LINES = 3  # name, status(+core), stats
+CARD_LINES = 3  # detailed: identity, status(+core), stats
+COMPACT_CARD_LINES = 2  # compact: identity, essential status/core/score
 TOP_BAND_PADDING = 6
-CARD_GAP = 4  # vertical gap between the header lines and the card row
+CARD_GAP = 4  # gap between the header and cards, and between card rows
 CARD_PADDING_X = 8  # horizontal gutter between/around entrant cards
+
+# 640px gives a two-entrant detailed row about 300px per card (roughly 43
+# monospace HUD characters). 480px leaves at least the 256px useful arena
+# viewport below a one/two-row HUD and the 60px footer. Ordinary OS resize
+# events are still honored below this preferred supported minimum; the pure
+# layout clips bands instead of overlapping or crashing.
+MIN_VIEWER_SIZE = (640, 480)
+MIN_USEFUL_ARENA_HEIGHT = 256
+
+# Detailed cards retain all three existing information lines. At narrower
+# widths they reflow to a balanced two-row grid; five-plus entrants use the
+# denser two-line roster. The 35% cap is also bounded by
+# MIN_USEFUL_ARENA_HEIGHT at supported sizes, so extra entrants cannot consume
+# an unreasonable share of the viewer.
+DETAILED_CARD_MIN_WIDTH = 220
+COMPACT_CARD_MIN_WIDTH = 180
+MAX_TOP_BAND_FRACTION = 0.35
+
+CardMode = Literal["detailed", "compact"]
 
 TOP_BAND_HEIGHT = (
     TOP_BAND_PADDING
@@ -81,47 +98,170 @@ class ViewerLayout:
     window_size: tuple[int, int]
     header_rect: Rect
     entrant_card_rects: tuple[Rect, ...]
+    card_mode: CardMode
+    card_columns: int
+    card_rows: int
+    top_band_height: int
+    arena_viewport_rect: Rect
     arena_rect: Rect
+    arena_scale: int
     footer_text_rect: Rect
     footer_graph_rect: Rect
+    footer_height: int
 
 
-def calculate_layout(window_size: tuple[int, int], entrant_count: int) -> ViewerLayout:
-    """Tile ``window_size`` into header/cards/arena/footer bands.
+def integer_scale_to_fit(grid_cols: int, grid_rows: int, bounds: tuple[int, int]) -> int:
+    """Largest positive integer cell scale fitting ``bounds``.
 
-    Deterministic and pure. ``entrant_count`` cards are laid out in one
-    equal-width row (the last card absorbs any integer-division remainder
-    so the row always tiles exactly to the window width, with no gap or
-    overlap). The arena band's height is always exactly ``window_h -
-    TOP_BAND_HEIGHT - FOOTER_HEIGHT`` -- by construction never overlapping
-    either fixed band, though it can be very small (never negative; clamped
-    at 0) for a pathologically short window.
+    One pixel per cell remains the irreducible fallback for a pathologically
+    small viewport. At every supported viewer size the ordinary arena grids
+    fit at a true positive integer scale; the fallback only keeps undersized
+    platform/window-manager states total and crash-free.
+    """
+
+    cols = max(1, int(grid_cols))
+    rows = max(1, int(grid_rows))
+    width = max(1, int(bounds[0]))
+    height = max(1, int(bounds[1]))
+    return max(1, min(width // cols, height // rows))
+
+
+def _columns_for_width(window_w: int, count: int, minimum_card_width: int) -> int:
+    return max(
+        1,
+        min(
+            count,
+            max(1, (window_w - CARD_PADDING_X) // (minimum_card_width + CARD_PADDING_X)),
+        ),
+    )
+
+
+def _balanced_columns(count: int, maximum_columns: int) -> int:
+    columns = max(1, min(count, maximum_columns))
+    rows = (count + columns - 1) // columns
+    return max(1, min(columns, (count + rows - 1) // rows))
+
+
+def _top_content_height(rows: int, card_lines: int) -> int:
+    return (
+        TOP_BAND_PADDING
+        + HEADER_LINES * HEADER_LINE_HEIGHT
+        + CARD_GAP
+        + rows * card_lines * CARD_LINE_HEIGHT
+        + max(0, rows - 1) * CARD_GAP
+        + TOP_BAND_PADDING
+    )
+
+
+def _top_height_cap(window_h: int, footer_h: int) -> int:
+    available = max(0, window_h - footer_h)
+    proportional = int(window_h * MAX_TOP_BAND_FRACTION)
+    if window_h >= MIN_VIEWER_SIZE[1]:
+        preserve_arena = max(0, window_h - footer_h - MIN_USEFUL_ARENA_HEIGHT)
+        return max(0, min(available, proportional, preserve_arena))
+    return max(0, min(available, proportional))
+
+
+def calculate_layout(
+    window_size: tuple[int, int],
+    entrant_count: int,
+    grid_size: tuple[int, int] | None = None,
+    *,
+    preferred_arena_scale: int | None = None,
+) -> ViewerLayout:
+    """Tile one requested outer window into responsive HUD/arena/footer.
+
+    ``grid_size`` makes ``arena_rect`` the largest centered integer-scaled
+    arena that fits the separate ``arena_viewport_rect``. When omitted (old
+    helper consumers/tests), the arena occupies the whole viewport. A manual
+    zoom may supply ``preferred_arena_scale``; it is capped to what fits.
+
+    Two through four entrants use detailed three-line cards whenever a
+    balanced grid fits the explicit top-band cap. Five-plus entrants use a
+    compact two-line roster. Compact columns may become narrower than their
+    preferred width only when necessary to keep every entrant inside the HUD
+    without starving the arena.
     """
     window_w = max(1, int(window_size[0]))
     window_h = max(1, int(window_size[1]))
     count = max(1, int(entrant_count))
 
-    header_rect: Rect = (0, 0, window_w, TOP_BAND_PADDING + HEADER_LINES * HEADER_LINE_HEIGHT)
+    footer_h = min(FOOTER_HEIGHT, window_h)
+    top_cap = _top_height_cap(window_h, footer_h)
 
-    card_y = header_rect[1] + header_rect[3] + CARD_GAP
-    card_h = CARD_LINES * CARD_LINE_HEIGHT
-    raw_card_w = max(1, (window_w - CARD_PADDING_X * (count + 1)) // count)
+    detailed_columns = _balanced_columns(
+        count, _columns_for_width(window_w, count, DETAILED_CARD_MIN_WIDTH)
+    )
+    detailed_rows = (count + detailed_columns - 1) // detailed_columns
+    detailed_height = _top_content_height(detailed_rows, CARD_LINES)
+
+    if count <= 4 and detailed_height <= top_cap:
+        card_mode: CardMode = "detailed"
+        columns = detailed_columns
+        rows = detailed_rows
+        card_lines = CARD_LINES
+        content_height = detailed_height
+    else:
+        card_mode = "compact"
+        columns = _columns_for_width(window_w, count, COMPACT_CARD_MIN_WIDTH)
+        rows = (count + columns - 1) // columns
+        content_height = _top_content_height(rows, COMPACT_CARD_LINES)
+        while content_height > top_cap and columns < count:
+            columns += 1
+            rows = (count + columns - 1) // columns
+            content_height = _top_content_height(rows, COMPACT_CARD_LINES)
+        card_lines = COMPACT_CARD_LINES
+
+    top_h = min(content_height, top_cap, max(0, window_h - footer_h))
+    header_required_h = TOP_BAND_PADDING + HEADER_LINES * HEADER_LINE_HEIGHT
+    header_rect: Rect = (0, 0, window_w, min(top_h, header_required_h))
+
+    card_y = min(top_h, header_required_h + CARD_GAP)
+    card_h = card_lines * CARD_LINE_HEIGHT
+    available_card_w = max(0, window_w - CARD_PADDING_X * (columns + 1))
+    base_card_w = max(0, available_card_w // columns)
     card_rects: list[Rect] = []
-    x = CARD_PADDING_X
     for index in range(count):
-        if index == count - 1:
-            this_w = max(1, window_w - x - CARD_PADDING_X)
+        row, column = divmod(index, columns)
+        x = CARD_PADDING_X + column * (base_card_w + CARD_PADDING_X)
+        if column == columns - 1:
+            this_w = max(0, window_w - x - CARD_PADDING_X)
         else:
-            this_w = raw_card_w
-        card_rects.append((x, card_y, this_w, card_h))
-        x += this_w + CARD_PADDING_X
+            this_w = base_card_w
+        y = card_y + row * (card_h + CARD_GAP)
+        visible_h = max(0, min(card_h, top_h - y))
+        card_rects.append((x, y, this_w, visible_h))
 
-    footer_y = max(TOP_BAND_HEIGHT, window_h - FOOTER_HEIGHT)
-    arena_rect: Rect = (0, TOP_BAND_HEIGHT, window_w, max(0, footer_y - TOP_BAND_HEIGHT))
+    footer_y = max(top_h, window_h - footer_h)
+    viewport: Rect = (0, top_h, window_w, max(0, footer_y - top_h))
 
-    show_graph = window_w >= FOOTER_GRAPH_MIN_WINDOW_WIDTH
+    if grid_size is None:
+        arena_rect = viewport
+        arena_scale = 1
+    else:
+        cols = max(1, int(grid_size[0]))
+        grid_rows = max(1, int(grid_size[1]))
+        fit_scale = integer_scale_to_fit(cols, grid_rows, (viewport[2], viewport[3]))
+        arena_scale = (
+            fit_scale
+            if preferred_arena_scale is None
+            else max(1, min(fit_scale, int(preferred_arena_scale)))
+        )
+        # If a platform forces a viewport smaller than the logical grid, no
+        # positive integer scale can fit. Clamp only that pathological case
+        # to the viewport so rendering remains bounded and non-overlapping.
+        arena_w = min(viewport[2], cols * arena_scale)
+        arena_h = min(viewport[3], grid_rows * arena_scale)
+        arena_rect = (
+            viewport[0] + max(0, (viewport[2] - arena_w) // 2),
+            viewport[1] + max(0, (viewport[3] - arena_h) // 2),
+            arena_w,
+            arena_h,
+        )
+
+    show_graph = window_w >= FOOTER_GRAPH_MIN_WINDOW_WIDTH and footer_h == FOOTER_HEIGHT
     graph_w = FOOTER_GRAPH_WIDTH if show_graph else 0
-    graph_h = FOOTER_HEIGHT - 2 * FOOTER_PADDING if show_graph else 0
+    graph_h = footer_h - 2 * FOOTER_PADDING if show_graph else 0
     graph_rect: Rect = (
         max(0, window_w - graph_w - FOOTER_PADDING),
         footer_y + FOOTER_PADDING,
@@ -129,15 +269,22 @@ def calculate_layout(window_size: tuple[int, int], entrant_count: int) -> Viewer
         graph_h,
     )
     text_w = max(0, graph_rect[0] - FOOTER_PADDING * 2) if show_graph else max(0, window_w - FOOTER_PADDING * 2)
-    footer_text_rect: Rect = (FOOTER_PADDING, footer_y, text_w, FOOTER_HEIGHT)
+    footer_text_rect: Rect = (FOOTER_PADDING, footer_y, text_w, footer_h)
 
     return ViewerLayout(
         window_size=(window_w, window_h),
         header_rect=header_rect,
         entrant_card_rects=tuple(card_rects),
+        card_mode=card_mode,
+        card_columns=columns,
+        card_rows=rows,
+        top_band_height=top_h,
+        arena_viewport_rect=viewport,
         arena_rect=arena_rect,
+        arena_scale=arena_scale,
         footer_text_rect=footer_text_rect,
         footer_graph_rect=graph_rect,
+        footer_height=footer_h,
     )
 
 
@@ -227,20 +374,84 @@ def format_entrant_stats_line(status: EntrantReplayStatus, *, max_chars: int | N
 
 
 def format_entrant_card_lines(
-    status: EntrantReplayStatus, *, max_chars: int | None = None
-) -> tuple[str, str, str]:
-    """The three lines of one entrant's status card: name, status(+core),
-    stats -- always exactly ``CARD_LINES`` (3) lines, so every card in a
-    row occupies the same fixed height regardless of entrant state.
+    status: EntrantReplayStatus,
+    *,
+    max_chars: int | None = None,
+    ordinal: int | None = None,
+    mode: CardMode = "detailed",
+) -> tuple[str, ...]:
+    """One entrant card's detailed or compact text lines.
+
+    ``ordinal`` is a presentation-only recorded-order badge (``#1``,
+    ``#2``, …), used alongside the real agent id/name so identification
+    remains possible after the four-color palette is exhausted. It is shown
+    for every entrant rather than appearing suddenly at entrant five.
+
+    Detailed cards preserve the existing three-line hierarchy. Compact cards
+    retain identity on line one and textual life/core/score state on line two;
+    lower-priority name/core/score clauses yield deliberately as width narrows,
+    while the ordinal+agent id and Alive/Dead/CAPTURED state remain last.
     """
-    name = status.name.upper()
-    if max_chars is not None and len(name) > max_chars:
-        name = truncate_with_ellipsis(name, max_chars)
-    return (
-        name,
-        format_entrant_status_line(status, max_chars=max_chars),
-        format_entrant_stats_line(status, max_chars=max_chars),
-    )
+
+    bare_identity = status.name.upper()
+    token = f"#{ordinal} {status.agent_id}" if ordinal is not None else status.agent_id
+    identity = f"{token} · {bare_identity}" if ordinal is not None else bare_identity
+    identity = truncate_with_ellipsis(identity, max_chars)
+    if mode == "detailed":
+        return (
+            identity,
+            format_entrant_status_line(status, max_chars=max_chars),
+            format_entrant_stats_line(status, max_chars=max_chars),
+        )
+
+    core = status.core
+    captured = core is not None and core.captured
+    life = "CAPTURED" if captured else ("Alive" if status.alive else "Dead")
+    core_part = f"Core {core.intact_cells}/{core.total_cells}" if core is not None else None
+    score_part = f"Score {status.score:g}"
+    candidates = [
+        " | ".join(part for part in (life, core_part, score_part) if part),
+        " | ".join(part for part in (life, core_part) if part),
+        life,
+    ]
+    if max_chars is None:
+        compact_status = candidates[0]
+    else:
+        compact_status = next(
+            (candidate for candidate in candidates if len(candidate) <= max_chars),
+            truncate_with_ellipsis(life, max_chars),
+        )
+    return identity, compact_status
+
+
+COMPACT_HELP_TEXT = "Space play/pause · arrows step · Shift+arrows seek · ? controls"
+EXPANDED_HELP_LINES = (
+    "Space play/pause · arrows step · Shift+arrows seek 10 · Home/End first/last",
+    "+/- speed · [/] zoom · 0 fit · T trails · click inspect/seek · Esc/Q quit · ? close",
+)
+
+
+def format_help_lines(*, expanded: bool) -> tuple[str, ...]:
+    """Compact always-visible help or the two-line footer help panel."""
+
+    return EXPANDED_HELP_LINES if expanded else (COMPACT_HELP_TEXT,)
+
+
+def format_terminal_state_line(
+    *, winner: str | None, termination_reason: str | None, result_available: bool
+) -> str:
+    """Prominent text for an already-authoritative replay terminal result.
+
+    This does not infer a winner or termination condition. It only labels the
+    result fields already loaded by :class:`ReplaySession` and keeps the same
+    historical no-winner-as-tie presentation used by the prior HUD.
+    """
+
+    if not result_available:
+        return ""
+    outcome = f"Winner: {winner}" if winner is not None else "Draw / tie"
+    reason = (termination_reason or "unknown").replace("_", " ")
+    return f"MATCH COMPLETE — {outcome} — {reason}"
 
 
 def format_match_header_lines(
@@ -267,10 +478,11 @@ def format_match_header_lines(
         f"Bytefray Replay — Ruleset {ruleset_label}  |  runtime {runtime_kind}  |  "
         f"arena {arena_size}  |  entrants {entrant_count}"
     )
-    if result_available:
-        line2 = f"Winner: {winner or 'tie'}   Termination: {termination_reason or 'unknown'}"
-    else:
-        line2 = ""
+    line2 = format_terminal_state_line(
+        winner=winner,
+        termination_reason=termination_reason,
+        result_available=result_available,
+    )
     return (line1, line2)
 
 
@@ -285,6 +497,11 @@ __all__ = [
     "CARD_LINES",
     "CARD_LINE_HEIGHT",
     "CARD_PADDING_X",
+    "COMPACT_CARD_LINES",
+    "COMPACT_CARD_MIN_WIDTH",
+    "COMPACT_HELP_TEXT",
+    "DETAILED_CARD_MIN_WIDTH",
+    "EXPANDED_HELP_LINES",
     "FOOTER_GRAPH_MIN_WINDOW_WIDTH",
     "FOOTER_GRAPH_WIDTH",
     "FOOTER_HEIGHT",
@@ -293,15 +510,22 @@ __all__ = [
     "FOOTER_PADDING",
     "HEADER_LINES",
     "HEADER_LINE_HEIGHT",
+    "MAX_TOP_BAND_FRACTION",
+    "MIN_USEFUL_ARENA_HEIGHT",
+    "MIN_VIEWER_SIZE",
     "TOP_BAND_HEIGHT",
     "TOP_BAND_PADDING",
+    "CardMode",
     "Rect",
     "ViewerLayout",
     "calculate_layout",
     "format_entrant_card_lines",
     "format_entrant_stats_line",
     "format_entrant_status_line",
+    "format_help_lines",
     "format_match_header_lines",
     "format_playback_line",
+    "format_terminal_state_line",
+    "integer_scale_to_fit",
     "truncate_with_ellipsis",
 ]

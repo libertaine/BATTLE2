@@ -339,7 +339,8 @@ def test_hud_shows_winner_and_termination_regardless_of_cursor_position(tmp_path
         result_available=session.result is not None,
     )
     assert "Winner: A" in line2
-    assert "Termination: tick_limit" in line2
+    assert "MATCH COMPLETE" in line2
+    assert "tick limit" in line2
 
 
 def test_hud_agent_status_reflects_alive_dead(tmp_path):
@@ -449,6 +450,16 @@ def test_dispatch_t_reports_toggle_trails(tmp_path):
     session = _five_tick_session(tmp_path)
     controller = PlaybackController(session)
     assert dispatch_key(pygame, pygame.K_t, 0, controller).toggle_trails
+
+
+def test_dispatch_question_mark_reports_toggle_help(tmp_path):
+    pygame = pytest.importorskip("pygame")
+    session = _five_tick_session(tmp_path)
+    controller = PlaybackController(session)
+    assert dispatch_key(pygame, pygame.K_QUESTION, 0, controller).toggle_help
+    assert dispatch_key(
+        pygame, pygame.K_SLASH, pygame.KMOD_SHIFT, controller
+    ).toggle_help
 
 
 def test_dispatch_unknown_key_is_a_no_op(tmp_path):
