@@ -2,6 +2,39 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [2.0.0-rc2] - 2026-08-24
+
+### Fixed omitted-start Ruleset-v2 default placement (RC1 release blocker)
+
+- `bytefray run` (and, transitively, Agent Designer's Simple/Advanced direct
+  matches and Development Test, none of which ever set a start address)
+  previously defaulted every omitted `--a-start`/`--b-start`/`--c-start` to
+  the literal integer `0`. Under the permanent Ruleset-v2 identity, every
+  entrant's vulnerable core is anchored at its own start address, so every
+  omitted-start default match collapsed all entrants' cores onto the same
+  window and the last entrant seeded eliminated every earlier entrant before
+  its first action. `bytefray agents test` / Designer's Development Test had
+  the identical independent default and defect.
+- Omitted starts under the permanent Ruleset-v2 identity now resolve to a
+  deterministic, non-overlapping per-seat layout instead. An explicitly
+  supplied start (including an explicit `0`) is always preserved exactly as
+  given, never adjusted.
+- The engine now fails closed: `NativeMatchService.run` rejects any resolved
+  Ruleset-v2 placement whose entrant cores overlap (including ordinary arena
+  wraparound) before any entrant executes or any replay/result artifact is
+  written, for every caller — CLI, Designer, and direct `MatchRequest`
+  construction alike.
+- Ruleset-v1's historical omitted-start default (`0`) is unchanged, as are
+  Ruleset-v2 gameplay semantics, the Agent API, all schemas, and evaluation
+  methodology. RC2's corrected default v2 match identity intentionally
+  differs from RC1's broken one-tick default; RC1's historical artifacts
+  remain readable and are not reinterpreted.
+- Also removes stale "Beta3" wording from the Agent Designer's read-only
+  source-viewer hint/tooltip and recaptures the affected README screenshot.
+
+RC2 corrects an RC1 default-path integration defect discovered during RC1's
+release audit — it is not a new development cycle or gameplay redesign.
+
 ## [2.0.0-rc1] - 2026-08-24
 
 ### Bytefray 2.0 release-candidate freeze

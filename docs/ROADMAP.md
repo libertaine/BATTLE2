@@ -849,6 +849,34 @@ pre-created; another candidate remains evidence-driven only.
 Additional beta releases beyond beta3/rc1 are evidence-driven only and are
 not pre-planned.
 
+## v2.0.0-rc2 — Corrected Release Qualification
+
+**Status: release candidate prepared for final artifact and CI qualification;
+not yet published.** RC2 exists solely to correct RC1's release-blocking
+default-placement defect: an omitted-start Ruleset-v2 direct match (the
+documented default CLI/README style, and every Designer Simple/Advanced/
+Development-Test path, none of which ever set a start address) collapsed
+every entrant's vulnerable core onto address 0, letting the last entrant
+seeded eliminate every earlier entrant before its first action. Omitted
+Ruleset-v2 starts now resolve to a deterministic, non-overlapping per-seat
+layout; explicit starts are preserved exactly; and the engine fails closed
+before execution if a resolved Ruleset-v2 placement still overlaps. Ruleset-v1
+default placement, Ruleset-v2 gameplay semantics, the Agent API, all schemas,
+and evaluation methodology are unchanged. This is corrective product
+integration work, not a new gameplay design.
+
+The exact corrective tree passed the full automated suite (1,936 passed, 14
+skipped, 2 deselected) plus 195 GUI/display-backed tests, Ruff, and both
+canonical mypy targets clean on Windows; candidate-branch CI passed the
+Python 3.10-3.13 core matrix, the Linux wheel build, and the Windows
+frozen-build job. The documented default `bytefray run` command, Agent
+Designer's default Quick Match, Development Test, a 3-entrant omitted-start
+match, explicit same-address and arena-wraparound overlap rejection, and the
+Ruleset-v1 omitted-start control were each re-run directly against this
+candidate and matched their expected corrected/unchanged behavior. Final RC2
+wheel/source/portable/installer and CI qualification still precede tagging or
+publication. RC3 is not pre-planned and remains evidence-driven only.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:

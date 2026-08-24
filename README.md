@@ -136,6 +136,9 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
+**RC2 candidate:** `v2.0.0-rc2` corrects an RC1 default-placement defect and
+is in final artifact and CI qualification; it has not yet been published.
+
 **Current published prerelease:** [Bytefray v2.0.0-rc1](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-rc1)
 — Release Qualification. It is the frozen candidate for real-use soak and
 final verification, not yet the stable 2.0 line.
