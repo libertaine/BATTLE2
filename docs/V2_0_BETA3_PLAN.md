@@ -550,13 +550,15 @@ packaging/environment qualification.
 
 ### Phase 5 — Integrated Beta3 Qualification & Release Decision
 
-**Deliverable:** no new feature design; qualify source, isolated wheel, Windows
+**Status: complete; qualified and published. Deliverable:** no new feature
+design; qualify source, isolated wheel, Windows
 frozen/portable/installer GUI workflows, Replay Viewer 2/3/4+ entrant cases,
 Designer empty/content lifecycle, pairwise and group evaluation/history, and
-historical artifacts. Decide release readiness from evidence. The active Phase
-5 release task is explicitly authorized to merge, tag, and publish only after
-every mandatory source, package, frozen, installer, and compatibility gate
-passes.
+historical artifacts. Every mandatory source, package, frozen, installer,
+upgrade, and compatibility gate passed. Final artifacts were built from release
+commit `401431b`, and the annotated tag and
+[GitHub prerelease](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta3)
+publish that exact commit with independently verified asset hashes.
 
 This five-phase sequence is proportionate; no additional phase is justified by
 the current architecture.
