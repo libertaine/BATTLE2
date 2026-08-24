@@ -3,10 +3,10 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -19,6 +19,7 @@ from app.widgets.agent_combo import (
     selected_agent_name,
     sync_compatible_b_choices,
 )
+from app.widgets.designer_presentation import MatchOutputView
 
 GRID_PRESETS = {
     "Small (256)": 256,
@@ -42,50 +43,81 @@ class SimplePanel(QWidget):
 
         root = QVBoxLayout(self)
 
-        # Top controls
+        # Match configuration and actions
         controls = QGroupBox("Quick Match")
-        grid = QHBoxLayout(controls)
+        controls_layout = QVBoxLayout(controls)
+        controls_layout.setContentsMargins(12, 12, 12, 12)
+        controls_layout.setSpacing(10)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(4)
 
-        grid.addWidget(QLabel("Agent A"))
+        agent_a_label = QLabel("Agent A")
         self.agentA = QComboBox()
-        grid.addWidget(self.agentA)
+        agent_a_label.setBuddy(self.agentA)
+        grid.addWidget(agent_a_label, 0, 0)
+        grid.addWidget(self.agentA, 1, 0)
 
-        grid.addWidget(QLabel("Agent B"))
+        agent_b_label = QLabel("Agent B")
         self.agentB = QComboBox()
-        grid.addWidget(self.agentB)
+        agent_b_label.setBuddy(self.agentB)
+        grid.addWidget(agent_b_label, 0, 1)
+        grid.addWidget(self.agentB, 1, 1)
 
-        grid.addWidget(QLabel("Grid"))
+        grid_label = QLabel("Grid")
         self.gridSize = QComboBox()
         for k in GRID_PRESETS:
             self.gridSize.addItem(k)
         self.gridSize.setCurrentIndex(1)  # Medium
-        grid.addWidget(self.gridSize)
+        grid_label.setBuddy(self.gridSize)
+        grid.addWidget(grid_label, 0, 2)
+        grid.addWidget(self.gridSize, 1, 2)
 
-        grid.addWidget(QLabel("Ticks"))
+        ticks_label = QLabel("Ticks")
         self.ticks = QComboBox()
         for t in TICK_PRESETS:
             self.ticks.addItem(str(t), userData=t)
         self.ticks.setCurrentIndex(1)
-        grid.addWidget(self.ticks)
+        ticks_label.setBuddy(self.ticks)
+        grid.addWidget(ticks_label, 0, 3)
+        grid.addWidget(self.ticks, 1, 3)
+        grid.setColumnStretch(0, 2)
+        grid.setColumnStretch(1, 2)
+        grid.setColumnStretch(2, 1)
+        grid.setColumnStretch(3, 1)
+        controls_layout.addLayout(grid)
 
         self.btnRun = QPushButton("Run Match")
+        run_font = self.btnRun.font()
+        run_font.setBold(True)
+        self.btnRun.setFont(run_font)
+        self.btnRun.setMinimumWidth(120)
+        self.btnRun.setAccessibleDescription(
+            "Run a match using the selected agents, grid, and tick limit."
+        )
         self.btnStop = QPushButton("Stop")
         self.btnOpen = QPushButton("Open Last Replay")
         self.btnOpen.setEnabled(False)
         self.btnRefresh = QPushButton("Refresh Agents")
 
-        grid.addWidget(self.btnRun)
-        grid.addWidget(self.btnStop)
-        grid.addWidget(self.btnOpen)
-        grid.addWidget(self.btnRefresh)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        actions.addWidget(self.btnRun)
+        actions.addWidget(self.btnStop)
+        actions.addWidget(self.btnOpen)
+        actions.addStretch(1)
+        actions.addWidget(self.btnRefresh)
+        controls_layout.addLayout(actions)
 
         root.addWidget(controls)
 
-        # Log area
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumBlockCount(10000)
-        root.addWidget(self.log, 1)
+        # Output area: a real UI empty state, never placeholder log data.
+        output_group = QGroupBox("Match Output")
+        output_layout = QVBoxLayout(output_group)
+        self.output = MatchOutputView(output_group)
+        self.log = self.output.log  # Existing MainWindow/test compatibility surface.
+        output_layout.addWidget(self.output)
+        root.addWidget(output_group, 1)
 
         # Signals
         self.btnRun.clicked.connect(self._emit_run)
@@ -93,15 +125,22 @@ class SimplePanel(QWidget):
         self.btnOpen.clicked.connect(self.openReplayRequested.emit)
         self.btnRefresh.clicked.connect(self.refreshAgentsRequested.emit)
         self.agentA.currentIndexChanged.connect(self._on_agent_a_changed)
+        self.agentA.currentIndexChanged.connect(self._update_matchup_summary)
+        self.agentB.currentIndexChanged.connect(self._update_matchup_summary)
+        self._update_matchup_summary()
 
     # API consumed by MainWindow
     def setAgents(self, rows: list[AgentRow]) -> None:
         populate_agent_combo(self.agentA, rows)
         populate_agent_combo(self.agentB, rows)
         sync_compatible_b_choices(self.agentA, self.agentB)
+        self._update_matchup_summary()
 
     def _on_agent_a_changed(self, _index: int) -> None:
         sync_compatible_b_choices(self.agentA, self.agentB)
+
+    def _update_matchup_summary(self, _index: int | None = None) -> None:
+        self.output.set_matchup(self.agentA.currentText(), self.agentB.currentText())
 
     def setBusy(self, busy: bool) -> None:
         for w in (
@@ -119,7 +158,10 @@ class SimplePanel(QWidget):
         self.btnOpen.setEnabled(enable)
 
     def appendLog(self, line: str) -> None:
-        self.log.appendPlainText(line.rstrip("\n"))
+        self.output.append_log(line)
+
+    def clearLog(self) -> None:
+        self.output.clear_log()
 
     # Helpers
     def _emit_run(self) -> None:

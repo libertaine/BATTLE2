@@ -6,10 +6,10 @@ This is the working plan for `v2.0.0-beta3`, on
 `v2.0.0-beta2` release. The Beta2 release branch and annotated tag both point
 to `b580ad2de025443bcb3c55735bdc837fc668a825`.
 
-**Release status: Phase 2 complete; Beta3 not released.** This document began
-as the Phase-1 product audit and now records the completed Replay Viewer
-presentation phase. The qualified Beta2 engine, evaluation methodology,
-artifacts, and user data remain unchanged.
+**Release status: Phase 3 complete; Beta3 not released.** This document began
+as the Phase-1 product audit and now records the completed Replay Viewer and
+Agent Designer presentation phases. The qualified Beta2 engine, evaluation
+methodology, artifacts, and user data remain unchanged.
 
 > Beta3 presents the qualified game and evaluation workflows more clearly.
 > It does not redesign the game or its evidence model.
@@ -340,7 +340,7 @@ deselected). Repository-wide Ruff, engine/client mypy, and two display-backed
 Pygame smokes passed on Windows. Linux/Xvfb and frozen/installer qualification
 remain Phase-5 environment gates; no Linux result is inferred from Windows.
 
-## 6. Agent Designer polish direction (Phase 3)
+## 6. Agent Designer polish direction (Phase 3 — complete)
 
 The smallest useful first-launch improvement is a restrained application
 identity plus a real empty state, not a background watermark.
@@ -374,6 +374,33 @@ Phase-3 acceptance:
 - native keyboard navigation and existing lifecycle behavior remain intact;
 - empty/content transition logic has focused helper/Qt coverage and GUI startup
   smokes pass.
+
+Phase 3 retained the native tabbed shell and resolved the presentation as
+follows:
+
+- one compact header above the existing tabs uses the approved square icon via
+  `get_branding_icon_path`, with real text remaining complete when the optional
+  image cannot be loaded;
+- Quick Match uses a labeled configuration grid and separate action row, with
+  the unchanged `Run Match` action given restrained local emphasis;
+- the Simple output area is a `QStackedWidget`-based ready/live view. Its ready
+  copy is actual accessible UI text and never enters the `QPlainTextEdit`; the
+  first meaningful `appendLog` call selects the genuine log page;
+- the matchup summary uses the combo boxes' existing disambiguated presentation
+  labels while selection and command construction remain authoritative by
+  discovery id under `Qt.UserRole`; duplicate names and self-match therefore
+  remain truthful;
+- no user-facing Clear action was invented. The presentation seam exposes an
+  explicit clear transition that restores the current ready state for callers,
+  and focused tests cover ready -> selection -> live -> clear -> ready -> live.
+
+Qualification passed 7 new presentation tests, 184 broader Qt tests, the
+display-backed startup smoke, two real Designer match runs, and the canonical
+headless suite (1,897 passed, 14 skipped, 2 deselected). Repository-wide Ruff,
+engine/client mypy, resource-path tests, and diff checks passed on Windows. The
+standalone/unified frozen builds, installer, wheel execution, and Linux/Xvfb
+remain Phase-5 integrated environment gates; Phase 3 changed no resource helper,
+asset, PyInstaller spec, installer, or package-data rule.
 
 ## 7. Multi-entrant product integration and wording (Phase 4)
 
@@ -495,9 +522,10 @@ passed; Linux/Xvfb and final frozen packaging remain Phase-5 gates.
 
 ### Phase 3 — Agent Designer / Application Visual Polish
 
-**Deliverable:** intentional first-launch hierarchy and content-replacing empty
-states using existing branding. **Acceptance:** the Phase-3 criteria in §6,
-including canonical packaging modes.
+**Status: complete. Deliverable:** intentional first-launch hierarchy and
+content-replacing empty states using existing branding. **Acceptance:** the
+Phase-3 criteria in §6 passed in source/host qualification; canonical wheel,
+frozen, installer, and Linux/Xvfb execution remain Phase-5 integrated gates.
 
 ### Phase 4 — Multi-Entrant Product Integration & Documentation
 

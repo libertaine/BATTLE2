@@ -35,6 +35,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from app.services.agent_catalog import AgentCatalog, AgentRow
@@ -66,6 +68,7 @@ from app.views.evaluation import EvaluationDialog, EvaluationResultsDialog
 from app.views.evaluation_history import EvaluationHistoryDialog
 from app.views.simple import SimplePanel
 from app.views.tournament import TournamentDialog
+from app.widgets.designer_presentation import DesignerIdentityHeader
 
 
 def _resolve_data_root() -> Path:
@@ -155,7 +158,14 @@ class AgentDesigner(QMainWindow):
                 f"Failed to initialize Agent Development panel with data_root={data_root}\n\n{e}",
             )
 
-        self.setCentralWidget(self.tabs)
+        central = QWidget(self)
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(8, 8, 8, 8)
+        central_layout.setSpacing(8)
+        self.identityHeader = DesignerIdentityHeader(central)
+        central_layout.addWidget(self.identityHeader)
+        central_layout.addWidget(self.tabs, 1)
+        self.setCentralWidget(central)
         self._build_menus()
         self.resize(1000, 720)
 
