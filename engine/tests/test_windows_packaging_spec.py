@@ -197,6 +197,20 @@ def test_bytefray_spec_still_bundles_starter_agents(monkeypatch):
     assert any(entry[1] == "battle_engine/data/starter_agents" for entry in datas)
 
 
+def test_bytefray_spec_bundles_designer_branding_icon(monkeypatch):
+    """The unified ``bytefray.exe design`` path must retain Beta3 branding."""
+
+    datas = _exec_spec_datas(BYTEFRAY_SPEC, monkeypatch)
+    branding_entries = [entry for entry in datas if entry[1] == "assets/branding"]
+    assert branding_entries, (
+        "tools/bytefray.spec's `datas` must bundle the package-local "
+        "branding directory used by the Beta3 Designer identity header"
+    )
+    source_dir = Path(branding_entries[0][0])
+    assert source_dir.is_dir()
+    assert (source_dir / "bytefray-icon.png").is_file()
+
+
 def test_agent_designer_spec_bundles_the_agent_template_directory(monkeypatch):
     """Regression test for the Phase 4a packaging blocker (agent_designer_workflow.md Sec 17.3).
 

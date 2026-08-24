@@ -8,6 +8,7 @@ client_src = os.path.join(project_root, "client", "src")
 script_path = os.path.join(engine_src, "battle_engine", "__main__.py")
 pmars_dir = os.path.join(project_root, "pmars", "windows")
 icon_path = os.path.join(project_root, "assets", "branding", "bytefray-icon.ico")
+branding_dir = os.path.join(project_root, "app", "assets", "branding")
 starter_agents_dir = os.path.join(engine_src, "battle_engine", "data", "starter_agents")
 agent_template_dir = os.path.join(engine_src, "battle_engine", "data", "agent_template")
 pmars_datas = [
@@ -15,6 +16,8 @@ pmars_datas = [
     (os.path.join(pmars_dir, "COPYING"), "pmars/windows"),
 ]
 datas = list(pmars_datas)
+if os.path.isdir(branding_dir):
+    datas.append((branding_dir, "assets/branding"))
 if os.path.isdir(starter_agents_dir):
     datas.append((starter_agents_dir, "battle_engine/data/starter_agents"))
 if os.path.isdir(agent_template_dir):

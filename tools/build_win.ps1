@@ -74,6 +74,14 @@ foreach ($Artifact in $Artifacts) {
   if (-not (Test-Path $ExePath)) { throw "Expected artifact was not produced: $ExePath" }
 }
 
+# Beta3's Designer identity header uses the shared square branding icon. The
+# unified dispatcher imports the Designer dynamically, so prove its frozen
+# tree contains the same runtime resource as the standalone GUI build.
+$UnifiedBrandingIcon = Join-Path $DistDir "bytefray\_internal\assets\branding\bytefray-icon.png"
+if (-not (Test-Path -LiteralPath $UnifiedBrandingIcon -PathType Leaf)) {
+  throw "Unified Designer branding resource missing: $UnifiedBrandingIcon"
+}
+
 # Exercise the dynamically imported Designer from the unified dispatcher and
 # the standalone Designer. The internal timeout enters the Qt event loop and
 # closes deterministically without requiring desktop automation.
