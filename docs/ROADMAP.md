@@ -801,8 +801,8 @@ for the published assets and notes.
 
 ## v2.0.0-beta3 — Workflow & Compatibility Stabilization
 
-**Status: implementation complete; release preparation and integrated Phase 5
-qualification in progress. Beta3 is not yet published.** The
+**Status: shipped.** `v2.0.0-beta3` is tagged and published as a GitHub
+prerelease. The
 [Beta3 product-presentation plan](V2_0_BETA3_PLAN.md) audits the shipped
 Replay Viewer, Agent Designer, multi-entrant workflows, test seams, and GUI
 resource packaging. Phase 2 now ships responsive detailed/compact entrant HUD
@@ -814,10 +814,13 @@ ready/log state whose matchup text follows the current authoritative selections.
 Phase 4 adds explicit Pairwise/Group evaluation modes, a canonical
 Ruleset-v2 roster/layout/seat-assignment preview, group-aware live and history
 presentation, and safe drill-down capabilities without changing methodology or
-artifacts. Phase 5 is qualifying the exact `2.0.0b3` source, wheel, frozen,
-portable, installer, and historical-artifact release candidate before any
-merge, tag, or publication. No gameplay, Agent API, schema, evaluation identity,
-or methodology change is planned.
+artifacts. Phase 5 qualified the exact `2.0.0b3` source, wheel, frozen,
+portable, installer, Beta2 upgrade, and historical-artifact release candidate.
+The annotated tag publishes qualified release commit `401431b`; all five live
+release assets were independently downloaded and verified hash-identical. See
+the [v2.0.0-beta3 release](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta3)
+for the published assets and notes. No gameplay, Agent API, schema, evaluation
+identity, or methodology changed.
 
 ## v2.0.0-rc1 — Release Qualification
 
