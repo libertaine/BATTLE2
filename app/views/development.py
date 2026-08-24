@@ -201,7 +201,7 @@ class AgentDevelopmentPanel(QWidget):
         source = QGroupBox("Source")
         source_layout = QVBoxLayout(source)
         source_hint = QLabel(
-            "Source is read-only in Beta3. Use Open Folder to edit the agent externally."
+            "Source is read-only. Use Open Folder to edit the agent externally."
         )
         source_hint.setWordWrap(True)
         source_layout.addWidget(source_hint)
@@ -214,7 +214,7 @@ class AgentDevelopmentPanel(QWidget):
             viewer.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
             viewer.setFont(fixed_font)
             viewer.setToolTip(
-                "Source is read-only in Beta3. Use Open Folder to edit externally."
+                "Source is read-only. Use Open Folder to edit externally."
             )
         self.sourceTabs.addTab(self.pythonSource, "agent.py")
         self.sourceTabs.addTab(self.manifestSource, "agent.yaml")
