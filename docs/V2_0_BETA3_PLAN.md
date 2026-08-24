@@ -6,8 +6,8 @@ This is the working plan for `v2.0.0-beta3`, on
 `v2.0.0-beta2` release. The Beta2 release branch and annotated tag both point
 to `b580ad2de025443bcb3c55735bdc837fc668a825`.
 
-**Release status: implementation complete; release preparation and integrated
-Phase 5 qualification in progress; Beta3 not published.** This document began
+**Release status: published as the `v2.0.0-beta3` prerelease on August 24,
+2026, after integrated Phase 5 qualification completed.** This document began
 as the Phase-1 product audit and now records the completed Replay Viewer,
 Agent Designer presentation, and multi-entrant product-integration phases. The
 qualified Beta2 engine, evaluation methodology, artifacts, and user data remain
