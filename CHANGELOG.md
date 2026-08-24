@@ -2,6 +2,36 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [2.0.0-rc1] - 2026-08-24
+
+### Bytefray 2.0 release-candidate freeze
+
+- Freezes the integrated 2.0 candidate: Ruleset-v2 vulnerable-core gameplay,
+  multi-entrant matches and evaluation, responsive Replay Viewer presentation,
+  and complete Agent Designer authoring/evaluation workflows.
+- Ruleset-v2 gameplay semantics, Agent API v1, result/replay/evaluation/package
+  schemas, revision and canonical match identities, and evaluation methodology
+  are unchanged from the qualified beta program.
+
+### Post-Beta3 workflow completion
+
+- Simple and Advanced Designer matches now expose explicit Ruleset selection.
+  Compatible Python-vs-Python direct matches recommend/default to Ruleset v2;
+  VM/blob selections clearly fall back to the valid Ruleset-v1 path. The
+  canonical `ruleset_id` is passed explicitly to the engine and persisted in
+  result/replay artifacts.
+- Agent Development now displays the selected Python agent's `agent.py` and
+  `agent.yaml` in a fail-closed, read-only viewer, clears stale source when the
+  selection changes, and retains external editing through **Open Folder**.
+- README onboarding was reorganized around the current product, with refreshed
+  Windows Agent Designer and Ruleset-v2 multi-entrant Replay Viewer screenshots.
+
+### Qualification stabilization
+
+- The source-viewer symlink-containment regression now skips consistently when
+  non-privileged Windows cannot create a test symlink, matching the existing
+  cross-platform containment-test policy without weakening production checks.
+
 ## [2.0.0-beta3] - 2026-08-24
 
 ### Replay Viewer presentation

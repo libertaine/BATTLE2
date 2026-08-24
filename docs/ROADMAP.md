@@ -824,8 +824,22 @@ identity, or methodology changed.
 
 ## v2.0.0-rc1 — Release Qualification
 
-**Status: planned.** Purpose: release qualification only — no gameplay
-design work belongs here.
+**Status: release candidate prepared for final artifact and CI qualification;
+not yet published.** RC1 freezes the exact integrated 2.0 product without new
+gameplay design: Ruleset-v2 direct Python play is the recommended Designer
+default, Ruleset v1 remains the valid VM/blob and legacy path, canonical
+Ruleset selection reaches result/replay artifacts, and Agent Development adds
+read-only `agent.py`/`agent.yaml` inspection. The reorganized README and current
+Windows screenshots present the same product.
+
+The exact pre-version tree passed 1,908/1,922 Windows headless tests (14
+documented skips, two GUI tests deselected), both separate GUI tests, 1,917/1,922
+Linux headless tests (five documented skips, two GUI tests deselected), focused
+Designer/Replay Viewer/historical-artifact suites, Ruff, both canonical mypy
+targets, real pairwise/group workflows, a clean installed wheel, and all four
+Windows frozen applications. Final RC1 wheel/source/portable/installer and CI
+qualification still precede tagging or publication. No RC2 milestone is
+pre-created; another candidate is evidence-driven only.
 
 Additional beta releases beyond beta3/rc1 are evidence-driven only and are
 not pre-planned.

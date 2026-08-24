@@ -71,8 +71,8 @@ developing Python agents:
 - Pairwise and Ruleset-v2 Group Evaluation with matrix preview
 - evaluation history, comparison, provenance, and revision restoration
 
-Source viewing is deliberately read-only in Beta3. Use **Open Folder** to edit
-an agent with your preferred editor. See the
+Source viewing is deliberately read-only in the 2.0 release candidate. Use
+**Open Folder** to edit an agent with your preferred editor. See the
 [Agent Authoring Guide](docs/AGENT_AUTHORING.md) and
 [Agent Designer workflow reference](docs/specs/agent_designer_workflow.md).
 
@@ -89,7 +89,8 @@ bytefray design
 </p>
 
 The Pygame Replay Viewer reconstructs the arena directly from a canonical
-replay; it never reruns the match. Its current Beta3 presentation includes:
+replay; it never reruns the match. Its presentation, introduced for Beta3 and
+retained in RC1, includes:
 
 - a responsive arena view with ownership, recent activity, trails, selection,
   and write markers
@@ -135,7 +136,10 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-**Current prerelease:** [Bytefray v2.0.0-beta3](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta3)
+**RC1 candidate:** `v2.0.0-rc1` is in final artifact and CI qualification and
+has not yet been published.
+
+**Current published prerelease:** [Bytefray v2.0.0-beta3](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta3)
 — Product Presentation & Workflow. It is published as a prerelease, not yet
 the stable 2.0 line.
 
@@ -285,10 +289,11 @@ For development setup, testing, and contribution workflow, see
 
 Bytefray's stable 1.x line established Agent API v1, Ruleset v1, canonical
 result/replay schemas, reproducible evaluation, provenance, package sharing,
-and architecture boundaries. The 2.0 beta program adds the Python-only
+and architecture boundaries. The 2.0 beta program added the Python-only
 Ruleset-v2 vulnerable-core game and scales evaluation and presentation to
-multi-entrant work. Beta3 focuses on presenting those capabilities coherently
-through Agent Designer, Replay Viewer, onboarding, and documentation.
+multi-entrant work. RC1 freezes those capabilities together with explicit
+Designer Ruleset selection, read-only agent-source inspection, refreshed
+onboarding, and current product screenshots for release qualification.
 
 Future 2.x ideas—replication, multi-unit entrants, communication, richer
 resource/attack mechanics, and Agent API v2—remain research, not commitments.
