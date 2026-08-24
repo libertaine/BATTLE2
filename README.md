@@ -136,20 +136,17 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-**RC1 candidate:** `v2.0.0-rc1` is in final artifact and CI qualification and
-has not yet been published.
-
-**Current published prerelease:** [Bytefray v2.0.0-beta3](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-beta3)
-— Product Presentation & Workflow. It is published as a prerelease, not yet
-the stable 2.0 line.
+**Current published prerelease:** [Bytefray v2.0.0-rc1](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-rc1)
+— Release Qualification. It is the frozen candidate for real-use soak and
+final verification, not yet the stable 2.0 line.
 
 | Package | Download | Notes |
 |---|---|---|
-| Windows installer | [Bytefray-Setup-2.0.0-beta3.exe](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta3/Bytefray-Setup-2.0.0-beta3.exe) | Administrative AMD64/x64 installation |
-| Portable Windows applications | [bytefray-2.0.0-beta3-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta3/bytefray-2.0.0-beta3-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-2.0.0b3-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta3/bytefray-2.0.0b3-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-2.0.0b3.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta3/bytefray-2.0.0b3.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-beta3/SHA256SUMS.txt) | SHA-256 values for Beta3 assets |
+| Windows installer | [Bytefray-Setup-2.0.0-rc1.exe](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-rc1/Bytefray-Setup-2.0.0-rc1.exe) | Administrative AMD64/x64 installation |
+| Portable Windows applications | [bytefray-2.0.0-rc1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-rc1/bytefray-2.0.0-rc1-windows.zip) | Complete onedir layouts for all four executables |
+| Python wheel | [bytefray-2.0.0rc1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-rc1/bytefray-2.0.0rc1-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-2.0.0rc1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-rc1/bytefray-2.0.0rc1.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v2.0.0-rc1/SHA256SUMS.txt) | SHA-256 values for RC1 assets |
 
 **Stable release:** [Bytefray v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0).
 Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)

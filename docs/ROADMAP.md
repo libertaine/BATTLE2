@@ -824,22 +824,27 @@ identity, or methodology changed.
 
 ## v2.0.0-rc1 — Release Qualification
 
-**Status: release candidate prepared for final artifact and CI qualification;
-not yet published.** RC1 freezes the exact integrated 2.0 product without new
-gameplay design: Ruleset-v2 direct Python play is the recommended Designer
-default, Ruleset v1 remains the valid VM/blob and legacy path, canonical
-Ruleset selection reaches result/replay artifacts, and Agent Development adds
-read-only `agent.py`/`agent.yaml` inspection. The reorganized README and current
-Windows screenshots present the same product.
+**Status: published qualification candidate.** `v2.0.0-rc1` was published as
+a GitHub prerelease on August 24, 2026. RC1 freezes the exact integrated 2.0
+product without new gameplay design: Ruleset-v2 direct Python play is the
+recommended Designer default, Ruleset v1 remains the valid VM/blob and legacy
+path, canonical Ruleset selection reaches result/replay artifacts, and Agent
+Development adds read-only `agent.py`/`agent.yaml` inspection. The reorganized
+README and current Windows screenshots present the same product.
 
-The exact pre-version tree passed 1,908/1,922 Windows headless tests (14
-documented skips, two GUI tests deselected), both separate GUI tests, 1,917/1,922
-Linux headless tests (five documented skips, two GUI tests deselected), focused
-Designer/Replay Viewer/historical-artifact suites, Ruff, both canonical mypy
-targets, real pairwise/group workflows, a clean installed wheel, and all four
-Windows frozen applications. Final RC1 wheel/source/portable/installer and CI
-qualification still precede tagging or publication. No RC2 milestone is
-pre-created; another candidate is evidence-driven only.
+The exact tagged commit `e4088d3f891d13a1668537dffa170427da475065`
+passed 1,908/1,922 Windows headless tests (14 documented skips, two GUI tests
+deselected), both separate GUI tests, and 1,917/1,922 Linux headless tests
+(five documented skips, two GUI tests deselected), plus focused Designer,
+Replay Viewer, historical-artifact, pairwise, and group workflows. Ruff and
+both canonical mypy targets were clean. The wheel, source distribution,
+portable Windows applications, frozen executables, and fresh/upgrade/uninstall
+installer lifecycle all passed artifact-level smoke tests. Candidate and main
+CI passed Python 3.10-3.13, Linux-wheel, and Windows frozen-build jobs; main also
+passed the optional Linux Pygame/Designer GUI and reproducible Ubuntu pMARS
+workflows. All five [published assets](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-rc1)
+were independently downloaded and verified hash-identical. No RC2 milestone is
+pre-created; another candidate remains evidence-driven only.
 
 Additional beta releases beyond beta3/rc1 are evidence-driven only and are
 not pre-planned.
