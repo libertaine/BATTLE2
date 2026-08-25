@@ -74,9 +74,10 @@ BYTEFRAY_RULESET_ID = "bytefray-rules-1"
 defined in `battle_engine.rules`. See [RULES.md](RULES.md) for the full
 Ruleset v1 contract and its bump policy.
 
-## Ruleset v2 (beta)
+## Ruleset v2
 
-`v2.0.0-beta1` introduces a second Ruleset identity:
+`v2.0.0-beta1` introduces a second Ruleset identity, permanent and stable as
+of `v2.0.0`:
 
 ```python
 BYTEFRAY_RULESET_V2_ID = "bytefray-rules-2"
@@ -88,12 +89,10 @@ fail-closed `resolve_ruleset_policy` seam as every other identity. See
 `docs/V2_0_BETA1_PLAN.md`/`docs/V2_0_RULESET_V2_CANDIDATE.md` for the
 evidence behind it.
 
-- **Status: beta candidate semantic identity**, introduced during 2.0 beta
-  development from the v2.0 alpha research program's evidence-backed
-  result. It is not claimed as permanently immutable forever the way
-  Ruleset v1's contract is — a beta or RC qualification pass could still
-  find reason to revise it before a final 2.0 release, though no such
-  revision is expected without new evidence.
+- **Status: permanent, stable semantic identity** as of `v2.0.0`, promoted
+  unchanged from the 2.0 beta/RC program's evidence-backed result. Like
+  Ruleset v1's contract, it is not expected to change without new evidence
+  and a deliberate, separately-versioned decision to revise it.
 - **Agent API version is unaffected.** Ruleset v2 is a gameplay-semantics
   identity; Agent API v1 (`battle_engine.agent_api.AGENT_API_VERSION == 1`)
   remains the supported Python programming contract for both Ruleset v1 and

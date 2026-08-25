@@ -71,7 +71,7 @@ developing Python agents:
 - Pairwise and Ruleset-v2 Group Evaluation with matrix preview
 - evaluation history, comparison, provenance, and revision restoration
 
-Source viewing is deliberately read-only in the 2.0 release candidate. Use
+Source viewing is deliberately read-only in the 2.0 release. Use
 **Open Folder** to edit an agent with your preferred editor. See the
 [Agent Authoring Guide](docs/AGENT_AUTHORING.md) and
 [Agent Designer workflow reference](docs/specs/agent_designer_workflow.md).
@@ -135,6 +135,10 @@ For headless Linux and wheel-specific guidance, see
 environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
+
+**Bytefray v2.0.0 final release candidate:** promoted from the qualified
+`v2.0.0-rc2` candidate with no software change; in final artifact and CI
+qualification, not yet published.
 
 **Current published prerelease:** [Bytefray v2.0.0-rc2](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-rc2)
 — Corrected Release Qualification. It corrects RC1's default-placement
@@ -200,13 +204,13 @@ See [Writing Agents](docs/AGENT_AUTHORING.md), the
 
 Agent Designer passes its selection explicitly. The CLI retains its
 backward-compatible Ruleset-v1 default when `--ruleset` is omitted. Ruleset v2
-is a beta gameplay identity and should not be described as permanently stable.
-Historical alpha identities remain readable/executable for artifact
-compatibility but are not normal product choices.
+is a permanent, stable gameplay identity as of `v2.0.0`. Historical alpha
+identities remain readable/executable for artifact compatibility but are not
+normal product choices.
 
 Detailed references:
 
-- [Ruleset v2 (beta)](docs/RULES_V2.md)
+- [Ruleset v2](docs/RULES_V2.md)
 - [Ruleset v1](docs/RULES.md)
 - [Compatibility model](docs/COMPATIBILITY.md)
 
@@ -253,7 +257,7 @@ See [pMARS build/runtime guidance](tools/pmars/README.md) and
 - [Agent Authoring Guide](docs/AGENT_AUTHORING.md)
 - [Agent API v1 Technical Contract](docs/AGENT_API_V1.md)
 - [Agent Lab: trace, inspect, diverge, timeouts, and evaluation](docs/AGENT_LAB.md)
-- [Ruleset v2 Beta Reference](docs/RULES_V2.md)
+- [Ruleset v2 Reference](docs/RULES_V2.md)
 - [Ruleset v1 Reference](docs/RULES.md)
 - [Result Schema](docs/RESULT_SCHEMA.md) and [Replay Schema](docs/REPLAY_SCHEMA.md)
 - [Tournament Service](docs/TOURNAMENTS.md)
@@ -287,11 +291,11 @@ For development setup, testing, and contribution workflow, see
 
 Bytefray's stable 1.x line established Agent API v1, Ruleset v1, canonical
 result/replay schemas, reproducible evaluation, provenance, package sharing,
-and architecture boundaries. The 2.0 beta program added the Python-only
+and architecture boundaries. Bytefray 2.0 adds the permanent, Python-only
 Ruleset-v2 vulnerable-core game and scales evaluation and presentation to
-multi-entrant work. RC1 freezes those capabilities together with explicit
-Designer Ruleset selection, read-only agent-source inspection, refreshed
-onboarding, and current product screenshots for release qualification.
+multi-entrant work, together with explicit Designer Ruleset selection,
+read-only agent-source inspection, refreshed onboarding, and current product
+screenshots.
 
 Future 2.x ideas—replication, multi-unit entrants, communication, richer
 resource/attack mechanics, and Agent API v2—remain research, not commitments.

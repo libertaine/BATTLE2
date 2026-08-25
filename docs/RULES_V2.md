@@ -1,10 +1,11 @@
-# Bytefray Ruleset v2 (Beta) Reference
+# Bytefray Ruleset v2 Reference
 
-This document defines **Ruleset v2** (`bytefray-rules-2`), the beta
-gameplay-semantics identity introduced in `v2.0.0-beta1`. It describes the
-beta game as it plays today — how a match differs from Ruleset v1 and what
-stays the same — not how the research that produced it was conducted. For
-that evidence trail, see `docs/V2_0_ALPHA_RESEARCH_SUMMARY.md` and
+This document defines **Ruleset v2** (`bytefray-rules-2`), the permanent
+gameplay-semantics identity introduced in `v2.0.0-beta1` and stable as of
+`v2.0.0`. It describes the game as it plays today — how a match differs from
+Ruleset v1 and what stays the same — not how the research that produced it
+was conducted. For that evidence trail, see
+`docs/V2_0_ALPHA_RESEARCH_SUMMARY.md` and
 `docs/V2_0_RULESET_V2_CANDIDATE.md`.
 
 `docs/RULES.md` remains the frozen, unmodified Ruleset v1 reference. This
@@ -13,9 +14,9 @@ unchanged in more detail than necessary — where a rule is identical to
 Ruleset v1, this document says so and points back to `docs/RULES.md` rather
 than duplicating the explanation.
 
-**Status: beta candidate semantic identity**, not yet claimed permanently
-immutable. See `docs/COMPATIBILITY.md`'s "Ruleset v2 (beta)" section for
-what that status does and does not promise.
+**Status: permanent, stable semantic identity** as of `v2.0.0`. See
+`docs/COMPATIBILITY.md`'s "Ruleset v2" section for what that status does and
+does not promise.
 
 ## What makes v2 different from v1, in one paragraph
 
@@ -199,8 +200,8 @@ RNG derivation. `Observation`/`MatchContext` continue to expose nothing
 about any other entrant: no identity, no position, no core address, no
 ownership, no score. An agent written against `docs/AGENT_API_V1.md` runs
 unmodified under either Ruleset — the only difference is what the shared
-arena does around it. See `docs/COMPATIBILITY.md`'s "Ruleset v2 (beta)"
-section for the independent-axes statement this follows from.
+arena does around it. See `docs/COMPATIBILITY.md`'s "Ruleset v2" section for
+the independent-axes statement this follows from.
 
 ## Fixed constants
 
@@ -230,5 +231,5 @@ persistence/comparison/resume behavior this implies.
 `bytefray-rules-2-alpha1` and `bytefray-rules-2-alpha11` remain executable,
 historical, uncorrected evidence records of the research that produced this
 Ruleset — see `docs/V2_0_ALPHA_RESEARCH_SUMMARY.md` for how they got here.
-This document describes the beta game; the alpha reports describe how it
+This document describes the stable game; the alpha reports describe how it
 was found.

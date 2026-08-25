@@ -2,6 +2,47 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [2.0.0] - 2026-08-24
+
+### Bytefray 2.0 — stable release
+
+Promotes the qualified `v2.0.0-rc2` candidate to the stable 2.0 line with no
+engine, UI, schema, or evaluation-methodology change since RC2 — this entry
+is a version/documentation-only release, not new development.
+
+- **Ruleset v2** (`bytefray-rules-2`) is now a permanent, stable gameplay
+  identity alongside frozen Ruleset v1 (`bytefray-rules-1`): a small
+  vulnerable core per entrant enables decisive captures instead of relying
+  only on territory scores at the tick limit, with owner-maintained core
+  observability and RC2's corrected deterministic, non-overlapping
+  omitted-start placement (fails closed on any resolved overlap, including
+  arena wraparound).
+- **Multi-entrant execution and evaluation**: real 3+-entrant native matches,
+  Designer Group Evaluation with canonical roster/layout/seat-assignment
+  preview, per-entrant outcome/capture/behavior analysis, and Pairwise
+  evaluation's Wilson-interval/significance/behavior-profile analytics — all
+  fully derived from existing canonical evaluation artifacts, no ranking
+  system or schema redesign.
+- **Agent Designer**: explicit Ruleset selection on Simple/Advanced direct
+  matches and Development Test (Python-vs-Python defaults to v2; VM/blob
+  selections fall back to v1), read-only `agent.py`/`agent.yaml` source
+  inspection, and Group Evaluation integration alongside the already-shipped
+  evaluation history, revision provenance, and package import/export
+  workflows.
+- **Replay Viewer**: responsive detailed/compact entrant HUD layouts,
+  centered integer arena scaling, and group-aware presentation for
+  multi-entrant Ruleset-v2 replays.
+- **Compatibility retained throughout**: Agent API v1, all persisted result/
+  replay/evaluation/package schemas, canonical match identity rules,
+  evaluation methodology, and scheduler/winner/scoring semantics are
+  unchanged from the 1.x line, and full Ruleset-v1/VM/blob execution remains
+  supported; historical 1.x and 2.0 alpha/beta/RC artifacts remain readable
+  and are not reinterpreted.
+
+See `docs/ROADMAP.md`'s `v2.0.0-beta1` through `v2.0.0-rc2` sections for the
+full phase-by-phase development record, and `docs/RULES_V2.md` for the
+complete Ruleset v2 gameplay reference.
+
 ## [2.0.0-rc2] - 2026-08-24
 
 ### Fixed omitted-start Ruleset-v2 default placement (RC1 release blocker)
