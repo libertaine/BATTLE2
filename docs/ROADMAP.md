@@ -879,9 +879,11 @@ Candidate-branch and main CI passed the Python 3.10-3.13 core matrix, the
 Linux wheel build, and the Windows frozen-build job; main also passed the
 optional Linux Pygame/Designer GUI and reproducible Ubuntu pMARS workflows.
 The wheel, source distribution, portable Windows applications, and installer
-all passed artifact-level smoke tests; a fully privileged install/upgrade/
-uninstall lifecycle needs an interactive elevated session this qualification
-did not have available and was not exercised. All five
+all passed artifact-level smoke tests, including a full privileged
+fresh-install/upgrade/uninstall lifecycle (`tools/smoke_after_install.ps1
+-Lifecycle`) run interactively: installed application smoke, an upgrade
+install over the prior RC2 install, and uninstall with user-data preservation
+all passed. All five
 [published assets](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0-rc2)
 were independently downloaded and verified hash-identical. RC3 is not
 pre-planned; the expected next step is a short soak/real-use verification
