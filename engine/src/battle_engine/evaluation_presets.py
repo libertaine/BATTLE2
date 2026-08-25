@@ -65,6 +65,12 @@ _ALLOWED_FIELDS = {
     "ticks",
     "orientation",
     "ruleset",
+    # v3 Phase 0 (docs/V3_PHASE0_RESEARCH_BASELINE.md): the two controlled
+    # experimental variables, settable by a preset exactly like `ticks`.
+    # A preset is the natural home for a research condition -- it is how
+    # the Phase-0 baseline corpus pins its own conditions reproducibly.
+    "arena_size",
+    "instr_per_tick",
 }
 _REQUIRED_FIELDS = {"schema", "schema_version"}
 
@@ -104,6 +110,11 @@ class EvaluationPreset:
     seeds: tuple[int, ...] | None
     seed_range: tuple[int, int] | None
     ticks: int | None
+    # v3 Phase 0: `None` means "not set by this preset", falling back to the
+    # ordinary default unless overridden by an explicit CLI flag -- the
+    # identical contract as every field above.
+    arena_size: int | None
+    instr_per_tick: int | None
     orientation: str | None
     # v2.0.0-beta2 Phase 1: the same optional Ruleset selector `agents
     # evaluate --ruleset` accepts, resolved the identical way -- `None`
@@ -304,6 +315,18 @@ def load_preset_file(path: Path, *, name: str | None = None) -> EvaluationPreset
         if ticks <= 0:
             raise EvaluationPresetError(f"{path}: 'ticks' must be greater than zero.")
 
+    arena_size = data.get("arena_size")
+    if arena_size is not None:
+        _require_type(arena_size, int, "arena_size", path)
+        if arena_size <= 0:
+            raise EvaluationPresetError(f"{path}: 'arena_size' must be greater than zero.")
+
+    instr_per_tick = data.get("instr_per_tick")
+    if instr_per_tick is not None:
+        _require_type(instr_per_tick, int, "instr_per_tick", path)
+        if instr_per_tick <= 0:
+            raise EvaluationPresetError(f"{path}: 'instr_per_tick' must be greater than zero.")
+
     orientation = data.get("orientation")
     if orientation is not None:
         _require_type(orientation, str, "orientation", path)
@@ -336,6 +359,8 @@ def load_preset_file(path: Path, *, name: str | None = None) -> EvaluationPreset
         seeds=seeds,
         seed_range=seed_range,
         ticks=ticks,
+        arena_size=arena_size,
+        instr_per_tick=instr_per_tick,
         orientation=orientation,
         ruleset_id=ruleset_id,
         content_digest=content_digest,
@@ -365,6 +390,8 @@ def _preset_to_json(preset: EvaluationPreset) -> dict[str, Any]:
             else None
         ),
         "ticks": preset.ticks,
+        "arena_size": preset.arena_size,
+        "instr_per_tick": preset.instr_per_tick,
         "orientation": preset.orientation,
         "ruleset": preset.ruleset_id,
         "content_digest": preset.content_digest,
@@ -410,6 +437,12 @@ def _print_show(preset: EvaluationPreset) -> None:
     else:
         print("seeds: (not set by this preset -- explicit override, or the ordinary single-seed default)")
     print(f"ticks: {preset.ticks if preset.ticks is not None else '(not set -- ordinary default)'}")
+    _unset = "(not set -- ordinary default)"
+    print(f"arena_size: {preset.arena_size if preset.arena_size is not None else _unset}")
+    print(
+        "instr_per_tick: "
+        f"{preset.instr_per_tick if preset.instr_per_tick is not None else _unset}"
+    )
     print(f"orientation: {preset.orientation or '(not set -- ordinary default: both)'}")
     print(f"ruleset: {preset.ruleset_id or '(not set -- ordinary default: bytefray-rules-1)'}")
     print(

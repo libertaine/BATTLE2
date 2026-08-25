@@ -186,6 +186,8 @@ class EvaluationCellWorkerHandle:
         ticks: int,
         data_root: Path | None,
         planned_identities: Mapping[str, dict[str, Any]],
+        arena_size: int | None = None,
+        instr_per_tick: int | None = None,
     ) -> WorkerCallResult:
         """One blocking round trip: run exactly one evaluation cell.
 
@@ -203,6 +205,16 @@ class EvaluationCellWorkerHandle:
                 "ticks": ticks,
                 "data_root": str(data_root) if data_root is not None else None,
                 "planned_identities": dict(planned_identities),
+                # v3 Phase 0D: evaluation-wide execution conditions, carried
+                # as explicit wire keys exactly like `ticks` above rather
+                # than folded into the cell payload -- a worker must receive
+                # the identical values the coordinator resolved, so that
+                # `--workers N` and `--workers 1` produce byte-identical
+                # results for a non-default arena/action budget. `null` (the
+                # key present with a null value, or absent on an older
+                # payload) means "executor default", matching `agent_test`.
+                "arena_size": arena_size,
+                "instr_per_tick": instr_per_tick,
             },
             timeout=None,
         )
@@ -274,9 +286,21 @@ def _handle_run_cell(request: dict[str, Any], out: Any) -> None:
     ticks = request["ticks"]
     data_root = Path(request["data_root"]) if request.get("data_root") else None
     planned_identities = request.get("planned_identities") or {}
+    # v3 Phase 0D: `.get(...)` (not `[...]`) so a payload written by an
+    # older coordinator -- which never sends these keys -- still means
+    # "executor default", the exact behavior it had before this phase.
+    arena_size = request.get("arena_size")
+    instr_per_tick = request.get("instr_per_tick")
 
     try:
-        result = EvaluationService()._execute_cell(cell, ticks, data_root, planned_identities)
+        result = EvaluationService()._execute_cell(
+            cell,
+            ticks,
+            data_root,
+            planned_identities,
+            arena_size=arena_size,
+            instr_per_tick=instr_per_tick,
+        )
     except Exception as exc:  # belt-and-suspenders: _execute_cell/test_agent
         # already catch nearly everything internally (agent_test.test_agent's
         # own docstring); this should rarely fire.

@@ -75,6 +75,7 @@ from battle_engine.match_service import (
 from battle_engine.paths import contained_path, get_data_root
 from battle_engine.placement import spread_seat_starts
 from battle_engine.project_info import get_project_info
+from battle_engine.python_runtime import CORE_SIZE
 from battle_engine.replay import ReplayHeader, iter_replay
 from battle_engine.result_model import (
     ReplayIntegrityError,
@@ -581,12 +582,36 @@ class EffectiveConditions:
     tracing: str = "untraced"
 
 
-def effective_conditions_for(ticks: int, agent_api_version: int) -> EffectiveConditions:
+def effective_conditions_for(
+    ticks: int,
+    agent_api_version: int,
+    arena_size: int | None = None,
+    instr_per_tick: int | None = None,
+) -> EffectiveConditions:
+    """Resolve one evaluation's effective conditions.
+
+    v3 Phase 0D: ``arena_size``/``instr_per_tick`` are the two controlled
+    experimental variables Phase 1's arena-size-vs-action-budget research
+    needs to vary (docs/V3_PHASE0_RESEARCH_BASELINE.md). ``None`` -- the
+    default, and what every pre-Phase-0 caller passes -- resolves to
+    ``Config()``'s own field default, which is exactly the literal this
+    function already hardcoded, so an omitted-parameter call returns a
+    byte-identical ``EffectiveConditions`` and therefore a byte-identical
+    ``evaluation_id``/``effective_conditions_fingerprint``.
+
+    No new identity axis is introduced by this change: both values were
+    *already* fields of ``EffectiveConditions``, already hashed into
+    ``_evaluation_id``'s ``"effective_conditions"`` key, already persisted
+    in ``evaluation.json``, and already part of ``canonical_match_id``'s
+    ``reproducibility`` block. Phase 0 makes them *variable*, not
+    *identity-bearing* -- they always were.
+    """
+
     defaults = Config()
     return EffectiveConditions(
         tick_limit=ticks,
-        arena_size=defaults.arena_size,
-        action_budget=defaults.instr_per_tick,
+        arena_size=defaults.arena_size if arena_size is None else arena_size,
+        action_budget=defaults.instr_per_tick if instr_per_tick is None else instr_per_tick,
         win_mode=defaults.win_mode,
         weights=asdict(defaults.weights),
         agent_api_version=agent_api_version,
@@ -701,6 +726,8 @@ def _expected_cell_match_id(
     ruleset_id: str,
     subject_start: int,
     opponent_start: int,
+    arena_size: int | None = None,
+    instr_per_tick: int | None = None,
 ) -> str:
     """Recompute the ``match_id`` a fresh cell run would produce.
 
@@ -749,8 +776,20 @@ def _expected_cell_match_id(
     else:
         slot_a_agent_id, slot_a_spec, slot_a_start = subject_id, subject_spec, subject_start
         slot_b_agent_id, slot_b_spec, slot_b_start = opponent_id, opponent_spec, opponent_start
+    _config_defaults = Config()
     request = MatchRequest(
-        config=Config(seed=seed),
+        # v3 Phase 0D: mirrors `_test_agent`'s own `None`-means-default
+        # `Config` construction exactly -- an omitted pair reproduces the
+        # identical `Config(seed=...)` (and therefore the identical
+        # `canonical_match_id`) every historical resume already verified
+        # against.
+        config=Config(
+            seed=seed,
+            arena_size=_config_defaults.arena_size if arena_size is None else arena_size,
+            instr_per_tick=(
+                _config_defaults.instr_per_tick if instr_per_tick is None else instr_per_tick
+            ),
+        ),
         entrants=(
             MatchEntrant.python(TESTED_AGENT_SLOT, slot_a_agent_id, slot_a_start, slot_a_spec),
             MatchEntrant.python(OPPONENT_SLOT, slot_b_agent_id, slot_b_start, slot_b_spec),
@@ -769,6 +808,8 @@ def _expected_group_cell_match_id(
     seed: int,
     ticks: int,
     ruleset_id: str,
+    arena_size: int | None = None,
+    instr_per_tick: int | None = None,
 ) -> str:
     """The multi-entrant generalization of :func:`_expected_cell_match_id`.
 
@@ -780,8 +821,17 @@ def _expected_group_cell_match_id(
     ``canonical_match_id`` and must be reproduced exactly.
     """
 
+    _config_defaults = Config()
     request = MatchRequest(
-        config=Config(seed=seed),
+        # v3 Phase 0D: same `None`-means-default contract as
+        # `_expected_cell_match_id` above.
+        config=Config(
+            seed=seed,
+            arena_size=_config_defaults.arena_size if arena_size is None else arena_size,
+            instr_per_tick=(
+                _config_defaults.instr_per_tick if instr_per_tick is None else instr_per_tick
+            ),
+        ),
         entrants=tuple(
             MatchEntrant.python(seat_label(index), agent_id, start, specs[agent_id])
             for index, (agent_id, start) in enumerate(zip(seat_agent_ids, seat_starts, strict=True))
@@ -1017,6 +1067,39 @@ class EvaluationRequest:
     # unchanged. Requires v2 methodology (`is_v2_methodology`) -- validated
     # in `EvaluationService._validate`, never silently ignored.
     group: bool = False
+    # v3 Phase 0 (docs/V3_PHASE0_RESEARCH_BASELINE.md): the two controlled
+    # experimental variables Phase 1's arena-size-vs-action-budget research
+    # varies. `None` (the default) resolves to `Config()`'s own field
+    # default -- exactly the value this evaluation path already used
+    # unconditionally -- so every omitted-parameter evaluation keeps its
+    # exact historical behavior, matrix shape, and evaluation_id, byte for
+    # byte. These are per-match *configuration*, not Ruleset semantics
+    # (docs/RULES.md, "Configuration values are not Ruleset identity"), so
+    # selecting one never implies a Ruleset/Agent-API/schema bump; they are
+    # nevertheless fully identity-bearing, because `EffectiveConditions`
+    # already carries both into `_evaluation_id` and
+    # `effective_conditions_fingerprint`.
+    arena_size: int | None = None
+    instr_per_tick: int | None = None
+
+    @property
+    def resolved_arena_size(self) -> int:
+        """The arena size this evaluation actually runs at.
+
+        The single authority for arena size across matrix generation
+        (placements/layouts are pure functions of it), identity, execution,
+        and display -- never `Config().arena_size` read independently at
+        each site, which is exactly how a matrix could otherwise be built
+        for one arena and executed in another.
+        """
+
+        return Config().arena_size if self.arena_size is None else self.arena_size
+
+    @property
+    def resolved_instr_per_tick(self) -> int:
+        """The per-tick action budget this evaluation actually runs at."""
+
+        return Config().instr_per_tick if self.instr_per_tick is None else self.instr_per_tick
 
     @property
     def orientation_mode(self) -> str:
@@ -1329,8 +1412,15 @@ def build_matrix(
             request, evaluation_id, resolved_rules_id, specs, conditions_fingerprint
         )
 
+    # v3 Phase 0D: placements are pure functions of arena size, so they
+    # MUST be derived from this request's own resolved arena size, never
+    # from `Config().arena_size` independently. A non-default arena with
+    # default-derived placements would place entrants at addresses outside
+    # it, which `MatchEntrant.python` silently wraps (`% arena_size`) --
+    # collapsing two supposedly-separated starts onto the same cell and
+    # measuring placement collision instead of the variable under test.
     placements: tuple[EvaluationPlacement | None, ...] = (
-        standard_placements() if resolved_is_v2 else (None,)
+        standard_placements(request.resolved_arena_size) if resolved_is_v2 else (None,)
     )
 
     cells: list[EvaluationCell] = []
@@ -1481,7 +1571,7 @@ def _build_group_matrix(
 
     roster = request.roster_agent_ids
     canonical_roster = request.canonical_roster
-    layouts = standard_layouts(len(roster))
+    layouts = standard_layouts(len(roster), request.resolved_arena_size)
     seat_assignments = enumerate_seat_assignments(roster)
     arena_alignment_mode = EVALUATION_ARENA_ALIGNMENT_MODE_V2_GROUP_STANDARD
 
@@ -2108,6 +2198,8 @@ def _evaluation_dispatcher_loop(
     ticks: int,
     data_root: Path | None,
     planned_identities: Mapping[str, dict[str, Any]],
+    arena_size: int | None = None,
+    instr_per_tick: int | None = None,
 ) -> None:
     """One dispatcher thread's body: owns exactly one worker subprocess handle
     for its entire lifetime, processing cells strictly one at a time against
@@ -2133,7 +2225,12 @@ def _evaluation_dispatcher_loop(
         if cell is None:
             return
         call_result = handle.submit_cell(
-            cell, ticks=ticks, data_root=data_root, planned_identities=planned_identities
+            cell,
+            ticks=ticks,
+            data_root=data_root,
+            planned_identities=planned_identities,
+            arena_size=arena_size,
+            instr_per_tick=instr_per_tick,
         )
         if call_result.status == WorkerCallStatus.OK:
             payload = call_result.payload or {}
@@ -2347,6 +2444,8 @@ class EvaluationService:
         both_orientations: bool = True,
         ruleset_id: str | None = None,
         group: bool = False,
+        arena_size: int | None = None,
+        instr_per_tick: int | None = None,
     ) -> tuple[dict[str, AgentSpec], str]:
         """Validate a request's agent/seed/tick shape and resolve its evaluation id.
 
@@ -2371,6 +2470,8 @@ class EvaluationService:
             both_orientations=both_orientations,
             ruleset_id=ruleset_id,
             group=group,
+            arena_size=arena_size,
+            instr_per_tick=instr_per_tick,
         )
         specs = self._validate(request)
         conditions = self._effective_conditions(request)
@@ -2571,7 +2672,12 @@ class EvaluationService:
             if request.workers <= 1:
                 for cell in pending:
                     result = self._execute_cell(
-                        cell, request.ticks, request.data_root, planned_identities
+                        cell,
+                        request.ticks,
+                        request.data_root,
+                        planned_identities,
+                        arena_size=request.arena_size,
+                        instr_per_tick=request.instr_per_tick,
                     )
                     if ingest(result):
                         break
@@ -2682,7 +2788,16 @@ class EvaluationService:
         threads = [
             threading.Thread(
                 target=_evaluation_dispatcher_loop,
-                args=(handle, pending_queue, results_queue, request.ticks, request.data_root, planned_identities),
+                args=(
+                    handle,
+                    pending_queue,
+                    results_queue,
+                    request.ticks,
+                    request.data_root,
+                    planned_identities,
+                    request.arena_size,
+                    request.instr_per_tick,
+                ),
                 daemon=True,
             )
             for handle in handles
@@ -2771,6 +2886,29 @@ class EvaluationService:
             raise EvaluationConfigurationError("Evaluation requires a positive tick limit.")
         if request.workers < 1:
             raise EvaluationConfigurationError("Evaluation requires a positive worker count.")
+        # v3 Phase 0D: fail closed rather than letting a nonsensical arena
+        # reach the VM. The lower bound is not arbitrary: `standard_
+        # placements`/`standard_layouts` derive every start address as a
+        # fraction of arena size, and both are documented non-overlapping
+        # only while that fraction stays larger than one core (CORE_SIZE,
+        # 8). A roster of N entrants uses `arena_size // (2 * N)` as its
+        # tightest ("close" layout) gap, so require that gap to exceed
+        # CORE_SIZE -- otherwise two entrants would silently start inside
+        # one another's core and the experiment would measure placement
+        # collision rather than the variable under test.
+        if request.arena_size is not None:
+            entrant_count = len(request.roster_agent_ids) if request.group else 2
+            minimum = 2 * entrant_count * (CORE_SIZE + 1)
+            if request.arena_size < minimum:
+                raise EvaluationConfigurationError(
+                    f"Evaluation --arena-size {request.arena_size} is too small for "
+                    f"{entrant_count} entrants; standard placements/layouts would overlap. "
+                    f"Require at least {minimum}."
+                )
+        if request.instr_per_tick is not None and request.instr_per_tick < 1:
+            raise EvaluationConfigurationError(
+                "Evaluation requires a positive --instr-per-tick action budget."
+            )
         if request.baseline_id is not None and request.baseline_id == request.candidate_id:
             raise EvaluationConfigurationError(
                 "Candidate and baseline must be different agents."
@@ -2818,7 +2956,12 @@ class EvaluationService:
         return {agent_id: _resolve_python_agent(root, agent_id) for agent_id in all_ids}
 
     def _effective_conditions(self, request: EvaluationRequest) -> EffectiveConditions:
-        return effective_conditions_for(request.ticks, get_project_info().agent_api_version)
+        return effective_conditions_for(
+            request.ticks,
+            get_project_info().agent_api_version,
+            arena_size=request.arena_size,
+            instr_per_tick=request.instr_per_tick,
+        )
 
     def _evaluation_id(
         self,
@@ -2879,7 +3022,9 @@ class EvaluationService:
             payload["group"] = True
             payload["layouts"] = [
                 {"layout_id": layout.layout_id, "seat_starts": list(layout.seat_starts)}
-                for layout in standard_layouts(len(request.roster_agent_ids))
+                for layout in standard_layouts(
+                    len(request.roster_agent_ids), request.resolved_arena_size
+                )
             ]
         else:
             payload["orientation_mode"] = request.orientation_mode
@@ -2895,7 +3040,7 @@ class EvaluationService:
                         "subject_start": placement.subject_start,
                         "opponent_start": placement.opponent_start,
                     }
-                    for placement in standard_placements()
+                    for placement in standard_placements(request.resolved_arena_size)
                 ]
         return stable_id("evaluation-v2", payload)
 
@@ -3005,6 +3150,8 @@ class EvaluationService:
                 cell.seed,
                 request.ticks,
                 cell.rules_compatibility_id,
+                arena_size=request.arena_size,
+                instr_per_tick=request.instr_per_tick,
             )
         else:
             expected_match_id = _expected_cell_match_id(
@@ -3018,6 +3165,8 @@ class EvaluationService:
                 cell.rules_compatibility_id,
                 cell.subject_start,
                 cell.opponent_start,
+                arena_size=request.arena_size,
+                instr_per_tick=request.instr_per_tick,
             )
         mismatch = _resumed_cell_mismatch(envelope, cell, expected_match_id)
         if mismatch is not None:
@@ -3041,6 +3190,8 @@ class EvaluationService:
         ticks: int,
         data_root: Path | None,
         planned_identities: Mapping[str, dict[str, Any]],
+        arena_size: int | None = None,
+        instr_per_tick: int | None = None,
     ) -> CellExecutionResult:
         """Execute one cell. Pure apart from filesystem I/O under ``cell.artifact_
         dir`` and reading agent source under ``data_root``/the default data
@@ -3053,6 +3204,15 @@ class EvaluationService:
         accidentally gain access to a coordinator-only field (``resume``,
         ``retry_failures``, ``workers``, ...) that has no valid meaning
         per-cell.
+
+        v3 Phase 0D adds ``arena_size``/``instr_per_tick`` as two more
+        explicit scalar arguments of exactly the same kind as ``ticks``:
+        evaluation-wide execution conditions that are constant across a
+        matrix but must be transported explicitly into a worker subprocess.
+        They are deliberately NOT stored on ``EvaluationCell`` -- doing so
+        would change the persisted cell shape for every historical artifact
+        while expressing an evaluation-wide fact per cell. ``None`` keeps
+        the executor's own historical default (see ``agent_test``).
         """
 
         root = data_root or get_data_root()
@@ -3066,7 +3226,15 @@ class EvaluationService:
         # addition, byte-for-byte, matching build_matrix's own "separate
         # function, early return" precedent for the same reason.
         if cell.is_group:
-            return self._execute_group_cell(cell, ticks, data_root, root, planned_identities)
+            return self._execute_group_cell(
+                cell,
+                ticks,
+                data_root,
+                root,
+                planned_identities,
+                arena_size=arena_size,
+                instr_per_tick=instr_per_tick,
+            )
 
         # v0.9 Phase 6 (Phase 5 spec Sec H.1/T.4): `candidate_first` reuses
         # the exact historical call; `opponent_first` calls the same
@@ -3116,6 +3284,8 @@ class EvaluationService:
                 ruleset_id=cell.rules_compatibility_id,
                 agent_start=test_agent_start,
                 opponent_start=test_opponent_start,
+                arena_size=arena_size,
+                instr_per_tick=instr_per_tick,
             )
         except AgentTestError as exc:
             return CellExecutionResult(
@@ -3194,6 +3364,9 @@ class EvaluationService:
         data_root: Path | None,
         root: Path,
         planned_identities: Mapping[str, dict[str, Any]],
+        *,
+        arena_size: int | None = None,
+        instr_per_tick: int | None = None,
     ) -> CellExecutionResult:
         """The multi-entrant generalization of the pairwise branch of
         :meth:`_execute_cell` (v2.0.0-beta2 Phase 2).
@@ -3222,6 +3395,8 @@ class EvaluationService:
                 run_dir=cell.artifact_dir,
                 data_root=data_root,
                 ruleset_id=cell.rules_compatibility_id,
+                arena_size=arena_size,
+                instr_per_tick=instr_per_tick,
             )
         except AgentTestError as exc:
             return CellExecutionResult(
@@ -3646,6 +3821,28 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help=f"tick budget per cell (default: {DEFAULT_TICKS}, unless set by --preset)",
     )
+    parser.add_argument(
+        "--arena-size",
+        type=_positive_int,
+        default=None,
+        help=(
+            f"arena size in cells (default: {Config().arena_size}, unless set by "
+            "--preset). A controlled experimental variable: it changes the standard "
+            "placement/layout coordinates (which are fractions of arena size) and "
+            "therefore the evaluation_id, but is NOT a Ruleset change. See "
+            "docs/V3_PHASE0_RESEARCH_BASELINE.md."
+        ),
+    )
+    parser.add_argument(
+        "--instr-per-tick",
+        type=_positive_int,
+        default=None,
+        help=(
+            f"per-entrant action budget per tick (default: {Config().instr_per_tick}, "
+            "unless set by --preset). A controlled experimental variable, not a "
+            "Ruleset change -- see docs/V3_PHASE0_RESEARCH_BASELINE.md."
+        ),
+    )
     parser.add_argument("--output", type=Path, default=None, help="evaluation artifact directory")
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument(
@@ -3744,7 +3941,7 @@ def _print_v2_methodology(request: EvaluationRequest, matrix: Sequence[Evaluatio
     if request.group:
         _print_group_methodology(request)
         return
-    placements = standard_placements()
+    placements = standard_placements(request.resolved_arena_size)
     orientations = 2 if request.both_orientations else 1
     cells_per_opponent = len(request.seeds) * len(placements) * orientations
     print(f"placements: {len(placements)} ({', '.join(p.placement_id for p in placements)})")
@@ -3760,13 +3957,28 @@ def _print_group_methodology(request: EvaluationRequest) -> None:
     """
 
     roster = request.roster_agent_ids
-    layouts = standard_layouts(len(roster))
+    layouts = standard_layouts(len(roster), request.resolved_arena_size)
     seat_assignments = enumerate_seat_assignments(roster)
     cells = len(request.seeds) * len(layouts) * len(seat_assignments)
     print(f"roster: {', '.join(roster)} ({len(roster)} entrants)")
     print(f"layouts: {len(layouts)} ({', '.join(layout.layout_id for layout in layouts)})")
     print(f"seat assignments: {len(seat_assignments)}")
     print(f"cells: {cells}")
+
+
+def _print_experimental_conditions(request: EvaluationRequest) -> None:
+    """Disclose any non-default v3 Phase 0 experimental condition.
+
+    Prints nothing at all when both are at their ordinary defaults, so
+    every existing evaluation's human-readable output is unchanged
+    character-for-character.
+    """
+
+    defaults = Config()
+    if request.resolved_arena_size != defaults.arena_size:
+        print(f"arena size: {request.resolved_arena_size} (non-default)")
+    if request.resolved_instr_per_tick != defaults.instr_per_tick:
+        print(f"action budget/tick: {request.resolved_instr_per_tick} (non-default)")
 
 
 def _print_matrix(
@@ -3784,6 +3996,14 @@ def _print_matrix(
     else:
         print(f"seeds: {', '.join(str(seed) for seed in request.seeds)}")
     print(f"ticks: {request.ticks}")
+    # v3 Phase 0D: disclose the two controlled experimental variables
+    # whenever they are NOT at their ordinary defaults. Printed
+    # unconditionally would add two noise lines to every ordinary
+    # evaluation's output; omitted when non-default, a reader would have no
+    # way to tell a 1024-cell arena run from a 4096-cell one -- exactly the
+    # "omission would be misleading" case. Same conditional-disclosure
+    # discipline `preset:` above already uses.
+    _print_experimental_conditions(request)
     # v2.0.0-beta2 Phase 2: "subjects: N opponents: M" and the 2-value
     # "Entrant orientation: both/candidate-first only" line both describe
     # 1v1 methodology's own axes (subject_role, orientation) -- neither is
@@ -4297,6 +4517,24 @@ def main(argv: list[str] | None = None) -> int:
     else:
         ticks = DEFAULT_TICKS
 
+    # v3 Phase 0D: the identical three-tier resolution `--ticks` above uses
+    # (explicit CLI > --preset > ordinary default), with "ordinary default"
+    # expressed as `None` rather than a literal so `EvaluationRequest`
+    # remains the single place `Config()`'s defaults are resolved.
+    if args.arena_size is not None:
+        arena_size = args.arena_size
+    elif preset is not None and preset.arena_size is not None:
+        arena_size = preset.arena_size
+    else:
+        arena_size = None
+
+    if args.instr_per_tick is not None:
+        instr_per_tick = args.instr_per_tick
+    elif preset is not None and preset.instr_per_tick is not None:
+        instr_per_tick = preset.instr_per_tick
+    else:
+        instr_per_tick = None
+
     if args.single_orientation:
         both_orientations = False
     elif args.both_orientations:
@@ -4317,6 +4555,8 @@ def main(argv: list[str] | None = None) -> int:
             both_orientations=both_orientations,
             ruleset_id=ruleset_id,
             group=args.group,
+            arena_size=arena_size,
+            instr_per_tick=instr_per_tick,
         )
     except EvaluationConfigurationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -4340,6 +4580,8 @@ def main(argv: list[str] | None = None) -> int:
         workers=args.workers,
         ruleset_id=ruleset_id,
         group=args.group,
+        arena_size=arena_size,
+        instr_per_tick=instr_per_tick,
     )
     matrix = build_matrix(request, evaluation_id)
     if not args.quiet or args.dry_run:

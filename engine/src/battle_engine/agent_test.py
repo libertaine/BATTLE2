@@ -239,6 +239,8 @@ def test_agent(
     ruleset_id: str | None = None,
     agent_start: int | None = None,
     opponent_start: int | None = None,
+    arena_size: int | None = None,
+    instr_per_tick: int | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     """Run one short, real development match for ``agent_id``.
 
@@ -306,6 +308,8 @@ def test_agent(
             ruleset_id=ruleset_id,
             agent_start=agent_start,
             opponent_start=opponent_start,
+            arena_size=arena_size,
+            instr_per_tick=instr_per_tick,
         )
     except AgentTestError:
         raise
@@ -334,6 +338,8 @@ def _test_agent(
     ruleset_id: str | None = None,
     agent_start: int | None = None,
     opponent_start: int | None = None,
+    arena_size: int | None = None,
+    instr_per_tick: int | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = resource_root or get_resource_root()
@@ -386,7 +392,23 @@ def _test_agent(
 
     replay_path = run_dir / "replay.jsonl"
     trace_path = (run_dir / "trace.jsonl") if trace else None
-    match_config = Config(seed=effective_seed)
+    # v3 Phase 0D: `None` means "this executor's historical default"
+    # (`Config()`'s own field default), exactly like `seed`/`ticks` above --
+    # so every existing caller that omits these two builds a byte-identical
+    # `Config` and therefore a byte-identical `canonical_match_id`. Only an
+    # explicit value from a controlled arena/action-budget experiment
+    # (docs/V3_PHASE0_RESEARCH_BASELINE.md) ever changes it. Deliberately
+    # NOT a Ruleset-semantics change: `arena_size`/`instr_per_tick` are
+    # per-match *configuration*, which docs/RULES.md's "Configuration values
+    # are not Ruleset identity" already separates from gameplay identity.
+    _config_defaults = Config()
+    match_config = Config(
+        seed=effective_seed,
+        arena_size=_config_defaults.arena_size if arena_size is None else arena_size,
+        instr_per_tick=(
+            _config_defaults.instr_per_tick if instr_per_tick is None else instr_per_tick
+        ),
+    )
     effective_agent_start, effective_opponent_start = resolve_direct_match_starts(
         ruleset_id=ruleset_id,
         arena_size=match_config.arena_size,
@@ -554,6 +576,8 @@ def test_agents(
     data_root: Path | None = None,
     run_dir: Path | None = None,
     ruleset_id: str | None = None,
+    arena_size: int | None = None,
+    instr_per_tick: int | None = None,
 ) -> GroupTestOutcome | GroupInitializationFailureOutcome:
     """Run one short, real N-entrant (N >= 2) development match.
 
@@ -583,6 +607,8 @@ def test_agents(
             data_root=data_root,
             run_dir=run_dir,
             ruleset_id=ruleset_id,
+            arena_size=arena_size,
+            instr_per_tick=instr_per_tick,
         )
     except AgentTestError:
         raise
@@ -607,6 +633,8 @@ def _test_agents(
     data_root: Path | None,
     run_dir: Path | None = None,
     ruleset_id: str | None = None,
+    arena_size: int | None = None,
+    instr_per_tick: int | None = None,
 ) -> GroupTestOutcome | GroupInitializationFailureOutcome:
     if len(entrants) < 2:
         raise _tool_error(
@@ -651,8 +679,17 @@ def _test_agents(
 
     replay_path = run_dir / "replay.jsonl"
     trace_path = (run_dir / "trace.jsonl") if trace else None
+    _config_defaults = Config()
     request = MatchRequest(
-        config=Config(seed=effective_seed),
+        # v3 Phase 0D: identical `None` == "historical default" contract as
+        # `_test_agent`'s own `match_config` above -- see that comment.
+        config=Config(
+            seed=effective_seed,
+            arena_size=_config_defaults.arena_size if arena_size is None else arena_size,
+            instr_per_tick=(
+                _config_defaults.instr_per_tick if instr_per_tick is None else instr_per_tick
+            ),
+        ),
         entrants=tuple(
             MatchEntrant.python(entrant.seat, entrant.agent_id, entrant.start, spec)
             for entrant, spec in zip(entrants, specs, strict=True)
