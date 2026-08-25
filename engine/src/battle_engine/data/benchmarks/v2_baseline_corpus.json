@@ -1,0 +1,137 @@
+{
+  "schema": "bytefray.benchmark_corpus",
+  "schema_version": 1,
+  "corpus_id": "v2-baseline-corpus",
+  "benchmark_id": "v2-baseline",
+  "description": "The v3 Phase 0F control corpus: the Ruleset-v2 strategic ecology reproduced under fixed, declared conditions from the frozen v2-baseline benchmark population. Reproduces docs/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md's own corpus so its Sec 17 ecology rubric can be scored verbatim, and so Phase 1/Phase 2 have a control that was measured, not asserted.",
+  "ruleset_id": "bytefray-rules-2",
+  "conditions": {
+    "arena_size": null,
+    "instr_per_tick": null,
+    "conditions_note": "null means the ordinary Ruleset-v2 default (arena_size 4096, instr_per_tick 8). The control corpus is deliberately run at defaults: it is the baseline that Phase 1's varied-arena/varied-budget experiments are measured against, so it must not itself vary them."
+  },
+  "group": {
+    "seeds": [1, 2, 3, 4, 5],
+    "ticks": 400,
+    "cells_per_roster": 90,
+    "design": "5 seeds x 3 standard layouts x 6 seat permutations",
+    "rosters": [
+      {
+        "id": "claimer_coredefender_reactive",
+        "roster": ["claimer", "core_defender", "reactive_core_defender"],
+        "hypothesis": "negative control: no offense present",
+        "beta2_win_rates": {"claimer": 1.0, "core_defender": 0.0, "reactive_core_defender": 0.0}
+      },
+      {
+        "id": "claimer_hunter_coredefender",
+        "roster": ["claimer", "hunter", "core_defender"],
+        "hypothesis": "second expansion rival vs. defender-only",
+        "beta2_win_rates": {"claimer": 0.5, "hunter": 0.5, "core_defender": 0.0}
+      },
+      {
+        "id": "claimer_hunter_reactive",
+        "roster": ["claimer", "hunter", "reactive_core_defender"],
+        "hypothesis": "same, reactive defender variant",
+        "beta2_win_rates": {"claimer": 0.444, "hunter": 0.556, "reactive_core_defender": 0.0}
+      },
+      {
+        "id": "claimer_coretracker_coredefender",
+        "roster": ["claimer", "core_tracker", "core_defender"],
+        "hypothesis": "reproduce alpha.11 A17 trio",
+        "beta2_win_rates": {"claimer": 0.444, "core_tracker": 0.1, "core_defender": 0.456}
+      },
+      {
+        "id": "claimer_coretracker_reactive",
+        "roster": ["claimer", "core_tracker", "reactive_core_defender"],
+        "hypothesis": "reproduce alpha.11 A17 trio",
+        "beta2_win_rates": {"claimer": 0.489, "core_tracker": 0.089, "reactive_core_defender": 0.422}
+      },
+      {
+        "id": "claimer_coretracker_hunter",
+        "roster": ["claimer", "core_tracker", "hunter"],
+        "hypothesis": "reproduce alpha.11 A17 trio",
+        "beta2_win_rates": {"claimer": 0.367, "core_tracker": 0.3, "hunter": 0.333}
+      },
+      {
+        "id": "claimer_coreseeker_hunter",
+        "roster": ["claimer", "core_seeker", "hunter"],
+        "hypothesis": "two independent searchers vs. Claimer",
+        "beta2_win_rates": {"claimer": 0.444, "core_seeker": 0.222, "hunter": 0.333}
+      },
+      {
+        "id": "hunter_coretracker_coredefender",
+        "roster": ["hunter", "core_tracker", "core_defender"],
+        "hypothesis": "non-Claimer-focal corpus diversity",
+        "beta2_win_rates": {"hunter": 0.456, "core_tracker": 0.167, "core_defender": 0.378}
+      },
+      {
+        "id": "reactive_hunter_coreseeker",
+        "roster": ["reactive_core_defender", "hunter", "core_seeker"],
+        "hypothesis": "defender under dual offensive pressure",
+        "beta2_win_rates": {"core_seeker": 0.5}
+      },
+      {
+        "id": "hunter_coretracker_coreseeker",
+        "roster": ["hunter", "core_tracker", "core_seeker"],
+        "hypothesis": "offense-heavy, zero defenders",
+        "beta2_win_rates": {"hunter": 0.256, "core_tracker": 0.333, "core_seeker": 0.411}
+      },
+      {
+        "id": "coredefender_reactive_coreseeker",
+        "roster": ["core_defender", "reactive_core_defender", "core_seeker"],
+        "hypothesis": "defense-heavy, minimal expansion",
+        "beta2_win_rates": {}
+      }
+    ]
+  },
+  "pairwise": {
+    "seeds": [1, 2, 3, 4, 5],
+    "cells_per_pair": 30,
+    "design": "5 seeds x 3 standard placements x 2 entrant orientations",
+    "design_note": "Beta2 Phase 4 Sec 2 describes these controls as '15 cells each'; its own reported rates (e.g. claimer vs core_tracker 23%) are only reachable on a 30-cell, both-orientations denominator (7/30 = 23.3%). The 30-cell reading is what reproduces, and is what this corpus declares. See docs/V3_PHASE0_RESEARCH_BASELINE.md Sec 10.",
+    "pairs": [
+      {
+        "id": "claimer_vs_coretracker_400",
+        "candidate": "claimer",
+        "opponent": "core_tracker",
+        "ticks": 400,
+        "beta2_win_rates": {"claimer": 0.23, "core_tracker": 0.77}
+      },
+      {
+        "id": "hunter_vs_coretracker_400",
+        "candidate": "hunter",
+        "opponent": "core_tracker",
+        "ticks": 400,
+        "beta2_win_rates": {"hunter": 0.23, "core_tracker": 0.77}
+      },
+      {
+        "id": "claimer_vs_hunter_400",
+        "candidate": "claimer",
+        "opponent": "hunter",
+        "ticks": 400,
+        "beta2_win_rates": {"claimer": 0.67, "hunter": 0.33}
+      },
+      {
+        "id": "claimer_vs_coretracker_200",
+        "candidate": "claimer",
+        "opponent": "core_tracker",
+        "ticks": 200,
+        "beta2_win_rates": {"claimer": 0.47, "core_tracker": 0.53}
+      },
+      {
+        "id": "hunter_vs_coretracker_200",
+        "candidate": "hunter",
+        "opponent": "core_tracker",
+        "ticks": 200,
+        "beta2_win_rates": {"hunter": 0.37, "core_tracker": 0.63}
+      },
+      {
+        "id": "claimer_vs_hunter_200",
+        "candidate": "claimer",
+        "opponent": "hunter",
+        "ticks": 200,
+        "beta2_win_rates": {"claimer": 0.67, "hunter": 0.33}
+      }
+    ]
+  }
+}
