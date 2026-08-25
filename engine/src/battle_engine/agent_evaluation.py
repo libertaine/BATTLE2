@@ -613,6 +613,7 @@ def effective_conditions_for(
     agent_api_version: int,
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
+    kill_weight: float | None = None,
 ) -> EffectiveConditions:
     """Resolve one evaluation's effective conditions.
 
@@ -631,15 +632,29 @@ def effective_conditions_for(
     in ``evaluation.json``, and already part of ``canonical_match_id``'s
     ``reproducibility`` block. Phase 0 makes them *variable*, not
     *identity-bearing* -- they always were.
+
+    v3 Phase 3: ``kill_weight`` is a third controlled variable, of exactly
+    the same kind and by exactly the same reasoning -- ``EffectiveConditions
+    .weights`` already exists and is already hashed/persisted (it has
+    always carried ``asdict(Config().weights)``); this only makes the
+    ``kill`` entry of that already-identity-bearing dict variable. ``None``
+    reproduces ``Config()``'s own default ``Weights`` byte for byte, so
+    every existing caller (which never passes this parameter) is
+    unaffected. Only ``weights.kill`` varies; ``alive``/``territory``/
+    ``territory_bucket`` stay at their ``Weights`` defaults, since Phase 3
+    tests one scoring lever, not a general reweighting facility.
     """
 
     defaults = Config()
+    resolved_weights = (
+        defaults.weights if kill_weight is None else replace(defaults.weights, kill=kill_weight)
+    )
     return EffectiveConditions(
         tick_limit=ticks,
         arena_size=defaults.arena_size if arena_size is None else arena_size,
         action_budget=defaults.instr_per_tick if instr_per_tick is None else instr_per_tick,
         win_mode=defaults.win_mode,
-        weights=asdict(defaults.weights),
+        weights=asdict(resolved_weights),
         agent_api_version=agent_api_version,
     )
 
@@ -781,6 +796,7 @@ def _expected_cell_match_id(
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
+    kill_weight: float | None = None,
 ) -> str:
     """Recompute the ``match_id`` a fresh cell run would produce.
 
@@ -835,12 +851,17 @@ def _expected_cell_match_id(
         # `Config` construction exactly -- an omitted pair reproduces the
         # identical `Config(seed=...)` (and therefore the identical
         # `canonical_match_id`) every historical resume already verified
-        # against.
+        # against. v3 Phase 3 extends this to `weights.kill` the same way.
         config=Config(
             seed=seed,
             arena_size=_config_defaults.arena_size if arena_size is None else arena_size,
             instr_per_tick=(
                 _config_defaults.instr_per_tick if instr_per_tick is None else instr_per_tick
+            ),
+            weights=(
+                _config_defaults.weights
+                if kill_weight is None
+                else replace(_config_defaults.weights, kill=kill_weight)
             ),
         ),
         entrants=(
@@ -865,6 +886,7 @@ def _expected_group_cell_match_id(
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
+    kill_weight: float | None = None,
 ) -> str:
     """The multi-entrant generalization of :func:`_expected_cell_match_id`.
 
@@ -879,12 +901,18 @@ def _expected_group_cell_match_id(
     _config_defaults = Config()
     request = MatchRequest(
         # v3 Phase 0D: same `None`-means-default contract as
-        # `_expected_cell_match_id` above.
+        # `_expected_cell_match_id` above. v3 Phase 3 extends this to
+        # `weights.kill` the same way.
         config=Config(
             seed=seed,
             arena_size=_config_defaults.arena_size if arena_size is None else arena_size,
             instr_per_tick=(
                 _config_defaults.instr_per_tick if instr_per_tick is None else instr_per_tick
+            ),
+            weights=(
+                _config_defaults.weights
+                if kill_weight is None
+                else replace(_config_defaults.weights, kill=kill_weight)
             ),
         ),
         entrants=tuple(
@@ -1143,6 +1171,19 @@ class EvaluationRequest:
     # evaluation that names a reach and does not get one would produce a
     # corpus whose conditions its own artifacts misdescribe.
     locality_reach: int | None = None
+    # v3 research Phase 3 (docs/V3_PHASE3_OFFENSE_PAYOFF_CHARACTERIZATION.md):
+    # the one controlled scoring variable this phase tests. `None` (the
+    # default, and what every pre-Phase-3 caller passes) resolves to
+    # `Config()`'s own `Weights.kill` default -- exactly the value this
+    # evaluation path already used unconditionally -- so every
+    # omitted-parameter evaluation keeps its exact historical behavior and
+    # evaluation_id, byte for byte. Per-match configuration, not Ruleset
+    # semantics (docs/RULES.md, "Configuration values are not Ruleset
+    # identity"), but already identity-bearing: `EffectiveConditions.weights`
+    # already carries it into `_evaluation_id`/`effective_conditions_
+    # fingerprint`, and `Config.weights` already carries it into
+    # `canonical_match_id`'s `reproducibility` block.
+    kill_weight: float | None = None
 
     @property
     def resolved_locality_reach(self) -> int | None:
@@ -1182,6 +1223,12 @@ class EvaluationRequest:
         """The per-tick action budget this evaluation actually runs at."""
 
         return Config().instr_per_tick if self.instr_per_tick is None else self.instr_per_tick
+
+    @property
+    def resolved_kill_weight(self) -> float:
+        """The ``weights.kill`` value this evaluation's matches actually score with."""
+
+        return Config().weights.kill if self.kill_weight is None else self.kill_weight
 
     @property
     def orientation_mode(self) -> str:
@@ -2283,6 +2330,7 @@ def _evaluation_dispatcher_loop(
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
+    kill_weight: float | None = None,
 ) -> None:
     """One dispatcher thread's body: owns exactly one worker subprocess handle
     for its entire lifetime, processing cells strictly one at a time against
@@ -2315,6 +2363,7 @@ def _evaluation_dispatcher_loop(
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
+            kill_weight=kill_weight,
         )
         if call_result.status == WorkerCallStatus.OK:
             payload = call_result.payload or {}
@@ -2531,6 +2580,7 @@ class EvaluationService:
         arena_size: int | None = None,
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
+        kill_weight: float | None = None,
     ) -> tuple[dict[str, AgentSpec], str]:
         """Validate a request's agent/seed/tick shape and resolve its evaluation id.
 
@@ -2558,6 +2608,7 @@ class EvaluationService:
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
+            kill_weight=kill_weight,
         )
         specs = self._validate(request)
         conditions = self._effective_conditions(request)
@@ -2768,6 +2819,7 @@ class EvaluationService:
                         arena_size=request.arena_size,
                         instr_per_tick=request.instr_per_tick,
                         locality_reach=request.resolved_locality_reach,
+                        kill_weight=request.kill_weight,
                     )
                     if ingest(result):
                         break
@@ -2888,6 +2940,7 @@ class EvaluationService:
                     request.arena_size,
                     request.instr_per_tick,
                     request.resolved_locality_reach,
+                    request.kill_weight,
                 ),
                 daemon=True,
             )
@@ -3000,6 +3053,16 @@ class EvaluationService:
             raise EvaluationConfigurationError(
                 "Evaluation requires a positive --instr-per-tick action budget."
             )
+        # v3 Phase 3: fail closed on a negative kill weight rather than
+        # silently scoring with one -- alpha.3 already excluded negative
+        # weights as having no meaningful interpretation in this game's
+        # design (docs/V2_0_ALPHA3_SCORING_SENSITIVITY.md Sec 8), and this
+        # phase does not revisit that exclusion. Zero is allowed: it is one
+        # of the phase's own predeclared-adjacent boundary values (see K0).
+        if request.kill_weight is not None and request.kill_weight < 0:
+            raise EvaluationConfigurationError(
+                "Evaluation requires a non-negative --kill-weight."
+            )
         if request.baseline_id is not None and request.baseline_id == request.candidate_id:
             raise EvaluationConfigurationError(
                 "Candidate and baseline must be different agents."
@@ -3067,6 +3130,7 @@ class EvaluationService:
             get_project_info().agent_api_version,
             arena_size=request.arena_size,
             instr_per_tick=request.instr_per_tick,
+            kill_weight=request.kill_weight,
         )
 
     def _evaluation_id(
@@ -3261,6 +3325,7 @@ class EvaluationService:
                 arena_size=request.arena_size,
                 instr_per_tick=request.instr_per_tick,
                 locality_reach=request.resolved_locality_reach,
+                kill_weight=request.kill_weight,
             )
         else:
             expected_match_id = _expected_cell_match_id(
@@ -3277,6 +3342,7 @@ class EvaluationService:
                 arena_size=request.arena_size,
                 instr_per_tick=request.instr_per_tick,
                 locality_reach=request.resolved_locality_reach,
+                kill_weight=request.kill_weight,
             )
         mismatch = _resumed_cell_mismatch(envelope, cell, expected_match_id)
         if mismatch is not None:
@@ -3303,6 +3369,7 @@ class EvaluationService:
         arena_size: int | None = None,
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
+        kill_weight: float | None = None,
     ) -> CellExecutionResult:
         """Execute one cell. Pure apart from filesystem I/O under ``cell.artifact_
         dir`` and reading agent source under ``data_root``/the default data
@@ -3346,6 +3413,7 @@ class EvaluationService:
                 arena_size=arena_size,
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
+                kill_weight=kill_weight,
             )
 
         # v0.9 Phase 6 (Phase 5 spec Sec H.1/T.4): `candidate_first` reuses
@@ -3399,6 +3467,7 @@ class EvaluationService:
                 arena_size=arena_size,
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
+                kill_weight=kill_weight,
             )
         except AgentTestError as exc:
             return CellExecutionResult(
@@ -3481,6 +3550,7 @@ class EvaluationService:
         arena_size: int | None = None,
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
+        kill_weight: float | None = None,
     ) -> CellExecutionResult:
         """The multi-entrant generalization of the pairwise branch of
         :meth:`_execute_cell` (v2.0.0-beta2 Phase 2).
@@ -3512,6 +3582,7 @@ class EvaluationService:
                 arena_size=arena_size,
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
+                kill_weight=kill_weight,
             )
         except AgentTestError as exc:
             return CellExecutionResult(
@@ -3960,6 +4031,16 @@ def _parser() -> argparse.ArgumentParser:
             "Ruleset change -- see docs/V3_PHASE0_RESEARCH_BASELINE.md."
         ),
     )
+    parser.add_argument(
+        "--kill-weight",
+        type=float,
+        default=None,
+        help=(
+            f"score awarded per attributed core capture (default: {Config().weights.kill}). "
+            "A controlled experimental variable, per-match configuration rather than a "
+            "Ruleset change -- see docs/V3_PHASE3_OFFENSE_PAYOFF_CHARACTERIZATION.md."
+        ),
+    )
     parser.add_argument("--output", type=Path, default=None, help="evaluation artifact directory")
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument(
@@ -4096,6 +4177,8 @@ def _print_experimental_conditions(request: EvaluationRequest) -> None:
         print(f"arena size: {request.resolved_arena_size} (non-default)")
     if request.resolved_instr_per_tick != defaults.instr_per_tick:
         print(f"action budget/tick: {request.resolved_instr_per_tick} (non-default)")
+    if request.resolved_kill_weight != defaults.weights.kill:
+        print(f"kill weight: {request.resolved_kill_weight} (non-default)")
     # v3 Phase 2: only ever non-None for the experimental locality Ruleset,
     # so this line is absent from every non-locality evaluation's output.
     if request.resolved_locality_reach is not None:
@@ -4659,6 +4742,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         instr_per_tick = None
 
+    # v3 Phase 3: `--kill-weight` follows the identical "no --preset field"
+    # shape locality_reach uses below -- explicit CLI or ordinary default,
+    # since a reweighting experiment has no business being a reusable
+    # product-facing preset shape.
+    kill_weight = args.kill_weight
+
     # v3 Phase 2: the experimental bounded-locality Ruleset is deliberately
     # NOT reachable from this product CLI -- `--ruleset`'s choices above
     # expose exactly the two product-facing identities, and a preset is a
@@ -4692,6 +4781,7 @@ def main(argv: list[str] | None = None) -> int:
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
+            kill_weight=kill_weight,
         )
     except EvaluationConfigurationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -4718,6 +4808,7 @@ def main(argv: list[str] | None = None) -> int:
         arena_size=arena_size,
         instr_per_tick=instr_per_tick,
         locality_reach=locality_reach,
+        kill_weight=kill_weight,
     )
     matrix = build_matrix(request, evaluation_id)
     if not args.quiet or args.dry_run:

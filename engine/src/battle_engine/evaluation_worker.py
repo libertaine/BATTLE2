@@ -189,6 +189,7 @@ class EvaluationCellWorkerHandle:
         arena_size: int | None = None,
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
+        kill_weight: float | None = None,
     ) -> WorkerCallResult:
         """One blocking round trip: run exactly one evaluation cell.
 
@@ -220,6 +221,11 @@ class EvaluationCellWorkerHandle:
                 # through `.get(...)`, so an omitted key means "no
                 # locality" exactly as it did before the key existed.
                 "locality_reach": locality_reach,
+                # v3 Phase 3: additive wire key, identical contract --
+                # `.get(...)` on the worker side means an older coordinator
+                # payload (which never sends this key) still means
+                # "executor default".
+                "kill_weight": kill_weight,
             },
             timeout=None,
         )
@@ -297,6 +303,7 @@ def _handle_run_cell(request: dict[str, Any], out: Any) -> None:
     arena_size = request.get("arena_size")
     instr_per_tick = request.get("instr_per_tick")
     locality_reach = request.get("locality_reach")
+    kill_weight = request.get("kill_weight")
 
     try:
         result = EvaluationService()._execute_cell(
@@ -307,6 +314,7 @@ def _handle_run_cell(request: dict[str, Any], out: Any) -> None:
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
+            kill_weight=kill_weight,
         )
     except Exception as exc:  # belt-and-suspenders: _execute_cell/test_agent
         # already catch nearly everything internally (agent_test.test_agent's

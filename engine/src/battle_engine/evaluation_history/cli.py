@@ -203,6 +203,13 @@ def _print_experimental_conditions(summary) -> None:
         print(f"arena size: {arena_size} (non-default) ({confidence})")
     if isinstance(action_budget, int) and action_budget != defaults.instr_per_tick:
         print(f"action budget/tick: {action_budget} (non-default) ({confidence})")
+    # v3 Phase 3: `weights` has always been a recorded key of
+    # `effective_conditions`; only its `kill` entry becomes variable here.
+    weights = conditions.get("weights")
+    if isinstance(weights, dict):
+        kill_weight = weights.get("kill")
+        if isinstance(kill_weight, (int, float)) and kill_weight != defaults.weights.kill:
+            print(f"kill weight: {kill_weight} (non-default) ({confidence})")
     # v3 Phase 2: recorded only by an experimental bounded-locality
     # evaluation, so its mere presence is the disclosure -- there is no
     # "default" reach to compare against, and no non-locality artifact
