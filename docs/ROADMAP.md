@@ -889,6 +889,38 @@ were independently downloaded and verified hash-identical. RC3 is not
 pre-planned; the expected next step is a short soak/real-use verification
 period followed directly by `v2.0.0` final.
 
+## v2.0.0 — Vulnerable Core
+
+**Status: PUBLISHED.** `v2.0.0` was tagged and published as the stable
+GitHub Release on August 24, 2026, promoting the qualified `v2.0.0-rc2`
+candidate with no engine, UI, schema, or evaluation-methodology change.
+Ruleset v2 (`bytefray-rules-2`) becomes a permanent, stable gameplay
+identity alongside frozen Ruleset v1; status language across README,
+`docs/RULES_V2.md`, and `docs/COMPATIBILITY.md` was updated from beta/RC to
+stable, and package/installer version metadata was bumped to `2.0.0`.
+
+The exact tagged commit `965d2f6bf756025a66240aa963681c2efa72130a` passed
+the full automated suite (1,936 passed, 14 skipped, 2 deselected) plus 195
+GUI/display-backed tests, Ruff, and both canonical mypy targets clean on
+Windows — identical counts to the qualified RC2 candidate, confirming the
+RC2→final delta was documentation/metadata only. The documented default
+`bytefray run` command, a genuine 3-entrant omitted-start match, explicit
+same-address/within-core/arena-wraparound overlap rejection, the Ruleset-v1
+omitted-start control, Pairwise and Group evaluation, and Agent Designer/
+Replay Viewer startup against a real v2 replay were each re-run directly
+against this candidate. Candidate-branch and `main` CI passed the Python
+3.10-3.13 core matrix, the Linux wheel build, the Windows frozen-build job,
+the optional Linux Pygame/Designer GUI smoke, and the reproducible Ubuntu
+pMARS workflow. The wheel, source distribution, and portable Windows ZIP
+were each installed/extracted into a clean environment outside the source
+tree and independently qualified. The full Windows installer lifecycle
+passed, including a fresh install/reinstall/uninstall cycle, a real
+RC2 → 2.0.0 upgrade in place, and a real v1.6.0 → 2.0.0 upgrade in place,
+each preserving user-created agent data and correctly updating the reported
+version. All five
+[published assets](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
+were independently downloaded and verified hash-identical.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:
