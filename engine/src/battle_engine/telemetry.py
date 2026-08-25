@@ -77,7 +77,7 @@ def _agent_snapshot(agent: Any) -> dict[str, Any]:
         zero_flag = getattr(agent, "zero_flag", None)
         last_read = getattr(agent, "last_read", None)
         termination_reason = getattr(agent, "entrant_termination", None)
-    return {
+    snapshot = {
         "id": agent.agent_id,
         "pc": agent.pc,
         "alive": agent.alive,
@@ -90,6 +90,16 @@ def _agent_snapshot(agent: Any) -> dict[str, Any]:
         "last_read": last_read,
         "termination_reason": termination_reason,
     }
+    # v3 research Phase 2: the entrant's bounded-locality execution locus,
+    # emitted only when it exists (a locality match). Omitted -- not written
+    # as null -- under every other Ruleset and for every VM entrant, so
+    # every non-locality replay record stays byte-identical. Deliberately
+    # named "locus" rather than "position": `replay._agent_from_dict`
+    # already treats a "position" key as a historical alias for "pc".
+    locus = getattr(agent, "locus", None)
+    if locus is not None:
+        snapshot["locus"] = locus
+    return snapshot
 
 
 def build_snapshot(

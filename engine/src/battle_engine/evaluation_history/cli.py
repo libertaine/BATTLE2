@@ -176,7 +176,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
 
 
 def _print_experimental_conditions(summary) -> None:
-    """v3 Phase 0D/0E: disclose any non-default arena size / action budget.
+    """v3 Phase 0D/0E/Phase 2: disclose non-default or experimental conditions.
 
     These became controllable experimental variables in Phase 0
     (docs/V3_PHASE0_RESEARCH_BASELINE.md), so an artifact read back without
@@ -203,6 +203,16 @@ def _print_experimental_conditions(summary) -> None:
         print(f"arena size: {arena_size} (non-default) ({confidence})")
     if isinstance(action_budget, int) and action_budget != defaults.instr_per_tick:
         print(f"action budget/tick: {action_budget} (non-default) ({confidence})")
+    # v3 Phase 2: recorded only by an experimental bounded-locality
+    # evaluation, so its mere presence is the disclosure -- there is no
+    # "default" reach to compare against, and no non-locality artifact
+    # carries the key at all.
+    locality_reach = conditions.get("locality_reach")
+    if isinstance(locality_reach, int):
+        print(
+            f"locality reach: {locality_reach} (EXPERIMENTAL bounded locality) "
+            f"({confidence})"
+        )
 
 
 def _print_show(

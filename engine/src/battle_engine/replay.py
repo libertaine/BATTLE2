@@ -52,6 +52,13 @@ class AgentState:
     # Always ``None`` for VM entrants -- the native VM scheduler does not
     # track a per-agent termination reason at this granularity.
     termination_reason: str | None = None
+    # v3 research Phase 2: this entrant's bounded-locality execution locus
+    # on this tick, or ``None`` under every Ruleset whose addressing is
+    # absolute. Round-tripped so an experimental replay can be re-read and
+    # (later, if the mechanic survives) visualized; the key is omitted
+    # entirely from serialized output when ``None``, so no non-locality
+    # replay record changes shape. Additive to schema version 3.
+    locus: int | None = None
 
 
 @dataclass(frozen=True)
@@ -218,6 +225,7 @@ def _agent_from_dict(value: Any) -> AgentState:
     termination_reason = data.get("termination_reason")
     if termination_reason is not None and not isinstance(termination_reason, str):
         raise ReplayFormatError("agent.termination_reason must be a string or null")
+    locus = data.get("locus")
     return AgentState(
         agent_id=agent_id,
         pc=pc,
@@ -230,6 +238,7 @@ def _agent_from_dict(value: Any) -> AgentState:
         zero_flag=(None if zero_flag is None else bool(zero_flag)),
         last_read=(None if last_read is None else _as_int(last_read, "agent.last_read")),
         termination_reason=termination_reason,
+        locus=(None if locus is None else _as_int(locus, "agent.locus")),
     )
 
 
@@ -372,7 +381,7 @@ def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
 
 
 def _agent_to_dict(agent: AgentState) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "id": agent.agent_id,
         "pc": list(agent.pc) if isinstance(agent.pc, tuple) else agent.pc,
         "alive": agent.alive,
@@ -385,6 +394,12 @@ def _agent_to_dict(agent: AgentState) -> dict[str, Any]:
         "last_read": agent.last_read,
         "termination_reason": agent.termination_reason,
     }
+    # v3 research Phase 2: omitted, never serialized as null, so a
+    # non-locality replay is byte-identical to one written before the field
+    # existed.
+    if agent.locus is not None:
+        payload["locus"] = agent.locus
+    return payload
 
 
 def _event_to_dict(event: EngineEvent) -> dict[str, Any]:

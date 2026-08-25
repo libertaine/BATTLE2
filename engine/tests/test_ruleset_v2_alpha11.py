@@ -475,6 +475,13 @@ def test_no_opponent_core_metadata_is_exposed_to_agents() -> None:
 
     observation_fields = set(Observation.__dataclass_fields__)
     context_fields = set(MatchContext.__dataclass_fields__)
+    # v3 research Phase 2 adds exactly two additive, optional fields, and
+    # both are self-referential: `locus` is *this* entrant's own execution
+    # position and `locality_reach` is a Ruleset constant. Neither carries
+    # anything about another entrant, which is what this test actually
+    # guarantees -- and the forbidden-token sweep below still runs over
+    # them unchanged. Both default to `None`, so alpha.11's own agents
+    # observe byte-identical values to before they existed.
     assert observation_fields == {
         "tick",
         "agent_id",
@@ -484,6 +491,7 @@ def test_no_opponent_core_metadata_is_exposed_to_agents() -> None:
         "zero_flag",
         "last_read",
         "alive",
+        "locus",
     }
     assert context_fields == {
         "agent_id",
@@ -492,7 +500,10 @@ def test_no_opponent_core_metadata_is_exposed_to_agents() -> None:
         "tick_limit",
         "action_budget",
         "rng",
+        "locality_reach",
     }
+    assert Observation.__dataclass_fields__["locus"].default is None
+    assert MatchContext.__dataclass_fields__["locality_reach"].default is None
     forbidden = ("core", "owner", "ownership", "opponent", "enemy", "beacon", "start")
     for field in observation_fields | context_fields:
         assert not any(token in field for token in forbidden), field

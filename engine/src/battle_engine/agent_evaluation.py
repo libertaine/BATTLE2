@@ -75,7 +75,11 @@ from battle_engine.match_service import (
 from battle_engine.paths import contained_path, get_data_root
 from battle_engine.placement import spread_seat_starts
 from battle_engine.project_info import get_project_info
-from battle_engine.python_runtime import CORE_SIZE
+from battle_engine.python_runtime import (
+    CORE_SIZE,
+    DEFAULT_LOCALITY_REACH,
+    has_bounded_locality,
+)
 from battle_engine.replay import ReplayHeader, iter_replay
 from battle_engine.result_model import (
     ReplayIntegrityError,
@@ -87,7 +91,10 @@ from battle_engine.result_model import (
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
 from battle_engine.rules import BYTEFRAY_RULESET_ID, normalize_ruleset_id
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V3_ALPHA1_ID,
+)
 
 SCHEMA_NAME = "bytefray.evaluation"
 SCHEMA_VERSION = 4
@@ -470,18 +477,37 @@ def resolve_evaluation_ruleset_id(ruleset_id: str | None) -> str:
     return normalize_ruleset_id(ruleset_id)
 
 
+#: Which resolved rules-compatibility ids select the v2 evaluation
+#: methodology. Finite and explicit, never a prefix check.
+_V2_METHODOLOGY_RULESET_IDS: frozenset[str] = frozenset(
+    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID}
+)
+
+
 def is_ruleset_v2_methodology(rules_compatibility_id: str) -> bool:
     """Whether a resolved rules-compatibility id selects the v2 evaluation methodology.
 
     Methodology is tied 1:1 to Ruleset identity (design doc Sec Ruleset
     selection): only ``BYTEFRAY_RULESET_V2_ID`` gets balanced placement/
-    standard-seed/capture-metric methodology. Every historical alpha
+    standard-seed/capture-metric methodology. Every *historical* alpha
     Ruleset identity a result/replay artifact might still reference is
     deliberately excluded -- product-facing evaluation methodology never
     advertises an alpha Ruleset identity.
+
+    v3 research Phase 2 adds exactly one more:
+    ``BYTEFRAY_RULESET_V3_ALPHA1_ID``, the experimental bounded-locality
+    identity. It is included because the locality experiment's whole design
+    is to change *addressing and nothing else* -- it must run under the
+    identical standard placements, standard layouts, standard seed set and
+    capture/core evidence the Ruleset-v2 control runs under, or the
+    comparison Phase 2 exists to make would be confounded by methodology
+    rather than by locality. Note what this does *not* do: it does not make
+    the identity product-facing, it does not alias it to
+    ``bytefray-rules-2``, and it does not change any hashed value for a
+    request that does not name it.
     """
 
-    return rules_compatibility_id == BYTEFRAY_RULESET_V2_ID
+    return rules_compatibility_id in _V2_METHODOLOGY_RULESET_IDS
 
 
 def resolved_arena_alignment_mode(is_v2_methodology: bool, group: bool = False) -> str:
@@ -618,6 +644,32 @@ def effective_conditions_for(
     )
 
 
+def effective_conditions_payload(
+    conditions: EffectiveConditions, locality_reach: int | None = None
+) -> dict[str, Any]:
+    """The hashed/persisted form of one evaluation's effective conditions.
+
+    ``asdict(conditions)`` verbatim, plus -- for a bounded-locality
+    evaluation only -- the resolved reach ``R``.
+
+    Reach is deliberately *not* a field of :class:`EffectiveConditions`
+    itself. Adding one would put ``"locality_reach": null`` into
+    ``asdict()`` for every evaluation ever run, changing every
+    ``evaluation_id`` and every ``effective_conditions_fingerprint`` in the
+    project's history to disclose a condition that does not apply to them.
+    Gating the key here keeps every non-locality payload byte-identical
+    while still making reach fully identity-bearing and
+    comparability-gating where it is real: two locality evaluations that
+    differ only in ``R`` get different ids and are correctly reported as
+    running under different conditions.
+    """
+
+    payload = asdict(conditions)
+    if locality_reach is not None:
+        payload["locality_reach"] = locality_reach
+    return payload
+
+
 @dataclass(frozen=True)
 class ExecutionContext:
     """One observed runtime environment a v2 cell may be attributable to.
@@ -728,6 +780,7 @@ def _expected_cell_match_id(
     opponent_start: int,
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
+    locality_reach: int | None = None,
 ) -> str:
     """Recompute the ``match_id`` a fresh cell run would produce.
 
@@ -797,6 +850,7 @@ def _expected_cell_match_id(
         max_ticks=ticks,
         replay_path=Path("."),
         ruleset_id=ruleset_id,
+        locality_reach=locality_reach,
     )
     return canonical_match_id(request)
 
@@ -810,6 +864,7 @@ def _expected_group_cell_match_id(
     ruleset_id: str,
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
+    locality_reach: int | None = None,
 ) -> str:
     """The multi-entrant generalization of :func:`_expected_cell_match_id`.
 
@@ -839,6 +894,7 @@ def _expected_group_cell_match_id(
         max_ticks=ticks,
         replay_path=Path("."),
         ruleset_id=ruleset_id,
+        locality_reach=locality_reach,
     )
     return canonical_match_id(request)
 
@@ -1081,6 +1137,32 @@ class EvaluationRequest:
     # `effective_conditions_fingerprint`.
     arena_size: int | None = None
     instr_per_tick: int | None = None
+    # v3 research Phase 2's experimental bounded-locality reach. Meaningful
+    # only when `ruleset_id` is the locality identity; `_validate` rejects
+    # it outright otherwise rather than silently ignoring it, because an
+    # evaluation that names a reach and does not get one would produce a
+    # corpus whose conditions its own artifacts misdescribe.
+    locality_reach: int | None = None
+
+    @property
+    def resolved_locality_reach(self) -> int | None:
+        """The reach this request's cells actually execute under.
+
+        `None` for every non-locality Ruleset, so every locality-gated key
+        downstream (identity payloads, conditions fingerprint, disclosure)
+        is absent exactly when locality is absent. A locality request that
+        omits a reach resolves to `python_runtime.DEFAULT_LOCALITY_REACH` --
+        the same fallback the runtime itself applies, computed here so the
+        planned identity and the executed match can never disagree.
+        """
+
+        if not has_bounded_locality(self.resolved_rules_compatibility_id):
+            return None
+        return (
+            DEFAULT_LOCALITY_REACH
+            if self.locality_reach is None
+            else self.locality_reach
+        )
 
     @property
     def resolved_arena_size(self) -> int:
@@ -2200,6 +2282,7 @@ def _evaluation_dispatcher_loop(
     planned_identities: Mapping[str, dict[str, Any]],
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
+    locality_reach: int | None = None,
 ) -> None:
     """One dispatcher thread's body: owns exactly one worker subprocess handle
     for its entire lifetime, processing cells strictly one at a time against
@@ -2231,6 +2314,7 @@ def _evaluation_dispatcher_loop(
             planned_identities=planned_identities,
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
+            locality_reach=locality_reach,
         )
         if call_result.status == WorkerCallStatus.OK:
             payload = call_result.payload or {}
@@ -2446,6 +2530,7 @@ class EvaluationService:
         group: bool = False,
         arena_size: int | None = None,
         instr_per_tick: int | None = None,
+        locality_reach: int | None = None,
     ) -> tuple[dict[str, AgentSpec], str]:
         """Validate a request's agent/seed/tick shape and resolve its evaluation id.
 
@@ -2472,6 +2557,7 @@ class EvaluationService:
             group=group,
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
+            locality_reach=locality_reach,
         )
         specs = self._validate(request)
         conditions = self._effective_conditions(request)
@@ -2520,7 +2606,10 @@ class EvaluationService:
         # `evaluation_id` -- see `_evaluation_id` and `_write_state` below.
         planned_identities = {agent_id: agent_identity(spec) for agent_id, spec in specs.items()}
         conditions = self._effective_conditions(request)
-        conditions_fp = stable_id("evaluation-conditions", asdict(conditions))
+        conditions_fp = stable_id(
+            "evaluation-conditions",
+            effective_conditions_payload(conditions, request.resolved_locality_reach),
+        )
         evaluation_id = self._evaluation_id(request, planned_identities, conditions)
         resolved_rules_id = request.resolved_rules_compatibility_id
         resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
@@ -2678,6 +2767,7 @@ class EvaluationService:
                         planned_identities,
                         arena_size=request.arena_size,
                         instr_per_tick=request.instr_per_tick,
+                        locality_reach=request.resolved_locality_reach,
                     )
                     if ingest(result):
                         break
@@ -2797,6 +2887,7 @@ class EvaluationService:
                     planned_identities,
                     request.arena_size,
                     request.instr_per_tick,
+                    request.resolved_locality_reach,
                 ),
                 daemon=True,
             )
@@ -2925,11 +3016,26 @@ class EvaluationService:
         if request.ruleset_id is not None and request.ruleset_id not in (
             BYTEFRAY_RULESET_ID,
             BYTEFRAY_RULESET_V2_ID,
+            BYTEFRAY_RULESET_V3_ALPHA1_ID,
         ):
             raise EvaluationConfigurationError(
                 f"Unsupported evaluation --ruleset {request.ruleset_id!r}; expected "
-                f"{BYTEFRAY_RULESET_ID!r} or {BYTEFRAY_RULESET_V2_ID!r}."
+                f"{BYTEFRAY_RULESET_ID!r}, {BYTEFRAY_RULESET_V2_ID!r}, or "
+                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}."
             )
+        # v3 Phase 2: fail closed on a reach that would be silently
+        # discarded. A request that names a reach it will not get would
+        # write artifacts describing conditions it did not run under.
+        if request.locality_reach is not None:
+            if not has_bounded_locality(request.resolved_rules_compatibility_id):
+                raise EvaluationConfigurationError(
+                    "Evaluation --locality-reach requires --ruleset "
+                    f"{BYTEFRAY_RULESET_V3_ALPHA1_ID}."
+                )
+            if request.locality_reach < 1:
+                raise EvaluationConfigurationError(
+                    "Evaluation requires a positive --locality-reach."
+                )
         # v2.0.0-beta2 Phase 2: multi-entrant ("group") methodology
         # constraints -- fail closed rather than silently degrading to
         # pairwise or silently ignoring `group`.
@@ -2993,7 +3099,9 @@ class EvaluationService:
             "opponents": [identities[opponent_id] for opponent_id in request.opponent_ids],
             "seeds": list(request.seeds),
             "ticks": request.ticks,
-            "effective_conditions": asdict(conditions),
+            "effective_conditions": effective_conditions_payload(
+                conditions, request.resolved_locality_reach
+            ),
             # v0.10 Phase 2/v2.0.0-beta2 Phase 1: was the module constant
             # EVALUATION_RULES_COMPATIBILITY_ID unconditionally; now the
             # request's own resolved value -- for every v1 request (omitted
@@ -3152,6 +3260,7 @@ class EvaluationService:
                 cell.rules_compatibility_id,
                 arena_size=request.arena_size,
                 instr_per_tick=request.instr_per_tick,
+                locality_reach=request.resolved_locality_reach,
             )
         else:
             expected_match_id = _expected_cell_match_id(
@@ -3167,6 +3276,7 @@ class EvaluationService:
                 cell.opponent_start,
                 arena_size=request.arena_size,
                 instr_per_tick=request.instr_per_tick,
+                locality_reach=request.resolved_locality_reach,
             )
         mismatch = _resumed_cell_mismatch(envelope, cell, expected_match_id)
         if mismatch is not None:
@@ -3192,6 +3302,7 @@ class EvaluationService:
         planned_identities: Mapping[str, dict[str, Any]],
         arena_size: int | None = None,
         instr_per_tick: int | None = None,
+        locality_reach: int | None = None,
     ) -> CellExecutionResult:
         """Execute one cell. Pure apart from filesystem I/O under ``cell.artifact_
         dir`` and reading agent source under ``data_root``/the default data
@@ -3234,6 +3345,7 @@ class EvaluationService:
                 planned_identities,
                 arena_size=arena_size,
                 instr_per_tick=instr_per_tick,
+                locality_reach=locality_reach,
             )
 
         # v0.9 Phase 6 (Phase 5 spec Sec H.1/T.4): `candidate_first` reuses
@@ -3286,6 +3398,7 @@ class EvaluationService:
                 opponent_start=test_opponent_start,
                 arena_size=arena_size,
                 instr_per_tick=instr_per_tick,
+                locality_reach=locality_reach,
             )
         except AgentTestError as exc:
             return CellExecutionResult(
@@ -3367,6 +3480,7 @@ class EvaluationService:
         *,
         arena_size: int | None = None,
         instr_per_tick: int | None = None,
+        locality_reach: int | None = None,
     ) -> CellExecutionResult:
         """The multi-entrant generalization of the pairwise branch of
         :meth:`_execute_cell` (v2.0.0-beta2 Phase 2).
@@ -3397,6 +3511,7 @@ class EvaluationService:
                 ruleset_id=cell.rules_compatibility_id,
                 arena_size=arena_size,
                 instr_per_tick=instr_per_tick,
+                locality_reach=locality_reach,
             )
         except AgentTestError as exc:
             return CellExecutionResult(
@@ -3629,7 +3744,9 @@ class EvaluationService:
             ),
             "opponents": [_revision_payload(opponent_id) for opponent_id in request.opponent_ids],
         }
-        conditions_dict = asdict(conditions)
+        conditions_dict = effective_conditions_payload(
+            conditions, request.resolved_locality_reach
+        )
         resolved_rules_id = request.resolved_rules_compatibility_id
         resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
         resolved_group = request.group and resolved_is_v2
@@ -3979,6 +4096,13 @@ def _print_experimental_conditions(request: EvaluationRequest) -> None:
         print(f"arena size: {request.resolved_arena_size} (non-default)")
     if request.resolved_instr_per_tick != defaults.instr_per_tick:
         print(f"action budget/tick: {request.resolved_instr_per_tick} (non-default)")
+    # v3 Phase 2: only ever non-None for the experimental locality Ruleset,
+    # so this line is absent from every non-locality evaluation's output.
+    if request.resolved_locality_reach is not None:
+        print(
+            f"locality reach: {request.resolved_locality_reach} "
+            "(EXPERIMENTAL bounded locality)"
+        )
 
 
 def _print_matrix(
@@ -4535,6 +4659,16 @@ def main(argv: list[str] | None = None) -> int:
     else:
         instr_per_tick = None
 
+    # v3 Phase 2: the experimental bounded-locality Ruleset is deliberately
+    # NOT reachable from this product CLI -- `--ruleset`'s choices above
+    # expose exactly the two product-facing identities, and a preset is a
+    # reusable product-facing evaluation shape that an unstable research
+    # identity has no business appearing in. `EvaluationRequest.
+    # locality_reach` and `EvaluationService._validate` accept it for a
+    # programmatically constructed request, which is how the Phase 2
+    # research driver (`tools/v3_phase2_locality_corpus.py`) runs it.
+    locality_reach = None
+
     if args.single_orientation:
         both_orientations = False
     elif args.both_orientations:
@@ -4557,6 +4691,7 @@ def main(argv: list[str] | None = None) -> int:
             group=args.group,
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
+            locality_reach=locality_reach,
         )
     except EvaluationConfigurationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -4582,6 +4717,7 @@ def main(argv: list[str] | None = None) -> int:
         group=args.group,
         arena_size=arena_size,
         instr_per_tick=instr_per_tick,
+        locality_reach=locality_reach,
     )
     matrix = build_matrix(request, evaluation_id)
     if not args.quiet or args.dry_run:

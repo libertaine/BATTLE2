@@ -29,7 +29,22 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V3_ALPHA1_ID,
+)
+
+# Which Ruleset identities default an omitted start to a spread seat layout
+# rather than to the historical literal ``0``. ``bytefray-rules-2`` is the
+# permanent product identity the RC2 fix was written for;
+# ``bytefray-rules-3-alpha1`` is added because it inherits the identical
+# core mechanic *and* anchors each entrant's locality locus at its start
+# address, so collapsing every start to 0 would collapse every locus too.
+# Ruleset v1 and every historical alpha identity keep their exact
+# historical default.
+_SPREAD_START_RULESET_IDS: frozenset[str] = frozenset(
+    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID}
+)
 
 __all__ = ["resolve_direct_match_starts", "spread_seat_starts"]
 
@@ -94,7 +109,7 @@ def resolve_direct_match_starts(
             f"got {len(supplied_starts)}"
         )
 
-    if ruleset_id != BYTEFRAY_RULESET_V2_ID:
+    if ruleset_id not in _SPREAD_START_RULESET_IDS:
         return tuple(0 if start is None else start for start in supplied_starts)
 
     defaults = spread_seat_starts(entrant_count, arena_size)

@@ -6,7 +6,7 @@ import hashlib
 import random
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -37,6 +37,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ALPHA1_ID,
     BYTEFRAY_RULESET_V2_ALPHA11_ID,
     BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V3_ALPHA1_ID,
     RULESET_V1,
     RulesetPolicy,
     TerminationReason,
@@ -123,11 +124,108 @@ CORE_SEED_BYTE_ALPHA1 = 0x00
 # duplicating it -- the two identities are distinguished by registration and
 # persistence (``ruleset_policy.py``), not by behavior.
 VULNERABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V2_ALPHA1_ID, BYTEFRAY_RULESET_V2_ALPHA11_ID, BYTEFRAY_RULESET_V2_ID}
+    {
+        BYTEFRAY_RULESET_V2_ALPHA1_ID,
+        BYTEFRAY_RULESET_V2_ALPHA11_ID,
+        BYTEFRAY_RULESET_V2_ID,
+        # v3 Phase 2: the locality experiment changes *addressing*, nothing
+        # else. Core vulnerability and core observability are inherited from
+        # Ruleset v2 unchanged so the two ecologies stay comparable -- a
+        # locality result that differed because the core mechanic also
+        # differed would answer no question Phase 2 asks.
+        BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    }
 )
 OBSERVABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V2_ALPHA11_ID, BYTEFRAY_RULESET_V2_ID}
+    {
+        BYTEFRAY_RULESET_V2_ALPHA11_ID,
+        BYTEFRAY_RULESET_V2_ID,
+        BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    }
 )
+
+# ---------------------------------------------------------------------------
+# v3 research Phase 2: experimental bounded locality
+# ---------------------------------------------------------------------------
+#
+# The whole of the experimental mechanic, in one place, gated on one exact
+# Ruleset identity. Under ``bytefray-rules-3-alpha1`` a Python entrant is no
+# longer omnipresent: it occupies a single arena address (its *locus*) and
+# may only read, write, or move within a bounded circular reach ``R`` of it.
+#
+# Three rules, and deliberately no fourth:
+#
+# 1. **Position.** One locus per entrant, engine-owned, initialized to the
+#    entrant's own spawn address -- which is also its core anchor
+#    (``core_start = entrant.start % arena_size``), so an entrant begins
+#    standing on its own core and defending it is possible from action one.
+#    Normalized ``% arena_size`` like every other address in this engine.
+# 2. **Bounded reach.** ``LOCAL_READ``/``LOCAL_WRITE`` take a signed
+#    *displacement* from the locus and are legal only while the circular
+#    distance of that displacement is ``<= R``. ``MOVE`` takes a signed
+#    displacement under the identical bound, so ``R`` is the single spatial
+#    constant governing both sensing and locomotion; travel costs one action
+#    per hop of at most ``R`` cells.
+# 3. **Action accounting.** Every locality action -- including ``MOVE`` and
+#    including an out-of-reach attempt -- consumes exactly one action slot
+#    from the entrant's ordinary ``instr_per_tick`` budget. Locality creates
+#    no additional throughput of any kind.
+#
+# An out-of-reach ``LOCAL_READ``/``LOCAL_WRITE``/``MOVE`` is a **no-op that
+# still costs its action**, counted as a ``reach_miss``. It is deliberately
+# neither a forfeit (which would make the experiment measure agent
+# arithmetic bugs and mortality rather than strategy) nor silently clamped
+# (which would invent semantics the agent never asked for). An agent is told
+# ``R`` at reset via ``MatchContext.locality_reach`` and knows its own locus
+# every action, so it can always avoid a reach miss; the counter exists so
+# the report can say whether agents actually did.
+#
+# Explicitly NOT implemented, because the hypothesis is minimal: velocity,
+# acceleration, facing/orientation, terrain, movement points, a separate
+# movement cost dimension, multiple loci, and any fog-of-war mechanic
+# distinct from locality itself.
+LOCALITY_RULESET_IDS: frozenset[str] = frozenset({BYTEFRAY_RULESET_V3_ALPHA1_ID})
+
+# The reach used when a locality match does not name one. 64 is not
+# computed: it is 8x CORE_SIZE (so a single position can cover a whole core
+# window and its immediate surroundings without being able to cover two
+# cores at any standard placement) and 1/64th of the default 4096 arena
+# (so an entrant sees about 3% of the arena at a time and crossing the
+# default half-arena separation costs 32 of its 3200 actions). Phase 2's
+# pilot varies it; this is only the default a request may omit.
+DEFAULT_LOCALITY_REACH = 64
+
+
+def has_bounded_locality(ruleset_id: str) -> bool:
+    """Whether ``ruleset_id``'s Python semantics bound reach to a locus."""
+
+    return ruleset_id in LOCALITY_RULESET_IDS
+
+
+def circular_distance(a: int, b: int, arena_size: int) -> int:
+    """Shortest distance between two addresses on the circular arena.
+
+    The arena wraps (``vm._wr8``/``_rd32`` have always used ``pos %
+    arena_size``), so 3 and ``arena_size - 3`` are six cells apart, not
+    ``arena_size - 6``. Every locality range check goes through this
+    function rather than through a subtraction, so the experiment can never
+    silently measure a linear arena.
+    """
+
+    offset = (a - b) % arena_size
+    return min(offset, arena_size - offset)
+
+
+def circular_displacement(displacement: int, arena_size: int) -> int:
+    """Normalize a signed displacement to its shortest circular magnitude.
+
+    ``+arena_size - 1`` and ``-1`` name the same one-cell step; both
+    normalize to a magnitude of 1 here, so an agent that reasons in either
+    sign convention gets the identical reach decision.
+    """
+
+    offset = displacement % arena_size
+    return min(offset, arena_size - offset)
 
 
 def has_vulnerable_core(ruleset_id: str) -> bool:
@@ -652,6 +750,27 @@ class PythonEntrantState:
     # unused under Ruleset v1); only ``apply_core_capture`` reads it, and
     # only under ``bytefray-rules-2-alpha1``.
     core_start: int = 0
+    # v3 research Phase 2: this entrant's single execution locus, or
+    # ``None`` under every non-locality Ruleset. Engine-owned: only
+    # ``apply_action``'s ``MOVE`` branch ever changes it, never ``JUMP``
+    # and never the agent directly. ``None`` is load-bearing -- it is what
+    # keeps every locality-conditional field out of a Ruleset-v1/v2
+    # observation, replay record, and result artifact.
+    locus: int | None = None
+    # v3 research Phase 2 locality instrumentation. All ``0``/empty and
+    # never touched under a non-locality Ruleset, so no non-locality
+    # artifact changes. Deterministic counters only -- no wall time, no
+    # sampling, no pathfinding analytics (Phase 2O).
+    locality_moves: int = 0
+    locality_move_cells: int = 0
+    locality_reach_misses: int = 0
+    locality_local_reads: int = 0
+    locality_local_writes: int = 0
+    locality_visited: set[int] = field(default_factory=set)
+    locality_core_distance_sum: int = 0
+    locality_core_distance_max: int = 0
+    locality_encounter_ticks: int = 0
+    locality_opponent_core_reach_ticks: int = 0
 
     def __init__(
         self,
@@ -678,6 +797,7 @@ class PythonEntrantState:
         diagnostic: RuntimeDiagnostic | None = None,
         entrant_termination: str | None = None,
         core_start: int = 0,
+        locus: int | None = None,
     ) -> None:
         self.identity = EntrantIdentity(agent_id=agent_id, name=name)
         self.loaded = loaded
@@ -701,6 +821,17 @@ class PythonEntrantState:
         self.diagnostic = diagnostic
         self.entrant_termination = entrant_termination
         self.core_start = core_start
+        self.locus = locus
+        self.locality_moves = 0
+        self.locality_move_cells = 0
+        self.locality_reach_misses = 0
+        self.locality_local_reads = 0
+        self.locality_local_writes = 0
+        self.locality_visited = set() if locus is None else {locus}
+        self.locality_core_distance_sum = 0
+        self.locality_core_distance_max = 0
+        self.locality_encounter_ticks = 0
+        self.locality_opponent_core_reach_ticks = 0
 
     @property
     def agent_id(self) -> str:
@@ -737,13 +868,58 @@ def _integer(value: object, label: str) -> int:
     return value
 
 
-def validate_action(action: object) -> AgentAction:
-    """Validate one action and reject irrelevant or malformed operands."""
+#: The two absolute-addressing operations. Legal under every Ruleset whose
+#: addressing is absolute, and rejected outright under a locality Ruleset --
+#: which is what makes bounded locality unbypassable rather than advisory.
+ABSOLUTE_ADDRESSING_ACTIONS: frozenset[ActionKind] = frozenset(
+    {ActionKind.READ, ActionKind.WRITE}
+)
+
+#: The three experimental locality operations. Legal *only* under a locality
+#: Ruleset; rejected as an invalid action anywhere else, so an agent written
+#: for the experiment forfeits loudly under Ruleset v2 instead of quietly
+#: meaning something else.
+LOCALITY_ACTIONS: frozenset[ActionKind] = frozenset(
+    {ActionKind.MOVE, ActionKind.LOCAL_READ, ActionKind.LOCAL_WRITE}
+)
+
+
+def validate_action(action: object, *, locality: bool = False) -> AgentAction:
+    """Validate one action and reject irrelevant or malformed operands.
+
+    ``locality`` (v3 research Phase 2) selects which *addressing vocabulary*
+    this Ruleset admits, and the two vocabularies are disjoint:
+
+    * ``locality=False`` -- the default, and what every pre-Phase-2 caller
+      passes -- is the unchanged Agent API v1 vocabulary. The three
+      experimental locality kinds fall through to the same "unsupported
+      action" rejection any unrecognized action has always received, so a
+      Ruleset-v1/v2 match behaves byte-identically to before they existed.
+    * ``locality=True`` admits ``MOVE``/``LOCAL_READ``/``LOCAL_WRITE`` and
+      rejects the absolute ``READ``/``WRITE``. Forbidding the absolute forms
+      is what makes the experiment honest: with them available an agent
+      could simply ignore its locus, and the corpus would measure an opt-in
+      handicap rather than a Ruleset.
+
+    Every other operation (``NOP``, ``SET_A``, ``ADD_A``, ``SET_P``,
+    ``ADD_P``, ``JUMP``, ``JUMP_IF_ZERO``, ``HALT``) is identical under both,
+    and none of them touches the arena.
+    """
 
     if not isinstance(action, AgentAction):
         raise InvalidPythonActionError("act() must return one AgentAction")
     if not isinstance(action.kind, ActionKind):
         raise InvalidPythonActionError("action kind is unsupported")
+
+    if locality:
+        if action.kind in ABSOLUTE_ADDRESSING_ACTIONS:
+            raise InvalidPythonActionError(
+                f"{action.kind.value} addresses the arena absolutely and is not "
+                "available under bounded-locality rules; use local_read/"
+                "local_write relative to this entrant's locus"
+            )
+    elif action.kind in LOCALITY_ACTIONS:
+        raise InvalidPythonActionError(f"unsupported action: {action.kind!r}")
 
     no_operand = {ActionKind.NOP, ActionKind.HALT}
     one_operand = {
@@ -754,6 +930,8 @@ def validate_action(action: object) -> AgentAction:
         ActionKind.ADD_P,
         ActionKind.JUMP,
         ActionKind.JUMP_IF_ZERO,
+        ActionKind.LOCAL_READ,
+        ActionKind.MOVE,
     }
     if action.kind in no_operand:
         if action.operand is not None or action.value is not None:
@@ -765,6 +943,9 @@ def validate_action(action: object) -> AgentAction:
     elif action.kind is ActionKind.WRITE:
         _integer(action.operand, "write address")
         _integer(action.value, "write value")
+    elif action.kind is ActionKind.LOCAL_WRITE:
+        _integer(action.operand, "local_write displacement")
+        _integer(action.value, "local_write value")
     else:  # Defensive if the enum grows without runtime semantics.
         raise InvalidPythonActionError(f"unsupported action: {action.kind!r}")
     return action
@@ -780,13 +961,28 @@ def _observation(tick: int, state: PythonEntrantState) -> Observation:
         zero_flag=state.zero_flag,
         last_read=state.last_read,
         alive=state.alive,
+        locus=state.locus,
     )
 
 
-def apply_action(action: AgentAction, state: PythonEntrantState, vm: VM) -> None:
-    """Apply one validated action to engine-owned state and the shared arena."""
+def apply_action(
+    action: AgentAction,
+    state: PythonEntrantState,
+    vm: VM,
+    *,
+    locality_reach: int | None = None,
+) -> None:
+    """Apply one validated action to engine-owned state and the shared arena.
 
-    action = validate_action(action)
+    ``locality_reach`` (v3 research Phase 2) is ``None`` -- the default, and
+    what every pre-Phase-2 caller passes -- for every Ruleset whose
+    addressing is absolute. A non-``None`` value selects the experimental
+    bounded-locality vocabulary and is the reach ``R`` enforced against this
+    entrant's ``state.locus``.
+    """
+
+    locality = locality_reach is not None
+    action = validate_action(action, locality=locality)
     operand = action.operand
     if action.kind is ActionKind.NOP:
         return
@@ -794,6 +990,10 @@ def apply_action(action: AgentAction, state: PythonEntrantState, vm: VM) -> None
         state.alive = False
         return
     assert operand is not None
+    if action.kind in LOCALITY_ACTIONS:
+        assert locality_reach is not None
+        _apply_locality_action(action, state, vm, locality_reach)
+        return
     if action.kind is ActionKind.SET_A:
         state.register_a = operand & 0xFFFFFFFF
     elif action.kind is ActionKind.ADD_A:
@@ -814,6 +1014,115 @@ def apply_action(action: AgentAction, state: PythonEntrantState, vm: VM) -> None
         state.register_p = (state.register_p + operand) & 0xFFFFFFFF
     elif action.kind is ActionKind.JUMP or action.kind is ActionKind.JUMP_IF_ZERO and state.zero_flag:
         state.pc = operand & 0xFFFFFFFF
+
+
+def _apply_locality_action(
+    action: AgentAction,
+    state: PythonEntrantState,
+    vm: VM,
+    reach: int,
+) -> None:
+    """Apply one ``MOVE``/``LOCAL_READ``/``LOCAL_WRITE`` under bounded reach.
+
+    The operand of all three is a **signed displacement from this entrant's
+    locus**, never an absolute address. Out of reach is a no-op that still
+    consumed its action slot (the caller already charged it); nothing about
+    the entrant's agent-visible state changes, so a reach miss can never be
+    mistaken for a successful read of a zero cell.
+    """
+
+    arena_size = len(vm.arena)
+    assert state.locus is not None
+    displacement = action.operand
+    assert displacement is not None
+    if circular_displacement(displacement, arena_size) > reach:
+        state.locality_reach_misses += 1
+        return
+
+    if action.kind is ActionKind.MOVE:
+        # A zero-cell move is legal and simply costs its action; it is
+        # counted as a move so "how many actions went to movement" stays
+        # answerable, but it travels nothing and visits nothing new.
+        state.locality_moves += 1
+        if displacement % arena_size != 0:
+            state.locus = (state.locus + displacement) % arena_size
+            state.locality_move_cells += circular_displacement(displacement, arena_size)
+            state.locality_visited.add(state.locus)
+        return
+
+    address = (state.locus + displacement) % arena_size
+    if action.kind is ActionKind.LOCAL_READ:
+        value = vm.arena[address]
+        state.last_read = value
+        state.register_a = value
+        state.zero_flag = value == 0
+        state.locality_local_reads += 1
+        return
+
+    # LOCAL_WRITE -- the only remaining locality kind.
+    assert action.value is not None
+    vm._wr8(address, action.value, state.agent_id)
+    state.mem_writes += 1
+    state.locality_local_writes += 1
+
+
+def record_locality_tick(
+    states: list[PythonEntrantState], arena_size: int, reach: int
+) -> None:
+    """Accumulate this tick's deterministic spatial telemetry, once per tick.
+
+    Called after the tick's actions have run and after
+    :func:`apply_core_capture`, so a captured entrant stops contributing on
+    the tick it dies exactly like every other per-tick accumulator here.
+    Reads only engine-owned state (loci and core anchors); it never inspects
+    agent internals and never influences gameplay.
+    """
+
+    living = [state for state in states if state.alive and state.locus is not None]
+    for state in living:
+        assert state.locus is not None
+        distance = circular_distance(state.locus, state.core_start, arena_size)
+        state.locality_core_distance_sum += distance
+        state.locality_core_distance_max = max(
+            state.locality_core_distance_max, distance
+        )
+        for other in living:
+            if other is state:
+                continue
+            assert other.locus is not None
+            if circular_distance(state.locus, other.locus, arena_size) <= reach:
+                state.locality_encounter_ticks += 1
+                break
+        for other in states:
+            if other is state:
+                continue
+            if circular_distance(state.locus, other.core_start, arena_size) <= reach:
+                state.locality_opponent_core_reach_ticks += 1
+                break
+
+
+def locality_statistics(
+    state: PythonEntrantState, arena_size: int
+) -> dict[str, int]:
+    """One entrant's locality telemetry, as a plain persistable mapping."""
+
+    assert state.locus is not None
+    return {
+        "final_locus": state.locus,
+        "moves": state.locality_moves,
+        "move_cells": state.locality_move_cells,
+        "distinct_loci": len(state.locality_visited),
+        "reach_misses": state.locality_reach_misses,
+        "local_reads": state.locality_local_reads,
+        "local_writes": state.locality_local_writes,
+        "core_distance_max": state.locality_core_distance_max,
+        "core_distance_sum": state.locality_core_distance_sum,
+        "encounter_ticks": state.locality_encounter_ticks,
+        "opponent_core_reach_ticks": state.locality_opponent_core_reach_ticks,
+        "final_core_distance": circular_distance(
+            state.locus, state.core_start, arena_size
+        ),
+    }
 
 
 def forfeit_entrant(
@@ -851,10 +1160,29 @@ class PythonEntrantController:
         *,
         trace_writer: TraceWriter | None = None,
         ruleset_policy: RulesetPolicy = RULESET_V1,
+        locality_reach: int | None = None,
     ):
         self.config = config
         self.trace_writer = trace_writer
         self.ruleset_policy = ruleset_policy
+        # v3 research Phase 2: resolved once here, never re-derived. `None`
+        # for every non-locality Ruleset even if a caller supplied a reach,
+        # so a stray parameter can never switch on locality semantics under
+        # `bytefray-rules-2`; a locality Ruleset that was given no reach
+        # falls back to DEFAULT_LOCALITY_REACH rather than running unbounded.
+        self.locality_reach: int | None = (
+            (DEFAULT_LOCALITY_REACH if locality_reach is None else locality_reach)
+            if has_bounded_locality(ruleset_policy.ruleset_id)
+            else None
+        )
+        if self.locality_reach is not None and self.locality_reach < 1:
+            raise PythonEntrantInitializationError(
+                RuntimeDiagnostic(
+                    code="match_configuration_invalid",
+                    stage="configuration",
+                    message="Bounded-locality matches require a positive reach.",
+                )
+            )
         if config.arena_size <= 0 or config.instr_per_tick <= 0 or max_ticks <= 0:
             diagnostic = RuntimeDiagnostic(
                 code="match_configuration_invalid",
@@ -896,6 +1224,17 @@ class PythonEntrantController:
                 pc=entrant.start & 0xFFFFFFFF,
                 region=(entrant.start % config.arena_size,) * 2,
                 core_start=entrant.start % config.arena_size,
+                # v3 research Phase 2: one locus per entrant, seeded at its
+                # own spawn address -- which is also its core anchor, so an
+                # entrant begins standing on the region it must defend and
+                # the initial geometry is exactly the placement methodology
+                # every Ruleset-v2 corpus already uses. `None` (and every
+                # locality field with it) under any other Ruleset.
+                locus=(
+                    entrant.start % config.arena_size
+                    if self.locality_reach is not None
+                    else None
+                ),
             )
             if has_vulnerable_core(self.ruleset_policy.ruleset_id):
                 seed_core_ownership(
@@ -908,6 +1247,7 @@ class PythonEntrantController:
                 tick_limit=max_ticks,
                 action_budget=config.instr_per_tick,
                 rng=state.rng,
+                locality_reach=self.locality_reach,
             )
             reset_start = time.perf_counter()
             try:
@@ -1003,7 +1343,7 @@ class PythonEntrantController:
             self._trace_decision(
                 state, tick, action_slot, act_start, observation, action, None
             )
-            apply_action(action, state, self.vm)
+            apply_action(action, state, self.vm, locality_reach=self.locality_reach)
             if action.kind is ActionKind.HALT:
                 state.entrant_termination = "normal_halt"
                 events.append({"type": "death", "victim": state.agent_id})
@@ -1094,6 +1434,10 @@ class PythonEntrantController:
                     )
                 if is_observable_core:
                     maintain_core_beacons(self.states, self.vm)
+                if self.locality_reach is not None:
+                    record_locality_tick(
+                        self.states, self.config.arena_size, self.locality_reach
+                    )
 
                 self.statistics_collector.record_tick(
                     self.statistics,
@@ -1153,9 +1497,13 @@ class PythonEntrantController:
 
 
 __all__ = [
+    "ABSOLUTE_ADDRESSING_ACTIONS",
     "CORE_BEACON_BYTE",
     "CORE_SEED_BYTE_ALPHA1",
     "CORE_SIZE",
+    "DEFAULT_LOCALITY_REACH",
+    "LOCALITY_ACTIONS",
+    "LOCALITY_RULESET_IDS",
     "OBSERVABLE_CORE_RULESET_IDS",
     "VULNERABLE_CORE_RULESET_IDS",
     "InvalidPythonActionError",
@@ -1167,6 +1515,8 @@ __all__ = [
     "TerminationReason",
     "apply_action",
     "apply_core_capture",
+    "circular_displacement",
+    "circular_distance",
     "core_addresses",
     "core_seed_byte",
     "derive_agent_seed",
@@ -1180,9 +1530,12 @@ __all__ = [
     "diagnose_worker_exited",
     "diagnose_worker_protocol_error",
     "forfeit_entrant",
+    "has_bounded_locality",
     "has_observable_core",
     "has_vulnerable_core",
+    "locality_statistics",
     "maintain_core_beacons",
+    "record_locality_tick",
     "seed_core_ownership",
     "validate_action",
 ]

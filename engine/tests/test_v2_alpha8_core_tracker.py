@@ -171,8 +171,7 @@ def test_observation_carries_no_opponent_state_the_agent_could_read() -> None:
     from -- the same guarantee every other reference agent in this
     package already documents and relies on."""
 
-    fields = {f.name for f in Observation.__dataclass_fields__.values()}
-    assert fields == {
+    v1_fields = {
         "tick",
         "agent_id",
         "pc",
@@ -182,6 +181,14 @@ def test_observation_carries_no_opponent_state_the_agent_could_read() -> None:
         "last_read",
         "alive",
     }
+    # v3 research Phase 2 adds exactly one additive, optional field, and it
+    # describes *this* entrant's own execution locus -- never another
+    # entrant's anything. It is `None` under every Ruleset with a stable
+    # identity, so a v1/v2 agent observes exactly what it always did.
+    experimental_fields = {"locus"}
+    fields = {f.name for f in Observation.__dataclass_fields__.values()}
+    assert fields == v1_fields | experimental_fields
+    assert Observation.__dataclass_fields__["locus"].default is None
 
 
 def test_source_does_not_hardcode_alpha7_placement_addresses() -> None:

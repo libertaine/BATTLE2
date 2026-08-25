@@ -51,6 +51,7 @@ from battle_engine.agent_trace import (
 from battle_engine.agent_worker import AgentWorkerHandle, WorkerCallResult, WorkerCallStatus
 from battle_engine.config import Config
 from battle_engine.python_runtime import (
+    DEFAULT_LOCALITY_REACH,
     InvalidPythonActionError,
     PythonEntrantInitializationError,
     PythonEntrantState,
@@ -70,9 +71,11 @@ from battle_engine.python_runtime import (
     diagnose_worker_exited,
     diagnose_worker_protocol_error,
     forfeit_entrant,
+    has_bounded_locality,
     has_observable_core,
     has_vulnerable_core,
     maintain_core_beacons,
+    record_locality_tick,
     seed_core_ownership,
 )
 from battle_engine.results import resolve_winner
@@ -171,11 +174,20 @@ class SupervisedPythonEntrantController:
         agent_call_timeout: float,
         trace_writer: TraceWriter | None = None,
         ruleset_policy: RulesetPolicy = RULESET_V1,
+        locality_reach: int | None = None,
     ) -> None:
         self.config = config
         self.trace_writer = trace_writer
         self.agent_call_timeout = agent_call_timeout
         self.ruleset_policy = ruleset_policy
+        # v3 research Phase 2 -- resolved exactly as the unsupervised
+        # controller resolves it, so a supervised locality match and an
+        # unsupervised one execute identical semantics.
+        self.locality_reach: int | None = (
+            (DEFAULT_LOCALITY_REACH if locality_reach is None else locality_reach)
+            if has_bounded_locality(ruleset_policy.ruleset_id)
+            else None
+        )
         if config.arena_size <= 0 or config.instr_per_tick <= 0 or max_ticks <= 0:
             diagnostic = RuntimeDiagnostic(
                 code="match_configuration_invalid",
@@ -257,6 +269,11 @@ class SupervisedPythonEntrantController:
             pc=entrant.start & 0xFFFFFFFF,
             region=(entrant.start % self.config.arena_size,) * 2,
             core_start=entrant.start % self.config.arena_size,
+            locus=(
+                entrant.start % self.config.arena_size
+                if self.locality_reach is not None
+                else None
+            ),
         )
         if has_vulnerable_core(self.ruleset_policy.ruleset_id):
             seed_core_ownership(
@@ -270,6 +287,7 @@ class SupervisedPythonEntrantController:
             arena_size=self.config.arena_size,
             tick_limit=self.max_ticks,
             action_budget=self.config.instr_per_tick,
+            locality_reach=self.locality_reach,
             timeout=self.agent_call_timeout,
         )
         if reset_result.status is not WorkerCallStatus.OK:
@@ -406,6 +424,10 @@ class SupervisedPythonEntrantController:
                     )
                 if is_observable_core:
                     maintain_core_beacons(self.states, self.vm)
+                if self.locality_reach is not None:
+                    record_locality_tick(
+                        self.states, self.config.arena_size, self.locality_reach
+                    )
 
                 self.statistics_collector.record_tick(
                     self.statistics,
@@ -510,7 +532,7 @@ class SupervisedPythonEntrantController:
             value=action_payload.get("value"),
         )
         try:
-            apply_action(action, state, self.vm)
+            apply_action(action, state, self.vm, locality_reach=self.locality_reach)
         except InvalidPythonActionError as exc:
             diagnostic = diagnose_invalid_action(
                 exc, agent_id=state.agent_id, slot=state.slot, tick=tick, action_slot=action_slot

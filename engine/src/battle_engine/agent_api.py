@@ -69,6 +69,13 @@ class MatchContext:
     tick_limit: int
     action_budget: int
     rng: random.Random
+    # v3 research Phase 2 (experimental, ``bytefray-rules-3-alpha1`` only):
+    # the bounded reach ``R`` this match's locality semantics enforce, so a
+    # locality-aware agent can compute which displacements are legal instead
+    # of discovering them by wasting actions. ``None`` under every Ruleset
+    # with a stable identity. Additive and optional, exactly like
+    # ``Observation.locus``; ``AGENT_API_VERSION`` is not bumped for it.
+    locality_reach: int | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +90,19 @@ class Observation:
     zero_flag: bool
     last_read: int | None
     alive: bool
+    # v3 research Phase 2 (experimental, ``bytefray-rules-3-alpha1`` only):
+    # this entrant's single arena execution locus -- the address its
+    # bounded reach is centred on. ``None`` under every non-locality
+    # Ruleset, which is every Ruleset with a stable identity, so no Agent
+    # API v1 agent's behavior can change: the field did not exist for them
+    # and carries no value for them now. Deliberately a *new* field rather
+    # than a reinterpretation of ``pc``: ``pc`` is not an execution
+    # location under any Ruleset (it is moved only by ``JUMP`` and is read
+    # by no addressing path), and Phase 2 keeps it that way so a locality
+    # experiment cannot be confused with a redefinition of an Agent API v1
+    # observation field. See ``battle_engine.python_runtime``'s locality
+    # section.
+    locus: int | None = None
 
 
 class ActionKind(str, Enum):
@@ -98,6 +118,25 @@ class ActionKind(str, Enum):
     JUMP = "jump"
     JUMP_IF_ZERO = "jump_if_zero"
     HALT = "halt"
+
+    # -- experimental, v3 research Phase 2 only ---------------------------
+    #
+    # Three additive members that are *not* part of the Agent API v1
+    # contract documented in docs/AGENT_API_V1.md and are not usable under
+    # any Ruleset with a stable identity. ``python_runtime.validate_action``
+    # accepts them only under ``bytefray-rules-3-alpha1`` and rejects them
+    # as invalid actions everywhere else, exactly as it already rejects any
+    # unrecognized action; symmetrically, that Ruleset rejects the absolute
+    # ``READ``/``WRITE`` above, so the v1 spelling of an absolute-address
+    # operation never silently acquires relative meaning.
+    #
+    # ``AGENT_API_VERSION`` is deliberately NOT bumped for these: an agent
+    # that never emits them observes and behaves exactly as before, and
+    # Phase 2's job is to *measure* what incompatibility locality actually
+    # requires, not to pre-declare an Agent API v2 from a guess.
+    MOVE = "move"
+    LOCAL_READ = "local_read"
+    LOCAL_WRITE = "local_write"
 
 
 @dataclass(frozen=True)

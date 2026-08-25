@@ -241,6 +241,35 @@ RULESET_V2 = RulesetPolicy(
 )
 
 
+# v3 research Phase 2's experimental bounded-locality identity (see
+# docs/V3_PHASE2_LOCALITY_FEASIBILITY.md). Spelled ``-alpha1``, exactly
+# like ``bytefray-rules-2-alpha1``/``-alpha11`` before it and for the same
+# reason: the mechanic is a hypothesis under test, not a matured contract.
+# This is deliberately NOT ``bytefray-rules-3`` -- no stable Ruleset 3
+# exists, and this module must never let a research prototype masquerade
+# as a durable compatibility promise (docs/RULES.md's bump policy).
+#
+# Gameplay under this identity is Ruleset v2's -- vulnerable core,
+# observable core beacon, identical scheduling and termination -- plus one
+# experimental change: a Python entrant occupies a single *execution
+# locus* in the arena and may only read/write within a bounded reach of
+# it, moving that locus with an action like any other. The mechanic itself
+# lives entirely in ``battle_engine.python_runtime`` (Python-only, gated
+# on this exact ``ruleset_id`` value); this policy object carries no
+# knowledge of it, exactly as it carries none of the vulnerable-core rule.
+#
+# Python-only (``supported_runtime_kinds={"python"}``), mirroring
+# ``bytefray-rules-2``: locality has no VM/Redcode implementation and is
+# not being given one -- see the Phase 2 report's Python-only scope
+# statement. A VM entrant requested under this identity is rejected by
+# ``NativeMatchService`` before any entrant executes.
+BYTEFRAY_RULESET_V3_ALPHA1_ID = "bytefray-rules-3-alpha1"
+RULESET_V3_ALPHA1 = RulesetPolicy(
+    ruleset_id=BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    supported_runtime_kinds=frozenset({"python"}),
+)
+
+
 class UnknownRulesetError(LookupError):
     """A Ruleset ID has no known policy.
 
@@ -264,9 +293,10 @@ class UnknownRulesetError(LookupError):
 # execute the aliased ID as today's Ruleset v1 -- see
 # ``docs/V1_5_PHASE3_RULESET_POLICY_DISPATCH.md``'s "Resolver design".
 #
-# ``bytefray-rules-2-alpha1``, ``bytefray-rules-2-alpha11``, and
-# ``bytefray-rules-2`` are each registered under their own explicit key,
-# never aliased to or from ``bytefray-rules-1`` or each other (``rules.py``'s
+# ``bytefray-rules-2-alpha1``, ``bytefray-rules-2-alpha11``,
+# ``bytefray-rules-2``, and ``bytefray-rules-3-alpha1`` are each registered
+# under their own explicit key, never aliased to or from
+# ``bytefray-rules-1`` or each other (``rules.py``'s
 # ``_RULESET_ALIASES`` gets no entry for any of them either -- see that
 # table's own docstring).
 _RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
@@ -274,6 +304,7 @@ _RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
     RULESET_V2_ALPHA1.ruleset_id: RULESET_V2_ALPHA1,
     RULESET_V2_ALPHA11.ruleset_id: RULESET_V2_ALPHA11,
     RULESET_V2.ruleset_id: RULESET_V2,
+    RULESET_V3_ALPHA1.ruleset_id: RULESET_V3_ALPHA1,
 }
 
 
@@ -297,10 +328,12 @@ __all__ = [
     "BYTEFRAY_RULESET_V2_ALPHA1_ID",
     "BYTEFRAY_RULESET_V2_ALPHA11_ID",
     "BYTEFRAY_RULESET_V2_ID",
+    "BYTEFRAY_RULESET_V3_ALPHA1_ID",
     "RULESET_V1",
     "RULESET_V2",
     "RULESET_V2_ALPHA1",
     "RULESET_V2_ALPHA11",
+    "RULESET_V3_ALPHA1",
     "RulesetPolicy",
     "TerminationDecision",
     "TerminationReason",

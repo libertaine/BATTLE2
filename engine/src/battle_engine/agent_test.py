@@ -241,6 +241,7 @@ def test_agent(
     opponent_start: int | None = None,
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
+    locality_reach: int | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     """Run one short, real development match for ``agent_id``.
 
@@ -310,6 +311,7 @@ def test_agent(
             opponent_start=opponent_start,
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
+            locality_reach=locality_reach,
         )
     except AgentTestError:
         raise
@@ -340,6 +342,7 @@ def _test_agent(
     opponent_start: int | None = None,
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
+    locality_reach: int | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = resource_root or get_resource_root()
@@ -431,6 +434,7 @@ def _test_agent(
         trace_path=trace_path,
         agent_call_timeout=effective_timeout,
         ruleset_id=ruleset_id,
+        locality_reach=locality_reach,
     )
 
     try:
@@ -578,6 +582,7 @@ def test_agents(
     ruleset_id: str | None = None,
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
+    locality_reach: int | None = None,
 ) -> GroupTestOutcome | GroupInitializationFailureOutcome:
     """Run one short, real N-entrant (N >= 2) development match.
 
@@ -609,6 +614,7 @@ def test_agents(
             ruleset_id=ruleset_id,
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
+            locality_reach=locality_reach,
         )
     except AgentTestError:
         raise
@@ -635,6 +641,7 @@ def _test_agents(
     ruleset_id: str | None = None,
     arena_size: int | None = None,
     instr_per_tick: int | None = None,
+    locality_reach: int | None = None,
 ) -> GroupTestOutcome | GroupInitializationFailureOutcome:
     if len(entrants) < 2:
         raise _tool_error(
@@ -700,6 +707,7 @@ def _test_agents(
         trace_path=trace_path,
         agent_call_timeout=effective_timeout,
         ruleset_id=ruleset_id,
+        locality_reach=locality_reach,
     )
 
     try:

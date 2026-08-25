@@ -216,6 +216,7 @@ class AgentWorkerHandle:
         tick_limit: int,
         action_budget: int,
         timeout: float,
+        locality_reach: int | None = None,
     ) -> WorkerCallResult:
         return self._call(
             {
@@ -225,6 +226,11 @@ class AgentWorkerHandle:
                 "arena_size": arena_size,
                 "tick_limit": tick_limit,
                 "action_budget": action_budget,
+                # v3 research Phase 2: additive, `None` for every Ruleset
+                # whose addressing is absolute. A worker built before this
+                # key existed reads it back through `.get(...)`, so the wire
+                # stays backward-tolerant in both directions.
+                "locality_reach": locality_reach,
             },
             timeout=timeout,
         )
@@ -245,6 +251,7 @@ class AgentWorkerHandle:
                     "zero_flag": observation.zero_flag,
                     "last_read": observation.last_read,
                     "alive": observation.alive,
+                    "locus": observation.locus,
                 },
             },
             timeout=timeout,
@@ -395,6 +402,7 @@ def _handle_reset(state: _WorkerState, request: dict[str, Any], out: Any) -> Non
         tick_limit=request["tick_limit"],
         action_budget=request["action_budget"],
         rng=random.Random(seed),
+        locality_reach=request.get("locality_reach"),
     )
     try:
         state.loaded.instance.reset(context)
@@ -422,6 +430,7 @@ def _handle_act(state: _WorkerState, request: dict[str, Any], out: Any) -> None:
         zero_flag=observation_payload["zero_flag"],
         last_read=observation_payload.get("last_read"),
         alive=observation_payload["alive"],
+        locus=observation_payload.get("locus"),
     )
     action_slot = request.get("action_slot", 0)
     try:

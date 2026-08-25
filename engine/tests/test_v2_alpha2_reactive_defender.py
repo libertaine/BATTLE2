@@ -234,8 +234,7 @@ def test_observation_carries_no_opponent_state_the_agent_could_read() -> None:
 
     from battle_engine.agent_api import Observation
 
-    fields = {f.name for f in Observation.__dataclass_fields__.values()}
-    assert fields == {
+    v1_fields = {
         "tick",
         "agent_id",
         "pc",
@@ -245,6 +244,14 @@ def test_observation_carries_no_opponent_state_the_agent_could_read() -> None:
         "last_read",
         "alive",
     }
+    # v3 research Phase 2 adds exactly one additive, optional field, and it
+    # describes *this* entrant's own execution locus -- never another
+    # entrant's anything. It is `None` under every Ruleset with a stable
+    # identity, so a v1/v2 agent observes exactly what it always did.
+    experimental_fields = {"locus"}
+    fields = {f.name for f in Observation.__dataclass_fields__.values()}
+    assert fields == v1_fields | experimental_fields
+    assert Observation.__dataclass_fields__["locus"].default is None
 
 
 def test_behavior_before_any_damage_is_identical_regardless_of_opponent(tmp_path) -> None:

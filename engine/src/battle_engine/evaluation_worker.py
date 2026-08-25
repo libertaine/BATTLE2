@@ -188,6 +188,7 @@ class EvaluationCellWorkerHandle:
         planned_identities: Mapping[str, dict[str, Any]],
         arena_size: int | None = None,
         instr_per_tick: int | None = None,
+        locality_reach: int | None = None,
     ) -> WorkerCallResult:
         """One blocking round trip: run exactly one evaluation cell.
 
@@ -215,6 +216,10 @@ class EvaluationCellWorkerHandle:
                 # payload) means "executor default", matching `agent_test`.
                 "arena_size": arena_size,
                 "instr_per_tick": instr_per_tick,
+                # v3 Phase 2: additive wire key. A worker reads it back
+                # through `.get(...)`, so an omitted key means "no
+                # locality" exactly as it did before the key existed.
+                "locality_reach": locality_reach,
             },
             timeout=None,
         )
@@ -291,6 +296,7 @@ def _handle_run_cell(request: dict[str, Any], out: Any) -> None:
     # "executor default", the exact behavior it had before this phase.
     arena_size = request.get("arena_size")
     instr_per_tick = request.get("instr_per_tick")
+    locality_reach = request.get("locality_reach")
 
     try:
         result = EvaluationService()._execute_cell(
@@ -300,6 +306,7 @@ def _handle_run_cell(request: dict[str, Any], out: Any) -> None:
             planned_identities,
             arena_size=arena_size,
             instr_per_tick=instr_per_tick,
+            locality_reach=locality_reach,
         )
     except Exception as exc:  # belt-and-suspenders: _execute_cell/test_agent
         # already catch nearly everything internally (agent_test.test_agent's

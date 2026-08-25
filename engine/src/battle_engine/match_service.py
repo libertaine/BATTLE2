@@ -21,6 +21,7 @@ from battle_engine.config import Config
 from battle_engine.core import Kernel
 from battle_engine.entrant_identity import EntrantIdentity
 from battle_engine.python_runtime import (
+    DEFAULT_LOCALITY_REACH,
     PythonEntrantController,
     PythonEntrantInitializationError,
     PythonRuntimeResult,
@@ -28,6 +29,8 @@ from battle_engine.python_runtime import (
     TerminationReason,
     core_addresses,
     derive_agent_seed,
+    has_bounded_locality,
+    locality_statistics,
 )
 from battle_engine.replay import (
     MatchResult as ReplayMatchResult,
@@ -48,6 +51,7 @@ from battle_engine.results import WINNER_TIE_SENTINEL
 from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V3_ALPHA1_ID,
     RulesetPolicy,
     resolve_ruleset_policy,
 )
@@ -137,6 +141,17 @@ class MatchRequest:
     trace_path: Path | None = None
     agent_call_timeout: float | None = None
     ruleset_id: str | None = None
+    # v3 research Phase 2's experimental bounded-locality reach. ``None``
+    # -- the default, and what every pre-Phase-2 caller passes -- means
+    # "not specified"; it is *ignored entirely* unless ``ruleset_id``
+    # resolves to a locality Ruleset, so setting it on a Ruleset-v1/v2
+    # request can never switch on locality semantics. Under a locality
+    # Ruleset, ``None`` resolves to
+    # ``python_runtime.DEFAULT_LOCALITY_REACH``; the *resolved* value is
+    # what enters ``canonical_match_id``'s ``reproducibility`` block and the
+    # persisted artifacts (see ``_reproducibility``), so a locality result
+    # always discloses the reach it actually ran under.
+    locality_reach: int | None = None
 
 
 @dataclass(frozen=True)
@@ -298,6 +313,20 @@ class OverlappingCoreError(ValueError):
         )
 
 
+# Which Ruleset identities reject overlapping entrant cores before
+# execution. ``bytefray-rules-2`` is the permanent product identity the RC2
+# guard was written for; ``bytefray-rules-3-alpha1`` is added because
+# locality inherits the identical vulnerable-core mechanic, so an
+# overlapping-core spawn would be exactly as fatal there -- and a research
+# corpus silently measuring spawn collision is precisely the failure Phase 0
+# built the placement machinery to avoid. The historical vulnerable-core
+# alpha identities are deliberately still excluded: their execution
+# semantics are frozen.
+_CORE_PLACEMENT_GUARDED_RULESET_IDS: frozenset[str] = frozenset(
+    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID}
+)
+
+
 def _validate_v2_core_placement(
     ruleset_policy: RulesetPolicy,
     entrants: tuple[MatchEntrant, ...],
@@ -312,7 +341,7 @@ def _validate_v2_core_placement(
     them, exactly as it did not exist before this fix.
     """
 
-    if ruleset_policy.ruleset_id != BYTEFRAY_RULESET_V2_ID:
+    if ruleset_policy.ruleset_id not in _CORE_PLACEMENT_GUARDED_RULESET_IDS:
         return
 
     windows = [
@@ -327,6 +356,56 @@ def _validate_v2_core_placement(
     ]
     if overlapping_pairs:
         raise OverlappingCoreError(ruleset_policy.ruleset_id, overlapping_pairs)
+
+
+def _resolve_locality_reach(request: MatchRequest) -> int | None:
+    """The bounded reach ``request`` actually executes/executed under.
+
+    ``None`` for every Ruleset whose addressing is absolute, whatever
+    ``request.locality_reach`` says. The one place this resolution is
+    computed, for the same reason :func:`_resolve_ruleset_id` is: dispatch,
+    identity hashing, and persistence must never disagree about it.
+    """
+
+    if not has_bounded_locality(_resolve_ruleset_id(request)):
+        return None
+    return (
+        DEFAULT_LOCALITY_REACH
+        if request.locality_reach is None
+        else request.locality_reach
+    )
+
+
+def _reproducibility(request: MatchRequest) -> dict[str, Any]:
+    """The per-match configuration block both identity and artifacts use.
+
+    One source for :func:`canonical_match_id` and
+    :func:`_finalize_native_artifacts`, which previously repeated the
+    identical literal -- the same discipline :func:`_resolve_ruleset_id`
+    already applies to the Ruleset identity, so the hashed and the persisted
+    configuration can never drift apart.
+
+    ``locality_reach`` appears only for a locality Ruleset. Omitted (not
+    written as null) otherwise, so every Ruleset-v1/v2 ``match_id``,
+    ``result_id``, ``replay_id``, and persisted ``reproducibility`` block is
+    byte-identical to one computed before Phase 2 -- the same gating
+    discipline the Python ``start`` key already uses in
+    :func:`canonical_match_id`.
+    """
+
+    payload: dict[str, Any] = {
+        "seed": request.config.seed,
+        "arena_size": request.config.arena_size,
+        "tick_limit": request.max_ticks,
+        "action_budget": request.config.instr_per_tick,
+        "win_mode": request.config.win_mode,
+        "weights": asdict(request.config.weights),
+        "entrant_order": [entrant.agent_id for entrant in request.entrants],
+    }
+    resolved_reach = _resolve_locality_reach(request)
+    if resolved_reach is not None:
+        payload["locality_reach"] = resolved_reach
+    return payload
 
 
 def _resolve_ruleset_id(request: MatchRequest) -> str:
@@ -432,6 +511,7 @@ def _build_python_result(
     runtime: PythonRuntimeResult,
     config: Config,
     replay_path: Path,
+    locality_reach: int | None = None,
 ) -> NativeMatchResult:
     arena_size = config.arena_size
     results: list[NativeAgentResult] = []
@@ -498,6 +578,21 @@ def _build_python_result(
                         # PythonEntrantController.run/supervised_runtime.
                         # SupervisedPythonEntrantController.run.
                         "local_source_fingerprint_final": state.local_source_fingerprint_final,
+                        # v3 research Phase 2: deterministic per-entrant
+                        # spatial telemetry, present only for a locality
+                        # match. Purely additive to this already free-form
+                        # metadata dict (the same seam `entry_point` and the
+                        # two fingerprints above use), and omitted entirely
+                        # under every other Ruleset -- so no Ruleset-v1/v2
+                        # `result.json`, and therefore no `result_id`,
+                        # changes. Research analysis reads it from
+                        # `result.json` rather than widening any evaluation
+                        # record, exactly as Phase 1 read `cpu_total`.
+                        **(
+                            {"locality": locality_statistics(state, arena_size)}
+                            if locality_reach is not None
+                            else {}
+                        ),
                     }
                 ),
             )
@@ -582,6 +677,7 @@ def _run_python_match_traced(
                     agent_call_timeout=request.agent_call_timeout,
                     trace_writer=trace_writer,
                     ruleset_policy=ruleset_policy,
+                    locality_reach=request.locality_reach,
                 )
             )
         else:
@@ -591,6 +687,7 @@ def _run_python_match_traced(
                 request.max_ticks,
                 trace_writer=trace_writer,
                 ruleset_policy=ruleset_policy,
+                locality_reach=request.locality_reach,
             )
     except PythonEntrantInitializationError:
         _remove_python_artifacts(replay_path, summary_path)
@@ -620,7 +717,12 @@ def _run_python_match_traced(
         sink = None  # The controller closes the replay publisher.
         recorded_path = temporary_path
         temporary_path = None
-        return _build_python_result(runtime, request.config, recorded_path)
+        return _build_python_result(
+            runtime,
+            request.config,
+            recorded_path,
+            locality_reach=_resolve_locality_reach(request),
+        )
     except OSError as exc:
         raise PythonMatchExecutionError(
             RuntimeDiagnostic(
@@ -756,15 +858,7 @@ def canonical_match_id(request: MatchRequest) -> str:
         entrant_identities.append(
             {"agent_id": entrant.agent_id, "name": entrant.name, "metadata": metadata}
         )
-    reproducibility = {
-        "seed": request.config.seed,
-        "arena_size": request.config.arena_size,
-        "tick_limit": request.max_ticks,
-        "action_budget": request.config.instr_per_tick,
-        "win_mode": request.config.win_mode,
-        "weights": asdict(request.config.weights),
-        "entrant_order": [entrant.agent_id for entrant in request.entrants],
-    }
+    reproducibility = _reproducibility(request)
     return stable_id(
         "match",
         {
@@ -784,15 +878,7 @@ def _finalize_native_artifacts(
 ) -> NativeMatchResult:
     source_replay_path = result.replay_path
     publish_path = final_replay_path or source_replay_path
-    reproducibility = {
-        "seed": request.config.seed,
-        "arena_size": request.config.arena_size,
-        "tick_limit": request.max_ticks,
-        "action_budget": request.config.instr_per_tick,
-        "win_mode": request.config.win_mode,
-        "weights": asdict(request.config.weights),
-        "entrant_order": [entrant.agent_id for entrant in request.entrants],
-    }
+    reproducibility = _reproducibility(request)
     entrants = [
         {
             "agent_id": agent.agent_id,
