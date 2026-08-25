@@ -380,7 +380,7 @@ def _layout_win_rates(roster: list[str], cells: list) -> dict[str, dict[str, flo
     rates: dict[str, dict[str, float | None]] = {}
     for view in analysis.layout_sensitivity:
         rates[view.agent_id] = {
-            summary.label: summary.winner.rate for summary in view.by_layout
+            summary.scope_label: summary.winner.rate for summary in view.by_layout
         }
     return rates
 
