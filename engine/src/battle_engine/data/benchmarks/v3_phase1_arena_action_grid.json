@@ -1,0 +1,376 @@
+{
+  "schema": "bytefray.parameter_grid",
+  "schema_version": 1,
+  "grid_id": "v3-phase1-arena-action",
+  "benchmark_id": "v2-baseline",
+  "corpus_id": "v2-baseline-corpus",
+  "ruleset_id": "bytefray-rules-2",
+  "description": "The v3 Phase 1 arena-size x action-budget parameter grid. Every roster and pair id below names an entry of v2_baseline_corpus.json, which stays the single declaration of what a roster or pair IS; this file declares only the parameter conditions those same rosters are replayed under, so a Phase 1 cell differs from its Phase 0 control cell in arena_size/instr_per_tick and nothing else.",
+  "density_note": "Configured per-entrant sweeps S = (instr_per_tick * ticks) / arena_size; aggregate configured pressure P = entrants * S. The default condition (4096, 8, 400 ticks, 3 entrants) is S = 0.781, P = 2.34. Conditions sharing an S value are an intentional constant-density diagonal: they hold configured action density fixed while varying absolute arena scale, which is what separates a density effect from a scale effect. Realized density is measured separately from each result's cpu_total and is never assumed equal to the configured value.",
+  "stages": {
+    "pilot": {
+      "description": "Phase 1D pilot. Cheap enough to discard: one seed, two rosters, deliberately including candidate extremes that are expected to be degenerate. Its job is to bound the reasonable parameter region before the main grid is declared, not to produce evidence.",
+      "ticks": 400,
+      "seeds": [
+        1
+      ],
+      "rosters": [
+        "claimer_coretracker_coredefender",
+        "hunter_coretracker_coreseeker"
+      ],
+      "pairs": [],
+      "conditions": [
+        {
+          "id": "a64_b8",
+          "arena_size": 64,
+          "instr_per_tick": 8,
+          "probe": "smallest arena the 3-entrant placement bound admits (2*3*(CORE_SIZE+1) = 54)"
+        },
+        {
+          "id": "a128_b8",
+          "arena_size": 128,
+          "instr_per_tick": 8,
+          "probe": "small-arena collision regime"
+        },
+        {
+          "id": "a256_b2",
+          "arena_size": 256,
+          "instr_per_tick": 2,
+          "probe": "small arena, low budget"
+        },
+        {
+          "id": "a256_b8",
+          "arena_size": 256,
+          "instr_per_tick": 8,
+          "probe": "small arena, default budget"
+        },
+        {
+          "id": "a256_b32",
+          "arena_size": 256,
+          "instr_per_tick": 32,
+          "probe": "small arena, high budget"
+        },
+        {
+          "id": "a1024_b2",
+          "arena_size": 1024,
+          "instr_per_tick": 2,
+          "probe": "constant-density diagonal S=0.781"
+        },
+        {
+          "id": "a1024_b8",
+          "arena_size": 1024,
+          "instr_per_tick": 8,
+          "probe": "quarter-default arena, default budget"
+        },
+        {
+          "id": "a1024_b32",
+          "arena_size": 1024,
+          "instr_per_tick": 32,
+          "probe": "quarter-default arena, high budget"
+        },
+        {
+          "id": "a4096_b1",
+          "arena_size": 4096,
+          "instr_per_tick": 1,
+          "probe": "minimum action budget"
+        },
+        {
+          "id": "a4096_b2",
+          "arena_size": 4096,
+          "instr_per_tick": 2,
+          "probe": "default arena, low budget"
+        },
+        {
+          "id": "a4096_b8",
+          "arena_size": 4096,
+          "instr_per_tick": 8,
+          "probe": "DEFAULT CONDITION (Phase 0 control anchor)"
+        },
+        {
+          "id": "a4096_b32",
+          "arena_size": 4096,
+          "instr_per_tick": 32,
+          "probe": "default arena, high budget"
+        },
+        {
+          "id": "a4096_b128",
+          "arena_size": 4096,
+          "instr_per_tick": 128,
+          "probe": "default arena, saturating budget"
+        },
+        {
+          "id": "a16384_b8",
+          "arena_size": 16384,
+          "instr_per_tick": 8,
+          "probe": "large arena, default budget"
+        },
+        {
+          "id": "a16384_b32",
+          "arena_size": 16384,
+          "instr_per_tick": 32,
+          "probe": "constant-density diagonal S=0.781"
+        },
+        {
+          "id": "a16384_b128",
+          "arena_size": 16384,
+          "instr_per_tick": 128,
+          "probe": "large arena, saturating budget"
+        },
+        {
+          "id": "a65536_b32",
+          "arena_size": 65536,
+          "instr_per_tick": 32,
+          "probe": "very large arena, interaction-starvation check"
+        },
+        {
+          "id": "a65536_b128",
+          "arena_size": 65536,
+          "instr_per_tick": 128,
+          "probe": "constant-density diagonal S=0.781 at 16x default scale"
+        }
+      ]
+    },
+    "main": {
+      "description": "The declared Phase 1 main grid: 6 power-of-two arena sizes x the default action budget and its quarter/4x neighbours, plus 16x default at the two arenas that complete a constant-density diagonal. Every cell runs the Phase 0 control corpus's own rosters and pairs, changing only arena_size and instr_per_tick.",
+      "declared_before_interpretation": true,
+      "stopping_criterion": "The reasonable parameter region is arena_size in [128, 65536] (powers of two, a 512x span bounded below by the standard-layout non-overlap requirement and above at 16x the default) crossed with instr_per_tick in [2, 128] (a quarter of the default to 16x it), giving configured density S in [0.012, 50] -- roughly a 4000x span, from a condition where almost nothing is claimed to one where the arena is filled fifty times over. Phase 1 stops once these conditions are measured. No condition outside this region is added afterwards to rescue or overturn a result.",
+      "tick_rationale": "Ticks are held at 400 for every condition. The pilot measured mean realized ticks of 400 (no truncation at all) in every large-arena/low-budget condition, so large arenas are not systematically cut short; the only conditions that end early are high-density ones ending in core capture, which is the effect under study rather than a measurement artifact. Raising ticks for large arenas would therefore change the variable under test rather than protect it.",
+      "seed_rationale": "Seeds 1-3 rather than the Phase 0 control's 1-5. Three seeds is the minimum that still measures seed sensitivity as its own context axis, and holding it at three keeps the 20-condition grid near 13,000 cells. The default condition is additionally cross-checked against the full 5-seed Phase 0 control, so the seed reduction is validated rather than assumed.",
+      "roster_rationale": "All 11 Phase 0 rosters. Beta2 Phase 4 Sec 17 criterion 1 is scored by enumerating which agent leads each tested roster, so a sampled roster subset could not be scored against the rubric verbatim.",
+      "pair_rationale": "The three 400-tick pairwise controls. They supply Sec 17 criterion 2's counter-strategy evidence and criterion 4's pairwise-versus-group divergence at every condition. The three 200-tick variants are Beta2's own tick-budget finding, which Phase 1 holds constant and does not re-measure per condition.",
+      "ticks": 400,
+      "seeds": [
+        1,
+        2,
+        3
+      ],
+      "rosters": [
+        "claimer_coredefender_reactive",
+        "claimer_hunter_coredefender",
+        "claimer_hunter_reactive",
+        "claimer_coretracker_coredefender",
+        "claimer_coretracker_reactive",
+        "claimer_coretracker_hunter",
+        "claimer_coreseeker_hunter",
+        "hunter_coretracker_coredefender",
+        "reactive_hunter_coreseeker",
+        "hunter_coretracker_coreseeker",
+        "coredefender_reactive_coreseeker"
+      ],
+      "pairs": [
+        "claimer_vs_coretracker_400",
+        "hunter_vs_coretracker_400",
+        "claimer_vs_hunter_400"
+      ],
+      "constant_density_diagonals": {
+        "S=0.048828": [
+          "a16384_b2",
+          "a65536_b8"
+        ],
+        "S=0.195312": [
+          "a4096_b2",
+          "a16384_b8",
+          "a65536_b32"
+        ],
+        "S=0.78125": [
+          "a1024_b2",
+          "a4096_b8",
+          "a16384_b32",
+          "a65536_b128"
+        ],
+        "S=3.125": [
+          "a256_b2",
+          "a1024_b8",
+          "a4096_b32"
+        ],
+        "S=12.5": [
+          "a256_b8",
+          "a1024_b32",
+          "a4096_b128"
+        ]
+      },
+      "conditions": [
+        {
+          "id": "a128_b2",
+          "arena_size": 128,
+          "instr_per_tick": 2,
+          "configured_sweeps_per_entrant": 6.25,
+          "is_default": false,
+          "arena_rationale": "smallest arena promoted into the main grid: comfortably above the 3-entrant standard-layout non-overlap bound (2*3*(CORE_SIZE+1) = 54) yet deep inside the collision regime the pilot found, so the degenerate-small-arena claim rests on main-grid evidence rather than on discarded pilot cells. A fixed 8-cell core is 6.2% of this arena and the fixed 64-cell territory bucket admits only 2 buckets.",
+          "budget_rationale": "a quarter of the default action budget; the low-density arm of every arena row."
+        },
+        {
+          "id": "a128_b8",
+          "arena_size": 128,
+          "instr_per_tick": 8,
+          "configured_sweeps_per_entrant": 25.0,
+          "is_default": false,
+          "arena_rationale": "smallest arena promoted into the main grid: comfortably above the 3-entrant standard-layout non-overlap bound (2*3*(CORE_SIZE+1) = 54) yet deep inside the collision regime the pilot found, so the degenerate-small-arena claim rests on main-grid evidence rather than on discarded pilot cells. A fixed 8-cell core is 6.2% of this arena and the fixed 64-cell territory bucket admits only 2 buckets.",
+          "budget_rationale": "the Ruleset-v2 default action budget."
+        },
+        {
+          "id": "a128_b32",
+          "arena_size": 128,
+          "instr_per_tick": 32,
+          "configured_sweeps_per_entrant": 100.0,
+          "is_default": false,
+          "arena_rationale": "smallest arena promoted into the main grid: comfortably above the 3-entrant standard-layout non-overlap bound (2*3*(CORE_SIZE+1) = 54) yet deep inside the collision regime the pilot found, so the degenerate-small-arena claim rests on main-grid evidence rather than on discarded pilot cells. A fixed 8-cell core is 6.2% of this arena and the fixed 64-cell territory bucket admits only 2 buckets.",
+          "budget_rationale": "4x the default; the high-density arm of every arena row."
+        },
+        {
+          "id": "a256_b2",
+          "arena_size": 256,
+          "instr_per_tick": 2,
+          "configured_sweeps_per_entrant": 3.125,
+          "is_default": false,
+          "arena_rationale": "the upper edge of the small-arena regime: core = 3.1% of the arena, 4 territory buckets. The first arena at which blind expansion stops sweeping the whole arena many times over within one match.",
+          "budget_rationale": "a quarter of the default action budget; the low-density arm of every arena row."
+        },
+        {
+          "id": "a256_b8",
+          "arena_size": 256,
+          "instr_per_tick": 8,
+          "configured_sweeps_per_entrant": 12.5,
+          "is_default": false,
+          "arena_rationale": "the upper edge of the small-arena regime: core = 3.1% of the arena, 4 territory buckets. The first arena at which blind expansion stops sweeping the whole arena many times over within one match.",
+          "budget_rationale": "the Ruleset-v2 default action budget."
+        },
+        {
+          "id": "a256_b32",
+          "arena_size": 256,
+          "instr_per_tick": 32,
+          "configured_sweeps_per_entrant": 50.0,
+          "is_default": false,
+          "arena_rationale": "the upper edge of the small-arena regime: core = 3.1% of the arena, 4 territory buckets. The first arena at which blind expansion stops sweeping the whole arena many times over within one match.",
+          "budget_rationale": "4x the default; the high-density arm of every arena row."
+        },
+        {
+          "id": "a1024_b2",
+          "arena_size": 1024,
+          "instr_per_tick": 2,
+          "configured_sweeps_per_entrant": 0.78125,
+          "is_default": false,
+          "arena_rationale": "quarter of the default. Together with budget 2 this is the low-scale anchor of the constant-density S = 0.781 diagonal.",
+          "budget_rationale": "a quarter of the default action budget; the low-density arm of every arena row."
+        },
+        {
+          "id": "a1024_b8",
+          "arena_size": 1024,
+          "instr_per_tick": 8,
+          "configured_sweeps_per_entrant": 3.125,
+          "is_default": false,
+          "arena_rationale": "quarter of the default. Together with budget 2 this is the low-scale anchor of the constant-density S = 0.781 diagonal.",
+          "budget_rationale": "the Ruleset-v2 default action budget."
+        },
+        {
+          "id": "a1024_b32",
+          "arena_size": 1024,
+          "instr_per_tick": 32,
+          "configured_sweeps_per_entrant": 12.5,
+          "is_default": false,
+          "arena_rationale": "quarter of the default. Together with budget 2 this is the low-scale anchor of the constant-density S = 0.781 diagonal.",
+          "budget_rationale": "4x the default; the high-density arm of every arena row."
+        },
+        {
+          "id": "a4096_b2",
+          "arena_size": 4096,
+          "instr_per_tick": 2,
+          "configured_sweeps_per_entrant": 0.1953125,
+          "is_default": false,
+          "arena_rationale": "the Ruleset-v2 default and the Phase 0 control anchor. Present at four budgets so the budget axis is fully resolved at the one arena the published ecology was measured in.",
+          "budget_rationale": "a quarter of the default action budget; the low-density arm of every arena row."
+        },
+        {
+          "id": "a4096_b8",
+          "arena_size": 4096,
+          "instr_per_tick": 8,
+          "configured_sweeps_per_entrant": 0.78125,
+          "is_default": true,
+          "arena_rationale": "the Ruleset-v2 default and the Phase 0 control anchor. Present at four budgets so the budget axis is fully resolved at the one arena the published ecology was measured in.",
+          "budget_rationale": "the Ruleset-v2 default action budget."
+        },
+        {
+          "id": "a4096_b32",
+          "arena_size": 4096,
+          "instr_per_tick": 32,
+          "configured_sweeps_per_entrant": 3.125,
+          "is_default": false,
+          "arena_rationale": "the Ruleset-v2 default and the Phase 0 control anchor. Present at four budgets so the budget axis is fully resolved at the one arena the published ecology was measured in.",
+          "budget_rationale": "4x the default; the high-density arm of every arena row."
+        },
+        {
+          "id": "a4096_b128",
+          "arena_size": 4096,
+          "instr_per_tick": 128,
+          "configured_sweeps_per_entrant": 12.5,
+          "is_default": false,
+          "arena_rationale": "the Ruleset-v2 default and the Phase 0 control anchor. Present at four budgets so the budget axis is fully resolved at the one arena the published ecology was measured in.",
+          "budget_rationale": "16x the default. Added only at arenas 4096 and 65536, because those two conditions complete the constant-density S = 12.5 and S = 0.781 diagonals respectively; the pilot showed the >=99%-occupancy region is flat, so extending budget 128 across every arena would only re-measure a ceiling."
+        },
+        {
+          "id": "a16384_b2",
+          "arena_size": 16384,
+          "instr_per_tick": 2,
+          "configured_sweeps_per_entrant": 0.048828125,
+          "is_default": false,
+          "arena_rationale": "4x the default; the mid-scale anchor of the S = 0.781 diagonal (with budget 32).",
+          "budget_rationale": "a quarter of the default action budget; the low-density arm of every arena row."
+        },
+        {
+          "id": "a16384_b8",
+          "arena_size": 16384,
+          "instr_per_tick": 8,
+          "configured_sweeps_per_entrant": 0.1953125,
+          "is_default": false,
+          "arena_rationale": "4x the default; the mid-scale anchor of the S = 0.781 diagonal (with budget 32).",
+          "budget_rationale": "the Ruleset-v2 default action budget."
+        },
+        {
+          "id": "a16384_b32",
+          "arena_size": 16384,
+          "instr_per_tick": 32,
+          "configured_sweeps_per_entrant": 0.78125,
+          "is_default": false,
+          "arena_rationale": "4x the default; the mid-scale anchor of the S = 0.781 diagonal (with budget 32).",
+          "budget_rationale": "4x the default; the high-density arm of every arena row."
+        },
+        {
+          "id": "a65536_b2",
+          "arena_size": 65536,
+          "instr_per_tick": 2,
+          "configured_sweeps_per_entrant": 0.01220703125,
+          "is_default": false,
+          "arena_rationale": "16x the default and the declared upper bound of the reasonable region; the high-scale anchor of the S = 0.781 diagonal (with budget 128). A fixed 8-cell core is 0.012% of this arena and there are 1024 territory buckets.",
+          "budget_rationale": "a quarter of the default action budget; the low-density arm of every arena row."
+        },
+        {
+          "id": "a65536_b8",
+          "arena_size": 65536,
+          "instr_per_tick": 8,
+          "configured_sweeps_per_entrant": 0.048828125,
+          "is_default": false,
+          "arena_rationale": "16x the default and the declared upper bound of the reasonable region; the high-scale anchor of the S = 0.781 diagonal (with budget 128). A fixed 8-cell core is 0.012% of this arena and there are 1024 territory buckets.",
+          "budget_rationale": "the Ruleset-v2 default action budget."
+        },
+        {
+          "id": "a65536_b32",
+          "arena_size": 65536,
+          "instr_per_tick": 32,
+          "configured_sweeps_per_entrant": 0.1953125,
+          "is_default": false,
+          "arena_rationale": "16x the default and the declared upper bound of the reasonable region; the high-scale anchor of the S = 0.781 diagonal (with budget 128). A fixed 8-cell core is 0.012% of this arena and there are 1024 territory buckets.",
+          "budget_rationale": "4x the default; the high-density arm of every arena row."
+        },
+        {
+          "id": "a65536_b128",
+          "arena_size": 65536,
+          "instr_per_tick": 128,
+          "configured_sweeps_per_entrant": 0.78125,
+          "is_default": false,
+          "arena_rationale": "16x the default and the declared upper bound of the reasonable region; the high-scale anchor of the S = 0.781 diagonal (with budget 128). A fixed 8-cell core is 0.012% of this arena and there are 1024 territory buckets.",
+          "budget_rationale": "16x the default. Added only at arenas 4096 and 65536, because those two conditions complete the constant-density S = 12.5 and S = 0.781 diagonals respectively; the pilot showed the >=99%-occupancy region is flat, so extending budget 128 across every arena would only re-measure a ceiling."
+        }
+      ]
+    }
+  }
+}
