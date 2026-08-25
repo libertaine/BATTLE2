@@ -1,0 +1,9 @@
+{
+  "name": "local_core_defender",
+  "display": "Core Defender (v3 locality research)",
+  "description": "EXPERIMENTAL v3 research Phase 2 bounded-locality agent: excursion defense. Runs only under bytefray-rules-3-alpha1, which is not a stable Ruleset identity. See docs/V3_PHASE2_LOCALITY_FEASIBILITY.md.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}

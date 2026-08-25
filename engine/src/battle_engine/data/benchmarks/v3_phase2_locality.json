@@ -1,0 +1,139 @@
+{
+  "schema": "bytefray.benchmark_population",
+  "schema_version": 1,
+  "benchmark_id": "v3-phase2-locality",
+  "description": "The frozen experimental population for v3 research Phase 2's bounded-locality feasibility study. Every member runs ONLY under bytefray-rules-3-alpha1, which is an explicitly non-stable research identity -- not Ruleset 3. Five members are ports of named Ruleset-v2 strategies (see v2_lineage) so their strategic lineage is traceable; local_camper is a deliberately trivial control with no ancestor. These agents do NOT replace or modify their v2 ancestors, which remain frozen and verifiable in v2_baseline.json. See docs/V3_PHASE2_LOCALITY_FEASIBILITY.md.",
+  "ruleset_id": "bytefray-rules-3-alpha1",
+  "frozen_at_commit": "ac1102b313bed5d627b31b4aee99aeac86394288",
+  "ecology_core": [
+    "local_claimer",
+    "local_core_defender",
+    "local_reactive_defender",
+    "local_core_seeker",
+    "local_core_tracker",
+    "local_camper"
+  ],
+  "ecology_core_note": "All six members. Unlike the Phase-0 v2 population -- where three starters were pinned but sat outside the Beta2 Sec 17 evidence base -- this population was constructed for exactly one experiment, so its ecology core is the whole population. The five ported members cover expansion, blind defense, reactive defense, and both search-offense variants; local_camper is the control.",
+  "members": [
+    {
+      "agent_id": "local_camper",
+      "display": "Local Camper",
+      "catalog": "v3_locality_research",
+      "resource_dir": "battle_engine/data/v3_locality_agents/local_camper",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_28d8db0931c0fdffdb67471098d7fc3a53e2a42285b72aefc01f5f8242fa23e3",
+      "source_sha256": "07b6fbf715a889431319e8dc438dbe81a41e4977e663803cb06a4d1d4a9ba60f",
+      "local_python_subset_fingerprint": "667fb79c4573e2d25e058363ce0559b5ff01c094cf8843a989ce854f6969a4da",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "stationary control",
+      "behavior": "Never moves; rewrites its whole reachable window forever. No v2 ancestor -- a deliberately trivial control that exists to detect turtling dominance and universal-solution failure.",
+      "v2_lineage": null
+    },
+    {
+      "agent_id": "local_claimer",
+      "display": "Local Claimer",
+      "catalog": "v3_locality_research",
+      "resource_dir": "battle_engine/data/v3_locality_agents/local_claimer",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_2c863bd1eb236c0b2f6f1df242aa6abea2067238bfb69990f6609c5de2a470e9",
+      "source_sha256": "d404208b7fa8ac8b2f114153127ecf722165bd61ab1f1d950edf52c2e29cd32c",
+      "local_python_subset_fingerprint": "6201aba5b1b9fadd8ba4692bf5c1ba0b5dd882e4ee2d2d48e121d3591599c256",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "blind expansion",
+      "behavior": "Fills the R cells ahead of its locus, then MOVEs exactly R and repeats. Reads nothing, reacts to nothing. Locality port of claimer.",
+      "v2_lineage": "claimer"
+    },
+    {
+      "agent_id": "local_core_defender",
+      "display": "Local Core Defender",
+      "catalog": "v3_locality_research",
+      "resource_dir": "battle_engine/data/v3_locality_agents/local_core_defender",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_098307b801a094b9d3e5e40fd7fd11ca06afadec7302e8bf937647cf01ad9bbe",
+      "source_sha256": "51658b5309d7fcdcee2c2512df7e1462434e348acd3dc542f83057f420b734e9",
+      "local_python_subset_fingerprint": "b4eafd34aea03b5f18ded0f6ae1f2297b9bbedf0a0ae61762d81f73be4a2a94e",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "unconditional (blind) defense + expansion",
+      "behavior": "Cycles travel-out / claim / travel-back / refresh: expands four R-wide windows away from its core, returns, and blindly rewrites all eight core cells. Defense costs travel. Locality port of core_defender.",
+      "v2_lineage": "core_defender"
+    },
+    {
+      "agent_id": "local_core_seeker",
+      "display": "Local Core Seeker",
+      "catalog": "v3_locality_research",
+      "resource_dir": "battle_engine/data/v3_locality_agents/local_core_seeker",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_f72ed8c808ba5f0c7eb616aaa8e25e62f92b6a67ae6f04029d55b5c69e2436e5",
+      "source_sha256": "0502a20a881205f50bafd64aad6296a45aa42839739193179d94d4a007532bb0",
+      "local_python_subset_fingerprint": "6bb3b9c800aa556ad9231ab8e3a347a618c3dbcf81427fbc3c430341dc96975f",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "dedicated search-and-destroy offense (historical control)",
+      "behavior": "Sweeps its reachable window reading one cell in three and claiming the rest; two foreign hits within LOCK_RADIUS trigger an approach and then a burst. Locality port of core_seeker.",
+      "v2_lineage": "core_seeker"
+    },
+    {
+      "agent_id": "local_core_tracker",
+      "display": "Local Core Tracker",
+      "catalog": "v3_locality_research",
+      "resource_dir": "battle_engine/data/v3_locality_agents/local_core_tracker",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_dc3b41dbc5bb9a76856b1d1447832efae58a352f39e2f15a91e9d29970441dab",
+      "source_sha256": "0db042f501409bff7b6e8cca091a6bbe16076b7887fd143824a8639115d67c70",
+      "local_python_subset_fingerprint": "2eeaeb11be4ff105b3a62e8b3dd642dea16c42a23b78d35c785f69a736faf502",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "dedicated search-and-destroy offense (probe-confirming)",
+      "behavior": "Same sweep as local_core_seeker, but approaches a candidate and probes four offsets around it before committing; a rejected candidate has already cost the trip. Sweep direction is drawn from the match RNG (the locality analogue of the ancestor's RNG scan anchor). Locality port of core_tracker.",
+      "v2_lineage": "core_tracker"
+    },
+    {
+      "agent_id": "local_reactive_defender",
+      "display": "Local Reactive Core Defender",
+      "catalog": "v3_locality_research",
+      "resource_dir": "battle_engine/data/v3_locality_agents/local_reactive_defender",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_642d88635c4b02c59b1108f7a6b644e4ebfb1a50c75bbaef6a38adcc0a5fdd77",
+      "source_sha256": "cd99b92a40d8edde0286e9c79d7f9916b0da12890002f9eb5332f65ac35cf1f6",
+      "local_python_subset_fingerprint": "825633c72f8e57dc845dfd548880e789b0d2781ee17fcf0ba8a14004bf7758c4",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "reactive/efficient defense within a guard band",
+      "behavior": "Never strays more than R - CORE_SIZE from its core, so every core cell is readable on every action; patrols by LOCAL_READ and repairs only on a mismatch. Zero detection latency, minimal territory. Locality port of reactive_core_defender.",
+      "v2_lineage": "reactive_core_defender"
+    }
+  ]
+}
