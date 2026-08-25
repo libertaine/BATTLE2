@@ -152,10 +152,6 @@ alongside frozen Ruleset v1.
 Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)
 for the previous stable v1.6.0 line and historical alpha/beta/RC prereleases.
 
-**Stable release:** [Bytefray v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0).
-Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)
-for stable downloads and historical releases.
-
 Windows installer data defaults to `%ProgramData%\Bytefray`; regular Windows
 wheel installs default to `%LOCALAPPDATA%\Bytefray`. `BYTEFRAY_ROOT` explicitly
 overrides the data root. The installer requires administrative installation
