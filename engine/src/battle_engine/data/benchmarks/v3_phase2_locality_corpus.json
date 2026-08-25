@@ -1,0 +1,180 @@
+{
+  "schema": "bytefray.research_corpus",
+  "schema_version": 1,
+  "corpus_id": "v3-phase2-locality",
+  "description": "The v3 research Phase 2 bounded-locality feasibility corpus. Declares the pilot, its predeclared rejection rules, the main experimental conditions, the three control arms, and the GO/MODIFY/ABANDON gates -- all before any main-stage result was inspected. See docs/V3_PHASE2_LOCALITY_FEASIBILITY.md.",
+  "declared_before_interpretation": true,
+  "ruleset_id": "bytefray-rules-3-alpha1",
+  "ruleset_note": "EXPERIMENTAL. Not Ruleset 3, not a stable identity, not an Agent API v2 declaration. Bounded locality changes addressing and nothing else: vulnerable core, core beacon, scheduling, termination, scoring and the entrant action budget are all inherited from bytefray-rules-2 unchanged.",
+  "population": "v3-phase2-locality",
+  "control_population": "v2-baseline",
+
+  "research_question": "Does a bounded-locality mechanic make two strategic axes viable at the same time -- specifically, can it hold Beta2 Sec 17 criterion 2 (search both wins meaningful matchups AND owns the core-capture mechanism) across a density range wider than the narrow Ruleset-v2 band, without any single archetype reaching 90% across dissimilar rosters?",
+
+  "phase1_inheritance": {
+    "density_is_the_axis": "Phase 1 Sec 6.1 established that arena size and action budget are one variable, indexed by S = (instr_per_tick x ticks) / arena_size. Phase 2 therefore varies density explicitly and holds a scale check at constant density rather than treating arena and budget as independent knobs.",
+    "arena_range_kept_narrow": "Phase 2H preferred approach. Arena is restricted to {1024, 4096, 16384} -- a 16x span. Phase 1 Sec 10.1 measured Weights.territory_bucket = 64 giving 16 / 64 / 256 buckets at those sizes and survival shares of 19.1% / 7.4% / 4.6% of claimer's score. Arena 256 and below (where the territory term collapses to identically zero) and 65536 (where survival is 1.3%) are both excluded, so the known scoring-resolution confound stays bounded and locality is the only thing that changes.",
+    "default_is_the_anchor": "Phase 1 Sec 18 item 2: arena 4096 / budget 8 / 400 ticks is at or adjacent to the optimum of the tested Ruleset-v2 parameter space. It is the density anchor here, not a tuning target.",
+    "criterion_2_is_the_discriminator": "Phase 1 Sec 18 item 3: criteria 1, 3 and 4 pass everywhere in Ruleset v2 and are not useful discriminators on their own. Criterion 2 has two independently failable halves and is the primary gate below."
+  },
+
+  "rosters": [
+    {"id": "lclaimer_ldefender_lreactive", "roster": ["local_claimer", "local_core_defender", "local_reactive_defender"], "note": "negative control: no offense present by construction. The Sec 17 criterion 5 exclusion, declared rather than inferred -- the direct analogue of the Phase 0 corpus's claimer_coredefender_reactive."},
+    {"id": "lclaimer_lcamper_ldefender", "roster": ["local_claimer", "local_camper", "local_core_defender"], "note": "search-free kingmaking mechanism check for lclaimer_ltracker_ldefender."},
+    {"id": "lclaimer_lcamper_lreactive", "roster": ["local_claimer", "local_camper", "local_reactive_defender"], "note": "search-free kingmaking mechanism check for lclaimer_ltracker_lreactive."},
+    {"id": "lclaimer_ltracker_ldefender", "roster": ["local_claimer", "local_core_tracker", "local_core_defender"], "note": "expansion + probing search + blind defense."},
+    {"id": "lclaimer_ltracker_lreactive", "roster": ["local_claimer", "local_core_tracker", "local_reactive_defender"], "note": "expansion + probing search + reactive defense."},
+    {"id": "lclaimer_ltracker_lcamper", "roster": ["local_claimer", "local_core_tracker", "local_camper"], "note": "expansion + probing search + the stationary control."},
+    {"id": "lclaimer_lseeker_lcamper", "roster": ["local_claimer", "local_core_seeker", "local_camper"], "note": "expansion + sweeping search + the stationary control."},
+    {"id": "lcamper_ltracker_ldefender", "roster": ["local_camper", "local_core_tracker", "local_core_defender"], "note": "no expansion archetype present."},
+    {"id": "lreactive_lcamper_lseeker", "roster": ["local_reactive_defender", "local_camper", "local_core_seeker"], "note": "reactive defense against sweeping search."},
+    {"id": "lcamper_ltracker_lseeker", "roster": ["local_camper", "local_core_tracker", "local_core_seeker"], "note": "both search variants at once."},
+    {"id": "ldefender_lreactive_lseeker", "roster": ["local_core_defender", "local_reactive_defender", "local_core_seeker"], "note": "both defense variants against sweeping search."}
+  ],
+  "roster_note": "Eleven three-entrant rosters, structurally mirroring the eleven the Phase 0 control corpus and Phase 1 grid both used, with local_camper occupying the seat hunter held there. All eleven are kept because Sec 17 criterion 1 is scored by enumerating which agent leads each tested roster; a sampled subset could not be scored against the rubric verbatim. local_camper is a control, NOT a second expansion archetype -- the same discipline Phase 0 Sec 10.3 applied to hunter.",
+
+  "pairs": [
+    {"id": "lclaimer_vs_ltracker", "candidate": "local_claimer", "opponent": "local_core_tracker", "ticks": 400, "note": "criterion 2's counter-strategy matchup: does dedicated search defeat blind expansion?"},
+    {"id": "lcamper_vs_ltracker", "candidate": "local_camper", "opponent": "local_core_tracker", "ticks": 400, "note": "search against the stationary control."},
+    {"id": "lclaimer_vs_lcamper", "candidate": "local_claimer", "opponent": "local_camper", "ticks": 400, "note": "search-free control matchup."}
+  ],
+
+  "kingmaking_pairs": [
+    ["lclaimer_ltracker_ldefender", "lclaimer_lcamper_ldefender", "local_core_defender"],
+    ["lclaimer_ltracker_lreactive", "lclaimer_lcamper_lreactive", "local_reactive_defender"]
+  ],
+
+  "roles": {
+    "search": ["local_core_seeker", "local_core_tracker"],
+    "expansion": ["local_claimer"],
+    "defense": ["local_core_defender", "local_reactive_defender"],
+    "control": ["local_camper"],
+    "negative_control_roster": "lclaimer_ldefender_lreactive"
+  },
+
+  "stages": {
+    "pilot": {
+      "purpose": "Bound the reasonable reach region before the main conditions are executed. Deliberately cheap and discardable: results are NOT counted as evidence anywhere except where a condition was promoted into the main stage.",
+      "seeds": [1],
+      "ticks": 400,
+      "rosters": ["lclaimer_ltracker_ldefender", "lcamper_ltracker_lseeker"],
+      "pairs": ["lclaimer_vs_ltracker"],
+      "conditions": [
+        {"id": "r4", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 4, "probe": "attack_infeasible: R < CORE_SIZE, so one burst cannot cover a whole core"},
+        {"id": "r8", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 8, "probe": "smallest reach at which a burst can still cover a core"},
+        {"id": "r16", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 16, "probe": "tight reach"},
+        {"id": "r32", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 32, "probe": "tight reach"},
+        {"id": "r64", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 64, "probe": "the runtime default reach"},
+        {"id": "r128", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 128, "probe": "wide reach"},
+        {"id": "r256", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 256, "probe": "wide reach"},
+        {"id": "r512", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 512, "probe": "an eighth of the arena reachable from one locus"},
+        {"id": "r1024", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 1024, "probe": "reach_collapse: a quarter of the arena reachable from one locus"},
+        {"id": "r2048", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 2048, "probe": "global-reach control: R = arena/2 makes every cell reachable from anywhere, so locality is present in name only"},
+        {"id": "r64_a16384_b8", "arena_size": 16384, "instr_per_tick": 8, "locality_reach": 64, "probe": "low density (S=0.195) in a large arena: no-contact / crawl check"},
+        {"id": "r64_a1024_b2", "arena_size": 1024, "instr_per_tick": 2, "locality_reach": 64, "probe": "anchor density (S=0.781) in a small arena: reach relative to arena size"}
+      ],
+      "rejection_rules": {
+        "attack_infeasible": "locality_reach < 8 (CORE_SIZE): a single reachable burst cannot cover a whole core, so offense is impossible by construction rather than by strategy.",
+        "reach_collapse": "locality_reach >= arena_size / 4: so much of the arena is reachable from one locus that bounded locality cannot be strategically distinct from global access. Such a condition may still be RETAINED as an explicitly labelled global-reach control (Phase 2L Control 2), but never as an experimental condition.",
+        "no_contact": "a roster containing a dedicated search agent produced zero core captures in any cell -- entrants coexisted without ever contesting a core.",
+        "movement_dominated": "mean share of entrant actions spent on MOVE >= 0.50 across the roster: agents spend most of their budget merely reaching one another.",
+        "crawl": "mean realized ticks equals the tick limit AND mean summed final occupancy < 20%: matches run out the clock without meaningful interaction.",
+        "turtle_dominant": "local_camper (the stationary control) wins >= 50% in a roster that contains a dedicated search agent.",
+        "runtime_pathology": "any forfeit, any reach miss, or any non-zero evaluation exit code."
+      },
+      "promotion_rule": "The main stage's reach R* is the smallest surviving reach at which the pilot shows BOTH (a) core captures occurring in a search-containing roster and (b) a MOVE action share strictly below 0.50, preferring a reach that is a power of two and no larger than arena_size/32 so that bounded locality is unambiguously distinct from global access. If no reach satisfies both, that is itself an ABANDON finding (A7) and no main stage is run."
+    },
+
+    "main": {
+      "purpose": "The controlled comparison. Three arms at matched conditions: bounded locality (L), a global-reach control on the identical runtime and population (G), and the Ruleset-v2 historical control (V) read from the committed Phase 1 artifacts without re-execution.",
+      "seeds": [1, 2, 3],
+      "ticks": 400,
+      "rosters": ["lclaimer_ldefender_lreactive", "lclaimer_lcamper_ldefender", "lclaimer_lcamper_lreactive", "lclaimer_ltracker_ldefender", "lclaimer_ltracker_lreactive", "lclaimer_ltracker_lcamper", "lclaimer_lseeker_lcamper", "lcamper_ltracker_ldefender", "lreactive_lcamper_lseeker", "lcamper_ltracker_lseeker", "ldefender_lreactive_lseeker"],
+      "pairs": ["lclaimer_vs_ltracker", "lcamper_vs_ltracker", "lclaimer_vs_lcamper"],
+      "reference_condition": "L_a4096_b8",
+      "conditions": [
+        {"id": "L_a4096_b2", "arm": "locality", "arena_size": 4096, "instr_per_tick": 2, "locality_reach": "R*", "S": 0.195, "rationale": "one density step below the anchor; the Ruleset-v2 control FAILS criterion 2 here (Phase 1 Sec 12)."},
+        {"id": "L_a4096_b8", "arm": "locality", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": "R*", "S": 0.781, "is_reference": true, "rationale": "the density anchor -- the shipped Ruleset-v2 default, which Phase 1 found at or adjacent to the optimum of the tested v2 space."},
+        {"id": "L_a4096_b32", "arm": "locality", "arena_size": 4096, "instr_per_tick": 32, "locality_reach": "R*", "S": 3.125, "rationale": "one density step above the anchor; the Ruleset-v2 control FAILS criterion 2 here, in the opposite direction (Phase 1 Sec 12.1)."},
+        {"id": "L_a1024_b2", "arm": "locality", "arena_size": 1024, "instr_per_tick": 2, "locality_reach": "R*", "S": 0.781, "rationale": "anchor density at a 4x smaller arena. With R* fixed in absolute cells, this is also the condition where reach is largest relative to the arena."},
+        {"id": "L_a16384_b8", "arm": "locality", "arena_size": 16384, "instr_per_tick": 8, "locality_reach": "R*", "S": 0.195, "rationale": "low density at a 4x larger arena; the Ruleset-v2 control FAILS criterion 2 here."},
+        {"id": "L_a16384_b32", "arm": "locality", "arena_size": 16384, "instr_per_tick": 32, "locality_reach": "R*", "S": 0.781, "rationale": "anchor density at a 4x larger arena -- the constant-density scale check Phase 1 Sec 7 showed is the least-perturbed axis under Ruleset v2."},
+        {"id": "G_a4096_b8", "arm": "global_reach_control", "arena_size": 4096, "instr_per_tick": 8, "locality_reach": 2048, "S": 0.781, "rationale": "Phase 2L Control 2. Identical runtime, identical population, identical conditions, but R = arena/2 so every cell is reachable from anywhere. This is what separates the effect of bounded locality from the effect of having written new agents."},
+        {"id": "G_a4096_b2", "arm": "global_reach_control", "arena_size": 4096, "instr_per_tick": 2, "locality_reach": 2048, "S": 0.195, "rationale": "the same control one density step down, so the L-versus-G comparison is not read off a single point."}
+      ],
+      "ruleset_v2_control": {
+        "source": "runs/research_v3_phase1/main/results",
+        "note": "Phase 2L Control 1. The Ruleset-v2 arm is NOT re-executed: Phase 1 already measured exactly these conditions with the frozen v2 population, and its artifacts are read as-is. Re-running them would produce identical numbers at real cost.",
+        "condition_map": {
+          "L_a4096_b2": "a4096_b2",
+          "L_a4096_b8": "a4096_b8",
+          "L_a4096_b32": "a4096_b32",
+          "L_a1024_b2": "a1024_b2",
+          "L_a16384_b8": "a16384_b8",
+          "L_a16384_b32": "a16384_b32"
+        },
+        "phase1_criterion_2_result": {
+          "a4096_b2": "FAIL", "a4096_b8": "PASS", "a4096_b32": "FAIL",
+          "a1024_b2": "PASS", "a16384_b8": "FAIL", "a16384_b32": "PASS"
+        },
+        "phase1_rubric_score": {
+          "a4096_b2": 4, "a4096_b8": 5, "a4096_b32": 4,
+          "a1024_b2": 5, "a16384_b8": 4, "a16384_b32": 5
+        },
+        "ruleset_v2_band_on_this_ladder": "Criterion 2 holds at exactly ONE density value on this six-condition ladder: S = 0.781. Every S = 0.195 condition and the S = 3.125 condition fail it. That single density is the number the locality arm has to beat."
+      },
+      "equal_action_budget": "Phase 2L Control 3, absolutely required. Movement, searching, defense, expansion and attack all consume the same instr_per_tick budget. No locality condition gives any entrant extra actions to compensate for movement; an out-of-reach attempt still costs its action. The cost of movement is part of the hypothesis."
+    }
+  },
+
+  "gates": {
+    "note": "Predeclared before any main-stage result was inspected. Evaluated in the fixed order below; the gates are not weakened, reinterpreted, or supplemented after the fact.",
+    "go": {
+      "G1": "PRIMARY. Beta2 Sec 17 criterion 2 passes at >= 2 distinct density values among the six locality (L) conditions. The Ruleset-v2 control passes it at exactly one (S = 0.781) on the identical ladder.",
+      "G2": "The locality arm scores 5/5 on the verbatim Sec 17 rubric at >= 4 of its 6 conditions, strictly more than the Ruleset-v2 control's 3 of 6 at the matched conditions.",
+      "G3": "Expansion loses its residual edge without becoming useless: at the reference condition local_claimer's win rate is below the Ruleset-v2 control's claimer rate, AND the expansion role still wins >= 15% overall.",
+      "G4": "Search is competitively relevant through its own mechanism: the search role wins >= 25% at >= 2 density values AND holds the highest capture-caused rate at those same conditions.",
+      "G5": "No single archetype reaches >= 90% in two or more dissimilar rosters outside the declared negative control, at any locality condition.",
+      "G6": "Context sensitivity survives: seat, layout and seed win-rate ranges are all non-zero at every locality condition, and the seed range at the reference condition is >= the Ruleset-v2 control's at a4096_b8.",
+      "G7": "Pairwise-versus-group divergence is >= 10 pp at every locality condition.",
+      "G8": "An observable movement/reconnaissance tradeoff exists: the mean MOVE share of actions is strictly between 0 and 0.5, and the highest-moving archetype exceeds the lowest-moving non-stationary archetype by >= 10 pp of action share.",
+      "G9": "Bounded reach itself does the work: at the reference condition, >= 4 of the 33 roster/agent win rates in arm L have a Wilson interval disjoint from the same rate in the matched global-reach control arm G.",
+      "G10": "Interaction stays frequent: mean encounter_ticks > 0 in >= 80% of rosters containing a dedicated search agent, at every locality condition."
+    },
+    "modify": {
+      "M1": "Locality clearly improves one strategic axis but measurably damages another.",
+      "M2": "Only a very narrow R range survives the pilot (exactly one reach passes every rejection rule).",
+      "M3": "Movement is useful but the addressing semantics need revision (e.g. reach misses are unavoidable for a correctly written agent).",
+      "M4": "Core defense becomes too strong: a defense archetype wins >= 70% across >= 3 dissimilar rosters at the reference condition.",
+      "M5": "Locality works only after one clearly identified, small mechanic correction."
+    },
+    "abandon": {
+      "A1": "Mean MOVE share of entrant actions >= 0.50 at the reference condition: agents spend most of their useful actions merely reaching one another.",
+      "A2": "Criterion 2 passes at <= 1 density value in the locality arm (no wider than Ruleset v2) AND no other GO criterion is met.",
+      "A3": ">= 50% of locality cells in search-containing rosters reach the tick limit with zero core captures.",
+      "A4": "Expansion remains dominant for the same structural reason: local_claimer is the top-win archetype at >= 5 of the 6 locality conditions while the search role stays below 15% at all six.",
+      "A5": "Search is strictly worse under locality than under the Ruleset-v2 control at every matched condition, on both win rate and capture-caused rate.",
+      "A6": "One trivial policy dominates: local_camper leads >= 4 of the 11 rosters at the reference condition.",
+      "A7": "Only near-global reach works: the pilot rejects every reach below arena_size/4, so no experimental condition is even available.",
+      "A8": "Bounded reach contributed nothing: G9 fails, meaning arm L is statistically indistinguishable from the global-reach control arm G and any difference from Ruleset v2 is attributable to the ported agents rather than to locality.",
+      "A9": "Context sensitivity is reduced: seat, layout and seed ranges are all lower at the reference condition than the Ruleset-v2 control's at a4096_b8."
+    },
+    "decision_rule": [
+      "1. Evaluate every ABANDON criterion first. If any holds, the verdict is LOCALITY NOT VALIDATED -- ABANDON CURRENT V3 THESIS.",
+      "2. Otherwise, if G1 holds AND at least 6 of G1..G10 hold, the verdict is LOCALITY VALIDATED -- PROCEED TO MULTI-LOCUS RESEARCH.",
+      "3. Otherwise the verdict is LOCALITY PROMISING -- MODIFY BEFORE MULTI-LOCUS, and the MODIFY criteria that hold name the smallest locality-only follow-up.",
+      "4. INCONCLUSIVE / BLOCKED is reserved for a genuine methodological or architectural inability to decide, never used to avoid an ABANDON result."
+    ]
+  },
+
+  "out_of_scope": [
+    "multiple loci or components", "locus identity or mortality", "replication or SPAWN",
+    "specialization", "shared entrant state", "inter-component messaging",
+    "explicit fog of war", "an ATTACK action", "energy or resource systems",
+    "territory decay", "Elo/Glicko", "behavioral clustering", "BFScript",
+    "VM/Redcode locality or pMARS parity", "a stable bytefray-rules-3",
+    "a stable Agent API v2", "Designer or Replay Viewer changes",
+    "distributed evaluation"
+  ],
+  "python_only": "Phase 2 locality research is Python-only. Ruleset v1 remains the historical VM/Redcode environment and is untouched; Ruleset v2 already established the Python-only gameplay precedent, and bytefray-rules-3-alpha1 declares supported_runtime_kinds = {python} for the same reason."
+}
