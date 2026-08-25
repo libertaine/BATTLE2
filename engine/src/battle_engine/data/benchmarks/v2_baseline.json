@@ -1,0 +1,190 @@
+{
+  "schema": "bytefray.benchmark_population",
+  "schema_version": 1,
+  "benchmark_id": "v2-baseline",
+  "description": "The frozen Ruleset-v2 strategic benchmark population for the v3 research program (Phase 0C). Every member is pinned by content-addressed agent_revision_id, so 'the Phase-0 v2 benchmark population' names exactly these immutable agent revisions and never 'whatever files currently exist in agents/'.",
+  "ruleset_id": "bytefray-rules-2",
+  "frozen_at_commit": "1093393b401aabda243ed89b7c44fa91938477b5",
+  "members": [
+    {
+      "agent_id": "adaptive",
+      "display": "Adaptive",
+      "catalog": "starter",
+      "resource_dir": "battle_engine/data/starter_agents/adaptive",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_bb2f2858909eb09311d2606c62ffe92cdd94ddc45bece33921cc8eec4179b59e",
+      "source_sha256": "4555fe5a7c3916ab020b8c662d781dee824bd1d465f83ca4d092ea3286da1845",
+      "local_python_subset_fingerprint": "3bc9c8bb4c9cc7cbaba2fc837ba748abf2a20de5385a13a8691df8b94d6ba173",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "phase-switching generalist",
+      "behavior": "Three ordered phases (CLAIM/CONTEST/final), each a blind sweep, switching region and stride on the match clock."
+    },
+    {
+      "agent_id": "claimer",
+      "display": "Claimer",
+      "catalog": "starter",
+      "resource_dir": "battle_engine/data/starter_agents/claimer",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_4b7b55c2ab0c3c6a767c34ed8fd115d130c7578fed3aef6c5ac1487a6427a076",
+      "source_sha256": "3666d81cd6a30b51db27d1f4f4196dba5b086d7fba0dffd1f0001faf812f0829",
+      "local_python_subset_fingerprint": "50b12c68cd44b6eec17f8423317325c7491933c621baa31be4d84e947ab7c0cb",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "blind expansion",
+      "behavior": "Sweeps the whole arena with a fixed stride, claims every cell visited; no reading, no reacting."
+    },
+    {
+      "agent_id": "hunter",
+      "display": "Hunter",
+      "catalog": "starter",
+      "resource_dir": "battle_engine/data/starter_agents/hunter",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_e892536b431701ca2514fd0f3085b19147d298b6f24fbd093448ee00210e2198",
+      "source_sha256": "cd988d1f22ec47550a329a0168298850395318f1a230f384ff025354c96ffdeb",
+      "local_python_subset_fingerprint": "096696da078d10f4f67c8c01b809b60a1e7d9739d937624a0bcc569de28a4b20",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "dispersed expansion",
+      "behavior": "Stakes scattered claims across the arena, then fills in between them. NOTE: Beta2 Phase 4 Sec 3 labels this agent 'opportunistic offense' and describes a scan-and-burst implementation; that description was already stale when written -- see docs/V3_PHASE0_RESEARCH_BASELINE.md Sec 10."
+    },
+    {
+      "agent_id": "strider",
+      "display": "Strider",
+      "catalog": "starter",
+      "resource_dir": "battle_engine/data/starter_agents/strider",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_05755119a20d79b82abd8461f1b613baf446ca5324c055ce86f9cc05dcdb4978",
+      "source_sha256": "98118005018c75809f97c6d333044d6f837f66d8139743a566df4fafe447c124",
+      "local_python_subset_fingerprint": "1ae01bc16c535de8fc280f62006846d4b868b2bf6beb2fe569313223c0be4cc6",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "expansion + rolling periodic defense",
+      "behavior": "Claimer's sweep at a different stride, pausing every CYCLE_ADVANCE actions to re-defend ground it already holds."
+    },
+    {
+      "agent_id": "wanderer",
+      "display": "Wanderer",
+      "catalog": "starter",
+      "resource_dir": "battle_engine/data/starter_agents/wanderer",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_fb90a6367cfffac6f635a5720c9aebc16966750b07868338cdab94e23ceaa125",
+      "source_sha256": "c2dadede51f61a24abb472c81befa37233c29b40344168572bbd764bae8ca58e",
+      "local_python_subset_fingerprint": "4bc2730882fa2e495c2a2205431573ac1d5b79d1e91d3e4d1fdb97e439b6037b",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "randomized-order expansion",
+      "behavior": "Per-seed random ODD stride, deliberately coprime with a power-of-two arena size. Encodes an arena-size assumption -- see docs/V3_PHASE0_RESEARCH_BASELINE.md Sec 10."
+    },
+    {
+      "agent_id": "core_defender",
+      "display": "Core Defender",
+      "catalog": "reference",
+      "resource_dir": "battle_engine/data/reference_agents/core_defender",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_c0e6fb0847b3e324575484948abec5e6eae0285c3fd18b8c3086ca39b096438f",
+      "source_sha256": "316acd660777a90f69bfddae8d264403d9caca257b4f18d95cf2d6a38326e222",
+      "local_python_subset_fingerprint": "479dfe101e0a9aaa9ee0fc6a029df686447f05b35a9cd33fd4342338b95f7d39",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "unconditional (blind) defense + expansion",
+      "behavior": "Spends part of its budget unconditionally refreshing its own core, the rest expanding."
+    },
+    {
+      "agent_id": "core_seeker",
+      "display": "Core Seeker",
+      "catalog": "reference",
+      "resource_dir": "battle_engine/data/reference_agents/core_seeker",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_d38b09bde99de2d99ae3e574acdc85c283ffb6678240b22b34f1200f5b4c215d",
+      "source_sha256": "a829d5fdf797284d1f7d36da234b04f5ff917da87f52d88c584a012316124190",
+      "local_python_subset_fingerprint": "a435d0e204703c2b2fb1b802446484c48246bcdd3b8381a43e78748a46dd4991",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "dedicated search-and-destroy offense (historical control)",
+      "behavior": "READ-scans for foreign ownership signs, commits a WRITE burst once the same signal is found twice in a row."
+    },
+    {
+      "agent_id": "core_tracker",
+      "display": "Core Tracker",
+      "catalog": "reference",
+      "resource_dir": "battle_engine/data/reference_agents/core_tracker",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_307b9385af77cd8449e7ec1cf32da1a6760bc856d3dc25eafcade42be5a19982",
+      "source_sha256": "4277d344fc86192f189981f1feab372fdcb6afc49e94e99347b02fd4e0fb526e",
+      "local_python_subset_fingerprint": "4695ca82c02541cc8c4baa487fb44d6c70747552502bd8d8f88c7c0704383a10",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "dedicated search-and-destroy offense (placement-agnostic benchmark)",
+      "behavior": "RNG-anchored coarse scan, coarse-to-fine probe requiring a second confirming read before a WRITE assault."
+    },
+    {
+      "agent_id": "reactive_core_defender",
+      "display": "Reactive Core Defender",
+      "catalog": "reference",
+      "resource_dir": "battle_engine/data/reference_agents/reactive_core_defender",
+      "runtime_kind": "python",
+      "agent_api_version": 1,
+      "agent_version": "0.1.0",
+      "entry_point": "agent.py:create_agent",
+      "agent_revision_id": "agent-revision_51152cd2df94d7a0ca1a79dc075124b7313d49f131665765adfad6bfb28f0045",
+      "source_sha256": "01c616c109752708a678940b1653a75c961b49d811d859a42f34932e4a8236ab",
+      "local_python_subset_fingerprint": "fd2f588e281d2776a6c63deb3e63281072243c2a018e1f25c4aa2521815b8bf6",
+      "files": [
+        "agent.py",
+        "agent.yaml"
+      ],
+      "strategic_role": "reactive/efficient defense + expansion",
+      "behavior": "Signs its core once, patrols with cheap READ, repairs only when a mismatch is actually detected."
+    }
+  ],
+  "ecology_core": [
+    "claimer",
+    "hunter",
+    "core_defender",
+    "reactive_core_defender",
+    "core_tracker",
+    "core_seeker"
+  ],
+  "ecology_core_note": "The six agents docs/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md Sec 3 used for the final v2 ecology analysis. The three remaining Python starters (strider, wanderer, adaptive) are pinned members of the population but were not part of that corpus; including them here keeps the population complete without retroactively widening the Beta2 rubric's own evidence base."
+}
