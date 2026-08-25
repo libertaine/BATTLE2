@@ -13,6 +13,7 @@ from battle_engine.agent_evaluation import (
     methodology_lines,
     resolved_arena_alignment_mode,
 )
+from battle_engine.config import Config
 from battle_engine.evaluation_analysis import EvidenceState, paired_evidence_from_verdicts
 from battle_engine.evaluation_behavior import BehaviorProfile, analyze_behavior
 from battle_engine.evaluation_capture import analyze_capture
@@ -22,7 +23,7 @@ from .behavior_adapter import cell_refs_for_behavior
 from .comparison import align
 from .discovery import AmbiguousSelectorError, adapt_any, discover, resolve_selector
 from .group_adapter import group_cell_refs
-from .models import ArtifactReadError
+from .models import ArtifactReadError, FieldConfidence
 from .verification import verify_summary
 
 
@@ -174,6 +175,36 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_experimental_conditions(summary) -> None:
+    """v3 Phase 0D/0E: disclose any non-default arena size / action budget.
+
+    These became controllable experimental variables in Phase 0
+    (docs/V3_PHASE0_RESEARCH_BASELINE.md), so an artifact read back without
+    them cannot be told apart from a default-conditions one -- exactly the
+    "omission would be misleading" case. Mirrors the live `agents evaluate`
+    CLI's own conditional disclosure: nothing is printed at defaults, so
+    every historical artifact's `show` output is unchanged.
+
+    Reads the artifact's own recorded `effective_conditions`, never a
+    recomputed default, and stays silent when that field is UNKNOWN rather
+    than implying a value the artifact never recorded.
+    """
+
+    if summary.effective_conditions.confidence == FieldConfidence.UNKNOWN:
+        return
+    conditions = summary.effective_conditions.value
+    if not isinstance(conditions, dict):
+        return
+    defaults = Config()
+    arena_size = conditions.get("arena_size")
+    action_budget = conditions.get("action_budget")
+    confidence = summary.effective_conditions.confidence.value
+    if isinstance(arena_size, int) and arena_size != defaults.arena_size:
+        print(f"arena size: {arena_size} (non-default) ({confidence})")
+    if isinstance(action_budget, int) and action_budget != defaults.instr_per_tick:
+        print(f"action budget/tick: {action_budget} (non-default) ({confidence})")
+
+
 def _print_show(
     summary, *, verified: bool | None, verify_error: str | None, behavior=None, capture=None, group_analysis=None
 ) -> None:
@@ -183,6 +214,7 @@ def _print_show(
     print(f"candidate: {summary.candidate_id}  baseline: {summary.baseline_id or 'none'}")
     print(f"opponents: {', '.join(summary.opponent_ids)}")
     print(f"seeds: {', '.join(str(s) for s in summary.seeds)}  ticks: {summary.ticks}")
+    _print_experimental_conditions(summary)
     print(
         f"lifecycle: {summary.lifecycle_state.value} ({summary.lifecycle_state.confidence.value})  "
         f"created_at: {summary.created_at.value or 'unknown'}  "

@@ -427,3 +427,60 @@ def test_parallel_workers_reproduce_serial_results(two_agents: Path) -> None:
     EvaluationService().run(serial)
     EvaluationService().run(parallel)
     assert _cell_signature(serial.output_dir) == _cell_signature(parallel.output_dir)
+
+
+# ---------------------------------------------------------------------------
+# Human-readable disclosure (Phase 0D/0E)
+# ---------------------------------------------------------------------------
+
+
+def _show_output(evaluation_json: Path, capsys) -> str:
+    from battle_engine.evaluation_history.cli import _print_show
+    from battle_engine.evaluation_history.discovery import adapt_any
+
+    _print_show(adapt_any(evaluation_json), verified=None, verify_error=None)
+    return capsys.readouterr().out
+
+
+def test_show_stays_silent_at_default_conditions(two_agents: Path, capsys) -> None:
+    """Every historical artifact's `show` output must be unchanged."""
+
+    request = _request(
+        two_agents, ruleset_id=BYTEFRAY_RULESET_V2_ID, output_dir=two_agents / "default-run"
+    )
+    EvaluationService().run(request)
+    output = _show_output(request.output_dir / "evaluation.json", capsys)
+    assert "arena size:" not in output
+    assert "action budget/tick:" not in output
+
+
+def test_show_discloses_non_default_conditions(two_agents: Path, capsys) -> None:
+    """A non-default artifact must not read as if it ran at defaults."""
+
+    request = _request(
+        two_agents,
+        ruleset_id=BYTEFRAY_RULESET_V2_ID,
+        arena_size=1024,
+        instr_per_tick=4,
+        output_dir=two_agents / "varied-run",
+    )
+    EvaluationService().run(request)
+    output = _show_output(request.output_dir / "evaluation.json", capsys)
+    assert "arena size: 1024 (non-default)" in output
+    assert "action budget/tick: 4 (non-default)" in output
+
+
+def test_live_matrix_print_discloses_non_default_conditions(two_agents: Path, capsys) -> None:
+    from battle_engine.agent_evaluation import _print_matrix
+
+    request = _request(
+        two_agents,
+        ruleset_id=BYTEFRAY_RULESET_V2_ID,
+        arena_size=1024,
+        output_dir=two_agents / "matrix-print",
+    )
+    _print_matrix(request, build_matrix(request, "evaluation-test"))
+    output = capsys.readouterr().out
+    assert "arena size: 1024 (non-default)" in output
+    # Untouched default stays silent even when its sibling is varied.
+    assert "action budget/tick:" not in output
