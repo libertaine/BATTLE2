@@ -585,17 +585,56 @@ def qualify_condition(condition: str, kind: str, *, threshold: int) -> dict[str,
     # its victim by construction; verified directly rather than assumed.
     self_farm_violations = [ep for ep in qualifying if ep["attacker_seat"] == ep["victim_seat"]]
 
-    # Sweep false positives (Q4): qualifying episodes whose attacker role is
-    # not "search" (the only archetypes with a deliberate-assault mechanism
-    # per Phase 5's stride analysis).
-    non_search_qualifying = [ep for ep in qualifying if ep["attacker_role"] != "search"]
+    # Attacker-attribution purity (Q3): every episode has exactly one
+    # attacker by construction (keyed by the (victim, attacker) pair), so
+    # this is a corpus-wide invariant scan, not a rate that could vary.
+    ambiguous_attacker = [ep for ep in all_episodes if not ep["attacker_seat"] or not ep["victim_seat"]]
 
-    per_cell_qual: Counter[tuple[str, str]] = Counter()
+    # Sweep false positives (Q4): windowed *opportunity* episodes whose
+    # attacker role is not "search" (the only archetypes with a deliberate
+    # assault mechanism per Phase 5's stride analysis) -- measured against
+    # opportunities, not qualifying instances, since Q4 is about whether the
+    # windowed-progress definition itself stays attacker-side selective.
+    non_search_opportunities = [ep for ep in opportunities if ep["attacker_role"] != "search"]
+
+    # Q1 mechanical validity: every qualifying instance's episode carries a
+    # hostile acquisition (nonempty cumulative_cells) and >=1 reclaim, by
+    # construction -- scanned rather than assumed.
+    mechanically_invalid = [
+        ep for ep in qualifying if ep["cumulative_cells_taken"] == 0 or ep["reclaim_count"] == 0
+    ]
+
+    per_appearance: Counter[tuple[str, str, str]] = Counter()
     for ep in qualifying:
-        per_cell_qual[(ep["condition"], ep["cell"], ep["victim"])] += 1
-    counts = sorted(per_cell_qual.values())
+        per_appearance[(ep["condition"], ep["cell"], ep["victim"])] += 1
+    counts = sorted(per_appearance.values())
     median_repeat = statistics.median(counts) if counts else 0
     p95_repeat = sorted(counts)[min(len(counts) - 1, int(0.95 * len(counts)))] if counts else 0
+
+    # Q9 topology coverage: which roster carries each search/expansion
+    # (non-defense) qualifying instance -- Phase 5A's own failure mode was
+    # one omitted roster carrying all of its counterevidence.
+    non_defense_qualifying = [ep for ep in qualifying if ep["victim_role"] != "defense"]
+    by_roster_non_defense: Counter[str] = Counter(ep["roster"] for ep in non_defense_qualifying)
+    max_roster_share = (
+        max(by_roster_non_defense.values()) / len(non_defense_qualifying) if non_defense_qualifying else None
+    )
+
+    # C2/Q7 seat decomposition, defense victims only.
+    defense_opp = [ep for ep in opportunities if ep["victim_role"] == "defense"]
+    defense_qual = [ep for ep in qualifying if ep["victim_role"] == "defense"]
+    opp_by_seat: Counter[str] = Counter(ep["victim_seat"] for ep in defense_opp)
+    qual_by_seat: Counter[str] = Counter(ep["victim_seat"] for ep in defense_qual)
+    seat_rates = {
+        seat: (qual_by_seat.get(seat, 0) / n if n else None) for seat, n in opp_by_seat.items()
+    }
+    seat_rate_values = [v for v in seat_rates.values() if v is not None]
+    seat_spread = (max(seat_rate_values) - min(seat_rate_values)) if seat_rate_values else None
+
+    # C6 replay auditability: independent capture-attribution agreement,
+    # aggregated across every captured victim in this condition/kind.
+    attribution_checks = [s for cell in cells for s in cell["summary"].values() if s["captured_tick"] is not None]
+    attribution_agree = sum(1 for s in attribution_checks if s["attribution_agrees"])
 
     return {
         "condition": condition,
@@ -606,15 +645,23 @@ def qualify_condition(condition: str, kind: str, *, threshold: int) -> dict[str,
         "opportunity_episodes": len(opportunities),
         "qualifying_episodes": len(qualifying),
         "by_agent": by_agent,
+        "by_roster_non_defense_qualifying": dict(by_roster_non_defense),
         "max_search_raw_rate": max(search_raw, default=0.0),
         "min_defense_opportunity_rate": min(defense_opp_rate, default=None),
         "max_search_opportunity_rate": max(search_opp_rate, default=0.0),
         "max_expansion_opportunity_rate": max(expansion_opp_rate, default=0.0),
         "self_farm_violations": len(self_farm_violations),
-        "non_search_qualifying_share": (len(non_search_qualifying) / len(qualifying)) if qualifying else None,
+        "ambiguous_attacker_episodes": len(ambiguous_attacker),
+        "mechanically_invalid_qualifying": len(mechanically_invalid),
+        "non_search_opportunity_share": (len(non_search_opportunities) / len(opportunities)) if opportunities else None,
         "median_qualifying_per_appearance": median_repeat,
         "p95_qualifying_per_appearance": p95_repeat,
         "max_qualifying_per_appearance": max(counts, default=0),
+        "max_roster_share_of_non_defense_qualifying": max_roster_share,
+        "non_defense_qualifying_count": len(non_defense_qualifying),
+        "seat_opportunity_conditioned_rates_defense": seat_rates,
+        "seat_spread_defense": seat_spread,
+        "attribution_agreement": {"agree": attribution_agree, "total": len(attribution_checks)},
     }
 
 
