@@ -1,0 +1,184 @@
+{
+  "schema": "bytefray.research_gates",
+  "schema_version": 1,
+  "phase": "v3-phase6",
+  "title": "Active defensive intervention qualification gates",
+  "declared_before_interpretation": true,
+  "declared_note": "Committed after mechanics-audit tooling and a 4-roster pilot sample (hunter_coretracker_coreseeker, claimer_coretracker_coredefender, coredefender_reactive_coreseeker, claimer_coreseeker_hunter) were used to select the episode/window/threshold definition below, and BEFORE the exhaustive full-corpus qualification run (594 default-condition group cells, all three budget conditions, pairwise) was executed. Nothing in this file may be revised in response to the exhaustive result; a failing gate is a finding, not a prompt to retune. The pilot sample was used only to choose the candidate's shape (per Phase 6K's discipline), never to fit a bound to a desired outcome -- every numeric bound below is set with deliberate headroom below what the pilot measured, not equal to it.",
+  "predecessor": "docs/V3_PHASE5A_DEFENSIVE_EVENT_QUALIFICATION.md (DEFENSIVE EVENT NOT QUALIFIED -- selectivity premise falsified; its own Sec 6 post-hoc 'active reclaim' finding is this phase's starting hypothesis, explicitly not inherited as a result)",
+
+  "scope": {
+    "changes_scoring": false,
+    "changes_ruleset": false,
+    "changes_defaults": false,
+    "changes_agent_api": false,
+    "note": "Phase 6 is measurement only. No score, weight, Ruleset identity, agent, Agent API field, or default is altered. Whether to reward this event is a later, separate, explicitly out-of-scope phase."
+  },
+
+  "event_definition": {
+    "unit": "attack episode",
+    "episode_statement": "A maximal, uninterrupted sequence of hostile core-cell acquisitions by one attacker against one victim's core, defined by ownership state transitions (never a wall-clock/tick window): opens on the attacker's first acquisition of a cell the victim currently owns, extends on further acquisitions by the same attacker, and closes when the attacker's held cells reach zero -- via full victim reclaim ('reclaimed_all'), full third-party takeover ('third_party_takeover'), or victim capture ('captured') -- or remains open to 'match_end'.",
+    "episode_threshold": 4,
+    "episode_threshold_status": "Re-derived independently in this phase's own pilot (not inherited from Phase 4/5's same-tick corpus-discovered value, though it coincides with it). C1-equivalent threshold sensitivity (2-6) was measured on the pilot sample before this value was chosen; see the qualification report.",
+    "progress_window": {
+      "formula": "ceil(ASSAULT_WINDOW / action_budget) + 1",
+      "assault_window_constant": 16,
+      "assault_window_source": "core_seeker.ASSAULT_WINDOW / core_tracker.ASSAULT_WINDOW / core_tracker.ASSAULT_ACTIONS -- the search agents' own published consecutive-WRITE burst-width constant (engine/src/battle_engine/data/reference_agents/{core_seeker,core_tracker}/agent.py)",
+      "slack_ticks": 1,
+      "slack_rationale": "A burst that starts mid-quota (the attacker had already spent part of that tick's actions before locking on) can spill one tick beyond the pure ceil(ASSAULT_WINDOW/action_budget) bound.",
+      "purpose": "Distinguishes a concentrated assault from slow incidental accretion. Pilot finding (Phase 6A): an unbounded episode lets a blind expansion sweeper (including core_defender's own outward sweep, which is Claimer-shaped) lap the whole arena repeatedly over a 400-tick match and accumulate cells from an undefended victim's core one incidental touch at a time -- at the a4096_b8 pilot condition this produced 'defense'-labeled attacker episodes reaching 4-5 cumulative cells against a lone core_seeker/core_tracker victim, entirely via incidental sweep contact, with zero deliberate assault. Requiring the threshold to be reached within this window reduced windowed 'meaningful progress' opportunities to attacker_role=search in 100% of pilot episodes at every tested budget (b2/b8/b32), eliminating that confound.",
+      "not_fitted_to_outcome": "The formula is fixed before the exhaustive run and evaluated identically at every action_budget encountered; it is not chosen per-condition to produce a target rate."
+    },
+    "meaningful_progress_statement": "An episode reaches 'meaningful progress' iff its cumulative distinct-cell count reaches episode_threshold within progress_window ticks of the episode's own start_tick.",
+    "active_reclaim_statement": "The victim writes back (reclaims) >=1 core cell held by the episode's attacker, at a tick where the victim is not captured, at or after the tick meaningful progress was reached.",
+    "qualifying_statement": "An episode is a qualifying active-defensive-intervention instance iff it reaches meaningful progress AND registers >=1 reclaim AND the victim survives the tick of that reclaim (i.e. is not captured, by any attacker, on that exact tick).",
+    "opportunity_statement": "An episode is a 'qualifying assault opportunity' iff it reaches meaningful progress, regardless of whether a reclaim follows. This is the primary selectivity denominator (see decision_rule.denominator_choice)."
+  },
+
+  "mechanical_audit_findings": {
+    "ownership_mutation": "Every ownership mutation routes through VM._wr8, which always claims the cell for whoever calls it; there is no unclaim operation, so an entrant's own write can never lower its own core-owned count (structural basis for Q2 self-farming).",
+    "diff_ordering": "vm.tick_diffs / TickSnapshot.memory_diffs are in true chronological write order within a tick (per _attribute_core_capture's own docstring).",
+    "scheduling": "run_sequential_quota: sequential-quota per entrant, not round-robin -- each seat completes its entire action quota before the next seat acts at all, once per tick, in fixed match order.",
+    "capture_timing": "apply_core_capture runs exactly once per tick, after every seat's actions for that tick, against a pre-tick ownership snapshot; kill/death TickSnapshot.events entries are authoritative and reused directly rather than re-derived.",
+    "core_anchor_recovery": "Tick-0 pc equals core_start for every Python entrant in this corpus (no action has executed by the time tick 0 is published); this is still the only persisted core-anchor recovery path, unchanged from Phase 4/5A.",
+    "revised_sweep_ceiling": "Phase 5A's single-tick sweep ceiling ('a sweeper lands at most one write per core per tick because stride > CORE_SIZE') is a special case that holds only while actions_per_tick x 1 pass does not complete a full arena lap within one tick. It does NOT hold unconditionally at instr_per_tick=32 for the fastest reference sweepers (observed empirically in the pilot as reduced -- not eliminated -- selectivity on the RECLAIM side only, never the attacker-acquisition side; see budget_robustness below)."
+  },
+
+  "qualification_gates": {
+    "Q1_mechanical_validity": {
+      "statement": "Every qualifying instance's episode contains >=1 hostile acquisition (attacker != victim) and >=1 victim-originated reclaim, by construction of the reconstruction algorithm.",
+      "bound": 1.0,
+      "direction": "at_least",
+      "blocking": true,
+      "verification": "structural -- checked by engine/tests/test_v3_phase6_defense_episode.py and re-verified as a corpus-wide invariant scan (zero counterexamples) during the exhaustive run."
+    },
+    "Q2_self_farming": {
+      "statement": "Zero qualifying instances where attacker == victim.",
+      "bound": 0,
+      "direction": "at_most",
+      "blocking": true
+    },
+    "Q3_attacker_attribution": {
+      "statement": "Every episode has exactly one attacker by construction (episodes are keyed by the (victim, attacker) pair; hostile activity from two different attackers is never merged into one episode). Measured as: fraction of qualifying instances with a single unambiguous attacker seat.",
+      "bound": 1.0,
+      "direction": "at_least",
+      "blocking": true
+    },
+    "Q4_sweep_false_positive_attacker_side": {
+      "statement": "Across the full default-condition (a4096_b8) group corpus, the share of 'meaningful progress' (windowed) episodes whose attacker role is not search stays at or below this bound.",
+      "bound": 0.05,
+      "direction": "at_most",
+      "blocking": true,
+      "note": "Pilot measured 0.0% (0 of 340) non-search-attacker windowed-progress episodes at a4096_b8 across all budgets tested. This bound gives deliberate headroom above that pilot observation for full-corpus variation."
+    },
+    "Q5_role_selectivity_default": {
+      "statement": "At the default condition (a4096_b8): defense's minimum opportunity-conditioned qualifying rate (per agent) is >= this bound, and search/expansion's maximum opportunity-conditioned qualifying rate is <= this bound.",
+      "defense_bound": 0.60,
+      "non_defense_bound": 0.15,
+      "direction": "defense_at_least / non_defense_at_most",
+      "blocking": true,
+      "note": "Pilot measured defense >=92.6%, search/expansion <=2.9% at a4096_b8. These bounds are set with substantial headroom below/above the pilot figures specifically because the pilot used only 4 of 11 rosters -- Phase 5A's own lesson is that a roster omitted from a small sample can carry the counterevidence."
+    },
+    "Q6_budget_robustness_margin": {
+      "statement": "At every tested budget condition (a4096_b2, a4096_b8, a4096_b32), the gap between defense's minimum opportunity-conditioned qualifying rate and max(search, expansion)'s maximum opportunity-conditioned qualifying rate is >= this bound.",
+      "bound": 0.40,
+      "direction": "at_least",
+      "blocking": true,
+      "note": "Pilot margins: a4096_b2 89.3pp, a4096_b8 89.7pp, a4096_b32 49.9pp. The 40pp bound is chosen below the weakest (b32) pilot observation with headroom, not above it -- b32's real, mechanically-diagnosed weakening (revised_sweep_ceiling above) is expected to persist at full-corpus scale and this gate is designed to still pass a genuinely-selective-but-imperfect candidate rather than demand budget-invariant absolute rates, which Q5 already does not claim.",
+      "diagnosed_mechanism": "At instr_per_tick=32, a search agent's own probe/search sweep phase can complete a full arena lap (including a pass back through its own core) within the progress_window, producing an incidental self-directed reclaim that satisfies the reclaim clause without genuine defensive intent. This affects the RECLAIM side (victim role) only; Q4's attacker-side purity was measured at 100% across every tested budget including b32."
+    },
+    "Q7_seat_robustness": {
+      "statement": "For defense-role victims at the default condition, the spread (max - min) across seats of P(qualifying | opportunity) must not exceed this bound.",
+      "bound": 0.40,
+      "direction": "at_most",
+      "blocking": true,
+      "disclosure_trigger": {
+        "statement": "A spread exceeding this lower bound must still be reported explicitly, mirroring Phase 5A's own C2 disclosure practice, even though it does not block qualification.",
+        "bound": 0.25
+      },
+      "note": "Pilot measured an 18.5pp spread (seat A 81.5%, seat C 100.0%) on the 4-roster sample -- well under both bounds, and directionally smaller than Phase 5A's own same-tick 19.5pp full-corpus figure, consistent with (not proof of) the cross-tick design reducing 'victim acts last' dependence."
+    },
+    "Q8_frequency_discipline": {
+      "statement": "Median qualifying instances per victim-appearance (an appearance being one (cell, agent) pair) is <= this bound.",
+      "bound": 3,
+      "direction": "at_most",
+      "blocking": true,
+      "cap_trigger": {
+        "statement": "If the 95th percentile exceeds this bound, a per-match event cap would be required before any future scoring experiment and must be disclosed as such.",
+        "bound": 10
+      },
+      "note": "Pilot measured median 1, p95 2, max 3 on the 4-roster sample."
+    },
+    "Q9_topology_coverage": {
+      "statement": "No single roster accounts for more than this share of all search-role-victim plus expansion-role-victim qualifying instances (Phase 5A's own failure mode: one omitted two-searcher roster carried 100% of its counterevidence).",
+      "bound": 0.50,
+      "direction": "at_most",
+      "blocking": true
+    }
+  },
+
+  "characterization_required": {
+    "C1_threshold_sensitivity": {
+      "statement": "Report windowed opportunity/qualifying counts and opportunity-conditioned rates by role at episode_threshold in {2,3,4,5,6}, at the default condition.",
+      "disclosure_trigger": "If threshold 4 is not materially better than 3 and 5, say so."
+    },
+    "C2_seat_creation_vs_survival": {
+      "statement": "Decompose seat effects into episode CREATION (P(a qualifying assault opportunity occurs | victim seat)) and RECLAIM SURVIVAL (P(qualifies | opportunity, victim seat)), mirroring Phase 5A's own C2."
+    },
+    "C3_budget_robustness_detail": {
+      "statement": "Report full per-agent opportunity-conditioned rates at a4096_b2, a4096_b8, and a4096_b32 (matched arena, varying instr_per_tick only), not just the Q6 margin summary.",
+      "conditions": ["a4096_b2", "a4096_b8", "a4096_b32"]
+    },
+    "C4_pairwise_meaning": {
+      "statement": "Measure on the 3 pairwise controls at every tested budget and state the event's 1v1 meaning explicitly -- a capture ends a pairwise match outright, so a qualifying instance there means the defender survived to fight on, not merely survived to the final tick."
+    },
+    "C5_farming_and_collusion": {
+      "statement": "Report the natural repeat-frequency distribution (Q8) and, separately, whether any single (attacker, victim) pair's qualifying-instance count is an outlier suggestive of a paced, repeat-damage-then-repair pattern rather than incidental match variation."
+    },
+    "C6_replay_auditability": {
+      "statement": "For every qualifying instance in the full default-condition corpus, this detector's own episode-closure attacker attribution (captured_by) must agree with the engine's own recorded kill/death event killer, for every episode that closes via capture. Additionally, two independent reconstruction passes over the same committed replays must produce a bit-identical digest of every episode's identifying fields (Q_determinism, below)."
+    },
+    "Q_determinism": {
+      "statement": "100% of episodes (and their qualifying status) reproduce identically across two independent reconstruction passes over the committed replays.",
+      "bound": 1.0,
+      "direction": "at_least",
+      "blocking": true
+    }
+  },
+
+  "decision_rule": {
+    "denominator_choice": "Opportunity-conditioned rate (qualifying / opportunity, i.e. P(active defensive intervention | qualifying hostile assault opportunity)) is the primary selectivity metric for Q5/Q6/Q7, not raw appearance rate -- declared here, before the exhaustive result, because a defender never assaulted cannot demonstrate defense, and raw-appearance selectivity was exactly Phase 5A's own falsified premise (it could not distinguish 'never attacked' from 'attacked and did nothing').",
+    "pass": "All blocking gates Q1-Q9 (plus Q_determinism) satisfied, and every C1-C6 characterization measured and reported.",
+    "revise": "A blocking gate fails in a way the characterization shows is a threshold-or-window-choice artifact: re-derive within this phase, re-declare in this file's successor, and re-run. Permitted at most once, and never after any full-corpus result beyond the pilot has been examined.",
+    "fail": "A blocking gate fails structurally -- selectivity cannot be achieved, attacker attribution is unstable, or the definition is a scheduler/budget artifact rather than a property of the mechanic. Phase 6 then reports a null or partial result; no successor detector is invented in the same phase.",
+    "null_is_valid": "Stopping with a null or PROMISING-with-one-revision result is a complete, reportable outcome, exactly as Phase 2, Phase 4, and Phase 5A's nulls were."
+  },
+
+  "population": {
+    "benchmark": "v2-baseline",
+    "members_required_to_verify": 9,
+    "roles": {
+      "search": ["core_seeker", "core_tracker"],
+      "expansion": ["claimer", "hunter"],
+      "defense": ["core_defender", "reactive_core_defender"]
+    }
+  },
+
+  "corpus": {
+    "primary_condition": "a4096_b8",
+    "group_rosters": 11,
+    "cells_per_roster": 54,
+    "group_cells_total": 594,
+    "budget_conditions": ["a4096_b2", "a4096_b8", "a4096_b32"],
+    "pairwise_pairs": 3,
+    "cells_per_pair": 18,
+    "source": "runs/research_v3_phase1/main/results/<condition>/",
+    "execution": "none -- Phase 6 reconstructs from committed Phase 1 artifacts only",
+    "pilot_rosters_used_for_definition_selection": [
+      "hunter_coretracker_coreseeker",
+      "claimer_coretracker_coredefender",
+      "coredefender_reactive_coreseeker",
+      "claimer_coreseeker_hunter"
+    ]
+  }
+}
