@@ -1,0 +1,16 @@
+name: turtle_core_refresher
+display: Turtle Core Refresher -- v3 research-closeout disposable probe, NOT a reference agent
+description: >
+  research probe only. non-gate benchmark agent. not part of frozen
+  v2-baseline. A maximally passive/turtle-style own-core writer: every
+  single action rewrites one of its own eight core cells in a fixed
+  round-robin, never expands, never READs, and carries no reactive logic
+  of any kind. Instantiates the Phase 5 design proposal's declared-but-
+  never-run E8 turtle-control probe (docs/V3_PHASE5_DEFENSIVE_EVENT_DESIGN_PROPOSAL.md
+  Sec 5B.3) against the Phase 6 active-defense event rather than against
+  Phase 5B's abandoned w_defense scoring experiment, which was never
+  implemented. Never pinned to any BenchmarkPopulation manifest.
+kind: python
+api_version: 1
+entrypoint: agent.py:create_agent
+version: 0.1.0-closeout-probe
