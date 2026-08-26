@@ -39,7 +39,7 @@ from pathlib import Path
 from battle_engine.agent_api import AgentValidationError
 from battle_engine.agent_scaffold import template_resource_dir
 from battle_engine.agents import AgentSpec, resolve_agent
-from battle_engine.config import Config
+from battle_engine.config import Config, Weights
 from battle_engine.match_service import (
     MatchEntrant,
     MatchRequest,
@@ -225,6 +225,33 @@ class InitializationFailureOutcome:
     trace_path: Path | None = None
 
 
+def _resolved_weights(
+    defaults: Config,
+    *,
+    kill_weight: float | None,
+    alive_weight: float | None = None,
+    territory_weight: float | None = None,
+) -> Weights:
+    """Apply only the explicitly-requested weight overrides on top of
+    ``defaults.weights`` -- v3 Phase 4 generalizes Phase 3's single-lever
+    `kill_weight` contract to the other two `Weights` fields research
+    might independently vary, one experiment at a time. `None` (every
+    field's default) reproduces `defaults.weights` unchanged, byte for
+    byte, exactly as `kill_weight=None` alone already did.
+    """
+
+    if kill_weight is None and alive_weight is None and territory_weight is None:
+        return defaults.weights
+    weights = defaults.weights
+    if kill_weight is not None:
+        weights = replace(weights, kill=kill_weight)
+    if alive_weight is not None:
+        weights = replace(weights, alive=alive_weight)
+    if territory_weight is not None:
+        weights = replace(weights, territory=territory_weight)
+    return weights
+
+
 def test_agent(
     agent_id: str,
     *,
@@ -243,6 +270,8 @@ def test_agent(
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
     kill_weight: float | None = None,
+    alive_weight: float | None = None,
+    territory_weight: float | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     """Run one short, real development match for ``agent_id``.
 
@@ -314,6 +343,8 @@ def test_agent(
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
             kill_weight=kill_weight,
+            alive_weight=alive_weight,
+            territory_weight=territory_weight,
         )
     except AgentTestError:
         raise
@@ -346,6 +377,8 @@ def _test_agent(
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
     kill_weight: float | None = None,
+    alive_weight: float | None = None,
+    territory_weight: float | None = None,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = resource_root or get_resource_root()
@@ -418,10 +451,11 @@ def _test_agent(
         instr_per_tick=(
             _config_defaults.instr_per_tick if instr_per_tick is None else instr_per_tick
         ),
-        weights=(
-            _config_defaults.weights
-            if kill_weight is None
-            else replace(_config_defaults.weights, kill=kill_weight)
+        weights=_resolved_weights(
+            _config_defaults,
+            kill_weight=kill_weight,
+            alive_weight=alive_weight,
+            territory_weight=territory_weight,
         ),
     )
     effective_agent_start, effective_opponent_start = resolve_direct_match_starts(
@@ -596,6 +630,8 @@ def test_agents(
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
     kill_weight: float | None = None,
+    alive_weight: float | None = None,
+    territory_weight: float | None = None,
 ) -> GroupTestOutcome | GroupInitializationFailureOutcome:
     """Run one short, real N-entrant (N >= 2) development match.
 
@@ -629,6 +665,8 @@ def test_agents(
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
             kill_weight=kill_weight,
+            alive_weight=alive_weight,
+            territory_weight=territory_weight,
         )
     except AgentTestError:
         raise
@@ -657,6 +695,8 @@ def _test_agents(
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
     kill_weight: float | None = None,
+    alive_weight: float | None = None,
+    territory_weight: float | None = None,
 ) -> GroupTestOutcome | GroupInitializationFailureOutcome:
     if len(entrants) < 2:
         raise _tool_error(
@@ -712,10 +752,11 @@ def _test_agents(
             instr_per_tick=(
                 _config_defaults.instr_per_tick if instr_per_tick is None else instr_per_tick
             ),
-            weights=(
-                _config_defaults.weights
-                if kill_weight is None
-                else replace(_config_defaults.weights, kill=kill_weight)
+            weights=_resolved_weights(
+                _config_defaults,
+                kill_weight=kill_weight,
+                alive_weight=alive_weight,
+                territory_weight=territory_weight,
             ),
         ),
         entrants=tuple(
