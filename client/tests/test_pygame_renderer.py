@@ -8,12 +8,18 @@ from battle_client.hud_layout import calculate_layout
 from battle_client.player import PlaybackController
 from battle_client.renderers.pygame_renderer import (
     ACTIVITY_WINDOW_TICKS,
+    CAPTURE_CALLOUT_DURATION_TICKS,
+    CAPTURE_CALLOUT_FADE_TICKS,
     HELP_TEXT,
     HUD_CHAR_WIDTH_PX,
+    CoreCaptureAttribution,
     PygameRenderer,
     activity_intensity,
+    capture_callout_alpha,
     choose_initial_window_scale,
+    core_captures_at_tick,
     downsample_series,
+    format_core_capture_callout_lines,
     format_event_line,
     format_inspector_lines,
     integer_scale_to_fit,
@@ -22,7 +28,7 @@ from battle_client.renderers.pygame_renderer import (
     select_history_window,
     territory_graph_points,
 )
-from battle_client.replay_status import get_entrant_statuses
+from battle_client.replay_status import EntrantReplayStatus, get_entrant_statuses
 from battle_client.session import ReplaySession, ReplayState
 from battle_engine.replay import (
     AgentEvent,
@@ -1353,3 +1359,449 @@ def test_selected_address_maps_back_to_the_clicked_cell_for_highlighting(tmp_pat
 
     xy = renderer._to_xy(renderer._selected_address)
     assert xy == (1, 1)
+
+
+# ---------------------------------------------------------------------------
+# v3.0 "fun feature": Core Capture Callout (docs/V3_CORE_CAPTURE_CALLOUT.md)
+#
+# core_captures_at_tick / format_core_capture_callout_lines /
+# capture_callout_alpha are pure and Pygame-free -- tested directly, no
+# renderer instance needed.
+# ---------------------------------------------------------------------------
+def test_core_captures_at_tick_detects_attributed_capture():
+    events = [(2, KillDeathEvent("kill", "A", "B"))]
+    agents = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    assert core_captures_at_tick(events, 2, agents) == (
+        CoreCaptureAttribution(victim="A", killer="B"),
+    )
+
+
+def test_core_captures_at_tick_detects_unattributed_capture():
+    events = [(2, KillDeathEvent("death", "A", None))]
+    agents = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    assert core_captures_at_tick(events, 2, agents) == (
+        CoreCaptureAttribution(victim="A", killer=None),
+    )
+
+
+def test_core_captures_at_tick_ignores_ordinary_kill_without_core_capture_reason():
+    """A VM kill (docs/RULES.md's own kill-attribution mechanism) never sets
+    ``termination_reason`` -- confirms an ordinary recorded ``KillDeathEvent``
+    never masquerades as a core capture just because it is a kill/death.
+    """
+    events = [(2, KillDeathEvent("kill", "B", "A"))]
+    agents = {"B": AgentState(agent_id="B", pc=4, alive=False)}  # termination_reason defaults to None
+
+    assert core_captures_at_tick(events, 2, agents) == ()
+
+
+def test_core_captures_at_tick_ignores_events_at_other_ticks():
+    events = [(2, KillDeathEvent("kill", "A", "B"))]
+    agents = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    assert core_captures_at_tick(events, 3, agents) == ()
+
+
+def test_core_captures_at_tick_bundles_simultaneous_captures():
+    events = [
+        (5, KillDeathEvent("kill", "A", "C")),
+        (5, KillDeathEvent("kill", "B", "C")),
+    ]
+    agents = {
+        "A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured"),
+        "B": AgentState(agent_id="B", pc=0, alive=False, termination_reason="core_captured"),
+    }
+
+    assert core_captures_at_tick(events, 5, agents) == (
+        CoreCaptureAttribution(victim="A", killer="C"),
+        CoreCaptureAttribution(victim="B", killer="C"),
+    )
+
+
+def test_format_core_capture_callout_lines_known_captor():
+    names = {"A": "Hunter", "B": "Core Seeker"}
+    lines = format_core_capture_callout_lines((CoreCaptureAttribution("A", "B"),), names)
+
+    assert lines == ("CORE CAPTURED", "Core Seeker eliminated Hunter")
+
+
+def test_format_core_capture_callout_lines_unavailable_captor():
+    names = {"A": "Hunter"}
+    lines = format_core_capture_callout_lines((CoreCaptureAttribution("A", None),), names)
+
+    assert lines == ("CORE CAPTURED", "Hunter eliminated")
+    assert not any(" by " in line for line in lines)  # never an invented killer
+
+
+def test_format_core_capture_callout_lines_falls_back_to_id_for_unknown_name():
+    lines = format_core_capture_callout_lines((CoreCaptureAttribution("A", "B"),), names={})
+
+    assert lines == ("CORE CAPTURED", "B eliminated A")
+
+
+def test_format_core_capture_callout_lines_collapses_overflow_to_a_summary():
+    captures = tuple(CoreCaptureAttribution(victim=f"E{i}", killer="Z") for i in range(5))
+
+    lines = format_core_capture_callout_lines(captures, names={})
+
+    assert lines[0] == "CORE CAPTURED"
+    assert len(lines) <= 4  # CAPTURE_CALLOUT_MAX_LINES
+    assert lines[-1].startswith("+") and lines[-1].endswith("more")
+
+
+def test_capture_callout_alpha_ramps_up_then_holds_then_fades_out():
+    duration, fade = CAPTURE_CALLOUT_DURATION_TICKS, CAPTURE_CALLOUT_FADE_TICKS
+
+    assert capture_callout_alpha(0, duration, fade) == pytest.approx(1 / fade)
+    assert capture_callout_alpha(fade - 1, duration, fade) == pytest.approx(1.0)
+    assert capture_callout_alpha(duration // 2, duration, fade) == 1.0
+    assert capture_callout_alpha(duration - 1, duration, fade) == pytest.approx(1 / fade)
+
+
+def test_capture_callout_alpha_zero_outside_its_window():
+    duration, fade = CAPTURE_CALLOUT_DURATION_TICKS, CAPTURE_CALLOUT_FADE_TICKS
+
+    assert capture_callout_alpha(-1, duration, fade) == 0.0
+    assert capture_callout_alpha(duration, duration, fade) == 0.0
+    assert capture_callout_alpha(duration + 5, duration, fade) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# PygameRenderer._advance_capture_callout: queue/lifetime bookkeeping,
+# driven directly through _advance_transient_effects exactly like the
+# existing _recent_changes tests above (same _state_with_owners fixture).
+# ---------------------------------------------------------------------------
+def test_forward_step_onto_capture_tick_activates_callout():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = [(1, KillDeathEvent("kill", "A", "B"))]
+    captured = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents={"A": _agent("A")}))
+    assert renderer._active_capture_callout is None
+
+    renderer._advance_transient_effects(_state_with_owners(1, (), agents=captured))
+
+    assert renderer._active_capture_callout == (1, (CoreCaptureAttribution("A", "B"),))
+    assert renderer._capture_callout_expires_after_tick == 1 + CAPTURE_CALLOUT_DURATION_TICKS
+
+
+def test_no_capture_no_callout_across_ordinary_playback(tmp_path):
+    """VM ``kill``/``death`` events (real, attributed and unattributed --
+    see ``_events_session``) never carry ``termination_reason ==
+    "core_captured"``, so ordinary playback of a replay with real events
+    but no core capture never shows a callout.
+    """
+    session = _events_session(tmp_path)
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = collect_match_events(session)
+
+    renderer._advance_transient_effects(session.current_state)
+    while not session.at_end:
+        renderer._advance_transient_effects(session.step_forward())
+        assert renderer._active_capture_callout is None
+        assert renderer._capture_callout_queue == []
+
+
+def test_callout_expires_after_duration_ticks():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = [(1, KillDeathEvent("kill", "A", "B"))]
+    captured = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents={"A": _agent("A")}))
+    renderer._advance_transient_effects(_state_with_owners(1, (), agents=captured))
+    expiry = renderer._capture_callout_expires_after_tick
+
+    for tick in range(2, expiry):
+        renderer._advance_transient_effects(_state_with_owners(tick, (), agents=captured))
+        assert renderer._active_capture_callout is not None, f"expired too early at tick {tick}"
+
+    renderer._advance_transient_effects(_state_with_owners(expiry, (), agents=captured))
+    assert renderer._active_capture_callout is None
+
+
+def test_pause_freezes_active_callout_across_repeated_frames_at_the_same_tick():
+    """The render loop calls ``_advance_transient_effects`` every rendered
+    frame (up to 60fps) even while paused, when ``PlaybackController.
+    update()`` is a no-op and the tick genuinely does not change -- this
+    must never be mistaken for a seek that clears the callout.
+    """
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = [(1, KillDeathEvent("kill", "A", "B"))]
+    captured = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents={"A": _agent("A")}))
+    renderer._advance_transient_effects(_state_with_owners(1, (), agents=captured))
+    active_after_capture = renderer._active_capture_callout
+
+    for _ in range(5):
+        renderer._advance_transient_effects(_state_with_owners(1, (), agents=captured))
+        assert renderer._active_capture_callout == active_after_capture
+        assert renderer._capture_callout_queue == []
+
+
+def test_seek_clears_pending_and_active_callout():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = [(2, KillDeathEvent("kill", "A", "B"))]
+    alive = {"A": _agent("A")}
+    captured = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents=alive))
+    renderer._advance_transient_effects(_state_with_owners(1, (), agents=alive))
+    renderer._advance_transient_effects(_state_with_owners(2, (), agents=captured))
+    assert renderer._active_capture_callout is not None
+
+    # A backward seek (e.g. Shift+Left) -- next tick is not last + 1.
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents=alive))
+
+    assert renderer._active_capture_callout is None
+    assert renderer._capture_callout_queue == []
+
+
+def test_forward_seek_past_a_capture_tick_does_not_trigger_its_callout():
+    """The load-bearing seek requirement: jumping straight onto (or past)
+    a capture tick via a seek must never show its callout -- only genuine
+    continuous forward playback, one tick at a time, does.
+    """
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = [(2, KillDeathEvent("kill", "A", "B"))]
+    captured = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents={"A": _agent("A")}))
+    # A forward seek straight onto the capture tick (e.g. Shift+Right, or a
+    # click on the event panel) -- next tick is not last + 1.
+    renderer._advance_transient_effects(_state_with_owners(2, (), agents=captured))
+
+    assert renderer._active_capture_callout is None
+    assert renderer._capture_callout_queue == []
+
+
+def test_restart_clears_an_in_progress_callout_and_permits_it_again():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = [(1, KillDeathEvent("kill", "A", "B"))]
+    alive = {"A": _agent("A")}
+    captured = {"A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured")}
+
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents=alive))
+    renderer._advance_transient_effects(_state_with_owners(1, (), agents=captured))
+    assert renderer._active_capture_callout is not None
+
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents=alive))  # restart
+    assert renderer._active_capture_callout is None
+
+    # Restarting permits the callout to appear again naturally on replay.
+    renderer._advance_transient_effects(_state_with_owners(1, (), agents=captured))
+    assert renderer._active_capture_callout == (1, (CoreCaptureAttribution("A", "B"),))
+
+
+def test_multiple_captures_on_the_same_tick_bundle_into_one_callout():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = [
+        (3, KillDeathEvent("kill", "A", "C")),
+        (3, KillDeathEvent("kill", "B", "C")),
+    ]
+    alive = {"A": _agent("A"), "B": _agent("B")}
+    both_captured = {
+        "A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured"),
+        "B": AgentState(agent_id="B", pc=0, alive=False, termination_reason="core_captured"),
+    }
+
+    for tick, agents in ((0, alive), (1, alive), (2, alive), (3, both_captured)):
+        renderer._advance_transient_effects(_state_with_owners(tick, (), agents=agents))
+
+    assert renderer._active_capture_callout == (
+        3,
+        (CoreCaptureAttribution("A", "C"), CoreCaptureAttribution("B", "C")),
+    )
+    assert renderer._capture_callout_queue == []  # one bundled entry, not two queued
+
+
+def test_multiple_captures_close_together_are_queued_not_dropped():
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = [
+        (1, KillDeathEvent("kill", "A", "C")),
+        (5, KillDeathEvent("kill", "B", "C")),
+    ]
+    alive = {"A": _agent("A"), "B": _agent("B")}
+    a_captured = {
+        "A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured"),
+        "B": _agent("B"),
+    }
+    both_captured = {
+        "A": AgentState(agent_id="A", pc=0, alive=False, termination_reason="core_captured"),
+        "B": AgentState(agent_id="B", pc=0, alive=False, termination_reason="core_captured"),
+    }
+
+    renderer._advance_transient_effects(_state_with_owners(0, (), agents=alive))
+    renderer._advance_transient_effects(_state_with_owners(1, (), agents=a_captured))
+    assert renderer._active_capture_callout == (1, (CoreCaptureAttribution("A", "C"),))
+
+    for tick in range(2, 5):
+        renderer._advance_transient_effects(_state_with_owners(tick, (), agents=a_captured))
+    renderer._advance_transient_effects(_state_with_owners(5, (), agents=both_captured))
+
+    # Queued, not dropped and not shown yet -- the first callout hasn't expired.
+    assert renderer._active_capture_callout == (1, (CoreCaptureAttribution("A", "C"),))
+    assert renderer._capture_callout_queue == [(5, (CoreCaptureAttribution("B", "C"),))]
+
+    expiry = 1 + CAPTURE_CALLOUT_DURATION_TICKS
+    for tick in range(6, expiry + 1):
+        renderer._advance_transient_effects(_state_with_owners(tick, (), agents=both_captured))
+
+    assert renderer._active_capture_callout == (5, (CoreCaptureAttribution("B", "C"),))
+    assert renderer._capture_callout_queue == []
+
+
+def test_end_to_end_known_captor_and_victim_from_a_real_v2_capture_replay(tmp_path):
+    session = _v2_two_entrant_session(tmp_path)  # A captured by B at tick 2
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = collect_match_events(session)
+
+    renderer._advance_transient_effects(session.current_state)
+    while not session.at_end:
+        renderer._advance_transient_effects(session.step_forward())
+
+    assert renderer._active_capture_callout == (2, (CoreCaptureAttribution("A", "B"),))
+
+
+def test_end_to_end_victim_with_unavailable_captor_from_a_real_v2_replay(tmp_path):
+    session = _v2_two_entrant_session(tmp_path, unattributed=True)
+    renderer = PygameRenderer()
+    renderer.arena, renderer.grid_cols, renderer.grid_rows = 1, 1, 1
+    renderer._match_events = collect_match_events(session)
+
+    renderer._advance_transient_effects(session.current_state)
+    while not session.at_end:
+        renderer._advance_transient_effects(session.step_forward())
+
+    assert renderer._active_capture_callout == (2, (CoreCaptureAttribution("A", None),))
+
+
+# ---------------------------------------------------------------------------
+# PygameRenderer._draw_capture_callout: rendered content and geometry
+# ---------------------------------------------------------------------------
+def test_capture_callout_renders_known_captor_and_victim_names(tmp_path):
+    session = _v2_two_entrant_session(tmp_path)
+    while not session.at_end:
+        session.step_forward()
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=32)
+    renderer._active_capture_callout = (2, (CoreCaptureAttribution("A", "B"),))
+    statuses = (
+        EntrantReplayStatus(
+            agent_id="A", name="Hunter", order=0, start_address=0, alive=False,
+            death_tick=2, death_reason="core_captured", killer_id="B", core=None,
+            tick=2, score=10, territory_cells=0, territory_percentage=0.0, kills_so_far=0,
+        ),
+        EntrantReplayStatus(
+            agent_id="B", name="Core Seeker", order=1, start_address=16, alive=True,
+            death_tick=None, death_reason=None, killer_id=None, core=None,
+            tick=2, score=8, territory_cells=0, territory_percentage=0.0, kills_so_far=1,
+        ),
+    )
+
+    renderer._draw_capture_callout(controller, statuses)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "CORE CAPTURED" in rendered
+    assert "Core Seeker eliminated Hunter" in rendered
+
+
+def test_capture_callout_renders_unattributed_victim_without_a_fake_killer(tmp_path):
+    session = _v2_two_entrant_session(tmp_path, unattributed=True)
+    while not session.at_end:
+        session.step_forward()
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=32)
+    renderer._active_capture_callout = (2, (CoreCaptureAttribution("A", None),))
+    statuses = get_entrant_statuses(session, match_events=collect_match_events(session))
+
+    renderer._draw_capture_callout(controller, statuses)
+
+    rendered = "\n".join(renderer.hud_font.rendered)
+    assert "CORE CAPTURED" in rendered
+    assert "A eliminated" in rendered
+    assert " by " not in rendered
+
+
+def test_no_active_callout_renders_nothing(tmp_path):
+    session = _v2_two_entrant_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=32)
+    assert renderer._active_capture_callout is None
+
+    renderer._draw_capture_callout(controller, ())
+
+    assert renderer.hud_font.rendered == []
+
+
+def test_capture_callout_truncates_unusually_long_agent_names(tmp_path):
+    session = _v2_two_entrant_session(tmp_path)
+    while not session.at_end:
+        session.step_forward()
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((640, 480), entrant_count=2, arena_size=32)
+    renderer._active_capture_callout = (2, (CoreCaptureAttribution("A", "B"),))
+    long_name = "An Extremely Long Agent Display Name That Would Otherwise Overflow The Callout Box"
+    statuses = (
+        EntrantReplayStatus(
+            agent_id="A", name=long_name, order=0, start_address=0, alive=False,
+            death_tick=2, death_reason="core_captured", killer_id="B", core=None,
+            tick=2, score=10, territory_cells=0, territory_percentage=0.0, kills_so_far=0,
+        ),
+        EntrantReplayStatus(
+            agent_id="B", name="B", order=1, start_address=16, alive=True,
+            death_tick=None, death_reason=None, killer_id=None, core=None,
+            tick=2, score=8, territory_cells=0, territory_percentage=0.0, kills_so_far=1,
+        ),
+    )
+
+    renderer._draw_capture_callout(controller, statuses)  # must not raise
+
+    rendered = renderer.hud_font.rendered
+    assert rendered  # something was actually drawn
+    assert not any(long_name in line for line in rendered)  # never rendered unclipped
+    assert any(line.endswith("…") for line in rendered)
+
+
+def test_capture_callout_fits_within_the_minimum_supported_viewport(tmp_path):
+    session = _v2_two_entrant_session(tmp_path)
+    while not session.at_end:
+        session.step_forward()
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((640, 480), entrant_count=2, arena_size=32)
+    renderer._active_capture_callout = (2, (CoreCaptureAttribution("A", "B"),))
+    statuses = get_entrant_statuses(session, match_events=collect_match_events(session))
+
+    renderer._draw_capture_callout(controller, statuses)  # must not raise
+
+    assert "CORE CAPTURED" in renderer.hud_font.rendered
+
+
+@pytest.mark.parametrize(
+    ("window_w", "window_h", "entrant_count"),
+    [(640, 480, 2), (960, 700, 3), (960, 700, 5)],
+)
+def test_capture_callout_renders_without_crashing_across_window_sizes(
+    tmp_path, window_w, window_h, entrant_count
+):
+    session = _v2_two_entrant_session(tmp_path)
+    while not session.at_end:
+        session.step_forward()
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((window_w, window_h), entrant_count=entrant_count, arena_size=32)
+    renderer._active_capture_callout = (2, (CoreCaptureAttribution("A", "B"),))
+    statuses = get_entrant_statuses(session, match_events=collect_match_events(session))
+
+    renderer._draw_capture_callout(controller, statuses)  # must not raise

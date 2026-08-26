@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import bisect
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -165,6 +165,145 @@ HEADER_ICON_GAP = 8
 # the footer help text from this module. Beta3 makes it deliberately compact;
 # the full two-line help panel is toggled with ``?``.
 HELP_TEXT = COMPACT_HELP_TEXT
+
+# v3.0 "fun feature": a temporary Core Capture Callout (see
+# docs/V3_CORE_CAPTURE_CALLOUT.md). Matches the replay-evidence check
+# battle_client.replay_status.CoreStatus.captured already performs (see
+# that module's _core_status) -- not a new fact, a presentation-local
+# re-check of the same recorded AgentState.termination_reason field.
+CORE_CAPTURE_TERMINATION_REASON = "core_captured"
+
+# Tick-denominated, not frame- or wall-clock-based: the callout's
+# visibility is a pure function of the current replay tick relative to the
+# tick it was captured on, so pausing freezes it exactly in place for
+# free, and a speed change needs no special-casing. 40 ticks is ~2 seconds
+# of match time at the CLI's DEFAULT_TICK_INTERVAL (0.05s/tick) 1x default
+# -- a short, restrained interval, not a lingering banner.
+CAPTURE_CALLOUT_DURATION_TICKS = 40
+# The linear fade in/out portion of that lifetime, in ticks each end.
+CAPTURE_CALLOUT_FADE_TICKS = 8
+# Title line plus at most this many attribution lines before the overflow
+# collapses into one "+N more" summary line -- keeps the box concise even
+# for a hypothetical many-entrant match with several simultaneous captures.
+CAPTURE_CALLOUT_MAX_LINES = 4
+CAPTURE_CALLOUT_BG: tuple[int, int, int] = (20, 16, 10)
+CAPTURE_CALLOUT_MAX_WIDTH = 360
+CAPTURE_CALLOUT_MARGIN = 40
+
+
+@dataclass(frozen=True)
+class CoreCaptureAttribution:
+    """One entrant's core-capture fact at a single tick.
+
+    Mirrors the identical victim/killer facts
+    ``battle_client.replay_status.CoreStatus``/``_death_tick_and_killer``
+    already derive from the same replay evidence (a recorded
+    ``KillDeathEvent`` plus the victim's own ``AgentState.
+    termination_reason``) -- this is a presentation-local re-derivation of
+    those facts for the callout's own tick-by-tick trigger, not a second
+    source of truth.
+    """
+
+    victim: str
+    killer: str | None
+
+
+def core_captures_at_tick(
+    events: Sequence[tuple[int, EngineEvent]],
+    tick: int,
+    agents: Mapping[str, AgentState],
+) -> tuple[CoreCaptureAttribution, ...]:
+    """Every core-capture recorded at exactly ``tick``, in recorded order.
+
+    A recorded ``KillDeathEvent`` (``"kill"`` or unattributed ``"death"``)
+    is a core capture iff its victim's ``AgentState`` at this tick carries
+    ``termination_reason == "core_captured"`` -- the same check
+    ``battle_client.replay_status._core_status`` performs, applied here
+    directly to one tick's own events/agents instead of by re-deriving a
+    full ``EntrantReplayStatus``. Returns one attribution per distinct
+    victim captured at this tick -- more than one is possible, since
+    ``battle_engine.python_runtime.apply_core_capture`` checks every
+    living entrant each tick before scoring. Returns ``()`` for a
+    Ruleset-v1 or VM replay, where ``termination_reason`` is never
+    ``"core_captured"``, and for any tick with no recorded capture.
+    """
+    captures: list[CoreCaptureAttribution] = []
+    for event_tick, event in events:
+        if event_tick != tick or not isinstance(event, KillDeathEvent):
+            continue
+        agent_state = agents.get(event.victim)
+        if agent_state is not None and agent_state.termination_reason == CORE_CAPTURE_TERMINATION_REASON:
+            captures.append(CoreCaptureAttribution(victim=event.victim, killer=event.killer))
+    return tuple(captures)
+
+
+def format_core_capture_callout_lines(
+    captures: Sequence[CoreCaptureAttribution], names: Mapping[str, str]
+) -> tuple[str, ...]:
+    """"CORE CAPTURED" callout text: a title line plus one attribution
+    line per victim captured together at the same tick.
+
+    Factual replay evidence only -- ``"{killer} eliminated {victim}"``
+    when a killer is attributed, ``"{victim} eliminated"`` when it is not
+    -- never invented strategic prose (see
+    docs/V3_CORE_CAPTURE_CALLOUT.md §7). ``names`` maps agent id to
+    display name (``EntrantReplayStatus.name``); an id missing from it
+    falls back to the bare id. More than ``CAPTURE_CALLOUT_MAX_LINES - 1``
+    simultaneous captures collapse the overflow into one summary line
+    rather than growing the box unboundedly -- the total line count
+    (title + shown attributions + one optional summary line) never
+    exceeds ``CAPTURE_CALLOUT_MAX_LINES``.
+    """
+    title = "CORE CAPTURED"
+    if not captures:
+        return (title,)
+    if len(captures) <= CAPTURE_CALLOUT_MAX_LINES - 1:
+        shown, remaining = captures, 0
+    else:
+        shown = captures[: CAPTURE_CALLOUT_MAX_LINES - 2]
+        remaining = len(captures) - len(shown)
+    lines = [title]
+    for capture in shown:
+        victim = names.get(capture.victim, capture.victim)
+        if capture.killer:
+            killer = names.get(capture.killer, capture.killer)
+            lines.append(f"{killer} eliminated {victim}")
+        else:
+            lines.append(f"{victim} eliminated")
+    if remaining > 0:
+        lines.append(f"+{remaining} more")
+    return tuple(lines)
+
+
+def capture_callout_alpha(tick_into_window: int, duration: int, fade_ticks: int) -> float:
+    """Linear fade in/out envelope for the callout's visible lifetime, as
+    a fraction in ``[0, 1]``.
+
+    Ramps up over the first ``fade_ticks`` ticks, holds at ``1.0``, then
+    ramps down over the last ``fade_ticks`` ticks before ``duration`` --
+    the same tick-denominated linear-decay shape ``activity_intensity``
+    already uses elsewhere in this module, applied here to a callout's own
+    bounded window instead of a per-cell recency map. ``tick_into_window``
+    is ``current_tick - capture_tick`` (``0`` at the instant of capture).
+    Purely a function of tick position, so it needs no separate per-frame
+    animation clock and stays exact under any playback speed, or a pause
+    (which simply stops ``tick_into_window`` from advancing). Returns
+    ``0.0`` outside ``[0, duration)`` -- but never at ``tick_into_window ==
+    0`` itself (the capture's own tick always renders at at least a sliver
+    of visibility, ``1 / fade_ticks``, rather than being invisible on the
+    very tick it happens).
+    """
+    if duration <= 0 or tick_into_window < 0 or tick_into_window >= duration:
+        return 0.0
+    fade = max(0, min(fade_ticks, duration // 2))
+    if fade == 0:
+        return 1.0
+    if tick_into_window < fade:
+        return (tick_into_window + 1) / fade
+    remaining = duration - tick_into_window
+    if remaining <= fade:
+        return remaining / fade
+    return 1.0
 
 
 def choose_initial_window_scale(
@@ -554,6 +693,23 @@ class PygameRenderer:
         # non-linear tick change -- see _advance_transient_effects's
         # docstring for why "clear" was chosen over "rebuild from history".
         self._recent_changes: dict[int, int] = {}
+
+        # Core-capture callout (v3.0 "fun feature" -- see
+        # docs/V3_CORE_CAPTURE_CALLOUT.md). A small FIFO queue, maintained
+        # by _advance_capture_callout: captures encountered via genuine
+        # continuous forward playback are queued so none are ever silently
+        # dropped, and shown one at a time so overlapping captures never
+        # stack into unreadable simultaneous boxes. A seek/restart clears
+        # both, matching this renderer's existing convention that seeking
+        # never replays a transient notification (see
+        # _advance_capture_callout's own docstring for why it computes its
+        # own tick delta rather than reusing _advance_transient_effects's
+        # is_linear_step verbatim). Visibility is a pure function of the
+        # current tick vs. the active entry's own expiry tick, never a
+        # per-frame counter.
+        self._capture_callout_queue: list[tuple[int, tuple[CoreCaptureAttribution, ...]]] = []
+        self._active_capture_callout: tuple[int, tuple[CoreCaptureAttribution, ...]] | None = None
+        self._capture_callout_expires_after_tick = 0
 
     # ---------- grid geometry (pure, presentation-only) ----------
 
@@ -970,8 +1126,64 @@ class PygameRenderer:
         for xy in expired:
             del self._flash[xy]
 
+        self._advance_capture_callout(state)
+
         self._last_rendered_tick = state.tick
         self._last_owners = state.owners
+
+    def _advance_capture_callout(self, state: ReplayState) -> None:
+        """Advance the core-capture callout queue for the newly-current
+        ``state`` (v3.0 "fun feature" -- see
+        docs/V3_CORE_CAPTURE_CALLOUT.md).
+
+        Deliberately does **not** reuse ``is_linear_step`` as computed
+        above in ``_advance_transient_effects``: that check treats "the
+        tick hasn't changed since the last call" (an entirely ordinary
+        *paused* frame -- this renderer re-renders at up to 60fps while
+        ``state.tick`` sits still) the same as "the tick jumped" --
+        harmless for the flash/trail/activity effects above (each is
+        already re-derived from scratch on every linear step, and their
+        own lifetimes are sub-second regardless), but wrong for a callout
+        meant to stay visible, unchanged, across a multi-second *pause*.
+        This method instead compares ``state.tick`` against
+        ``self._last_rendered_tick`` (still the *previous* call's tick --
+        read here before ``_advance_transient_effects`` overwrites it) and
+        only ever advances the queue on an exact ``+1`` step: genuine
+        continuous forward playback, whether driven by auto-play or a
+        single manual step. A delta of exactly ``0`` is a deliberate
+        no-op -- the active callout and queue are left exactly as they
+        are, so pausing freezes the callout in place for free. Any other
+        delta (backward, or a forward jump of more than one tick -- a
+        seek, restart, or jump-to-end) clears both: seeking reconstructs
+        state without replaying every transient notification, so a
+        callout is never shown merely because the playhead crossed an old
+        capture tick.
+
+        Multiple entrants captured on the very same tick are already
+        bundled into one queue entry by ``core_captures_at_tick`` (see its
+        own docstring); this method never splits or drops them.
+        """
+        last = self._last_rendered_tick
+        if last is not None and state.tick == last + 1:
+            captures = core_captures_at_tick(self._match_events, state.tick, state.agents)
+            if captures:
+                self._capture_callout_queue.append((state.tick, captures))
+        elif last is not None and state.tick != last:
+            self._capture_callout_queue.clear()
+            self._active_capture_callout = None
+
+        if self._active_capture_callout is None and self._capture_callout_queue:
+            self._active_capture_callout = self._capture_callout_queue.pop(0)
+            self._capture_callout_expires_after_tick = state.tick + CAPTURE_CALLOUT_DURATION_TICKS
+        elif (
+            self._active_capture_callout is not None
+            and state.tick >= self._capture_callout_expires_after_tick
+        ):
+            self._active_capture_callout = (
+                self._capture_callout_queue.pop(0) if self._capture_callout_queue else None
+            )
+            if self._active_capture_callout is not None:
+                self._capture_callout_expires_after_tick = state.tick + CAPTURE_CALLOUT_DURATION_TICKS
 
     # ---------- drawing ----------
 
@@ -1039,7 +1251,8 @@ class PygameRenderer:
             self._draw_agent_marker(agent_id, xy)
 
         self._draw_selection_highlight()
-        self._draw_top_band(controller)
+        statuses = self._draw_top_band(controller)
+        self._draw_capture_callout(controller, statuses)
         self._draw_footer(controller)
 
     def _blend(
@@ -1174,9 +1387,15 @@ class PygameRenderer:
         xy = self._to_xy(self._selected_address)
         return xy is not None and xy in self._flash
 
-    def _draw_top_band(self, controller: PlaybackController) -> None:
+    def _draw_top_band(
+        self, controller: PlaybackController
+    ) -> tuple[EntrantReplayStatus, ...]:
         """Draw the top HUD band: the match-identity header and one status
-        card per entrant.
+        card per entrant. Returns the entrant statuses just drawn (empty
+        if no layout has been computed yet), so a caller that also needs
+        per-entrant display names this frame -- e.g. ``_draw_capture_
+        callout`` -- doesn't have to re-derive them with a second
+        ``get_entrant_statuses`` call.
 
         Entrant status comes entirely from ``battle_client.replay_status.
         get_entrant_statuses`` (the Phase-3 status model) -- this method
@@ -1187,7 +1406,7 @@ class PygameRenderer:
         """
         layout = self._layout
         if layout is None:
-            return
+            return ()
         session = controller.session
         state = session.current_state
 
@@ -1236,6 +1455,79 @@ class PygameRenderer:
             zip(statuses, layout.entrant_card_rects), start=1
         ):
             self._draw_entrant_card(status, rect, ordinal=ordinal, mode=layout.card_mode)
+
+        return statuses
+
+    def _draw_capture_callout(
+        self, controller: PlaybackController, statuses: Sequence[EntrantReplayStatus]
+    ) -> None:
+        """Draw the active core-capture callout, if any (v3.0 "fun
+        feature" -- see docs/V3_CORE_CAPTURE_CALLOUT.md): a small bordered
+        banner centered in the top HUD band.
+
+        Drawn last, after ``_draw_top_band``, so it overlays part of the
+        entrant-card row for its brief, tick-bounded lifetime rather than
+        reserving permanent layout space -- ``self._layout`` itself is
+        never touched, so nothing else about the HUD/arena/footer tiling
+        changes. Sized and positioned to stay strictly inside
+        ``layout.top_band_height`` (never past it), so the arena band
+        below is never obscured, by construction rather than convention.
+        A no-op whenever no callout is active, no layout has been
+        computed yet, or the top band is too short to fit even a minimal
+        box (never the case at the supported 640x480 minimum -- see
+        docs/V3_CORE_CAPTURE_CALLOUT.md's minimum-viewport evidence).
+
+        ``statuses`` (this frame's already-computed
+        ``EntrantReplayStatus`` tuple from ``_draw_top_band``) supplies
+        display names for attribution text, so this method never issues
+        its own second ``get_entrant_statuses`` call.
+        """
+        layout = self._layout
+        if layout is None or self._active_capture_callout is None:
+            return
+        capture_tick, captures = self._active_capture_callout
+        current_tick = controller.session.current_state.tick
+
+        names = {status.agent_id: status.name for status in statuses}
+        lines = format_core_capture_callout_lines(captures, names)
+
+        window_w = layout.window_size[0]
+        box_w = max(1, min(CAPTURE_CALLOUT_MAX_WIDTH, window_w - CAPTURE_CALLOUT_MARGIN))
+        padding = 8
+        content_h = padding * 2 + len(lines) * CARD_LINE_HEIGHT
+        box_h = min(content_h, max(0, layout.top_band_height - 8))
+        if box_h <= 0:
+            return
+
+        alpha = capture_callout_alpha(
+            current_tick - capture_tick, CAPTURE_CALLOUT_DURATION_TICKS, CAPTURE_CALLOUT_FADE_TICKS
+        )
+        if alpha <= 0.0:
+            return
+
+        box_x = (window_w - box_w) // 2
+        box_y = max(0, (layout.top_band_height - box_h) // 2)
+
+        # Full opacity at the envelope's own peak (alpha == 1.0), not a
+        # permanently translucent panel: this callout is drawn on top of
+        # already-rendered entrant-card text (see this method's own
+        # docstring), and anything less than fully opaque at the hold
+        # phase lets that text show through in the gaps between this
+        # panel's own glyphs, muddling both. Only the brief fade in/out
+        # itself is genuinely translucent.
+        panel = self.pg.Surface((box_w, box_h), flags=self.pg.SRCALPHA)
+        panel.fill((*CAPTURE_CALLOUT_BG, int(255 * alpha)))
+        self.pg.draw.rect(panel, STATUS_CAPTURED_COLOR, panel.get_rect(), 2)
+
+        max_chars = max(6, (box_w - 2 * padding) // HUD_CHAR_WIDTH_PX)
+        for index, text in enumerate(lines):
+            if (index + 1) * CARD_LINE_HEIGHT > box_h - padding:
+                break
+            color = STATUS_CAPTURED_COLOR if index == 0 else TEXT_COLOR
+            rendered = self.hud_font.render(truncate_with_ellipsis(text, max_chars), True, color)
+            panel.blit(rendered, (padding, padding + index * CARD_LINE_HEIGHT))
+
+        self.screen.blit(panel, (box_x, box_y))
 
     def _draw_entrant_card(
         self,
