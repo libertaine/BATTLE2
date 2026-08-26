@@ -1,0 +1,7 @@
+name: core_tracker_offset
+display: Core Tracker (Offset) -- v3 Phase 7 disposable control, not a reference agent
+description: Disposable Phase 7 control agent -- a byte-for-byte copy of the frozen core_tracker reference agent with exactly one line changed (expand_cursor offset past its own core, mirroring core_defender's precedent), used only to isolate whether core_tracker's un-offset expand cursor explains Phase 6's a4096_b32 selectivity failure. Never pinned to any BenchmarkPopulation manifest.
+kind: python
+api_version: 1
+entrypoint: agent.py:create_agent
+version: 0.1.0-phase7-control
