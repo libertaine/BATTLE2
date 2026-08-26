@@ -176,6 +176,20 @@ mortality mechanic with owner-maintained core observability — into the
 below, each with its disposition updated to reflect what the alpha program
 actually found rather than what it merely proposed to investigate.
 
+**A second, closed v3 research program** (eight phases plus a closeout,
+`v3-research-phase0` through `v3-research-closeout`) subsequently tested
+locality, arena/action-density characterization, offense/defense payoff
+rebalancing, and two successive defensive-scoring-event designs against
+the shipped `bytefray-rules-2` ecology. Its conclusion was **no Ruleset
+change is currently justified**, and it closed without creating a stable
+`bytefray-rules-3`. See
+[V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) for the
+navigable index and [V3_RESEARCH_CLOSEOUT.md](V3_RESEARCH_CLOSEOUT.md) for
+the full final report. Each item below is updated with what v3 actually
+found, on the same discipline the alpha program's own disposition updates
+followed: findings are recorded, not asserted, and a rejected hypothesis is
+retained here as evidence rather than deleted.
+
 ### Core observability
 
 **Status: validated, moving into Ruleset-v2 beta semantics — no longer
@@ -204,6 +218,16 @@ not unfinished mandatory v2 work — it is a contingency that a passing gate
 correctly bypassed. The idea remains available for later research if future
 evidence (post-beta1) reopens the question.
 
+**v3 note**: the v3 program varied the existing `weights.territory`
+*scoring weight* (Phase 4, an 11-point sweep) as a candidate lever for
+defense compensation, not a decay/maintenance mechanic — the two are
+different ideas and should not be conflated. That sweep found raising
+`weights.territory` "fixes" defense's win share only by diluting Phase 3's
+offense-payoff correction back toward its pre-correction state; see
+[V3_PHASE4_DEFENSE_PAYOFF_CHARACTERIZATION.md](V3_PHASE4_DEFENSE_PAYOFF_CHARACTERIZATION.md)
+§10. A genuine decay/maintenance mechanic remains untested by either
+program.
+
 ### Advanced offensive mechanics
 
 **Status: Research**, with one clarification from the alpha program: 2.0
@@ -218,20 +242,42 @@ engine-decided `ATTACK opponent` command. An explicit `ATTACK` action
 remains a later-research idea only; the alpha program found no concrete
 need for one.
 
+**v3 note**: the v3 program independently reached the same conclusion from
+the defense side. Its locality mechanic (Phase 2) and both defensive-event
+designs (Phase 5A, Phase 6) were built entirely from existing engine
+primitives — `READ`/`WRITE`/ownership, plus additive `MOVE`/`LOCAL_READ`/
+`LOCAL_WRITE` for the explicitly experimental, non-stable locality Ruleset
+— with no `ATTACK`/`DEFEND` action ever implemented or found necessary. An
+explicit `DEFEND` action was named as a *possible* (not recommended)
+category if defense's deficit is ever revisited; see
+[V3_RESEARCH_CLOSEOUT.md](V3_RESEARCH_CLOSEOUT.md) Sec 8.
+
 ### Arena / field-size research
 
-**Status: Research — unchanged, not a 2.0 blocker.** Further analysis of
-arena size, rather than assuming the current default is universally
-optimal — its interaction with match duration, observation/read rate,
-write rate, process/execution count, entrant count, strategy type, and
-information availability. A useful framing is **information density**:
-what fraction of the arena can an entrant realistically observe or affect
-during a match? Very small arenas likely favor immediate conflict; larger
-arenas may make exploration, reconnaissance, uncertainty, prediction, and
-coordinated deployment strategically relevant. Fog-of-war and other
-environmental mechanics fall in the same research-only, not-a-2.0-blocker
-category. Any change here should be evidence-driven, in the same spirit as
-v0.9/v0.10's evaluation-methodology work.
+**Status: Substantially answered by the v3 program for arena size and
+action budget; fog-of-war and other environmental mechanics remain
+Research.** Phase 1 of the v3 program ran a 20-condition grid spanning
+arena sizes 128–65536 and action budgets 2–128 (a ~4000× density span) and
+found that arena size and action budget are **not two independent
+variables** — occupancy, match length, capture rate, and strategic-outcome
+magnitude collapse onto one dimensionless configured density,
+`S = (instr_per_tick × ticks) / arena_size`. The shipped default sits at or
+adjacent to the optimum of the tested space; no tested region scored
+better on the verbatim Beta2 §17 ecology rubric. See
+[V3_PHASE1_ARENA_ACTION_DENSITY.md](V3_PHASE1_ARENA_ACTION_DENSITY.md) and
+[V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) §5. A
+follow-on finding (the closeout, Sec 9–13) shows *absolute* action quota
+(not density) independently controls reaction-opportunity topology near
+the fixed `CORE_SIZE` constant — recorded as a research-methodology
+constraint, not a Ruleset change.
+
+Fog-of-war and other information-availability mechanics were not tested by
+either program and remain **Research**, unchanged. A useful framing is
+still **information density**: what fraction of the arena can an entrant
+realistically observe or affect during a match? Any change here should be
+evidence-driven, in the same spirit as v0.9/v0.10's evaluation-methodology
+work and the v3 program's own hypothesis → experiment → evidence →
+decision discipline.
 
 ### Multiple execution processes / multipronged agents
 
@@ -249,6 +295,13 @@ capability with correct survivor-only winner semantics. Multiple execution
 processes belonging to a *single* entrant is a different, still-open
 research question this program did not address.
 
+**v3 note**: not addressed. The v3 program's multi-entrant corpora (Phases
+0–7) always used one execution stream per entrant; "fixed-budget
+multi-component entrants" remains exactly the open, separately-scoped
+question it was before v3. See "Agent lifecycle: mutation, evolution, and
+replication economics" below for how this relates to replication/mutation
+research.
+
 ### Replication / deployment
 
 **Status: Research — unchanged, and distinct from the item above.**
@@ -260,6 +313,12 @@ against investment in expansion. Replication should create strategic
 choices, not simply serve as a free multiplier. Not exercised or validated
 by the v2.0 alpha program.
 
+**v3 note**: not addressed. Replication was explicitly out of scope for
+every v3 phase. See "Agent lifecycle: mutation, evolution, and replication
+economics" below, which groups replication with the closely related
+mutation/evolution/lifecycle candidates the v3 closeout deferred rather
+than duplicating them here.
+
 ### Specialized sub-agents
 
 **Status: Research — unchanged.** Potential future entrants built from
@@ -267,6 +326,10 @@ multiple role-specific components (scout, attacker, defender, claimer,
 coordinator) rather than clones of one controller — enabling research into
 communication, specialization, distributed planning, and coordinated
 attacks. No implementation or API is defined for this yet.
+
+**v3 note**: not addressed. Every v3 reference/experimental agent remained
+a single controller; sub-agent composition and "agents creating sub-agents"
+are grouped with the new lifecycle candidates below rather than tested.
 
 ### Agent API v2
 
@@ -282,6 +345,68 @@ API (see "Accessible agent-authoring language / DSL" above) should still
 wait for an actual Agent API v2 effort before beginning, if one is ever
 justified on its own separate grounds.
 
+**v3 note**: reinforced, not merely unchanged. Phase 2 deliberately tested
+the strongest candidate for requiring an Agent API v2 change (redefining
+`READ`/`WRITE` as locality-relative) and rejected it in favor of an
+additive-only design: two new optional, `None`-default observation/context
+fields and three new action kinds that a stable-Ruleset agent never emits.
+`AGENT_API_VERSION` was not bumped anywhere in the v3 program. See
+[V3_PHASE2_LOCALITY_FEASIBILITY.md](V3_PHASE2_LOCALITY_FEASIBILITY.md)
+§21.
+
+### Agent lifecycle: mutation, evolution, and replication economics
+
+**Status: Research — new candidates, not addressed by any research program
+to date.** A cluster of related future Ruleset research candidates,
+recorded here as **future Ruleset research candidates requiring separate
+hypothesis-driven qualification** — not committed work, and not designed
+here:
+
+* agents creating sub-agents, as a runtime capability distinct from a
+  fixed multi-component entrant (see "Multiple execution processes" above);
+* fixed-budget multi-component entrants;
+* controlled replication, building on the "Replication / deployment" item
+  above;
+* agent mutation, and what classes of mutation (parameter perturbation,
+  code-level variation, strategy-family switching) would be meaningful
+  under Agent API v1 or a future API version;
+* evolution *between* matches (offline, across an evaluation population)
+  versus evolution *during* a match (online, in response to that match's
+  own events) — named as two distinct questions, not one;
+* mutation and replication costs — what an entrant should pay, in what
+  currency (action budget, territory, score), to mutate or replicate, and
+  how that cost should interact with the existing scoring model;
+* resource-constrained growth generally, as a possible unifying frame for
+  replication and mutation costs together;
+* agent lifecycle mechanics more broadly — birth, aging, death, and
+  inheritance semantics for anything spawned or mutated during a match.
+
+None of this was exercised, prototyped, or validated by either the v2.0
+alpha program or the v3 program. Each item would need its own
+hypothesis → minimal experiment → evidence → decision cycle, following the
+same discipline both prior programs used, before any design work begins.
+
+### Execution-trace / intent semantics
+
+**Status: Research — a new candidate, directly evidenced (not merely
+speculated) by the v3 closeout as the most promising unaddressed direction
+if defense's scoring deficit is ever revisited.** The v3 program closed the
+entire family of ownership-history-based defensive-event designs (Phase
+5A, Phase 6, and the closeout's own three convergent checks) by showing
+that *what changed in the arena* cannot distinguish responsive defense from
+a sufficiently frequent blind rewrite. The closeout's own recommended next
+question, stated but explicitly not evaluated or implemented, is whether
+new observable execution telemetry — recording *why* an action was taken
+(e.g., whether a `WRITE` was preceded by a `READ` that returned evidence of
+damage), as a first-class engine-derived fact rather than something
+reconstructed from ownership diffs — could succeed where ownership history
+provably cannot. See
+[V3_RESEARCH_CLOSEOUT.md](V3_RESEARCH_CLOSEOUT.md) Sec 8 and Sec 25 for the
+full reasoning, including the explicit warning that any such telemetry
+would need its own anti-gaming analysis (self-reported "this was
+defensive" intent is trivially gameable) before being worth pursuing. This
+is recorded as an open question, not a recommendation to build it.
+
 ### Future rulesets
 
 If any of the above materially alters gameplay, it belongs in a clearly
@@ -292,10 +417,20 @@ versioned future ruleset rather than a silent mutation of an existing one:
 - **Ruleset v2** (`bytefray-rules-2`) — the beta candidate emerging from
   the v2.0 alpha program (`v2.0.0-beta1`, see [ROADMAP.md](ROADMAP.md) and
   [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)), distinct from every historical alpha
-  identity that preceded it.
+  identity that preceded it, and Bytefray's current, permanent, stable
+  Ruleset as of `v2.0.0`.
+- **`bytefray-rules-3-alpha1`** — one experimental, explicitly non-stable
+  locality identity the v3 program created and used entirely within Phase
+  2's research (never merged, never exposed on any product CLI's
+  `--ruleset` choices). It is **not** `bytefray-rules-3`; the locality
+  mechanic it carried was rejected (see
+  [V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) §4), and
+  no stable Ruleset 3 exists.
 - **Later ruleset(s)** — any future experimental multiprocessing/
-  replication/advanced-combat variant, versioned separately from both of
-  the above.
+  replication/advanced-combat variant, versioned separately from all of
+  the above. Bytefray v3.0 software development does not require, and does
+  not create, one — see
+  [V3_PRODUCT_SCOPE.md](V3_PRODUCT_SCOPE.md).
 
 Historical evaluations must remain interpretable according to the rules
 under which they were produced — this is the same honesty principle
