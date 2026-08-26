@@ -74,6 +74,19 @@ BYTEFRAY_RULESET_ID = "bytefray-rules-1"
 defined in `battle_engine.rules`. See [RULES.md](RULES.md) for the full
 Ruleset v1 contract and its bump policy.
 
+## Bytefray v3.0 software version
+
+Bytefray v3.0 is a software-version bump, not a Ruleset bump. The closed v3
+research program (see
+[V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md)) found no
+evidence justifying a gameplay-semantic change, so v3.0 software runs
+`bytefray-rules-2` unchanged — exactly the independent-axes relationship
+this document's own axis table already states (project/package version is
+one axis, Ruleset identity is a separate one). See
+[V3_PRODUCT_SCOPE.md](V3_PRODUCT_SCOPE.md) for the v3.0 compatibility
+freeze and the gate that would need to hold before any future release
+reopens Ruleset research.
+
 ## Ruleset v2
 
 `v2.0.0-beta1` introduces a second Ruleset identity, permanent and stable as

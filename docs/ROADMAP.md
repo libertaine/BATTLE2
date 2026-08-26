@@ -921,6 +921,50 @@ version. All five
 [published assets](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
 were independently downloaded and verified hash-identical.
 
+## v3 Ruleset Research — Closed
+
+**Status: closed.** `v3-research-phase0` through `v3-research-closeout` are
+complete on the `v3-research-closeout` branch lineage (`main` unchanged
+throughout — the research branches were never merged). The program tested
+whether the residual Ruleset-v2 strategic limitation Beta2 Phase 4
+identified (dedicated search offense is the only effective counter to
+blind expansion, in a narrow parameter region) could be resolved through
+locality, offense/defense payoff rebalancing, or a new defensive-scoring
+event. Its conclusion:
+
+> **NO RULESET CHANGE CURRENTLY JUSTIFIED — V3 RESEARCH SHOULD CLOSE
+> WITHOUT A NEW RULESET.**
+
+Bounded locality was implemented behind an explicitly experimental,
+non-stable Ruleset identity (`bytefray-rules-3-alpha1`) and rejected: it
+made blind expansion the *dominant* core-capture mechanism instead of
+checking it. Two successive defensive-scoring-event designs were
+qualified against full-corpus evidence and both failed — the second
+(a cross-tick "attack episode" event) came close, qualifying strongly at
+the shipped default, but failed two robustness gates at a high, non-default
+action budget for reasons independently diagnosed as a mixture of one
+agent's implementation artifact and a genuine scheduler property. A
+real, mechanically verified scheduler-topology effect was found and is
+recorded as a research-methodology constraint, not a gameplay change.
+`bytefray-rules-1` and `bytefray-rules-2` are unchanged by every phase of
+this program; `AGENT_API_VERSION` was never bumped.
+
+See [V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) for
+the navigable phase-by-phase index and
+[V3_RESEARCH_CLOSEOUT.md](V3_RESEARCH_CLOSEOUT.md) for the full final
+report.
+
+## v3.0 — Product Development
+
+**Status: Phase 0 in progress.** Bytefray v3.0 is a **product** release
+cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
+unchanged and focuses on presentation, agent creation, strategy analysis,
+evaluation infrastructure, and distribution quality. See
+[V3_PRODUCT_SCOPE.md](V3_PRODUCT_SCOPE.md) for the full product thesis,
+compatibility freeze, phase plan, and non-goals, and
+[V3_PHASE0_PRODUCT_SCOPE.md](V3_PHASE0_PRODUCT_SCOPE.md) for this cycle's
+Phase 0 scope-freeze report.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:
