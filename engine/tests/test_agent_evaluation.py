@@ -820,6 +820,125 @@ def test_cli_default_seed_is_config_default(tmp_path, monkeypatch, capsys):
     assert f"seeds: {Config().seed}" in captured.out
 
 
+def test_cli_dry_run_json_prints_structured_matrix_preview(tmp_path, monkeypatch, capsys):
+    """v3.0 Phase 3: ``--dry-run --json`` must emit valid, parseable JSON --
+    never the human matrix text ``--dry-run`` alone prints -- so a script
+    passing ``--json`` never has to special-case the dry-run combination.
+    """
+
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = main(
+        ["cand", "--opponents", "opp", "--seeds", "1,2", "--dry-run", "--single-orientation", "--json"]
+    )
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["matrix_size"] == 2
+    assert data["candidate_id"] == "cand"
+    assert data["opponent_ids"] == ["opp"]
+
+
+def test_cli_json_full_run_includes_behavior_and_null_analysis_without_baseline(
+    tmp_path, monkeypatch, capsys
+):
+    """v3.0 Phase 3: the completed-run ``--json`` output carries the same
+    top-level ``analysis``/``behavior``/``capture``/``group_analysis`` keys
+    ``evaluations show --json`` produces. No baseline was given, so
+    ``analysis`` (paired evidence) must be ``None`` -- it is meaningless
+    without one -- while ``behavior`` (a single-subject metric) is always
+    populated for a pairwise run, and ``capture``/``group_analysis`` stay
+    ``None`` for a v1, non-group run.
+    """
+
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = main(
+        ["cand", "--opponents", "opp", "--seeds", "1", "--ticks", "10", "--json"]
+    )
+    assert exit_code == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["schema"] == SCHEMA_NAME
+    assert data["analysis"] is None
+    assert data["behavior"] is not None
+    assert data["capture"] is None
+    assert data["group_analysis"] is None
+
+
+def test_cli_json_full_run_with_baseline_includes_analysis(tmp_path, monkeypatch, capsys):
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    scaffold_create_agent("base", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = main(
+        [
+            "cand",
+            "--baseline",
+            "base",
+            "--opponents",
+            "opp",
+            "--seeds",
+            "1",
+            "--ticks",
+            "10",
+            "--json",
+        ]
+    )
+    assert exit_code == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["analysis"] is not None
+    assert data["analysis"]["candidate_overall"] is not None
+
+
+def test_cli_json_group_run_includes_group_analysis_not_behavior(tmp_path, monkeypatch, capsys):
+    """v3.0 Phase 3: a ``--group`` run's ``--json`` output populates
+    ``group_analysis`` (the entrant-symmetric structure) instead of
+    ``behavior``/``capture``, mirroring ``_print_result``'s own group-vs-
+    pairwise branch -- behavior/capture's Tier-2 readers resolve a fixed
+    1v1 orientation slot that a group cell's seat assignment doesn't have.
+    """
+
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp_a", NOP_ACTION)
+    _write_python_agent(tmp_path, "opp_b", NOP_ACTION)
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = main(
+        [
+            "cand",
+            "--ruleset",
+            "bytefray-rules-2",
+            "--group",
+            "--opponents",
+            "opp_a,opp_b",
+            "--seeds",
+            "1",
+            "--ticks",
+            "10",
+            "--json",
+        ]
+    )
+    assert exit_code == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["group"] is True
+    assert data["behavior"] is None
+    assert data["capture"] is None
+    assert data["group_analysis"] is not None
+    assert data["group_analysis"]["roster_agent_ids"] == ["cand", "opp_a", "opp_b"]
+
+
+def test_cli_json_quiet_suppresses_output(tmp_path, monkeypatch, capsys):
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = main(
+        ["cand", "--opponents", "opp", "--seeds", "1", "--ticks", "10", "--json", "--quiet"]
+    )
+    assert exit_code == 0
+    assert capsys.readouterr().out == ""
+
+
 def test_run_dir_extension_places_artifacts_at_given_path(tmp_path):
     scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
     _write_python_agent(tmp_path, "opp", NOP_ACTION)

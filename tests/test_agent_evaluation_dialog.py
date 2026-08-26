@@ -56,7 +56,7 @@ def create_agent(): return Agent()
     )
 
 
-def _run_real_evaluation(tmp_path: Path, *, baseline: bool) -> Path:
+def _run_real_evaluation(tmp_path: Path, *, baseline: bool, ruleset_id: str | None = None) -> Path:
     """Produce a real ``evaluation.json`` via the actual service (no mocking)."""
 
     from battle_engine.agent_evaluation import EvaluationRequest, EvaluationService
@@ -75,6 +75,7 @@ def _run_real_evaluation(tmp_path: Path, *, baseline: bool) -> Path:
         output_dir=tmp_path / "eval-out",
         ticks=15,
         data_root=tmp_path,
+        ruleset_id=ruleset_id,
     )
     result = service.run(request)
     return result.state_path
@@ -489,6 +490,64 @@ def test_results_dialog_cells_only_mode_without_baseline(tmp_path):
         assert dialog.resultsList.count() == len(presentation.cells)
         dialog.resultsList.setCurrentRow(0)
         assert dialog.btnTestAgentLab.isEnabled()
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_results_dialog_visual_panel_shows_win_rate_and_behavior_without_baseline(tmp_path):
+    """v3.0 Phase 3: the results dialog's new visual evidence panel renders
+    a win-rate bar and a behavior-dimension row per dimension even without
+    a baseline (candidate-only values, no delta) -- confirming
+    ``_build_visual_evidence_panel`` doesn't require a baseline to add
+    anything, unlike the old text-only ``_evidence_summary_line``.
+    """
+
+    _make_app()
+    from battle_engine.evaluation_behavior import DIMENSION_NAMES
+
+    from app.services.designer_workflows import read_evaluation_presentation
+    from app.views.evaluation import EvaluationResultsDialog
+    from app.widgets.evaluation_visuals import DimensionDeltaRow, ProportionBar
+
+    state_path = _run_real_evaluation(tmp_path, baseline=False)
+    presentation = read_evaluation_presentation(state_path)
+
+    dialog = EvaluationResultsDialog(presentation)
+    try:
+        bars = dialog.findChildren(ProportionBar)
+        assert len(bars) >= 1
+        rows = dialog.findChildren(DimensionDeltaRow)
+        assert len(rows) == len(DIMENSION_NAMES)
+        assert all(row.delta.right is None for row in rows)
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_results_dialog_visual_panel_shows_capture_for_v2_ruleset(tmp_path):
+    """v3.0 Phase 3: capture/core evidence (previously computed but never
+    shown in any GUI surface) now renders as visual bars for a v2-ruleset
+    run, even when zero actual captures occurred (0% is still real
+    evidence, not absence of it).
+    """
+
+    from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+
+    _make_app()
+    from app.services.designer_workflows import read_evaluation_presentation
+    from app.views.evaluation import EvaluationResultsDialog
+    from app.widgets.evaluation_visuals import ProportionBar
+
+    state_path = _run_real_evaluation(tmp_path, baseline=True, ruleset_id=BYTEFRAY_RULESET_V2_ID)
+    presentation = read_evaluation_presentation(state_path)
+    assert presentation.capture is not None
+
+    dialog = EvaluationResultsDialog(presentation)
+    try:
+        captions = [bar.data.caption for bar in dialog.findChildren(ProportionBar)]
+        assert any("captured" in caption for caption in captions)
+        assert any("caused" in caption for caption in captions)
     finally:
         dialog.deleteLater()
 

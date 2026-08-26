@@ -413,29 +413,40 @@ def _classify_unmatched(
 ]:
     """M3: classify cells left unmatched by strict condition-key alignment.
 
-    Grouped only by ``(opponent_id, seed)`` -- never by outcome (Sec 14's
-    "never pair duplicates based on outcomes"). A group with exactly one
+    Grouped by ``(opponent_id, seed, orientation)`` -- never by outcome
+    (Sec 14's "never pair duplicates based on outcomes"). Orientation is
+    part of the key (v3.0 Phase 3 fix, disclosed non-blocking at v1.6 Phase
+    6): without it, a candidate cell from each orientation ("candidate_first"
+    and "candidate_second") sharing the same (opponent, seed) would fall
+    into one two-vs-two group whenever both sides ran both orientations and
+    differed in some other condition (e.g. tick count), reporting a
+    spurious ``ambiguous_duplicate_group`` for a pair that strict alignment
+    above already correctly kept apart by orientation and that this
+    fallback can resolve just as unambiguously. A group with exactly one
     unmatched cell on each side is an unambiguous ``changed_condition``
-    pair: the same nominal (opponent, seed) slot, but some other condition
-    dimension (rules id, effective conditions, or the opponent's own
-    identity) differs, which is exactly why strict alignment above didn't
-    match them. A group with more than one unmatched cell on either side is
-    genuinely ambiguous -- pairing them would have to guess which duplicate
-    corresponds to which, so it is reported as an ``ambiguous_duplicate_group``
-    instead of silently zipped under a coordinate that isn't actually
-    unique here (this includes legacy v1 duplicates whose
-    ``condition_occurrence_index`` came back ``UNKNOWN`` and so never
-    matched anything above at all). A group present on only one side is
-    left as ordinary unmatched -- there is nothing "changed" to relate it
-    to.
+    pair: the same nominal (opponent, seed, orientation) slot, but some
+    other condition dimension (rules id, effective conditions, or the
+    opponent's own identity) differs, which is exactly why strict alignment
+    above didn't match them. A group with more than one unmatched cell on
+    either side is genuinely ambiguous -- pairing them would have to guess
+    which duplicate corresponds to which, so it is reported as an
+    ``ambiguous_duplicate_group`` instead of silently zipped under a
+    coordinate that isn't actually unique here (this includes legacy v1
+    duplicates whose ``condition_occurrence_index`` came back ``UNKNOWN``
+    and so never matched anything above at all). A group present on only
+    one side is left as ordinary unmatched -- there is nothing "changed" to
+    relate it to.
     """
 
-    left_by_key: dict[tuple[str, int], list[AdaptedCell]] = {}
+    def _fallback_key(cell: AdaptedCell) -> tuple[str, int, str]:
+        return (cell.opponent_id, cell.seed, cell.orientation.value or "")
+
+    left_by_key: dict[tuple[str, int, str], list[AdaptedCell]] = {}
     for cell in unmatched_left:
-        left_by_key.setdefault((cell.opponent_id, cell.seed), []).append(cell)
-    right_by_key: dict[tuple[str, int], list[AdaptedCell]] = {}
+        left_by_key.setdefault(_fallback_key(cell), []).append(cell)
+    right_by_key: dict[tuple[str, int, str], list[AdaptedCell]] = {}
     for cell in unmatched_right:
-        right_by_key.setdefault((cell.opponent_id, cell.seed), []).append(cell)
+        right_by_key.setdefault(_fallback_key(cell), []).append(cell)
 
     changed_condition: list[tuple[AdaptedCell, AdaptedCell]] = []
     ambiguous_groups: list[AmbiguousGroup] = []

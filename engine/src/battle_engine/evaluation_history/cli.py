@@ -364,7 +364,10 @@ def _paired_evidence_line(entry) -> str:
     if entry.state == EvidenceState.NO_MATCHED_CONDITIONS:
         return "no matched conditions"
     if entry.state == EvidenceState.NO_DISCORDANT_PAIRS:
-        return f"{entry.paired_count} matched, no discordant pairs -- interval/exact test not meaningful"
+        return (
+            f"{entry.paired_count} matched, no discordant pairs "
+            "(all unchanged/inconclusive) -- interval/exact test not meaningful"
+        )
     interval = entry.better_interval
     assert interval is not None and entry.exact_p_value is not None
     return (

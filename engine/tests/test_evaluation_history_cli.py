@@ -7,9 +7,29 @@ from pathlib import Path
 
 import pytest
 from battle_engine.agent_evaluation import EvaluationRequest, EvaluationService
+from battle_engine.evaluation_analysis import PairedEvidence
+from battle_engine.evaluation_history.cli import _paired_evidence_line
 from battle_engine.evaluation_history.cli import main as evaluations_main
 
 NOP_ACTION = "AgentAction(ActionKind.NOP)"
+
+
+def test_paired_evidence_line_discloses_all_inconclusive_case():
+    """v3.0 Phase 3 fix (disclosed non-blocking at v1.6 Phase 6, Sec 22):
+    ``evaluations show``'s paired-evidence line must carry the same
+    "(all unchanged/inconclusive)" qualifier the live ``agents evaluate``
+    CLI's equivalent line already has for the no-discordant-pairs case --
+    both read the identical ``PairedEvidence.state``, so the English must
+    not silently differ between the two presentation call sites.
+    """
+
+    entry = PairedEvidence(
+        scope_label="overall", paired_count=17, improved=0, regressed=0, unchanged=0, inconclusive=17
+    )
+    assert _paired_evidence_line(entry) == (
+        "17 matched, no discordant pairs (all unchanged/inconclusive) -- "
+        "interval/exact test not meaningful"
+    )
 
 
 def _write_python_agent(root: Path, name: str, action: str = NOP_ACTION) -> None:

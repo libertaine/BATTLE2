@@ -140,6 +140,17 @@ alone is insufficient.
 * **Ruleset-neutral**: yes.
 
 ### Phase 3 — Strategy analysis
+
+**Status: complete** — see
+[V3_PHASE3_STRATEGY_ANALYSIS.md](V3_PHASE3_STRATEGY_ANALYSIS.md). Delivered:
+visual win-rate/behavior/capture/interaction-matrix widgets in both
+`EvaluationResultsDialog` and `EvaluationHistoryDialog` (the latter
+previously the thinnest of the four presentation surfaces despite being the
+"drill deeper" workflow), a `--json` mode on `agents evaluate`, and both
+disclosed v1.6 Phase 6 presentation defects resolved. `EvaluationComparisonDialog`
+was left unchanged — scoped out, not opportunistically touched; a candidate
+for a future pass.
+
 * **Objective**: a genuinely visual (not merely re-labeled text) GUI
   presentation of win-rate confidence intervals, behavior-profile
   dimensions, and the capture/interaction matrix; a correlated "why did X

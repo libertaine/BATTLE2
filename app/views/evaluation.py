@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -60,6 +61,17 @@ from app.services.designer_workflows import (
     EvaluationComparisonPresentation,
     EvaluationPresentation,
     build_designer_evaluation_plan,
+)
+from app.widgets.evaluation_visuals import (
+    COLOR_LOSS,
+    COLOR_WIN,
+    DimensionDeltaRow,
+    InteractionMatrixGrid,
+    ProportionBar,
+    ordered_behavior_deltas,
+    plain_rate_bar_data,
+    rate_stat_bar_data,
+    win_rate_bar_data,
 )
 
 
@@ -479,6 +491,91 @@ def _find_cell(
     return None
 
 
+def _build_visual_evidence_panel(presentation: EvaluationPresentation) -> QWidget | None:
+    """v3.0 Phase 3: a genuinely visual rendering of already-computed
+    evidence -- win-rate bars with their own Wilson interval, per-dimension
+    behavior bars (candidate vs. baseline where one exists), core-capture
+    rates, and (for a group evaluation) per-entrant rate bars plus the
+    captor -> victim interaction matrix. Every value here already exists on
+    ``presentation``'s own analysis/behavior/capture/group_analysis fields
+    -- nothing is computed in this function; it only chooses how to draw
+    values ``designer_workflows.read_evaluation_presentation`` already
+    derived via the shared engine analysis modules.
+    """
+
+    container = QWidget()
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(4, 4, 4, 4)
+    added = False
+
+    if presentation.group:
+        analysis = presentation.group_analysis
+        if analysis is not None:
+            focus = analysis.summary_for(presentation.candidate_id)
+            ordered = ([focus] if focus is not None else []) + [
+                summary for summary in analysis.entrant_summaries if summary.agent_id != presentation.candidate_id
+            ]
+            for summary in ordered:
+                role = "Focus" if summary.agent_id == presentation.candidate_id else "Roster"
+                layout.addWidget(QLabel(f"[{role}] {summary.agent_id}"))
+                layout.addWidget(ProportionBar(rate_stat_bar_data("winner", summary.winner, color=COLOR_WIN)))
+                layout.addWidget(ProportionBar(rate_stat_bar_data("survival", summary.survival, color=COLOR_WIN)))
+                layout.addWidget(ProportionBar(rate_stat_bar_data("eliminated", summary.elimination, color=COLOR_LOSS)))
+                added = True
+            matrix = analysis.interaction_matrix
+            if matrix.pairs or matrix.unattributed_captures:
+                layout.addWidget(QLabel("Captures (captor → victim)"))
+                grid = InteractionMatrixGrid(matrix)
+                layout.addWidget(grid)
+                caption_label = QLabel(grid.caption())
+                caption_label.setWordWrap(True)
+                layout.addWidget(caption_label)
+                added = True
+    else:
+        if presentation.analysis is not None:
+            layout.addWidget(QLabel("Win rate"))
+            layout.addWidget(ProportionBar(win_rate_bar_data(presentation.analysis.candidate_overall)))
+            if presentation.analysis.baseline_overall is not None:
+                layout.addWidget(ProportionBar(win_rate_bar_data(presentation.analysis.baseline_overall)))
+            added = True
+        if presentation.capture is not None:
+            overall = presentation.capture.candidate_overall
+            if overall.available_count:
+                layout.addWidget(QLabel("Core capture"))
+                layout.addWidget(
+                    ProportionBar(
+                        plain_rate_bar_data(
+                            "captured",
+                            overall.capture_rate_suffered,
+                            count=overall.captures_suffered,
+                            total=overall.available_count,
+                            color=COLOR_LOSS,
+                        )
+                    )
+                )
+                layout.addWidget(
+                    ProportionBar(
+                        plain_rate_bar_data(
+                            "caused",
+                            overall.capture_rate_caused,
+                            count=overall.captures_caused,
+                            total=overall.available_count,
+                            color=COLOR_WIN,
+                        )
+                    )
+                )
+                added = True
+        if presentation.behavior is not None:
+            label = "Behavior vs. baseline (★ = largest difference)" if presentation.baseline_id else "Behavior"
+            layout.addWidget(QLabel(label))
+            for delta, highlighted in ordered_behavior_deltas(presentation.behavior):
+                layout.addWidget(DimensionDeltaRow(delta, highlighted=highlighted))
+            added = True
+
+    layout.addStretch(1)
+    return container if added else None
+
+
 class EvaluationResultsDialog(QDialog):
     """Read-only results viewer: aggregate summary, per-cell/comparison list, drill-down.
 
@@ -547,6 +644,14 @@ class EvaluationResultsDialog(QDialog):
             behavior_label = QLabel(_behavior_summary_line(presentation.behavior))
             behavior_label.setWordWrap(True)
             layout.addWidget(behavior_label)
+
+        visual_panel = _build_visual_evidence_panel(presentation)
+        if visual_panel is not None:
+            scroll = QScrollArea()
+            scroll.setWidget(visual_panel)
+            scroll.setWidgetResizable(True)
+            scroll.setMaximumHeight(280)
+            layout.addWidget(scroll)
 
         layout.addWidget(QLabel("Cells" if not presentation.comparison else "Comparison"))
         self.resultsList = QListWidget()

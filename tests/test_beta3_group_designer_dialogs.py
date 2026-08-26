@@ -141,6 +141,33 @@ def test_group_results_use_roster_layout_seat_language_and_safe_actions(tmp_path
 
 
 @pytest.mark.gui
+def test_group_results_dialog_shows_visual_rate_bars_per_entrant(tmp_path: Path) -> None:
+    """v3.0 Phase 3: the results dialog's visual evidence panel renders a
+    winner/survival/eliminated rate bar per roster entrant (focus first),
+    matching CLI's ``_print_entrant_summary`` depth -- the GUI previously
+    stopped at winner/survival only and never showed elimination at all.
+    """
+
+    _app()
+    for agent_id in ("focus", "a", "b"):
+        _write_agent(tmp_path, agent_id)
+    result = _group_result(tmp_path, tmp_path / "result-view")
+
+    from app.services.designer_workflows import read_evaluation_presentation
+    from app.views.evaluation import EvaluationResultsDialog
+    from app.widgets.evaluation_visuals import ProportionBar
+
+    dialog = EvaluationResultsDialog(read_evaluation_presentation(result.state_path))
+    try:
+        captions = [bar.data.caption for bar in dialog.findChildren(ProportionBar)]
+        for label in ("winner", "survival", "eliminated"):
+            matches = [caption for caption in captions if caption.startswith(f"{label}:")]
+            assert len(matches) == 3, f"expected one '{label}' bar per roster entrant, got {matches}"
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
 def test_group_history_classifies_from_persisted_mode_and_disables_agent_lab(tmp_path: Path) -> None:
     _app()
     for agent_id in ("focus", "a", "b"):

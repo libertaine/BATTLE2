@@ -370,19 +370,33 @@ def test_compare_evaluations_incompatible_conditions_are_not_directly_comparable
 
 def test_compare_evaluations_ambiguous_groups_are_disclosed_not_silently_zero(tmp_path: Path):
     """Found during interactive qualification (real Designer session,
-    native Qt backend): comparing two both-orientation evaluations that
-    differ only in ``ticks`` produces cells that fall entirely into the
-    ``ambiguous_duplicate_groups`` bucket (two unmatched cells per
-    (opponent, seed) -- one per orientation -- on each side), not
-    ``changed_condition``. Before this fix, ``format_comparison_text``'s
-    denominators line never mentioned that count at all, so the summary
-    rendered as an uninformative wall of zeros with no visible signal that
-    "Show ... Details" had anything to show."""
+    native Qt backend): comparing two both-orientation evaluations, each
+    with a duplicated seed, under changed ticks produces cells that fall
+    entirely into the ``ambiguous_duplicate_groups`` bucket (two unmatched
+    cells per (opponent, seed, orientation) -- one per repeated seed
+    occurrence -- on each side), not ``changed_condition``. Before this
+    fix, ``format_comparison_text``'s denominators line never mentioned
+    that count at all, so the summary rendered as an uninformative wall of
+    zeros with no visible signal that "Show ... Details" had anything to
+    show.
+
+    v3.0 Phase 3 (docs/V3_PRODUCT_SCOPE.md, disclosed at v1.6 Phase 6 Sec
+    22): a single duplicated seed, without a changed condition, used to be
+    enough to reach this state, because the pre-fix fallback grouping key
+    was (opponent_id, seed) only -- a candidate_first cell and an
+    opponent_first cell for the same (opponent, seed) collided into one
+    spurious 2-vs-2 group even under a single seed. With orientation now
+    part of that key, a single duplicated seed under a changed condition
+    resolves cleanly into two independent 1-vs-1 changed_condition pairs
+    (one per orientation) instead -- so this test now duplicates the seed
+    itself (two physical occurrences per orientation) to construct a
+    genuine ambiguity the fix does not, and should not, resolve.
+    """
 
     _write_python_agent(tmp_path, "candidate")
     _write_python_agent(tmp_path, "opponent")
-    left_path = _run_evaluation(tmp_path, "eval-short", ticks=10, both_orientations=True)
-    right_path = _run_evaluation(tmp_path, "eval-long", ticks=25, both_orientations=True)
+    left_path = _run_evaluation(tmp_path, "eval-short", ticks=10, seeds=(1, 1), both_orientations=True)
+    right_path = _run_evaluation(tmp_path, "eval-long", ticks=25, seeds=(1, 1), both_orientations=True)
 
     result = compare_evaluations(left_path, right_path)
     assert result.comparison.denominators.directly_comparable == 0

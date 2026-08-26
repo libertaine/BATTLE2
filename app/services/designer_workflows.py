@@ -19,6 +19,7 @@ from battle_engine.agent_evaluation import (
     EvaluationRequest,
     EvaluationService,
     build_matrix,
+    is_ruleset_v2_methodology,
     parse_opponents,
     parse_seed_list,
     parse_seed_range,
@@ -30,6 +31,8 @@ from battle_engine.evaluation_analysis import EvaluationAnalysis
 from battle_engine.evaluation_analysis import analyze as analyze_evaluation
 from battle_engine.evaluation_behavior import BehaviorAnalysis, cell_ref_from_evaluation_cell
 from battle_engine.evaluation_behavior import analyze_behavior as analyze_behavior_evaluation
+from battle_engine.evaluation_capture import CaptureAnalysis
+from battle_engine.evaluation_capture import analyze_capture as analyze_capture_evaluation
 from battle_engine.evaluation_group_analysis import (
     GroupAnalysis,
     analyze_group,
@@ -509,6 +512,14 @@ class EvaluationPresentation:
     # lives in Qt/UI code. `None` only when the artifact has zero scored
     # cells.
     behavior: BehaviorAnalysis | None = None
+    # v3.0 Phase 3: derived by the same shared
+    # `evaluation_capture.analyze_capture` entry point the CLI/evaluation-
+    # history read paths use -- zero capture measurement lives in Qt/UI
+    # code. `None` for a v1 artifact (capture/core evidence is a
+    # Ruleset-v2-only concept) or a group artifact (its Tier-2 reader
+    # resolves a fixed 1v1 orientation slot a group cell doesn't have,
+    # mirroring `behavior` above's identical group exclusion).
+    capture: CaptureAnalysis | None = None
     # Beta3 Phase 4: authoritative persisted methodology classification.
     # Never inferred from labels/orientation sentinels in the Qt layer.
     group: bool = False
@@ -607,6 +618,7 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
     real_cells = evaluation_cells_from_raw(raw_cells, base_dir) if raw_cells else ()
     is_group = data.get("group") is True
     roster_agent_ids = tuple(str(value) for value in (data.get("roster_agent_ids") or ()))
+    rules_compatibility_id = data.get("rules_compatibility_id")
     if is_group:
         group_refs = tuple(
             group_cell_ref_from_evaluation_cell(cell)
@@ -616,16 +628,19 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
         group_analysis = analyze_group(roster_agent_ids, group_refs)
         analysis = None
         behavior = None
+        capture = None
     else:
         group_analysis = None
         analysis = analyze_evaluation(candidate_id, baseline_id, real_cells) if real_cells else None
+        scored_refs = [cell_ref_from_evaluation_cell(cell) for cell in real_cells if cell.is_scored]
         behavior = (
-            analyze_behavior_evaluation(
-                candidate_id,
-                baseline_id,
-                [cell_ref_from_evaluation_cell(cell) for cell in real_cells if cell.is_scored],
-            )
+            analyze_behavior_evaluation(candidate_id, baseline_id, scored_refs) if real_cells else None
+        )
+        capture = (
+            analyze_capture_evaluation(candidate_id, baseline_id, scored_refs)
             if real_cells
+            and isinstance(rules_compatibility_id, str)
+            and is_ruleset_v2_methodology(rules_compatibility_id)
             else None
         )
 
@@ -642,12 +657,11 @@ def read_evaluation_presentation(state_path: Path) -> EvaluationPresentation:
         arena_alignment_mode=str(data.get("arena_alignment_mode", EVALUATION_ARENA_ALIGNMENT_MODE)),
         analysis=analysis,
         behavior=behavior,
+        capture=capture,
         group=is_group,
         roster_agent_ids=roster_agent_ids,
         rules_compatibility_id=(
-            str(data.get("rules_compatibility_id"))
-            if data.get("rules_compatibility_id") is not None
-            else None
+            str(rules_compatibility_id) if rules_compatibility_id is not None else None
         ),
         group_analysis=group_analysis,
     )

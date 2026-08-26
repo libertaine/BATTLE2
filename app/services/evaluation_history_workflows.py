@@ -24,7 +24,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from battle_engine.agent_evaluation import ORIENTATION_MODE_CANDIDATE_FIRST_ONLY, methodology_lines
+from battle_engine.agent_evaluation import (
+    ORIENTATION_MODE_CANDIDATE_FIRST_ONLY,
+    is_ruleset_v2_methodology,
+    methodology_lines,
+)
 from battle_engine.agent_revisions import (
     agent_revision_fingerprint,
     agent_revision_id,
@@ -32,6 +36,8 @@ from battle_engine.agent_revisions import (
     read_manifest,
     verify_revision,
 )
+from battle_engine.evaluation_behavior import BehaviorAnalysis, analyze_behavior
+from battle_engine.evaluation_capture import CaptureAnalysis, analyze_capture
 from battle_engine.evaluation_group_analysis import GroupAnalysis, analyze_group
 from battle_engine.evaluation_history import (
     AdaptedCell,
@@ -47,6 +53,7 @@ from battle_engine.evaluation_history import (
     discover,
     verify_summary,
 )
+from battle_engine.evaluation_history.behavior_adapter import cell_refs_for_behavior
 from battle_engine.evaluation_history.group_adapter import group_cell_refs
 
 from app.services.designer_workflows import DesignerValidationError
@@ -63,6 +70,43 @@ def group_analysis_for_summary(summary: EvaluationSummary) -> GroupAnalysis | No
         return None
     roster = tuple(summary.roster_agent_ids.value or ())
     return analyze_group(roster, group_cell_refs(summary))
+
+
+def behavior_analysis_for_summary(summary: EvaluationSummary) -> BehaviorAnalysis | None:
+    """v3.0 Phase 3: the same ``evaluation_behavior.analyze_behavior`` entry
+    point ``bytefray agents evaluations show``/``show --json`` already call
+    -- previously computed only for the CLI, never for the Designer's
+    history-browsing surface. ``None`` for a group artifact, mirroring
+    ``agent_evaluation._print_result``'s identical exclusion (a group
+    cell's seat assignment has no fixed 1v1 orientation slot for behavior's
+    Tier-2 reader to resolve).
+    """
+
+    if summary_is_group(summary):
+        return None
+    refs = cell_refs_for_behavior(summary)
+    if not refs:
+        return None
+    return analyze_behavior(summary.candidate_id, summary.baseline_id, refs)
+
+
+def capture_analysis_for_summary(summary: EvaluationSummary) -> CaptureAnalysis | None:
+    """v3.0 Phase 3: the same ``evaluation_capture.analyze_capture`` entry
+    point ``evaluations show``/``show --json`` already call -- previously
+    computed only for the CLI. ``None`` for a v1 artifact (capture/core
+    evidence is a Ruleset-v2-only concept) or a group artifact (same
+    exclusion as ``behavior_analysis_for_summary`` above).
+    """
+
+    if summary_is_group(summary):
+        return None
+    rules_id = summary.rules_compatibility_id.value
+    if not isinstance(rules_id, str) or not is_ruleset_v2_methodology(rules_id):
+        return None
+    refs = cell_refs_for_behavior(summary)
+    if not refs:
+        return None
+    return analyze_capture(summary.candidate_id, summary.baseline_id, refs)
 
 
 def format_group_cell_condition(cell: AdaptedCell) -> str:

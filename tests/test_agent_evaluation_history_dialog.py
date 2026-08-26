@@ -695,9 +695,24 @@ def test_evaluation_comparison_dialog_changed_condition_requires_explicit_side(t
 @pytest.mark.gui
 def test_evaluation_comparison_dialog_ambiguous_group_never_enables_actions(tmp_path):
     """Sec 11 of the v1.3 task, verbatim: "ambiguous duplicate group -> do
-    not guess." A real both-orientation comparison under changed ticks
-    produces an ambiguous group; selecting it must clear a previously active
-    cell and disable both drill-down actions."""
+    not guess." A real both-orientation comparison, with a duplicated seed
+    on each side under changed ticks, produces an ambiguous group (two
+    unmatched cells per side sharing the same (opponent, seed, orientation)
+    fallback key -- one per repeated seed occurrence); selecting it must
+    clear a previously active cell and disable both drill-down actions.
+
+    v3.0 Phase 3 (docs/V3_PRODUCT_SCOPE.md, disclosed at v1.6 Phase 6 Sec
+    22): a single duplicated seed, without a changed condition, used to be
+    enough to reach this state, because the pre-fix fallback grouping key
+    was (opponent_id, seed) only -- a candidate_first cell and an
+    opponent_first cell for the same (opponent, seed) collided into one
+    spurious 2-vs-2 group even under a single seed. With orientation now
+    part of that key, a single duplicated seed under a changed condition
+    resolves cleanly into two independent 1-vs-1 changed_condition pairs
+    (one per orientation) instead -- so this test now duplicates the seed
+    itself (two physical occurrences per orientation) to construct a
+    genuine ambiguity the fix does not, and should not, resolve.
+    """
 
     _make_app()
     from app.services.evaluation_history_workflows import compare_evaluations
@@ -708,6 +723,7 @@ def test_evaluation_comparison_dialog_ambiguous_group_never_enables_actions(tmp_
         output_name="eval-short",
         baseline=False,
         ticks=10,
+        seeds=(5, 5),
         both_orientations=True,
     )
     right_path = _run_real_evaluation(
@@ -715,6 +731,7 @@ def test_evaluation_comparison_dialog_ambiguous_group_never_enables_actions(tmp_
         output_name="eval-long",
         baseline=False,
         ticks=25,
+        seeds=(5, 5),
         both_orientations=True,
     )
     result = compare_evaluations(left_path, right_path, verify=False, data_root=tmp_path)

@@ -666,6 +666,39 @@ def test_heterogeneous_v1_duplicate_outcomes_are_ambiguous_not_paired_by_outcome
     assert result.reproducibility_anomalies == ()
 
 
+def test_both_orientation_cells_differing_in_condition_are_two_changed_condition_pairs():
+    """v3.0 Phase 3 fix (disclosed non-blocking at v1.6 Phase 6, Sec 22):
+    two both-orientation evaluations for the same (opponent, seed) that
+    also differ in rules id fall through strict alignment on *both*
+    orientations. Before the fix, the (opponent, seed)-only fallback key
+    pooled both orientations' cells into one 2-vs-2 group and reported a
+    spurious ``ambiguous_duplicate_group``, even though each orientation is
+    independently an unambiguous 1:1 relation. With orientation in the
+    fallback key, each orientation resolves to its own ``changed_condition``
+    pair and no group is ambiguous.
+    """
+
+    left = _summary(
+        cells=(
+            _cell(outcome="win", orientation="candidate_first"),
+            _cell(outcome="loss", orientation="candidate_second"),
+        ),
+        rules_id="evaluation-rules-1",
+    )
+    right = _summary(
+        cells=(
+            _cell(outcome="win", orientation="candidate_first"),
+            _cell(outcome="tie", orientation="candidate_second"),
+        ),
+        rules_id="evaluation-rules-2",
+    )
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 0
+    assert result.denominators.ambiguous_duplicate_groups == 0
+    assert result.denominators.changed_condition == 2
+    assert len(result.changed_condition) == 2
+
+
 def test_related_condition_family_differing_only_in_rules_id_is_changed_condition():
     """Same (opponent, seed) nominal slot, but the whole artifact's rules
     compatibility id differs -- a related-but-incompatible condition

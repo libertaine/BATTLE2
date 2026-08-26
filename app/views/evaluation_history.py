@@ -65,6 +65,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -72,6 +73,8 @@ from PySide6.QtWidgets import (
 
 from app.services.designer_workflows import DesignerValidationError
 from app.services.evaluation_history_workflows import (
+    behavior_analysis_for_summary,
+    capture_analysis_for_summary,
     compare_evaluations,
     discover_evaluation_listing,
     distinct_opponent_ids,
@@ -80,10 +83,22 @@ from app.services.evaluation_history_workflows import (
     format_comparison_text,
     format_evaluation_summary_text,
     format_group_cell_condition,
+    group_analysis_for_summary,
     load_agent_revision,
     load_evaluation_summary,
     sorted_listing_entries,
     summary_is_group,
+)
+from app.widgets.evaluation_visuals import (
+    COLOR_LOSS,
+    COLOR_WIN,
+    DimensionDeltaRow,
+    InteractionMatrixGrid,
+    ProportionBar,
+    ordered_behavior_deltas,
+    plain_rate_bar_data,
+    rate_stat_bar_data,
+    win_rate_bar_data,
 )
 
 _HISTORICAL_AGENT_LAB_TOOLTIP = (
@@ -886,6 +901,96 @@ class EvaluationComparisonDialog(QDialog):
         self.openReplayRequested.emit(summary.location.directory / cell.artifact_dir / "replay.jsonl")
 
 
+def _build_history_visual_panel(summary: EvaluationSummary) -> QWidget | None:
+    """v3.0 Phase 3: the historical-read counterpart to
+    ``app.views.evaluation._build_visual_evidence_panel`` -- this dialog was
+    previously the *thinnest* of the four evaluation-presentation surfaces
+    (no Wilson interval, no behavior, no capture, no seat/layout
+    sensitivity, no interaction matrix), despite being the "drill deeper"
+    workflow. This brings it to the same visual depth the live-run results
+    dialog and ``evaluations show --json`` already have, from the same
+    ``evaluation_analysis``/``evaluation_behavior``/``evaluation_capture``/
+    ``evaluation_group_analysis`` dataclasses -- nothing new is computed
+    here.
+    """
+
+    container = QWidget()
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(4, 4, 4, 4)
+    added = False
+
+    if summary_is_group(summary):
+        analysis = group_analysis_for_summary(summary)
+        if analysis is not None:
+            focus = analysis.summary_for(summary.candidate_id)
+            ordered = ([focus] if focus is not None else []) + [
+                entrant for entrant in analysis.entrant_summaries if entrant.agent_id != summary.candidate_id
+            ]
+            for entrant in ordered:
+                role = "Focus" if entrant.agent_id == summary.candidate_id else "Roster"
+                layout.addWidget(QLabel(f"[{role}] {entrant.agent_id}"))
+                layout.addWidget(ProportionBar(rate_stat_bar_data("winner", entrant.winner, color=COLOR_WIN)))
+                layout.addWidget(ProportionBar(rate_stat_bar_data("survival", entrant.survival, color=COLOR_WIN)))
+                layout.addWidget(
+                    ProportionBar(rate_stat_bar_data("eliminated", entrant.elimination, color=COLOR_LOSS))
+                )
+                added = True
+            matrix = analysis.interaction_matrix
+            if matrix.pairs or matrix.unattributed_captures:
+                layout.addWidget(QLabel("Captures (captor → victim)"))
+                grid = InteractionMatrixGrid(matrix)
+                layout.addWidget(grid)
+                caption_label = QLabel(grid.caption())
+                caption_label.setWordWrap(True)
+                layout.addWidget(caption_label)
+                added = True
+    else:
+        if summary.analysis is not None:
+            layout.addWidget(QLabel("Win rate"))
+            layout.addWidget(ProportionBar(win_rate_bar_data(summary.analysis.candidate_overall)))
+            if summary.analysis.baseline_overall is not None:
+                layout.addWidget(ProportionBar(win_rate_bar_data(summary.analysis.baseline_overall)))
+            added = True
+        capture = capture_analysis_for_summary(summary)
+        if capture is not None:
+            overall = capture.candidate_overall
+            if overall.available_count:
+                layout.addWidget(QLabel("Core capture"))
+                layout.addWidget(
+                    ProportionBar(
+                        plain_rate_bar_data(
+                            "captured",
+                            overall.capture_rate_suffered,
+                            count=overall.captures_suffered,
+                            total=overall.available_count,
+                            color=COLOR_LOSS,
+                        )
+                    )
+                )
+                layout.addWidget(
+                    ProportionBar(
+                        plain_rate_bar_data(
+                            "caused",
+                            overall.capture_rate_caused,
+                            count=overall.captures_caused,
+                            total=overall.available_count,
+                            color=COLOR_WIN,
+                        )
+                    )
+                )
+                added = True
+        behavior = behavior_analysis_for_summary(summary)
+        if behavior is not None:
+            label = "Behavior vs. baseline (★ = largest difference)" if summary.baseline_id else "Behavior"
+            layout.addWidget(QLabel(label))
+            for delta, highlighted in ordered_behavior_deltas(behavior):
+                layout.addWidget(DimensionDeltaRow(delta, highlighted=highlighted))
+            added = True
+
+    layout.addStretch(1)
+    return container if added else None
+
+
 class EvaluationHistoryDialog(QDialog):
     """Main entry point: browse discovered evaluations, inspect one in
     detail (with optional deep verification), drill into a cell's replay or
@@ -944,6 +1049,11 @@ class EvaluationHistoryDialog(QDialog):
         self.detailText = QPlainTextEdit()
         self.detailText.setReadOnly(True)
         detailLayout.addWidget(self.detailText, 2)
+
+        self.visualPanelScroll = QScrollArea()
+        self.visualPanelScroll.setWidgetResizable(True)
+        self.visualPanelScroll.setMaximumHeight(260)
+        detailLayout.addWidget(self.visualPanelScroll)
 
         detailLayout.addWidget(QLabel("Cells"))
         self.cellsList = QListWidget()
@@ -1032,6 +1142,16 @@ class EvaluationHistoryDialog(QDialog):
             return None
         return item.data(Qt.UserRole)
 
+    def _refresh_visual_panel(self, summary: EvaluationSummary | None) -> None:
+        old = self.visualPanelScroll.takeWidget()
+        if old is not None:
+            old.deleteLater()
+        if summary is None:
+            return
+        panel = _build_history_visual_panel(summary)
+        if panel is not None:
+            self.visualPanelScroll.setWidget(panel)
+
     def _on_selection_changed(self) -> None:
         entry = self._selected_entry()
         self.cellsList.clear()
@@ -1042,6 +1162,7 @@ class EvaluationHistoryDialog(QDialog):
         self.verifyStatusLabel.setText("")
         if entry is None:
             self.detailText.setPlainText("")
+            self._refresh_visual_panel(None)
             return
         if entry.summary is None:
             codes = ", ".join(code.value for code in entry.health.codes) or "unknown"
@@ -1050,6 +1171,7 @@ class EvaluationHistoryDialog(QDialog):
                 f"This evaluation could not be read.\npath: {entry.location.evaluation_json_path}\n"
                 f"health: {codes}\n{details}"
             )
+            self._refresh_visual_panel(None)
             return
 
         try:
@@ -1060,6 +1182,7 @@ class EvaluationHistoryDialog(QDialog):
             )
         except DesignerValidationError as exc:
             self.detailText.setPlainText(f"Could not read this evaluation: {exc}")
+            self._refresh_visual_panel(None)
             return
 
         self._current_summary = summary
@@ -1068,6 +1191,7 @@ class EvaluationHistoryDialog(QDialog):
         self.detailText.setPlainText(
             format_evaluation_summary_text(summary, verified=verified, verify_error=verify_error)
         )
+        self._refresh_visual_panel(summary)
         self._update_verify_status_label(verified, verify_error)
         for cell in summary.cells:
             item = QListWidgetItem(_cell_row_label(cell, group=summary_is_group(summary)))

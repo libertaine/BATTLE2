@@ -4047,6 +4047,18 @@ def _parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help="print the matrix and exit without running anything"
     )
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "print the result as JSON instead of the human-readable summary -- the same "
+            "analysis/behavior/capture/group_analysis structure 'bytefray agents "
+            "evaluations show --json' produces, over the artifact this run just wrote, so "
+            "no second command is needed to get structured output for a run just executed. "
+            "Replaces the human summary entirely (never mixed with it); --quiet still "
+            "suppresses it. See docs/V3_PRODUCT_SCOPE.md Phase 3."
+        ),
+    )
     orientation_group = parser.add_mutually_exclusive_group()
     orientation_group.add_argument(
         "--single-orientation",
@@ -4233,6 +4245,81 @@ def _print_matrix(
         orientation_line, _ = methodology_lines(request.orientation_mode)
         print(orientation_line)
     print(alignment_line)
+
+
+def _matrix_to_json(
+    request: EvaluationRequest, matrix: Sequence[EvaluationCell], preset: EvaluationPreset | None
+) -> dict[str, Any]:
+    """v3.0 Phase 3: ``--dry-run --json``'s structured counterpart to
+    ``_print_matrix`` -- kept a minimal preview (no cells enumerated), since
+    the matrix itself is already fully described by ``request``/its size.
+    """
+
+    return {
+        "preset": preset.name if preset is not None else None,
+        "candidate_id": request.candidate_id,
+        "baseline_id": request.baseline_id,
+        "opponent_ids": list(request.opponent_ids),
+        "seeds": list(request.seeds),
+        "ticks": request.ticks,
+        "matrix_size": len(matrix),
+        "group": request.group,
+        "orientation_mode": request.orientation_mode,
+        "arena_alignment_mode": resolved_arena_alignment_mode(request.is_v2_methodology, request.group),
+    }
+
+
+def _result_to_json(result: EvaluationResult, request: EvaluationRequest) -> dict[str, Any]:
+    """v3.0 Phase 3: the live ``agents evaluate`` command's structured-output
+    counterpart to ``evaluations show --json`` -- the same top-level
+    ``analysis``/``behavior``/``capture``/``group_analysis`` keys, computed
+    the identical way ``_print_result`` computes them for its own text
+    presentation, layered onto the artifact this run just wrote (read back
+    from ``result.state_path`` rather than re-derived, so this can never
+    drift from what was actually persisted). No second command is needed to
+    get structured output for a run just executed.
+    """
+
+    data: dict[str, Any] = json.loads(result.state_path.read_text(encoding="utf-8"))
+
+    analysis = None
+    if request.baseline_id is not None:
+        from battle_engine.evaluation_analysis import analyze as _analyze_evaluation
+
+        analysis = _analyze_evaluation(request.candidate_id, request.baseline_id, result.cells)
+    data["analysis"] = analysis.to_json() if analysis is not None else None
+
+    behavior = None
+    capture = None
+    group_analysis = None
+    if request.group:
+        from battle_engine.evaluation_group_analysis import (
+            analyze_group,
+            group_cell_ref_from_evaluation_cell,
+        )
+
+        group_scored_refs = [
+            group_cell_ref_from_evaluation_cell(cell) for cell in result.cells if cell.is_scored
+        ]
+        if group_scored_refs:
+            group_analysis = analyze_group(request.roster_agent_ids, group_scored_refs)
+    else:
+        from battle_engine.evaluation_behavior import (
+            analyze_behavior,
+            cell_ref_from_evaluation_cell,
+        )
+
+        scored_refs = [cell_ref_from_evaluation_cell(cell) for cell in result.cells if cell.is_scored]
+        behavior = analyze_behavior(request.candidate_id, request.baseline_id, scored_refs)
+        if request.is_v2_methodology:
+            from battle_engine.evaluation_capture import analyze_capture
+
+            capture = analyze_capture(request.candidate_id, request.baseline_id, scored_refs)
+
+    data["behavior"] = behavior.to_json() if behavior is not None else None
+    data["capture"] = capture.to_json() if capture is not None else None
+    data["group_analysis"] = group_analysis.to_json() if group_analysis is not None else None
+    return data
 
 
 def _fmt_optional_g(value: float | None) -> str:
@@ -4811,10 +4898,15 @@ def main(argv: list[str] | None = None) -> int:
         kill_weight=kill_weight,
     )
     matrix = build_matrix(request, evaluation_id)
-    if not args.quiet or args.dry_run:
-        _print_matrix(request, matrix, preset)
     if args.dry_run:
+        if args.json:
+            if not args.quiet:
+                print(json.dumps(_matrix_to_json(request, matrix, preset), indent=2, sort_keys=True))
+        else:
+            _print_matrix(request, matrix, preset)
         return 0
+    if not args.quiet and not args.json:
+        _print_matrix(request, matrix, preset)
 
     try:
         result = service.run(request)
@@ -4823,7 +4915,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if not args.quiet:
-        _print_result(result, request)
+        if args.json:
+            print(json.dumps(_result_to_json(result, request), indent=2, sort_keys=True))
+        else:
+            _print_result(result, request)
     return 1 if (result.failed_cells or result.corrupted_cells or result.drift_cells) else 0
 
 
