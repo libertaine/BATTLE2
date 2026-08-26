@@ -434,3 +434,92 @@ question this phase justifies asking — explicitly not answered here.
 | *(this report)* | docs(v3): record the Phase 4 defense payoff characterization findings |
 
 Nothing merged to `main`, nothing tagged, nothing published.
+
+---
+
+# Addendum — 2026-08-25 (post-Phase-4)
+
+**This addendum is appended, not integrated. Nothing above it has been
+edited.** It records evidence obtained after Phase 4 concluded, and marks
+precisely which part of this document it does and does not affect.
+
+## What still stands, unchanged
+
+**§13's verdict is untouched and remains correct.** Phase 4 asked whether
+an *existing* scoring lever could restore defense's viability while
+preserving Phase 3's offense payoff, and answered no: `weights.alive` is
+disqualified by closed-form proof (§3.3), and `weights.territory` was
+given a fair 11-point test and disqualified empirically (§10). Nothing
+below revisits that experiment, its corpus, its gates, or its result.
+
+§3's measured economics — the ~25–26% unconditional action tax, the
+1,600-point denial benefit, defense's small territory deficit — likewise
+stand and are in fact the quantitative basis for the successor work.
+
+## What this addendum adds
+
+§14 posed the successor question and deliberately declined to answer it:
+it identified that a defensive scoring hook "would need a new scoring
+event ... that the current three-term model has no slot for," called that
+"a new scoring formula, out of every phase's scope so far," and left
+whether such a mechanism "can be added" as "the next question this phase
+justifies asking — explicitly not answered here."
+
+**That framing was accurate and is not corrected here.** Post-Phase-4
+replay analysis has now answered the *first half* of that open question —
+whether such an event can be defined selectively and deterministically —
+in the affirmative, which §14 neither asserted nor denied.
+
+One clarification is worth recording for the archive, because it was
+stated in session discussion rather than in this document: it was claimed
+conversationally that this report "assumed a defensive scoring event
+couldn't be made selective without arbitrary heuristics." **This report
+made no such claim.** §14's text poses an open question and says so. The
+overstatement belonged to the discussion, not to the research record, and
+is noted here so a later reader does not go looking for an error in §14
+that is not there.
+
+## The new evidence, in brief
+
+Core-ownership trajectories were reconstructed directly from committed
+Phase 1 replays (`memory_diffs` ownership replay from tick 0, core
+anchors from tick-0 `pc`/`region`), for 324 of the 594 group cells at the
+default condition. Every figure below is reproducible from the repository
+via `tools/v3_phase4_core_trajectory.py` (`trajectory` and `incursions`),
+which changes no scoring, Ruleset, or default. Findings:
+
+* Generic "core damaged, then recovered" is **not** selective — it fires
+  for 190/216 `core_defender` but also 147/162 `core_tracker` and
+  106/162 `claimer`, at ~6–7 recovery cycles per match. It measures
+  absorbed incidental scratch, not defense.
+* "Reached the brink and survived" is **anti**-selective: `core_seeker`
+  16.7% and `core_tracker` 11.1%, versus `core_defender` 6.0% — it would
+  pay the archetype Phase 3 already over-paid.
+* **Single-tick incursion concentration does separate cleanly.** Across
+  324 search-agent appearances, `core_seeker` and `core_tracker` never
+  once lost ≥3 of their own core cells to an opponent within a single
+  tick (maximum observed: 2). Both defense archetypes lost ≥4 in a single
+  tick and survived it in a clear majority of their appearances
+  (`core_defender` 97/162 = 59.9%, `reactive_core_defender` 109/162 =
+  67.3%), against `claimer` 4.3%, `hunter` 1.9%, and both searchers 0.0%.
+
+This yields a candidate event — *lost ≥4 own core cells to opponent
+writes within one tick, still owned ≥1 at that tick's capture check* —
+that is deterministic, replay-auditable, structurally impossible to
+self-generate (`vm._wr8` has no unclaim; an entrant's own write always
+*claims* the cell, so the precondition requires an opponent), and tied to
+a hostile assault rather than to passive survival.
+
+**The 4-cell threshold is a corpus-discovered candidate, not a Ruleset
+decision.** It was derived from the sample above and must not be treated
+as settled: it is unvalidated on the remaining 270 group cells, on the
+pairwise corpus, and at every non-default density condition.
+
+## Successor
+
+This evidence is carried forward, unimplemented, in
+[V3_PHASE5_DEFENSIVE_EVENT_DESIGN_PROPOSAL.md](V3_PHASE5_DEFENSIVE_EVENT_DESIGN_PROPOSAL.md),
+which splits the work into a qualification gate (5A, no scoring change)
+and a predeclared experimental scoring test (5B). Phase 5 is a **design
+proposal only** as of this addendum — nothing in it has been implemented,
+and no Ruleset, scoring formula, or default has been changed by it.
