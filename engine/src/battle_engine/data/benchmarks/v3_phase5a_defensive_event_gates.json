@@ -1,0 +1,127 @@
+{
+  "schema": "bytefray.research_gates",
+  "schema_version": 1,
+  "phase": "v3-phase5a",
+  "title": "Defensive-event qualification gates",
+  "declared_before_interpretation": true,
+  "declared_note": "Committed before the qualification harness was run against any corpus beyond the 324-cell post-Phase-4 sample already reported in the Phase 4 addendum. Nothing in this file may be revised in response to a Phase 5A or Phase 5B result; a failing gate is a finding, not a prompt to retune.",
+  "proposal": "docs/V3_PHASE5_DEFENSIVE_EVENT_DESIGN_PROPOSAL.md",
+  "predecessor_evidence": "docs/V3_PHASE4_DEFENSE_PAYOFF_CHARACTERIZATION.md (dated post-Phase-4 addendum)",
+
+  "scope": {
+    "changes_scoring": false,
+    "changes_ruleset": false,
+    "changes_defaults": false,
+    "note": "Phase 5A is measurement only. No score, weight, Ruleset identity, agent, or default is altered. Rewarding the event is Phase 5B and is gated on this phase passing."
+  },
+
+  "event_definition": {
+    "statement": "An entrant loses at least THRESHOLD of its own core cells to opponent writes within a single tick, and still owns at least 1 core cell at that tick's capture check.",
+    "threshold": 4,
+    "threshold_status": "PROVISIONAL - discovered from the 324-cell post-Phase-4 sample. May be revised by this phase's own characterization, but only before Phase 5B runs, and never in response to a scoring outcome.",
+    "survival_clause": "still owns >= 1 core cell at the tick's capture check",
+    "core_size": 8
+  },
+
+  "mechanical_prediction": {
+    "claim": "Every agent in the frozen v2-baseline population advances by a fixed stride strictly greater than CORE_SIZE (claimer 101, core_defender/reactive_core_defender 131, core_seeker 149, core_tracker 157, hunter dense 173), and receives instr_per_tick actions per tick. Consecutive writes are therefore at least one stride apart, so a purely sweeping opponent can land at most ONE write inside any given 8-cell core window per tick.",
+    "consequence": "Pure sweeping can cost a victim at most (entrant_count - 1) core cells in a single tick: 2 at N=3, 1 at N=2. Any single-tick loss above that ceiling implies at least one opponent wrote a contiguous run into the core -- i.e. a deliberate assault burst.",
+    "falsifiable_by": "Observing any tick in which one single opponent takes >= 2 cells of a victim's core while that opponent is not executing a contiguous assault burst, or any sweeper-only tick exceeding the (entrant_count - 1) ceiling.",
+    "why_it_matters": "If it holds, the threshold is not a curve fitted to this corpus; it is grounded in the population's write geometry, and 3 is the mechanical floor at N=3 with 4 carrying one cell of margin."
+  },
+
+  "qualification_gates": {
+    "Q1_selectivity_search": {
+      "statement": "Across the full default-condition group corpus (11 rosters x 54 cells = 594), search-agent event rate is <= 2% of appearances.",
+      "bound": 0.02,
+      "direction": "at_most",
+      "blocking": true
+    },
+    "Q2_selectivity_defense": {
+      "statement": "Across the same corpus, defense-agent event rate is >= 25% of appearances.",
+      "bound": 0.25,
+      "direction": "at_least",
+      "blocking": true
+    },
+    "Q3_threshold_margin": {
+      "statement": "The maximum single-tick own-core loss suffered by any search agent stays <= 2, i.e. two cells below the threshold of 4.",
+      "bound": 2,
+      "direction": "at_most",
+      "blocking": true,
+      "note": "A searcher reaching 3 cuts the margin to one cell and requires the threshold to be re-derived and re-declared before Phase 5B."
+    },
+    "Q4_burst_attribution": {
+      "statement": "At least 90% of defense events are classified as caused by a contiguous assault burst, defined deterministically as: at least one single opponent took >= 2 of the victim's core cells in that tick. The complement (every opponent took exactly 1) is coincidental sweeping.",
+      "bound": 0.9,
+      "direction": "at_least",
+      "blocking": true,
+      "note": "The mechanical prediction implies this should be 100% at N=3, because 2 opponents each limited to 1 cell cannot reach 4. Measured rather than assumed."
+    },
+    "Q5_frequency_discipline": {
+      "statement": "Median qualifying ticks per event-bearing match <= 3.",
+      "bound": 3,
+      "direction": "at_most",
+      "blocking": true,
+      "cap_trigger": {
+        "statement": "If the 95th percentile of qualifying ticks per event-bearing match exceeds 10, a per-match event cap is REQUIRED before Phase 5B and must be declared before 5B runs.",
+        "bound": 10
+      }
+    },
+    "Q6_determinism": {
+      "statement": "100% of events reproduce identically across two independent reconstruction passes over the committed replays.",
+      "bound": 1.0,
+      "direction": "at_least",
+      "blocking": true
+    }
+  },
+
+  "characterization_required": {
+    "C1_threshold_sensitivity": {
+      "statement": "Report selectivity and event counts at thresholds 2, 3, 4, 5 and 6, and state at which thresholds the mechanical interpretation (loss above the sweeper ceiling implies a burst) still holds.",
+      "disclosure_trigger": "If threshold 4's selectivity is not materially better than 3 and 5, say so; do not present 4 as uniquely justified when neighbours behave identically."
+    },
+    "C2_seat_creation_vs_survival": {
+      "statement": "Decompose seat effects into event CREATION and event SURVIVAL: P(burst incursion >= threshold occurs | victim seat) versus P(victim survives the tick | such an incursion occurred, victim seat). These are different mechanisms -- being found and burst is attacker-driven; same-tick reclaim depends on acting after the attacker within the tick.",
+      "disclosure_trigger": "If the SURVIVAL conditional varies by more than 25 percentage points across seats, the event is substantially a scheduler-order artifact and must be reported as such, with Phase 5B required to show exhaustive seat permutation neutralizes it."
+    },
+    "C3_density_robustness": {
+      "statement": "Re-measure Q1/Q2/Q3 at additional Phase 1 density conditions spanning the arena/budget range.",
+      "conditions": ["a1024_b2", "a4096_b2", "a4096_b32", "a16384_b32", "a65536_b32"],
+      "disclosure_trigger": "If selectivity holds only at a4096_b8, the threshold is a property of one condition rather than of the mechanic, and Phase 5B must not proceed on the default condition alone."
+    },
+    "C4_pairwise_meaning": {
+      "statement": "Measure on the 3 pairwise controls and state the event's 1v1 meaning explicitly. At N=2 the sweeper ceiling is 1, so any >= 2 single-tick loss already implies a burst; and losing the whole core ends the match outright.",
+      "disclosure_trigger": "Do not assume group semantics transfer to 1v1; state the difference."
+    }
+  },
+
+  "decision_rule": {
+    "pass": "All blocking gates Q1-Q6 satisfied, and every C1-C4 characterization measured and reported.",
+    "revise": "A blocking gate fails in a way the characterization shows is a threshold-choice artifact: re-derive the threshold within Phase 5A, re-declare it in this file's successor, and re-run. Permitted at most once, and never after any Phase 5B scoring outcome has been examined.",
+    "fail": "A blocking gate fails structurally -- the event cannot be made selective, or is farmable without a cap that destroys its meaning, or is a scheduler artifact. Phase 5A then reports a null result and Phase 5B does not run.",
+    "null_is_valid": "Stopping at Phase 5A with a null result is a complete, reportable outcome, exactly as the Phase 2 locality and Phase 4 defense-lever nulls were."
+  },
+
+  "population": {
+    "benchmark": "v2-baseline",
+    "members_required_to_verify": 9,
+    "roles": {
+      "search": ["core_seeker", "core_tracker"],
+      "expansion": ["claimer", "hunter"],
+      "defense": ["core_defender", "reactive_core_defender"]
+    },
+    "note": "hunter is expansion per Phase 0 Sec 10.3's correction of the Beta2 archetype table."
+  },
+
+  "corpus": {
+    "primary_condition": "a4096_b8",
+    "group_rosters": 11,
+    "cells_per_roster": 54,
+    "group_cells_total": 594,
+    "pairwise_pairs": 3,
+    "cells_per_pair": 18,
+    "pairwise_cells_total": 54,
+    "source": "runs/research_v3_phase1/main/results/<condition>/",
+    "execution": "none - Phase 5A reconstructs from committed artifacts only"
+  }
+}
