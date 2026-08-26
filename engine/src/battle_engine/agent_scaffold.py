@@ -1,7 +1,8 @@
-"""``bytefray agents create <agent-id>`` — scaffold a minimal Python agent.
+"""``bytefray agents create <agent-id>`` — scaffold a Python agent.
 
 Writes a static, byte-identical ``agent.yaml``/``agent.py`` pair (bundled
-under ``battle_engine/data/agent_template/``) into
+under one of :data:`TEMPLATE_DIRECTORIES`' resource directories, selected
+by the ``template`` argument/``--template`` flag) into
 ``get_data_root()/agents/<agent-id>/``, using the same writable-root
 resolver and exclusive-create discipline as :mod:`battle_engine.starters`,
 but rejecting rather than skipping an existing destination.
@@ -25,13 +26,30 @@ MAX_AGENT_ID_LENGTH = 64
 
 TEMPLATE_FILES = ("agent.yaml", "agent.py")
 
+# Phase 2 (v3.0 product cycle): a second, more heavily commented starting
+# point alongside the original blank template, so a first-time user is not
+# limited to an empty conceptual model. Deliberately its own fresh
+# resource directory rather than an adaptation of a bundled starter agent
+# -- docs/specs/agent_scaffold.md's own §8/§13 record that a starter's
+# source and manifest (literal ``name``/``display`` fields, docstrings
+# that cross-reference sibling starters by name) would misrepresent a
+# newly scaffolded agent's identity if copied verbatim.
+DEFAULT_TEMPLATE = "blank"
+TEMPLATE_DIRECTORIES = {
+    "blank": "agent_template",
+    "annotated": "agent_template_annotated",
+}
+
 __all__ = [
+    "DEFAULT_TEMPLATE",
+    "TEMPLATE_DIRECTORIES",
     "AgentScaffoldError",
     "ScaffoldResult",
     "create_agent",
     "main",
     "template_resource_dir",
     "validate_agent_id",
+    "validate_template",
 ]
 
 
@@ -58,10 +76,20 @@ def validate_agent_id(agent_id: str) -> str:
     return agent_id
 
 
-def template_resource_dir(resource_root: Path) -> Path:
+def validate_template(template: str) -> str:
+    """Return ``template`` unchanged if it names a known scaffold template."""
+    if template not in TEMPLATE_DIRECTORIES:
+        known = ", ".join(sorted(TEMPLATE_DIRECTORIES))
+        raise AgentScaffoldError(f"Unknown template {template!r}: expected one of {known}.")
+    return template
+
+
+def template_resource_dir(resource_root: Path, template: str = DEFAULT_TEMPLATE) -> Path:
+    validate_template(template)
+    dir_name = TEMPLATE_DIRECTORIES[template]
     candidates = (
-        resource_root / "battle_engine" / "data" / "agent_template",
-        resource_root / "engine" / "src" / "battle_engine" / "data" / "agent_template",
+        resource_root / "battle_engine" / "data" / dir_name,
+        resource_root / "engine" / "src" / "battle_engine" / "data" / dir_name,
     )
     for candidate in candidates:
         if candidate.is_dir():
@@ -75,21 +103,27 @@ def create_agent(
     *,
     data_root: Path | None = None,
     resource_root: Path | None = None,
+    template: str = DEFAULT_TEMPLATE,
 ) -> ScaffoldResult:
     """Create a new scaffolded Agent API v1 Python agent.
 
     Non-destructive: raises :class:`AgentScaffoldError` before touching the
-    filesystem for an invalid ``agent_id``, and before writing any template
-    bytes if the destination already exists (directory or file). The two
-    template files are written into a temporary sibling directory first and
-    published with a single atomic rename, so a failure partway through
-    writing never leaves a partially-created agent visible at the real path.
+    filesystem for an invalid ``agent_id`` or unknown ``template``, and
+    before writing any template bytes if the destination already exists
+    (directory or file). The two template files are written into a
+    temporary sibling directory first and published with a single atomic
+    rename, so a failure partway through writing never leaves a
+    partially-created agent visible at the real path.
+
+    ``template`` defaults to ``"blank"`` -- the original, sole template --
+    so every pre-Phase-2 caller that omits it gets byte-identical output to
+    before. See :data:`TEMPLATE_DIRECTORIES` for the full set.
     """
     validate_agent_id(agent_id)
 
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = (resource_root or get_resource_root()).expanduser().resolve()
-    template_dir = template_resource_dir(resources)
+    template_dir = template_resource_dir(resources, template)
 
     agents_dir = root / "agents"
     destination = agents_dir / agent_id
@@ -137,13 +171,23 @@ def _parser() -> argparse.ArgumentParser:
         description="Create a minimal, immediately-discoverable Agent API v1 Python agent.",
     )
     parser.add_argument("agent_id", help="new agent's directory name, also its discovery id")
+    parser.add_argument(
+        "--template",
+        choices=sorted(TEMPLATE_DIRECTORIES),
+        default=DEFAULT_TEMPLATE,
+        help=(
+            "starting-point content: 'blank' (default, a minimal skeleton) or "
+            "'annotated' (a commented example demonstrating READ-before-WRITE, "
+            "arena wraparound, and the once-per-tick action budget)."
+        ),
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        result = create_agent(args.agent_id)
+        result = create_agent(args.agent_id, template=args.template)
     except (AgentScaffoldError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

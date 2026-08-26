@@ -106,6 +106,18 @@ The social-preview asset and panel-init audit items below remain open.
 * **Ruleset-neutral**: yes.
 
 ### Phase 2 — Agent Designer / agent creation workflow
+
+**Status: complete, scope narrowed by explicit direction** — see
+[V3_PHASE2_AGENT_CREATION_WORKFLOW.md](V3_PHASE2_AGENT_CREATION_WORKFLOW.md).
+Delivered: a second scaffold template (not a starter copy — see that
+report §1 for why), a Development-tab Reload affordance wired into
+Validate/Test, selectable status/error text, and a documented null finding
+on the panel-init exception audit. Contextual in-app Agent API guidance
+(the fourth candidate below) was not separately built — the annotated
+template's inline comments serve that purpose for a first agent instead;
+a dedicated help system remains open if evidence later shows the template
+alone is insufficient.
+
 * **Objective**: a starter-based "start from example" scaffold option (CLI
   and GUI both currently offer only a blank template), a watched-file or
   explicit-reload affordance for the Development tab's external-editor

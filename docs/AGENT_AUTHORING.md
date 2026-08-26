@@ -37,6 +37,19 @@ source: <data_root>/agents/my_agent/agent.py
 Run 'bytefray run --a-type my_agent --b-type <opponent>' to try it.
 ```
 
+Add `--template annotated` for a more heavily commented starting point that
+explains reading before writing, address wraparound, and the once-per-tick
+action budget inline, instead of the default minimal (`--template blank`)
+skeleton:
+
+```bash
+bytefray agents create my_agent --template annotated
+```
+
+Agent Designer's **New Agent…** dialog offers the identical choice as a
+"Starting point" dropdown. Either template is a starting point to edit, not
+a strategy worth keeping as-is.
+
 Edit the generated `agent.py`'s `act` method to replace the placeholder
 strategy, then validate before running a real match:
 
@@ -287,15 +300,25 @@ The same create → validate → test → replay loop is also available from the
 PySide6 Agent Designer's **Agent Development** tab (`bytefray-agent-designer`
 or `bytefray design`), without touching a terminal:
 
-1. **New Agent…** prompts for an agent id and calls the identical scaffold
-   used by `bytefray agents create` (an id that would be rejected by the
-   CLI is rejected here too, with the same rule shown inline). The new
+1. **New Agent…** prompts for an agent id and a "Starting point" (Blank or
+   Annotated Example), then calls the identical scaffold used by
+   `bytefray agents create --template ...` (an id that would be rejected by
+   the CLI is rejected here too, with the same rule shown inline). The new
    agent is selected automatically once created.
-2. **Validate** runs `bytefray agents validate <agent-id>` out-of-process
+2. **Validate**/**Test** first reload the read-only source preview from
+   disk, so what is shown always matches what is about to run -- useful
+   after editing the agent externally without reselecting it in the combo
+   box. A standalone **Reload** button next to the preview does the same
+   refresh without running anything. Validate/Test themselves have always
+   read straight from disk regardless of the preview; only the preview
+   itself could go stale before this.
+3. **Validate** runs `bytefray agents validate <agent-id>` out-of-process
    and shows "Last validation: Valid" with the API version and dry-run
    action, or "Invalid" with the failing stage/code/error -- the same
-   outcome the CLI reports, not a re-implementation of it.
-3. **Development Test** runs `bytefray agents test <agent-id>` with the
+   outcome the CLI reports, not a re-implementation of it. This status text
+   is selectable, so a long error (a file path plus a Python exception
+   message) can be copied out rather than only read.
+4. **Development Test** runs `bytefray agents test <agent-id>` with the
    panel's Opponent (default `Reference`), Seed (default `1337`), Ticks
    (default `200`), and **Timeout (s)** (default `5.0`) options, mirroring
    `--opponent`/`--seed`/`--ticks`/`--timeout` exactly (see "Debugging with
@@ -305,21 +328,22 @@ or `bytefray design`), without touching a terminal:
    tested agent or an explicit opponent (no replay exists in that case), or
    "Could not be completed" for a tool/infrastructure failure -- kept
    visually distinct so a bad agent and a broken tool are never confused.
-4. **Open Replay** (inside the Development Test result) launches the
+5. **Open Replay** (inside the Development Test result) launches the
    existing external Pygame replay viewer for a completed test's replay.
    It is independent of the Simple/Advanced tabs' own "Open Last Replay"
    button -- running a development test never changes what that other
    button opens.
-5. **Inspect Trace** (next to Open Replay) opens the read-only Trace
+6. **Inspect Trace** (next to Open Replay) opens the read-only Trace
    Inspector dialog over that test's `trace.jsonl` -- tick/agent selectors
    and Prev/Next step through recorded decisions, with a "Failures only"
    filter. It is enabled whenever the last completed test wrote a trace
    (always, unless a run used `--no-trace`). Unlike Validate/Test, opening
    it runs no agent code and cannot hang: it only reads an already-written
    file, directly on the GUI thread.
-6. **Open Agent Folder** opens the agent's directory in the OS file
-   browser so `agent.py` can be edited in an external editor; return to
-   the Designer and click Validate/Test again to see the effect.
+7. **Open Agent Folder** opens the agent's directory in the OS file
+   browser so `agent.py` can be edited in an external editor; return to the
+   Designer and click Reload (or Validate/Test, which reload automatically)
+   to see the effect.
 
 Only one Designer-owned process (a match, a tournament, a validation, or a
 development test) ever runs at a time: while any of them is active, every
@@ -333,10 +357,10 @@ just an unconditional process kill.
 
 ## Underlying file format (manual reference)
 
-The scaffold command has no template selection — this section documents the
-same minimal shape by hand, useful when you want to understand or hand-edit
-the underlying manifest/source format rather than start from the generated
-files. It intentionally matches what `bytefray agents create` generates.
+This section documents the same minimal (`--template blank`) shape by hand,
+useful when you want to understand or hand-edit the underlying manifest/
+source format rather than start from the generated files. It intentionally
+matches what `bytefray agents create` generates with no `--template` flag.
 
 `agents/example/agent.yaml`:
 

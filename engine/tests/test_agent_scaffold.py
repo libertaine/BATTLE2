@@ -9,10 +9,14 @@ import pytest
 from battle_engine import command
 from battle_engine.agent_api import ActionKind, MatchContext, Observation, load_python_agent
 from battle_engine.agent_scaffold import (
+    DEFAULT_TEMPLATE,
+    TEMPLATE_DIRECTORIES,
     AgentScaffoldError,
     create_agent,
     main,
+    template_resource_dir,
     validate_agent_id,
+    validate_template,
 )
 from battle_engine.agents import discover_agents
 from battle_engine.starters import ensure_starter_agents
@@ -381,3 +385,83 @@ def test_generated_files_use_lf_line_endings(tmp_path):
     for filename in ("agent.yaml", "agent.py"):
         content = (agent_dir / filename).read_bytes()
         assert b"\r\n" not in content
+
+
+# --------------------------------------------------------------------------
+# Phase 2 (v3.0): scaffold template choice
+# --------------------------------------------------------------------------
+
+
+def test_default_template_is_blank():
+    assert DEFAULT_TEMPLATE == "blank"
+    assert set(TEMPLATE_DIRECTORIES) == {"blank", "annotated"}
+
+
+def test_omitting_template_is_byte_identical_to_explicit_blank(tmp_path):
+    create_agent("default_choice", data_root=tmp_path / "a", resource_root=_resource_root())
+    create_agent(
+        "explicit_blank",
+        data_root=tmp_path / "b",
+        resource_root=_resource_root(),
+        template="blank",
+    )
+
+    default_dir = tmp_path / "a" / "agents" / "default_choice"
+    explicit_dir = tmp_path / "b" / "agents" / "explicit_blank"
+    assert (default_dir / "agent.py").read_bytes() == (explicit_dir / "agent.py").read_bytes()
+    assert (default_dir / "agent.yaml").read_bytes() == (explicit_dir / "agent.yaml").read_bytes()
+
+
+def test_annotated_template_differs_from_blank_and_is_valid(tmp_path):
+    create_agent(
+        "annotated_agent", data_root=tmp_path, resource_root=_resource_root(), template="annotated"
+    )
+
+    agent_dir = tmp_path / "agents" / "annotated_agent"
+    blank_source = template_resource_dir(_resource_root(), "blank") / "agent.py"
+    assert (agent_dir / "agent.py").read_bytes() != blank_source.read_bytes()
+
+    spec = discover_agents(tmp_path)["annotated_agent"]
+    loaded = load_python_agent(spec)
+    loaded.instance.reset(_context())
+    action = loaded.instance.act(_observation())
+    assert action.kind == ActionKind.READ
+
+
+def test_annotated_template_manifest_omits_deliberately_excluded_fields(tmp_path):
+    create_agent("annotated_agent", data_root=tmp_path, resource_root=_resource_root(), template="annotated")
+
+    manifest = discover_agents(tmp_path)["annotated_agent"].manifest
+    for field in ("name", "display", "defaults", "description"):
+        assert field not in manifest
+
+
+def test_unknown_template_is_rejected_without_mutation(tmp_path):
+    with pytest.raises(AgentScaffoldError, match="Unknown template"):
+        create_agent("nope", data_root=tmp_path, resource_root=_resource_root(), template="bogus")
+
+    assert not (tmp_path / "agents").exists()
+
+
+def test_validate_template_accepts_known_and_rejects_unknown():
+    assert validate_template("blank") == "blank"
+    assert validate_template("annotated") == "annotated"
+    with pytest.raises(AgentScaffoldError, match="Unknown template"):
+        validate_template("bogus")
+
+
+def test_cli_template_flag_selects_annotated_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    assert main(["from_cli", "--template", "annotated"]) == 0
+
+    agent_py = (tmp_path / "agents" / "from_cli" / "agent.py").read_bytes()
+    annotated_source = (template_resource_dir(_resource_root(), "annotated") / "agent.py").read_bytes()
+    assert agent_py == annotated_source
+
+
+def test_cli_template_flag_rejects_unknown_choice(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    with pytest.raises(SystemExit) as excinfo:
+        main(["from_cli", "--template", "bogus"])
+    assert excinfo.value.code == 2
+    assert not (tmp_path / "agents").exists()

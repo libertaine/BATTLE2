@@ -24,14 +24,16 @@ from pathlib import Path
 
 from battle_engine.agent_scaffold import (
     AGENT_ID_PATTERN,
+    DEFAULT_TEMPLATE,
     MAX_AGENT_ID_LENGTH,
+    TEMPLATE_DIRECTORIES,
     AgentScaffoldError,
     ScaffoldResult,
     create_agent,
 )
 from battle_engine.agent_test import DEFAULT_AGENT_TIMEOUT, DEFAULT_TICKS
 from battle_engine.config import Config
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QComboBox,
@@ -61,6 +63,14 @@ _NEUTRAL_STYLE = ""
 _DEFAULT_TEST_SEED = Config().seed
 _DEFAULT_TEST_TICKS = DEFAULT_TICKS
 _MAX_SPINBOX_INT = 2_147_483_647
+
+# Display labels for battle_engine.agent_scaffold.TEMPLATE_DIRECTORIES'
+# keys, in the order offered -- "Blank" first and pre-selected, so the
+# default GUI choice is byte-identical to omitting --template on the CLI.
+_TEMPLATE_LABELS = {
+    "blank": "Blank",
+    "annotated": "Annotated Example (commented)",
+}
 
 
 def _is_python_agent(row: AgentRow) -> bool:
@@ -113,9 +123,20 @@ class NewAgentDialog(QDialog):
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
+        layout.addWidget(QLabel("Starting point"))
+        self.templateCombo = QComboBox()
+        for key in TEMPLATE_DIRECTORIES:
+            self.templateCombo.addItem(_TEMPLATE_LABELS.get(key, key), key)
+        self.templateCombo.setCurrentIndex(self.templateCombo.findData(DEFAULT_TEMPLATE))
+        layout.addWidget(self.templateCombo)
+
         self.errorLabel = QLabel("")
         self.errorLabel.setStyleSheet(_INVALID_STYLE)
         self.errorLabel.setWordWrap(True)
+        self.errorLabel.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         self.errorLabel.setVisible(False)
         layout.addWidget(self.errorLabel)
 
@@ -123,7 +144,10 @@ class NewAgentDialog(QDialog):
         buttons.accepted.connect(self._on_ok)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        self.resize(420, 200)
+        self.resize(420, 240)
+
+    def selected_template(self) -> str:
+        return self.templateCombo.currentData() or DEFAULT_TEMPLATE
 
     def _on_ok(self) -> None:
         agent_id = self.agentId.text().strip()
@@ -131,7 +155,9 @@ class NewAgentDialog(QDialog):
             self._show_error("Agent ID is required.")
             return
         try:
-            self.result = create_agent(agent_id, data_root=self._data_root)
+            self.result = create_agent(
+                agent_id, data_root=self._data_root, template=self.selected_template()
+            )
         except (AgentScaffoldError, OSError) as exc:
             self._show_error(str(exc))
             return
@@ -200,11 +226,21 @@ class AgentDevelopmentPanel(QWidget):
 
         source = QGroupBox("Source")
         source_layout = QVBoxLayout(source)
+        source_hint_row = QHBoxLayout()
         source_hint = QLabel(
-            "Source is read-only. Use Open Folder to edit the agent externally."
+            "Source is read-only. Use Open Folder to edit the agent externally, "
+            "then Reload to refresh this view."
         )
         source_hint.setWordWrap(True)
-        source_layout.addWidget(source_hint)
+        source_hint_row.addWidget(source_hint, 1)
+        self.btnReloadSource = QPushButton("Reload")
+        self.btnReloadSource.setToolTip(
+            "Re-read agent.py/agent.yaml from disk. Validate and Test always run "
+            "against the current on-disk source regardless of this view -- Reload "
+            "only refreshes what is shown here."
+        )
+        source_hint_row.addWidget(self.btnReloadSource)
+        source_layout.addLayout(source_hint_row)
         self.sourceTabs = QTabWidget()
         fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         self.pythonSource = QPlainTextEdit()
@@ -263,6 +299,10 @@ class AgentDevelopmentPanel(QWidget):
 
         self.testStatusLabel = QLabel("No agent selected.")
         self.testStatusLabel.setWordWrap(True)
+        self.testStatusLabel.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         test_layout.addWidget(self.testStatusLabel)
 
         replay_row = QHBoxLayout()
@@ -290,6 +330,10 @@ class AgentDevelopmentPanel(QWidget):
         status_layout = QVBoxLayout(status)
         self.statusLabel = QLabel("No agent selected.")
         self.statusLabel.setWordWrap(True)
+        self.statusLabel.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         status_layout.addWidget(self.statusLabel)
         root.addWidget(status, 1)
 
@@ -297,7 +341,15 @@ class AgentDevelopmentPanel(QWidget):
         self.btnNewAgent.clicked.connect(self.newAgentRequested.emit)
         self.btnOpenFolder.clicked.connect(self.openFolderRequested.emit)
         self.btnExportAgent.clicked.connect(self.exportAgentRequested.emit)
+        self.btnReloadSource.clicked.connect(self.reloadSource)
+        # Validate/Test already run against whatever is on disk regardless
+        # of this view (see reloadSource's docstring) -- refreshing the
+        # read-only preview first just means what a user sees here never
+        # lags behind what they just asked the Designer to do, without
+        # requiring a combo-box reselect as the only way to force it.
+        self.btnValidate.clicked.connect(self.reloadSource)
         self.btnValidate.clicked.connect(self.validateRequested.emit)
+        self.btnTest.clicked.connect(self.reloadSource)
         self.btnTest.clicked.connect(self.testRequested.emit)
         self.btnOpenTestReplay.clicked.connect(self.openTestReplayRequested.emit)
         self.btnInspectTrace.clicked.connect(self.inspectTraceRequested.emit)
@@ -387,12 +439,31 @@ class AgentDevelopmentPanel(QWidget):
         index = self.agentCombo.currentIndex()
         return self._rows[index] if 0 <= index < len(self._rows) else None
 
+    def reloadSource(self) -> None:
+        """Re-read the selected agent's agent.py/agent.yaml from disk.
+
+        The Designer never caches source for Validate/Test -- both already
+        launch a fresh out-of-process run that reads whatever is on disk at
+        that moment, regardless of what this method has or hasn't been
+        called. This only refreshes the read-only preview panes, which
+        otherwise show whatever was on disk the last time the agent was
+        (re)selected -- stale after an external edit until now. Safe to
+        call with no agent selected (clears both panes); safe to call
+        repeatedly.
+        """
+        row = self.selectedAgentRow()
+        agents_root = self._catalog.agents_dir() if self._catalog is not None else None
+        source = load_agent_source(row, agents_root=agents_root)
+        self.pythonSource.setPlainText(source.python_text)
+        self.manifestSource.setPlainText(source.manifest_text)
+
     def invalidateAgentState(self, agent_id: str, reason: str) -> None:
         """Clear cached evidence when the selected agent's source changes."""
 
         row = self.selectedAgentRow()
         if row is None or _agent_row_id(row) != agent_id:
             return
+        self.reloadSource()
         detail = reason.strip() or "The selected agent's source changed."
         self._last_validation = None
         self._last_test = None
@@ -427,6 +498,7 @@ class AgentDevelopmentPanel(QWidget):
         self.agentCombo.setEnabled(not busy)
         self.btnNewAgent.setEnabled(not busy)
         self.btnRefresh.setEnabled(not busy)
+        self.btnReloadSource.setEnabled(not busy)
         self.opponentCombo.setEnabled(not busy)
         self.seedSpin.setEnabled(not busy)
         self.ticksSpin.setEnabled(not busy)
@@ -607,10 +679,7 @@ class AgentDevelopmentPanel(QWidget):
     def _on_combo_changed(self, _index: int | None = None) -> None:
         self._update_enablement()
         row = self.selectedAgentRow()
-        agents_root = self._catalog.agents_dir() if self._catalog is not None else None
-        source = load_agent_source(row, agents_root=agents_root)
-        self.pythonSource.setPlainText(source.python_text)
-        self.manifestSource.setPlainText(source.manifest_text)
+        self.reloadSource()
         agent_id = _agent_row_id(row) if row is not None else None
         changed = agent_id != self._current_agent_id
         self._current_agent_id = agent_id

@@ -956,7 +956,7 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: Phase 1 complete.** Bytefray v3.0 is a **product** release
+**Status: Phase 2 complete.** Bytefray v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
 evaluation infrastructure, and distribution quality. See
@@ -975,6 +975,24 @@ the Replay Viewer's header band now carries the same branding icon Agent
 Designer's identity header already did, degrading silently if the shared
 asset is ever unavailable. No HUD semantic, Ruleset, Agent API, or scoring
 change.
+
+**Phase 2 (agent creation & iteration workflow) is complete** — see
+[V3_PHASE2_AGENT_CREATION_WORKFLOW.md](V3_PHASE2_AGENT_CREATION_WORKFLOW.md).
+Scope was narrowed by explicit direction to six concrete priorities: a
+second, self-contained "Annotated Example" scaffold template alongside the
+original blank one (`bytefray agents create --template annotated`, and the
+identical choice in Agent Designer's New Agent dialog) — deliberately not
+a copy of a bundled starter's source, since `docs/specs/agent_scaffold.md`
+already recorded why that would misrepresent a new agent's identity; a
+Development-tab Reload affordance, wired into a new button and
+automatically into Validate/Test, closing a read-only-preview staleness
+gap that Validate/Test's own results were never actually subject to;
+selectable (copyable) status/error text; a documented, evidence-based null
+finding that the Designer's three broad panel-initialization exception
+handlers are original defensive design, not a masked historical bug; and
+real, driven before/after screenshots. Strategy-analysis presentation was
+explicitly held out of scope for Phase 3. No Ruleset, Agent API, scoring,
+or provenance change.
 
 ## After v1.0
 

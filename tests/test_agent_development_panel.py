@@ -345,6 +345,200 @@ def test_open_agent_folder_noop_when_nothing_selected(monkeypatch, tmp_path):
 
 
 @pytest.mark.gui
+def test_new_agent_dialog_defaults_to_blank_template(monkeypatch, tmp_path):
+    _make_app()
+    from battle_engine.agent_scaffold import DEFAULT_TEMPLATE
+
+    from app.views.development import NewAgentDialog
+
+    data_root = tmp_path / "data"
+    dialog = NewAgentDialog(data_root)
+    assert dialog.selected_template() == DEFAULT_TEMPLATE == "blank"
+
+    dialog.agentId.setText("default_template_agent")
+    dialog._on_ok()
+
+    assert dialog.result is not None
+    source = dialog.result.source_path.read_text(encoding="utf-8")
+    assert "cursor" not in source  # the annotated template's own giveaway
+
+
+@pytest.mark.gui
+def test_new_agent_dialog_annotated_template_produces_commented_agent(monkeypatch, tmp_path):
+    _make_app()
+    from app.views.development import NewAgentDialog
+
+    data_root = tmp_path / "data"
+    dialog = NewAgentDialog(data_root)
+    index = dialog.templateCombo.findData("annotated")
+    assert index >= 0
+    dialog.templateCombo.setCurrentIndex(index)
+    assert dialog.selected_template() == "annotated"
+
+    dialog.agentId.setText("annotated_template_agent")
+    dialog._on_ok()
+
+    assert dialog.result is not None
+    source = dialog.result.source_path.read_text(encoding="utf-8")
+    assert "last_read" in source  # the annotated template explains this field
+
+
+@pytest.mark.gui
+def test_status_labels_are_selectable_for_copying_error_text(tmp_path):
+    _make_app()
+    from PySide6.QtCore import Qt
+
+    from app.views.development import AgentDevelopmentPanel, NewAgentDialog
+
+    panel = AgentDevelopmentPanel()
+    try:
+        for label in (panel.statusLabel, panel.testStatusLabel):
+            flags = label.textInteractionFlags()
+            assert flags & Qt.TextInteractionFlag.TextSelectableByMouse
+    finally:
+        panel.deleteLater()
+
+    dialog = NewAgentDialog(tmp_path)
+    flags = dialog.errorLabel.textInteractionFlags()
+    assert flags & Qt.TextInteractionFlag.TextSelectableByMouse
+
+
+@pytest.mark.gui
+def test_reload_source_picks_up_an_external_edit_without_reselecting(monkeypatch, tmp_path):
+    _make_app()
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
+
+    from battle_engine.agent_scaffold import create_agent
+
+    from app.agent_designer import AgentDesigner
+
+    designer = AgentDesigner()
+    try:
+        result = create_agent("editable_agent", data_root=data_root)
+        designer.refresh_agents(select="editable_agent")
+        assert "0xA5" in designer.development.pythonSource.toPlainText()
+
+        # Simulate an external editor's save -- the Designer's own source
+        # view must not know this happened until told to reload.
+        result.source_path.write_text(
+            "def create_agent():\n    raise RuntimeError('edited externally')\n",
+            encoding="utf-8",
+        )
+        assert "edited externally" not in designer.development.pythonSource.toPlainText()
+
+        designer.development.reloadSource()
+
+        assert "edited externally" in designer.development.pythonSource.toPlainText()
+        assert "0xA5" not in designer.development.pythonSource.toPlainText()
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_validate_and_test_buttons_reload_source_before_running(monkeypatch, tmp_path):
+    """Panel-level (not full Designer): confirms both buttons refresh the
+    preview via their real click-signal wiring, without needing to spin up
+    an actual validate/test subprocess (nothing is connected to
+    validateRequested/testRequested at this bare-panel level).
+    """
+    _make_app()
+    from battle_engine.agent_scaffold import create_agent
+
+    from app.services.agent_catalog import AgentRow
+    from app.views.development import AgentDevelopmentPanel
+
+    data_root = tmp_path / "data"
+    result = create_agent("clickable_agent", data_root=data_root)
+    row = AgentRow(
+        "clickable_agent",
+        str(result.source_path.parent),
+        None,
+        {"kind": "python"},
+        agent_id="clickable_agent",
+    )
+    panel = AgentDevelopmentPanel()
+    try:
+        panel.setAgents([row])
+        panel.selectAgent("clickable_agent")
+        assert "0xA5" in panel.pythonSource.toPlainText()
+
+        result.source_path.write_text("# edited before Validate\n", encoding="utf-8")
+        panel.btnValidate.click()
+        assert "edited before Validate" in panel.pythonSource.toPlainText()
+
+        result.source_path.write_text("# edited before Test\n", encoding="utf-8")
+        panel.btnTest.click()
+        assert "edited before Test" in panel.pythonSource.toPlainText()
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
+def test_reload_source_button_refreshes_preview(tmp_path):
+    _make_app()
+    from battle_engine.agent_scaffold import create_agent
+
+    from app.services.agent_catalog import AgentRow
+    from app.views.development import AgentDevelopmentPanel
+
+    data_root = tmp_path / "data"
+    result = create_agent("reload_button_agent", data_root=data_root)
+    row = AgentRow(
+        "reload_button_agent",
+        str(result.source_path.parent),
+        None,
+        {"kind": "python"},
+        agent_id="reload_button_agent",
+    )
+    panel = AgentDevelopmentPanel()
+    try:
+        panel.setAgents([row])
+        panel.selectAgent("reload_button_agent")
+
+        result.source_path.write_text("# via reload button\n", encoding="utf-8")
+        assert "via reload button" not in panel.pythonSource.toPlainText()
+
+        panel.btnReloadSource.click()
+
+        assert "via reload button" in panel.pythonSource.toPlainText()
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
+def test_invalidate_agent_state_also_refreshes_the_stale_preview(tmp_path):
+    _make_app()
+    from battle_engine.agent_scaffold import create_agent
+
+    from app.services.agent_catalog import AgentRow
+    from app.views.development import AgentDevelopmentPanel
+
+    data_root = tmp_path / "data"
+    result = create_agent("restored_agent", data_root=data_root)
+    row = AgentRow(
+        "restored_agent",
+        str(result.source_path.parent),
+        None,
+        {"kind": "python"},
+        agent_id="restored_agent",
+    )
+    panel = AgentDevelopmentPanel()
+    try:
+        panel.setAgents([row])
+        panel.selectAgent("restored_agent")
+
+        result.source_path.write_text("# restored from an older revision\n", encoding="utf-8")
+        assert "restored from an older revision" not in panel.pythonSource.toPlainText()
+
+        panel.invalidateAgentState("restored_agent", "Revision files were restored.")
+
+        assert "restored from an older revision" in panel.pythonSource.toPlainText()
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
 def test_existing_simple_and_advanced_selectors_still_populate(monkeypatch, tmp_path):
     """Regression: starters (kind != python) must still appear in Simple/Advanced."""
     _make_app()
