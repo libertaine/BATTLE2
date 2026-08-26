@@ -45,6 +45,7 @@ import bisect
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from battle_engine.paths import get_branding_icon_path
@@ -64,6 +65,7 @@ from battle_client.hud_layout import (
     FOOTER_HEIGHT,
     FOOTER_LINE_HEIGHT,
     HEADER_LINE_HEIGHT,
+    HEADER_LINES,
     MIN_VIEWER_SIZE,
     CardMode,
     ViewerLayout,
@@ -149,6 +151,15 @@ TERMINAL_TEXT_COLOR: tuple[int, int, int] = (255, 220, 120)
 # query, since the exact figure only affects how eagerly text truncates,
 # never correctness (see test_hud_layout.py's truncation tests).
 HUD_CHAR_WIDTH_PX = 7
+
+# Header identity icon (Phase 1 branding parity with Agent Designer's
+# DesignerIdentityHeader): small enough to sit inside the fixed two-line
+# header band (HEADER_LINES * HEADER_LINE_HEIGHT = 36px) with margin.
+# Purely decorative -- degrades silently to icon-free text when the shared
+# branding asset is unavailable, exactly like the Designer's own
+# _apply_optional_branding_icon.
+HEADER_ICON_SIZE = 24
+HEADER_ICON_GAP = 8
 
 # Compatibility import surface for tests/consumers that historically imported
 # the footer help text from this module. Beta3 makes it deliberately compact;
@@ -461,6 +472,13 @@ class PygameRenderer:
         self.grid_surf: Any = None
         self.font: Any = None
         self.hud_font: Any = None
+        # Header identity icon surface, set by _configure_window(). None
+        # before the first configure (e.g. a unit test that never called
+        # run()) and None permanently if the shared branding asset is
+        # unavailable -- every header-drawing method below must treat
+        # None as "draw text only", matching this renderer's pre-Phase-1
+        # behavior exactly.
+        self._header_icon: Any = None
         # Captured before the first set_mode() call. Some SDL backends report
         # the current window rather than the desktop from display.Info()
         # after a mode exists, which would otherwise make later manual/fit
@@ -736,6 +754,25 @@ class PygameRenderer:
         self.grid_surf = pg.Surface((self.grid_cols, self.grid_rows))
         self.font = pg.font.SysFont("consolas", 14)
         self.hud_font = pg.font.SysFont("consolas", 13)
+        self._header_icon = self._load_header_icon(icon_path)
+
+    def _load_header_icon(self, icon_path: Path | None) -> Any:
+        """The header band's small identity icon, or ``None`` if the shared
+        branding asset is missing or fails to load -- never raises, matching
+        the Designer's own silent-degrade branding pattern. Purely
+        decorative, so any failure (a missing/corrupt asset file, or a
+        test double standing in for the real ``pygame`` module) degrades to
+        icon-free text rather than breaking window configuration.
+        """
+        if icon_path is None:
+            return None
+        try:
+            loaded = self.pg.image.load(str(icon_path))
+            if hasattr(loaded, "convert_alpha"):
+                loaded = loaded.convert_alpha()
+            return self.pg.transform.smoothscale(loaded, (HEADER_ICON_SIZE, HEADER_ICON_SIZE))
+        except Exception:
+            return None
 
     def _display_bounds(self) -> tuple[int, int]:
         if self._display_safe_bounds is not None:
@@ -1168,6 +1205,12 @@ class PygameRenderer:
         statuses = get_entrant_statuses(session, state=state, match_events=self._match_events)
 
         hx, hy, hw, _hh = layout.header_rect
+        icon_reserved = 0
+        if self._header_icon is not None:
+            icon_reserved = HEADER_ICON_SIZE + HEADER_ICON_GAP
+            icon_y = hy + (HEADER_LINES * HEADER_LINE_HEIGHT - HEADER_ICON_SIZE) // 2
+            self.screen.blit(self._header_icon, (hx + 6, icon_y))
+        text_x = hx + 6 + icon_reserved
         header_lines = format_match_header_lines(
             ruleset_label=self._ruleset_label,
             runtime_kind=state.runtime_kind or "unknown",
@@ -1177,7 +1220,7 @@ class PygameRenderer:
             termination_reason=session.termination_reason,
             result_available=session.result is not None,
         )
-        header_max_chars = max(6, (hw - 6) // HUD_CHAR_WIDTH_PX)
+        header_max_chars = max(6, (hw - 6 - icon_reserved) // HUD_CHAR_WIDTH_PX)
         for index, text in enumerate(header_lines):
             if not text:
                 continue
@@ -1187,7 +1230,7 @@ class PygameRenderer:
             )
             line_y = hy + index * HEADER_LINE_HEIGHT
             if line_y + HEADER_LINE_HEIGHT <= hy + layout.header_rect[3]:
-                self.screen.blit(rendered, (hx + 6, line_y))
+                self.screen.blit(rendered, (text_x, line_y))
 
         for ordinal, (status, rect) in enumerate(
             zip(statuses, layout.entrant_card_rects), start=1

@@ -81,6 +81,11 @@ These may be revisited later; none is a current v3.0 product commitment.
 This phase. See [V3_PHASE0_PRODUCT_SCOPE.md](V3_PHASE0_PRODUCT_SCOPE.md).
 
 ### Phase 1 — Presentation / Replay Viewer
+
+**Status: baseline capture and branding parity complete** — see
+[V3_PHASE1_PRESENTATION_BASELINE.md](V3_PHASE1_PRESENTATION_BASELINE.md).
+The social-preview asset and panel-init audit items below remain open.
+
 * **Objective**: close the concrete presentation gaps the Phase 0 audit
   found — Replay Viewer branding parity with Agent Designer, a baseline
   screenshot/recording set across HUD modes (compact, 5+-entrant, narrow

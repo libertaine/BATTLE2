@@ -956,7 +956,7 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: Phase 0 in progress.** Bytefray v3.0 is a **product** release
+**Status: Phase 1 complete.** Bytefray v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
 evaluation infrastructure, and distribution quality. See
@@ -964,6 +964,17 @@ evaluation infrastructure, and distribution quality. See
 compatibility freeze, phase plan, and non-goals, and
 [V3_PHASE0_PRODUCT_SCOPE.md](V3_PHASE0_PRODUCT_SCOPE.md) for this cycle's
 Phase 0 scope-freeze report.
+
+**Phase 1 (presentation baseline & Replay Viewer branding parity) is
+complete** — see
+[V3_PHASE1_PRESENTATION_BASELINE.md](V3_PHASE1_PRESENTATION_BASELINE.md).
+A baseline screenshot set across the Replay Viewer's HUD modes (detailed,
+compact/5-entrant, narrow-window, terminal state) and Agent Designer's
+ready/live states was captured against the real running applications, and
+the Replay Viewer's header band now carries the same branding icon Agent
+Designer's identity header already did, degrading silently if the shared
+asset is ever unavailable. No HUD semantic, Ruleset, Agent API, or scoring
+change.
 
 ## After v1.0
 
