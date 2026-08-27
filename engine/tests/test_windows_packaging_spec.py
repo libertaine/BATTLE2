@@ -190,6 +190,35 @@ def test_bytefray_spec_bundles_the_agent_template_directory(monkeypatch):
     assert {"agent.yaml", "agent.py"} <= {path.name for path in source_dir.iterdir()}
 
 
+def test_bytefray_spec_bundles_the_annotated_agent_template_directory(monkeypatch):
+    """Regression test for a Phase 5 packaging gap in the same class as above.
+
+    Phase 2 added a second scaffold template, ``battle_engine/data/
+    agent_template_annotated`` (``bytefray agents create --template
+    annotated``, and the matching Agent Designer New Agent choice), but
+    ``tools/bytefray.spec`` was never updated alongside ``agent_template``'s
+    entry, so the Annotated Example template was silently absent from
+    ``bytefray.exe``'s frozen build even though the source checkout and
+    installed wheel both already had it -- the identical class of defect
+    ``test_bytefray_spec_bundles_the_agent_template_directory`` above already
+    guards for the original "blank" template.
+    """
+
+    datas = _exec_spec_datas(BYTEFRAY_SPEC, monkeypatch)
+    template_entries = [
+        entry for entry in datas if entry[1] == "battle_engine/data/agent_template_annotated"
+    ]
+    assert template_entries, (
+        "tools/bytefray.spec's `datas` must bundle "
+        "battle_engine/data/agent_template_annotated (needed by `bytefray "
+        "agents create --template annotated` in the frozen build); found "
+        f"only: {[entry[1] for entry in datas]}"
+    )
+    source_dir = Path(template_entries[0][0])
+    assert source_dir.is_dir()
+    assert {"agent.yaml", "agent.py"} <= {path.name for path in source_dir.iterdir()}
+
+
 def test_bytefray_spec_still_bundles_starter_agents(monkeypatch):
     """Confirms adding the agent_template entry did not disturb starter_agents."""
 
@@ -235,6 +264,34 @@ def test_agent_designer_spec_bundles_the_agent_template_directory(monkeypatch):
         "battle_engine/data/agent_template (needed by the Designer's "
         "in-process 'New Agent' workflow in the frozen build); found only: "
         f"{[entry[1] for entry in datas]}"
+    )
+    source_dir = Path(template_entries[0][0])
+    assert source_dir.is_dir()
+    assert {"agent.yaml", "agent.py"} <= {path.name for path in source_dir.iterdir()}
+
+
+def test_agent_designer_spec_bundles_the_annotated_agent_template_directory(monkeypatch):
+    """Regression test for the Designer half of the Phase 5 annotated-template gap.
+
+    Same defect class as ``test_bytefray_spec_bundles_the_annotated_agent_
+    template_directory`` above: ``tools/agent_designer.spec`` bundled the
+    original ``agent_template`` directory but not the sibling
+    ``agent_template_annotated`` directory the Designer's New Agent dialog's
+    "Annotated Example" choice depends on, so a frozen
+    ``bytefray-agent-designer.exe`` would fail that choice with a
+    ``FileNotFoundError`` from ``template_resource_dir`` even though the
+    "blank" template already worked.
+    """
+
+    datas = _exec_spec_datas(AGENT_DESIGNER_SPEC, monkeypatch)
+    template_entries = [
+        entry for entry in datas if entry[1] == "battle_engine/data/agent_template_annotated"
+    ]
+    assert template_entries, (
+        "tools/agent_designer.spec's `datas` must bundle "
+        "battle_engine/data/agent_template_annotated (needed by the "
+        "Designer's New Agent 'Annotated Example' choice in the frozen "
+        f"build); found only: {[entry[1] for entry in datas]}"
     )
     source_dir = Path(template_entries[0][0])
     assert source_dir.is_dir()

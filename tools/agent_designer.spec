@@ -11,6 +11,9 @@ client_src   = os.path.join(project_root, "client", "src")
 assets_dir   = os.path.join(project_root, "assets")
 starter_agents_dir = os.path.join(engine_src, "battle_engine", "data", "starter_agents")
 agent_template_dir = os.path.join(engine_src, "battle_engine", "data", "agent_template")
+agent_template_annotated_dir = os.path.join(
+    engine_src, "battle_engine", "data", "agent_template_annotated"
+)
 script_path  = os.path.join(project_root, "app", "agent_designer.py")  # ABSOLUTE
 icon_path    = os.path.join(project_root, "assets", "branding", "bytefray-icon.ico")
 
@@ -23,6 +26,8 @@ if os.path.isdir(starter_agents_dir):
     datas.append((starter_agents_dir, "battle_engine/data/starter_agents"))
 if os.path.isdir(agent_template_dir):
     datas.append((agent_template_dir, "battle_engine/data/agent_template"))
+if os.path.isdir(agent_template_annotated_dir):
+    datas.append((agent_template_annotated_dir, "battle_engine/data/agent_template_annotated"))
 
 a = Analysis(
     [script_path],
