@@ -10,13 +10,23 @@ from battle_engine.paths import get_data_root, get_resource_root
 
 # The first four are native VM starters (manifest-only; resolved against
 # the built-in VM programs in battle_engine.builtins by name -- see
-# cli.py's SUPPORTED fallback). The remaining five (added in v0.6.1) are
-# Agent API v1 Python starters, each shipping its own agent.py implementing
-# a distinct strategy against the restricted Python Agent API rather than
-# native VM bytecode -- see each agent.py's module docstring for its
-# strategy and the reasoning behind it. ensure_starter_agents() treats both
-# kinds identically: non-destructive copy-if-missing into the same writable
-# agents/ catalog.
+# cli.py's SUPPORTED fallback). The remaining seven are Agent API v1 Python
+# starters, each shipping its own agent.py implementing a distinct strategy
+# against the restricted Python Agent API rather than native VM bytecode --
+# see each agent.py's module docstring for its strategy and the reasoning
+# behind it. ensure_starter_agents() treats both kinds identically:
+# non-destructive copy-if-missing into the same writable agents/ catalog.
+#
+# Five of the Python starters (claimer, strider, hunter, wanderer,
+# adaptive, added in v0.6.1) are expansion-family strategies and are also
+# pinned members of the frozen v2 benchmark population -- their source is
+# content-addressed in battle_engine/data/benchmarks/v2_baseline.json and
+# must never be edited (see docs/V3_PHASE0_RESEARCH_BASELINE.md Sec 3).
+# raider and sentinel (added in v3.0.0-alpha2) are deliberately NOT
+# benchmark members: they exist to demonstrate the Ruleset-v2 vulnerable-
+# core mechanic itself -- attacking a core and defending one -- which no
+# expansion starter exercises, and they stay freely maintainable precisely
+# because they carry no benchmark identity.
 STARTER_AGENT_NAMES = (
     "runner",
     "writer",
@@ -27,6 +37,8 @@ STARTER_AGENT_NAMES = (
     "hunter",
     "wanderer",
     "adaptive",
+    "raider",
+    "sentinel",
 )
 
 

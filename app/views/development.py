@@ -55,6 +55,8 @@ from PySide6.QtWidgets import (
 from app.services.agent_catalog import AgentRow
 from app.services.agent_source import load_agent_source
 from app.services.agent_workflows import DevelopmentTestPresentation, ValidationPresentation
+from app.services.ruleset_options import RULESET_DESCRIPTION
+from app.widgets.ruleset_combo import populate_ruleset_combo, selected_ruleset_id
 
 _INVALID_STYLE = "color: #b00020;"
 _TOOL_FAILURE_STYLE = "color: #b06000;"
@@ -293,6 +295,26 @@ class AgentDevelopmentPanel(QWidget):
         options_row.addWidget(self.timeoutSpin)
         test_layout.addLayout(options_row)
 
+        # Ruleset is an explicit, visible choice here, never an inherited
+        # CLI default. Before v3.0.0-alpha2 this tab passed no --ruleset at
+        # all, so every development test silently resolved `bytefray agents
+        # test`'s own backward-compatible Ruleset-v1 default while the
+        # Simple/Advanced match tabs beside it defaulted to v2. Agent
+        # Development is Bytefray v3's primary Python-authoring workflow, so
+        # it now defaults to the current gameplay Ruleset and says which one
+        # it used. This tab filters to Python agents only (see
+        # _is_python_agent), and Python entrants are valid under both
+        # identities, so no entrant-kind gating is needed on this selector --
+        # unlike Simple/Advanced, whose combos also carry VM agents.
+        ruleset_row = QHBoxLayout()
+        ruleset_row.addWidget(QLabel("Ruleset"))
+        self.rulesetCombo = QComboBox()
+        populate_ruleset_combo(self.rulesetCombo)
+        self.rulesetCombo.setToolTip(RULESET_DESCRIPTION)
+        self.rulesetCombo.setAccessibleName("Development test ruleset")
+        ruleset_row.addWidget(self.rulesetCombo, 1)
+        test_layout.addLayout(ruleset_row)
+
         self.btnTest = QPushButton("Test")
         self.btnTest.setEnabled(False)
         test_layout.addWidget(self.btnTest)
@@ -411,6 +433,15 @@ class AgentDevelopmentPanel(QWidget):
     def selected_timeout(self) -> float:
         return self.timeoutSpin.value()
 
+    def selected_ruleset_id(self) -> str:
+        """The Ruleset identity to pass explicitly to ``bytefray agents test``.
+
+        Always a concrete identity, never ``None``: this tab must not let the
+        CLI's own backward-compatible default decide which Ruleset a
+        development test ran under.
+        """
+        return selected_ruleset_id(self.rulesetCombo)
+
     def last_test_trace_path(self) -> Path | None:
         """The last completed test's trace path, or ``None`` if unavailable."""
         return self._last_test_trace
@@ -503,6 +534,7 @@ class AgentDevelopmentPanel(QWidget):
         self.seedSpin.setEnabled(not busy)
         self.ticksSpin.setEnabled(not busy)
         self.timeoutSpin.setEnabled(not busy)
+        self.rulesetCombo.setEnabled(not busy)
         self._update_enablement()
 
     def python_agent_names(self) -> list[tuple[str, str]]:
@@ -563,7 +595,11 @@ class AgentDevelopmentPanel(QWidget):
 
     def showTesting(self, agent_id: str, opponent_label: str) -> None:
         self.testStatusLabel.setStyleSheet(_NEUTRAL_STYLE)
-        self.testStatusLabel.setText(f"Testing {agent_id} vs {opponent_label}…")
+        # Name the Ruleset while the test is in flight, so the effective
+        # gameplay semantics are visible without waiting for the result.
+        self.testStatusLabel.setText(
+            f"Testing {agent_id} vs {opponent_label} under {self.selected_ruleset_id()}…"
+        )
         self.btnOpenTestReplay.setEnabled(False)
         self.btnInspectTrace.setEnabled(False)
 
@@ -615,6 +651,10 @@ class AgentDevelopmentPanel(QWidget):
             lines = ["Last development test: Complete", f"Agent: {presentation.agent_id}"]
             if presentation.opponent:
                 lines.append(f"Opponent: {presentation.opponent}")
+            # The Ruleset the tool itself reported, not the one the combo
+            # requested -- so a user can always see which gameplay semantics
+            # produced this result.
+            lines.append(f"Ruleset: {presentation.ruleset_id or 'not reported'}")
             if presentation.seed is not None:
                 lines.append(f"Seed: {presentation.seed}")
             if presentation.ticks_run is not None and presentation.ticks_requested is not None:

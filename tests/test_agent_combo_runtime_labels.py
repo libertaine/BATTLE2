@@ -258,6 +258,7 @@ def test_simple_panel_disables_incompatible_b_and_emits_real_identifiers():
 @pytest.mark.gui
 def test_advanced_panel_matches_simple_panel_behavior(tmp_path):
     _make_app()
+    from app.services.ruleset_options import VM_RULESET_EXPLANATION
     from app.views.advanced import AdvancedPanel
 
     panel = AdvancedPanel(catalog=None, data_root=tmp_path)
@@ -282,7 +283,12 @@ def test_advanced_panel_matches_simple_panel_behavior(tmp_path):
     assert captured[0].ruleset_id == "bytefray-rules-1"
     v2_index = panel.ruleset.findData("bytefray-rules-2")
     assert panel.ruleset.model().item(v2_index).isEnabled() is False
-    assert "required for VM/blob" in panel.rulesetExplanation.text()
+    # v3.0.0-alpha2 replaced "Ruleset v1 is required for VM/blob matches."
+    # with copy that also states the converse (v2 is Python-only), so a
+    # reader learns the whole compatibility rule rather than half of it.
+    # Asserted against the shared constant, not a duplicated literal.
+    assert panel.rulesetExplanation.text() == VM_RULESET_EXPLANATION
+    assert "Ruleset v1 only" in panel.rulesetExplanation.text()
 
 
 # ---------------------------------------------------------------------------

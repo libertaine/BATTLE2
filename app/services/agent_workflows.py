@@ -176,6 +176,13 @@ class DevelopmentTestPresentation:
     summary_path: Path | None = None
     trace_path: Path | None = None
     forfeits: tuple[ForfeitDiagnostic, ...] = ()
+    # The Ruleset the tool reports it actually ran under, copied verbatim
+    # from ``agents test``'s own ``ruleset:`` output line -- authoritative
+    # over whatever the GUI requested. Deliberately optional rather than
+    # part of _COMPLETED_REQUIRED_FIELDS: a missing line renders as "not
+    # reported" instead of downgrading a real completed match to a tool
+    # failure.
+    ruleset_id: str | None = None
     stage: str | None = None
     code: str | None = None
     error: str | None = None
@@ -311,6 +318,7 @@ def _build_completed_test(
         summary_path=summary_path,
         trace_path=trace_path,
         forfeits=forfeits,
+        ruleset_id=fields.get("ruleset"),
     )
 
 

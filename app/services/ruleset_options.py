@@ -23,13 +23,29 @@ DESIGNER_RULESET_OPTIONS = (
         BYTEFRAY_RULESET_V2_ID, "Ruleset v2 — Current / Recommended"
     ),
     DesignerRulesetOption(
-        BYTEFRAY_RULESET_ID, "Ruleset v1 — Legacy / VM compatibility"
+        BYTEFRAY_RULESET_ID, "Ruleset v1 — Compatibility (Python and VM/blob)"
     ),
 )
 
+# Accurate on both axes, which the previous "Legacy / VM compatibility"
+# wording was not: Ruleset v1 is not Python-incompatible (a Python agent
+# runs unmodified under either identity -- see docs/COMPATIBILITY.md's
+# "The same Agent API v1 Python agent source may execute under more than
+# one compatible Ruleset"), it is merely not the current gameplay. What is
+# genuinely exclusive is the other direction: only v1 executes VM/blob
+# entrants. Deliberately says nothing about Redcode/pMARS, which uses no
+# Bytefray Ruleset at all (docs/RULES.md's "Redcode/pMARS -- not Ruleset
+# v1") and must never be implied to be a Ruleset-v1 format.
 RULESET_DESCRIPTION = (
-    "Ruleset v2 is the current Bytefray gameplay ruleset and supports Python agents. "
-    "Ruleset v1 is retained for legacy reproduction and VM/blob matches."
+    "Ruleset v2 is Bytefray's current gameplay ruleset and runs Python agents only. "
+    "Ruleset v1 also runs Python agents and is the only Bytefray ruleset that runs "
+    "VM/blob agents."
+)
+
+# Shown next to a Ruleset selector whenever the current entrant selection
+# includes a VM/blob agent.
+VM_RULESET_EXPLANATION = (
+    "VM/blob agents run under Ruleset v1 only. Ruleset v2 gameplay is Python-agent only."
 )
 
 

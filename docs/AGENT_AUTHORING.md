@@ -125,17 +125,42 @@ action contract the generated files satisfy.
 
 `bytefray agents create`'s scaffold is deliberately minimal -- it proves
 the Agent API v1 contract, not a strategy. For actual decision-logic
-ideas, read the five bundled Python starter agents' source
-(`agents/claimer`, `agents/strider`, `agents/hunter`, `agents/wanderer`,
-`agents/adaptive` under the writable data root once initialized): each
-module docstring explains its strategy, the state it tracks, what's
-reasonable to change, and -- for several of them -- what an earlier
-version tried and why it lost in evaluation. They demonstrate patterns
-worth reusing directly: tracking a pending `READ`'s address so a later
-call can act on `Observation.last_read` correctly (every agent beyond
-Claimer needs this), a signature byte to recognize your own already-claimed
-cells (`Observation` carries no ownership map), and Adaptive's use of the
-engine's `pc`/`JUMP` as an explicit phase state machine. There is no
+ideas, read the seven bundled Python starter agents' source (under the
+writable data root once initialized): each module docstring explains its
+strategy, the state it tracks, what's reasonable to change, and -- for
+several of them -- what an earlier version tried and why it lost in
+evaluation.
+
+Five are about winning ground:
+
+| Agent | What it demonstrates |
+|---|---|
+| `agents/claimer` | The simplest territorial strategy: a blind fixed-stride sweep that never reads. |
+| `agents/strider` | Claimer's sweep plus periodic re-defense of ground already held. |
+| `agents/hunter` | Scatter a sparse presence widely first, then fill in densely. |
+| `agents/wanderer` | A per-seed randomized sweep order, plus an opportunistic local burst. |
+| `agents/adaptive` | The engine's own `pc`/`JUMP` used as an explicit phase state machine. |
+
+Two are about Ruleset v2's Vulnerable Core, which none of the five above
+engage with at all:
+
+| Agent | What it demonstrates |
+|---|---|
+| `agents/raider` | Active core search and deliberate offense: `READ` to find evidence of an enemy core, confirm before committing, then attack it. |
+| `agents/sentinel` | Spending part of your action budget to keep your own core secured, and what that costs you in ground. |
+
+Neither is an optimal strategy, and both usually hold less territory than
+the pure expanders -- seeing that trade-off priced is the point.
+
+Together they demonstrate patterns worth reusing directly: tracking a
+pending `READ`'s address so a later call can act on `Observation.last_read`
+correctly (every agent beyond Claimer needs this, and Raider shows the
+structural version -- record the address you are waiting on and consume the
+result exactly once), a signature byte to recognize your own
+already-claimed cells (`Observation` carries no ownership map), capturing
+`observation.pc` on the first `act()` call to learn your own core's address
+(Sentinel and Raider both do this), and Adaptive's use of the engine's
+`pc`/`JUMP` as an explicit phase state machine. There is no
 separate "start from example" scaffold option -- copy one of these
 directories into a new agent id under `agents/` and edit `agent.py`
 directly; the file is the whole starting point. See the main

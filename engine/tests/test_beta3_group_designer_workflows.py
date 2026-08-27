@@ -7,11 +7,14 @@ from pathlib import Path
 
 import pytest
 from battle_engine.agent_evaluation import EvaluationService, build_matrix
+from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
 
 from app.services.designer_workflows import (
     EVALUATION_MODE_GROUP,
+    EVALUATION_MODE_PAIRWISE,
     DesignerValidationError,
+    build_designer_evaluate_command,
     build_designer_evaluate_command_from_plan,
     build_designer_evaluation_plan,
     read_evaluation_presentation,
@@ -177,3 +180,120 @@ def test_real_group_execution_round_trips_through_designer_presentation(tmp_path
         "spread-shifted",
         "close",
     }
+
+
+# ---------------------------------------------------------------------------
+# v3.0.0-alpha2: explicit pairwise Ruleset selection
+# ---------------------------------------------------------------------------
+
+
+def _pairwise_plan(root: Path, **overrides):
+    values = {
+        "candidate_id": "focus",
+        "baseline_id": None,
+        "opponent_ids": ("rival",),
+        "seeds_text": "7",
+        "seed_range_text": "",
+        "ticks": 3,
+        "output_dir": root / "evaluation",
+        "data_root": root,
+        "mode": EVALUATION_MODE_PAIRWISE,
+    }
+    values.update(overrides)
+    return build_designer_evaluation_plan(**values)
+
+
+def test_pairwise_omitted_ruleset_preserves_historical_identity(tmp_path: Path) -> None:
+    """``None`` must stay byte-identical to the explicit v1 identity.
+
+    ``resolve_evaluation_ruleset_id`` maps both to the same
+    ``rules_compatibility_id``, so a caller that does not pass a Ruleset --
+    including a Designer dialog double predating the alpha2 selector --
+    lands on exactly the evaluation identity it always did. If this ever
+    diverges, every previously written pairwise evaluation stops resuming.
+    """
+
+    _write_nop_agent(tmp_path, "focus")
+    _write_nop_agent(tmp_path, "rival")
+
+    omitted = _pairwise_plan(tmp_path, ruleset_id=None)
+    explicit_v1 = _pairwise_plan(tmp_path, ruleset_id=BYTEFRAY_RULESET_ID)
+
+    assert omitted.evaluation_id == explicit_v1.evaluation_id
+    assert (
+        omitted.request.resolved_rules_compatibility_id
+        == explicit_v1.request.resolved_rules_compatibility_id
+    )
+
+
+def test_pairwise_v2_is_a_distinct_evaluation_identity(tmp_path: Path) -> None:
+    """Selecting v2 is a genuinely different evaluation, not a relabelling."""
+
+    _write_nop_agent(tmp_path, "focus")
+    _write_nop_agent(tmp_path, "rival")
+
+    v1 = _pairwise_plan(tmp_path, ruleset_id=BYTEFRAY_RULESET_ID)
+    v2 = _pairwise_plan(tmp_path, ruleset_id=BYTEFRAY_RULESET_V2_ID)
+
+    assert v1.evaluation_id != v2.evaluation_id
+    assert v2.request.is_v2_methodology
+    assert not v1.request.is_v2_methodology
+
+
+def test_pairwise_command_sends_the_planned_ruleset_explicitly(tmp_path: Path) -> None:
+    """The launched command must match the Ruleset the plan was hashed with.
+
+    The Designer names each run's output directory after ``evaluation_id``,
+    so a command that resolved a different Ruleset than the plan would write
+    into a directory named for an evaluation it is not running.
+    """
+
+    _write_nop_agent(tmp_path, "focus")
+    _write_nop_agent(tmp_path, "rival")
+
+    for ruleset in (BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID):
+        plan = _pairwise_plan(tmp_path, ruleset_id=ruleset)
+        command = build_designer_evaluate_command_from_plan(plan)
+        assert "--ruleset" in command
+        assert command[command.index("--ruleset") + 1] == ruleset
+        assert "--group" not in command
+
+
+def test_group_mode_still_forces_ruleset_v2(tmp_path: Path) -> None:
+    """Group evaluation is Ruleset-v2-only and ignores any passed value."""
+
+    for agent_id in ("focus", "rival", "third"):
+        _write_nop_agent(tmp_path, agent_id)
+
+    plan = _plan(tmp_path, ("rival", "third"), ruleset_id=BYTEFRAY_RULESET_ID)
+    assert plan.request.resolved_rules_compatibility_id == BYTEFRAY_RULESET_V2_ID
+    command = build_designer_evaluate_command_from_plan(plan)
+    assert "--group" in command
+    assert command[command.index("--ruleset") + 1] == BYTEFRAY_RULESET_V2_ID
+
+
+def test_explicit_pairwise_command_builder_omits_ruleset_when_unset(tmp_path: Path) -> None:
+    """The non-plan pairwise builder stays argument-identical when unset."""
+
+    without = build_designer_evaluate_command(
+        candidate_id="focus",
+        baseline_id=None,
+        opponent_ids=("rival",),
+        seeds_text="1",
+        seed_range_text="",
+        ticks=5,
+        output_dir=tmp_path / "out",
+    )
+    assert "--ruleset" not in without
+
+    with_v2 = build_designer_evaluate_command(
+        candidate_id="focus",
+        baseline_id=None,
+        opponent_ids=("rival",),
+        seeds_text="1",
+        seed_range_text="",
+        ticks=5,
+        output_dir=tmp_path / "out",
+        ruleset_id=BYTEFRAY_RULESET_V2_ID,
+    )
+    assert with_v2[with_v2.index("--ruleset") + 1] == BYTEFRAY_RULESET_V2_ID

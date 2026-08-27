@@ -62,6 +62,7 @@ from app.services.designer_workflows import (
     EvaluationPresentation,
     build_designer_evaluation_plan,
 )
+from app.services.ruleset_options import RULESET_DESCRIPTION
 from app.widgets.evaluation_visuals import (
     COLOR_LOSS,
     COLOR_WIN,
@@ -73,6 +74,7 @@ from app.widgets.evaluation_visuals import (
     rate_stat_bar_data,
     win_rate_bar_data,
 )
+from app.widgets.ruleset_combo import populate_ruleset_combo, selected_ruleset_id
 
 
 class EvaluationDialog(QDialog):
@@ -157,10 +159,23 @@ class EvaluationDialog(QDialog):
         self.baselineLabel = QLabel("Baseline")
         form.addRow(self.baselineLabel, self.baselineCombo)
 
+        # Group evaluation is Ruleset-v2-only by construction, so it shows a
+        # fixed label. Pairwise gets a real selector: before v3.0.0-alpha2 it
+        # passed no --ruleset at all and silently inherited `bytefray agents
+        # evaluate`'s backward-compatible v1 methodology without disclosing
+        # it, while group mode beside it announced v2. Both modes now state
+        # their Ruleset, and pairwise defaults to the current gameplay one.
         self.rulesetLabel = QLabel("Ruleset")
         self.rulesetValue = QLabel("bytefray-rules-2 (required for group evaluation)")
         self.rulesetValue.setAccessibleName("Group evaluation ruleset")
         form.addRow(self.rulesetLabel, self.rulesetValue)
+
+        self.pairwiseRulesetLabel = QLabel("Ruleset")
+        self.pairwiseRulesetCombo = QComboBox()
+        populate_ruleset_combo(self.pairwiseRulesetCombo)
+        self.pairwiseRulesetCombo.setToolTip(RULESET_DESCRIPTION)
+        self.pairwiseRulesetCombo.setAccessibleName("Pairwise evaluation ruleset")
+        form.addRow(self.pairwiseRulesetLabel, self.pairwiseRulesetCombo)
 
         layout.addLayout(form)
 
@@ -262,6 +277,8 @@ class EvaluationDialog(QDialog):
         self.baselineCombo.setVisible(not group)
         self.rulesetLabel.setVisible(group)
         self.rulesetValue.setVisible(group)
+        self.pairwiseRulesetLabel.setVisible(not group)
+        self.pairwiseRulesetCombo.setVisible(not group)
         self.opponentsLabel.setText(
             "Roster members (select at least two; focus is included automatically)"
             if group
@@ -344,6 +361,25 @@ class EvaluationDialog(QDialog):
             self.ticksSpin.setValue(preset.ticks)
         if preset.orientation is not None:
             self.bothOrientationsCheck.setChecked(preset.orientation == PRESET_ORIENTATION_BOTH)
+        # A preset that names its own Ruleset is surfaced into the selector
+        # rather than silently overridden: the launch path now always passes
+        # --ruleset explicitly, and an explicit CLI --ruleset takes
+        # precedence over a preset's own value (see agent_evaluation.py's
+        # `if ruleset_id is None and preset is not None`). Showing it here
+        # keeps the preset faithful *and* visible. A preset that names no
+        # Ruleset leaves the user's current selection alone -- there is no
+        # preset intention to preserve in that case.
+        if preset.ruleset_id is not None:
+            index = self.pairwiseRulesetCombo.findData(preset.ruleset_id)
+            if index >= 0:
+                self.pairwiseRulesetCombo.setCurrentIndex(index)
+
+    def pairwise_ruleset_id(self) -> str:
+        """The Ruleset to pass explicitly for a pairwise evaluation.
+
+        Group mode ignores this: it is Ruleset-v2-only by construction.
+        """
+        return selected_ruleset_id(self.pairwiseRulesetCombo)
 
     def preset_name(self) -> str | None:
         if self.presetCombo is None or self.mode() == EVALUATION_MODE_GROUP:

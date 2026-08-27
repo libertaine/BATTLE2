@@ -363,3 +363,176 @@ def test_designer_evaluate_with_invalid_preset_on_disk_still_opens(monkeypatch, 
         assert opened["presets"] == {}
     finally:
         designer.deleteLater()
+
+
+# ---------------------------------------------------------------------------
+# v3.0.0-alpha2: pairwise Ruleset selector and its preset interaction
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gui
+def test_pairwise_ruleset_defaults_to_v2_and_group_stays_v2_only(tmp_path):
+    """Both modes now state their Ruleset; only pairwise is selectable."""
+
+    _make_app()
+    from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+
+    from app.services.designer_workflows import EVALUATION_MODE_GROUP
+    from app.views.evaluation import EvaluationDialog
+
+    dialog = EvaluationDialog(
+        [("Candidate", "candidate"), ("Opponent", "opponent"), ("Third", "third")],
+        default_candidate="candidate",
+        default_output=tmp_path / "out",
+    )
+    try:
+        assert dialog.pairwise_ruleset_id() == BYTEFRAY_RULESET_V2_ID
+        assert dialog.pairwiseRulesetCombo.isVisibleTo(dialog)
+        assert not dialog.rulesetValue.isVisibleTo(dialog)
+
+        index = dialog.modeCombo.findData(EVALUATION_MODE_GROUP)
+        dialog.modeCombo.setCurrentIndex(index)
+        # Group mode swaps the selector for the fixed v2-only statement.
+        assert not dialog.pairwiseRulesetCombo.isVisibleTo(dialog)
+        assert dialog.rulesetValue.isVisibleTo(dialog)
+        assert BYTEFRAY_RULESET_V2_ID in dialog.rulesetValue.text()
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_preset_ruleset_is_surfaced_into_the_selector(tmp_path):
+    """A preset's own Ruleset must be shown, not silently overridden.
+
+    The launch path always sends ``--ruleset`` explicitly now, and an
+    explicit CLI ``--ruleset`` outranks a preset's own ``ruleset`` field, so
+    the dialog has to adopt the preset's value for it to survive.
+    """
+
+    _make_app()
+    from battle_engine.evaluation_presets import load_preset
+    from battle_engine.rules import BYTEFRAY_RULESET_ID
+
+    _write_preset(
+        tmp_path,
+        "v1compat",
+        {"opponents": ["opponent"], "seeds": [1], "ruleset": BYTEFRAY_RULESET_ID},
+    )
+    from app.views.evaluation import EvaluationDialog
+
+    dialog = EvaluationDialog(
+        [("Candidate", "candidate"), ("Opponent", "opponent")],
+        default_candidate="candidate",
+        default_output=tmp_path / "out",
+        presets={"v1compat": load_preset(tmp_path, "v1compat")},
+    )
+    try:
+        dialog.presetCombo.setCurrentIndex(dialog.presetCombo.findData("v1compat"))
+        assert dialog.pairwise_ruleset_id() == BYTEFRAY_RULESET_ID
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_preset_without_a_ruleset_leaves_the_selection_alone(tmp_path):
+    """Nothing to preserve, so the user's own choice governs."""
+
+    _make_app()
+    from battle_engine.evaluation_presets import load_preset
+    from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+
+    _write_preset(tmp_path, "plain", {"opponents": ["opponent"], "seeds": [1]})
+    from app.views.evaluation import EvaluationDialog
+
+    dialog = EvaluationDialog(
+        [("Candidate", "candidate"), ("Opponent", "opponent")],
+        default_candidate="candidate",
+        default_output=tmp_path / "out",
+        presets={"plain": load_preset(tmp_path, "plain")},
+    )
+    try:
+        dialog.presetCombo.setCurrentIndex(dialog.presetCombo.findData("plain"))
+        assert dialog.pairwise_ruleset_id() == BYTEFRAY_RULESET_V2_ID
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_sends_the_dialogs_pairwise_ruleset(monkeypatch, tmp_path):
+    """End-to-end: the selection reaches the launched argv."""
+
+    _make_app()
+    from battle_engine.rules import BYTEFRAY_RULESET_ID
+
+    from app.agent_designer import AgentDesigner
+    from app.services.agent_catalog import AgentRow
+
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
+    designer = AgentDesigner()
+    try:
+        designer.development.setAgents(
+            [
+                AgentRow(name="candidate", path="agents/candidate", blob_path=None, meta={"kind": "python"}),
+                AgentRow(name="opponent", path="agents/opponent", blob_path=None, meta={"kind": "python"}),
+            ]
+        )
+        designer.development.selectAgent("candidate")
+
+        class _AcceptingDialog:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return True
+
+            def candidate_id(self):
+                return "candidate"
+
+            def baseline_id(self):
+                return None
+
+            def opponent_ids(self):
+                return ("opponent",)
+
+            def seeds_text(self):
+                return "1,2"
+
+            def seed_range_text(self):
+                return ""
+
+            def ticks(self):
+                return 30
+
+            def both_orientations(self):
+                return True
+
+            def output_path(self):
+                return tmp_path / "eval-out"
+
+            def preset_name(self):
+                return None
+
+            def pairwise_ruleset_id(self):
+                return BYTEFRAY_RULESET_ID
+
+        monkeypatch.setattr("app.agent_designer.EvaluationDialog", _AcceptingDialog)
+
+        launched: list[list[str]] = []
+
+        class _FakeProc:
+            def start(self):
+                pass
+
+        def _fake_start_process(command, env, working_directory, *, label):
+            launched.append(list(command))
+            designer._proc = _FakeProc()
+            return designer._proc
+
+        monkeypatch.setattr(designer, "_start_process", _fake_start_process)
+        designer._on_evaluate()
+
+        command = launched[0]
+        assert command[command.index("--ruleset") + 1] == BYTEFRAY_RULESET_ID
+    finally:
+        designer.deleteLater()

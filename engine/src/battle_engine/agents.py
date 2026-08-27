@@ -11,6 +11,7 @@ from battle_engine.agent_api import AgentManifestError
 
 __all__ = [
     "AgentSpec",
+    "agent_runtime_label",
     "agent_spec_from_dir",
     "discover_agents",
     "discover_agents_in",
@@ -31,6 +32,25 @@ class AgentSpec:
     source_path: Path | None = None
     entry_point: str | None = None
     manifest: dict[str, Any] = field(default_factory=dict)
+
+
+def agent_runtime_label(spec: AgentSpec) -> str:
+    """The short, user-facing runtime label for one agent: ``[Python]``/``[VM]``.
+
+    Deliberately the same two-value vocabulary and bracketed spelling the
+    Agent Designer's own match selectors already use
+    (``app.services.designer_workflows.decorate_agent_display``), so the CLI
+    and GUI never describe the same agent's runtime differently. The split
+    matches the one the engine actually enforces: only ``kind == "python"``
+    entrants may execute under Ruleset v2
+    (``ruleset_policy.RULESET_V2.supported_runtime_kinds``); every other
+    manifest shape resolves to a VM/blob entrant, which is Ruleset-v1-only.
+
+    Presentation only -- never parse an agent's runtime back out of this
+    string, and never persist it. No artifact schema carries it.
+    """
+
+    return "[Python]" if spec.kind == "python" else "[VM]"
 
 
 def _agents_root(root: Path) -> Path:

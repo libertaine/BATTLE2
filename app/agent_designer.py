@@ -82,6 +82,22 @@ def _resolve_data_root() -> Path:
     return get_data_root()
 
 
+def _dialog_pairwise_ruleset_id(dialog: object) -> str | None:
+    """The evaluation dialog's pairwise Ruleset selection, if it has one.
+
+    Same defensive-``getattr`` fallback the ``mode``/``workers`` accessors
+    already use for dialog doubles that predate a control: a dialog without
+    the v3.0.0-alpha2 pairwise Ruleset selector yields ``None``, which
+    ``build_designer_evaluation_plan``/``build_designer_evaluate_command``
+    both treat as "historical behavior, unchanged" -- ``None`` and the
+    explicit v1 identity resolve to the same ``rules_compatibility_id``, so
+    no existing evaluation identity moves.
+    """
+
+    getter = getattr(dialog, "pairwise_ruleset_id", None)
+    return getter() if callable(getter) else None
+
+
 class AgentDesigner(QMainWindow):
     """Main window combining Simple and Advanced tabs."""
     def __init__(self) -> None:
@@ -720,6 +736,7 @@ class AgentDesigner(QMainWindow):
             both_orientations=dialog.both_orientations(),
             mode=mode,
             workers=workers,
+            ruleset_id=_dialog_pairwise_ruleset_id(dialog),
         )
 
     def _on_evaluation_history(self) -> None:
@@ -857,8 +874,14 @@ class AgentDesigner(QMainWindow):
             workers_getter = getattr(dialog, "workers", None)
             workers = workers_getter() if callable(workers_getter) else 1
             if mode == EVALUATION_MODE_PAIRWISE:
-                # Preserve the historical pairwise command surface exactly,
-                # including preset/default resolution in the CLI.
+                # The pairwise command surface is otherwise unchanged, but
+                # the Ruleset is now always sent explicitly (v3.0.0-alpha2)
+                # instead of being left to the CLI's own backward-compatible
+                # v1 default. It must be the same value
+                # ``_build_evaluation_plan`` used to derive this run's
+                # evaluation_id/output directory, or the launched run would
+                # land in a directory named for a differently-resolved
+                # evaluation.
                 command = build_designer_evaluate_command(
                     candidate_id=dialog.candidate_id(),
                     baseline_id=dialog.baseline_id(),
@@ -870,6 +893,7 @@ class AgentDesigner(QMainWindow):
                     both_orientations=dialog.both_orientations(),
                     preset_name=dialog.preset_name(),
                     workers=workers,
+                    ruleset_id=_dialog_pairwise_ruleset_id(dialog),
                 )
             else:
                 plan = self._build_evaluation_plan(dialog, output_dir)
@@ -1118,6 +1142,12 @@ class AgentDesigner(QMainWindow):
         arguments.extend(("--seed", str(seed)))
         arguments.extend(("--ticks", str(ticks)))
         arguments.extend(("--timeout", str(timeout)))
+        # Always explicit, never inherited. `bytefray agents test`'s own
+        # default is still the backward-compatible Ruleset v1; before
+        # v3.0.0-alpha2 this call omitted the flag and therefore ran every
+        # Designer development test under v1 without saying so, while the
+        # Simple/Advanced tabs beside it defaulted to v2.
+        arguments.extend(("--ruleset", self.development.selected_ruleset_id()))
 
         try:
             command = build_agents_command("test", arguments)

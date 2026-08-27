@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QComboBox, QLabel
 from app.services.ruleset_options import (
     DESIGNER_RULESET_OPTIONS,
     RULESET_DESCRIPTION,
+    VM_RULESET_EXPLANATION,
     best_designer_ruleset,
     ruleset_supports_runtime_kinds,
 )
@@ -51,5 +52,5 @@ def sync_ruleset_choices(
             combo.setCurrentIndex(replacement)
 
     requires_v1 = "vm" in kinds
-    explanation.setText("Ruleset v1 is required for VM/blob matches." if requires_v1 else "")
+    explanation.setText(VM_RULESET_EXPLANATION if requires_v1 else "")
     explanation.setVisible(requires_v1)

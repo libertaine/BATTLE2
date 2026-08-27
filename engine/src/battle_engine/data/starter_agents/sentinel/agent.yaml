@@ -1,0 +1,9 @@
+{
+  "name": "sentinel",
+  "display": "Sentinel (Starter)",
+  "description": "Defense: spends one action in every four re-securing its own vulnerable core, claiming new ground with the rest. Makes the cost of defending visible.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}

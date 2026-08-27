@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from battle_engine.starters import STARTER_AGENT_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
 BYTEFRAY_SPEC = ROOT / "tools" / "bytefray.spec"
@@ -224,6 +225,38 @@ def test_bytefray_spec_still_bundles_starter_agents(monkeypatch):
 
     datas = _exec_spec_datas(BYTEFRAY_SPEC, monkeypatch)
     assert any(entry[1] == "battle_engine/data/starter_agents" for entry in datas)
+
+
+@pytest.mark.parametrize(
+    "spec_path",
+    (BYTEFRAY_SPEC, BYTEFRAY_CLI_SPEC, AGENT_DESIGNER_SPEC),
+    ids=("bytefray", "bytefray_cli", "agent_designer"),
+)
+def test_every_registered_starter_reaches_the_frozen_tree(spec_path: Path, monkeypatch):
+    """Every ``STARTER_AGENT_NAMES`` entry must be inside a bundled directory.
+
+    Phase 5 found a real, shipped defect of exactly this shape: the specs
+    enumerate data directories one at a time, so source-tree presence does
+    not imply frozen-build presence (``agent_template_annotated`` was in
+    the tree but in no spec, and ``agents create --template annotated``
+    failed from the real frozen executable). This test closes the same gap
+    for starter agents generally rather than for one named directory, so a
+    future starter cannot be registered without also being packaged.
+    """
+
+    datas = _exec_spec_datas(spec_path, monkeypatch)
+    starter_entries = [
+        entry for entry in datas if entry[1] == "battle_engine/data/starter_agents"
+    ]
+    assert starter_entries, f"{spec_path.name} must bundle battle_engine/data/starter_agents"
+    source_dir = Path(starter_entries[0][0])
+    assert source_dir.is_dir()
+    packaged = {path.name for path in source_dir.iterdir() if path.is_dir()}
+    missing = sorted(set(STARTER_AGENT_NAMES) - packaged)
+    assert not missing, (
+        f"{spec_path.name} bundles {source_dir}, which is missing registered "
+        f"starter agents: {missing}"
+    )
 
 
 def test_bytefray_spec_bundles_designer_branding_icon(monkeypatch):

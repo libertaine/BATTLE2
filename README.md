@@ -194,10 +194,31 @@ default so a non-returning agent call can be contained. This is development
 hang containment, not a security sandbox: Python agents are ordinary executable
 code and should be treated accordingly.
 
-Fresh installations include five Python examples (`claimer`, `strider`,
-`hunter`, `wanderer`, and `adaptive`) plus four VM starters (`runner`,
-`writer`, `seeker`, and `spiral`). Each Python starter documents its strategy
-and is intended to be read, copied, modified, tested, and evaluated.
+Fresh installations include seven Python examples plus four VM starters
+(`runner`, `writer`, `seeker`, and `spiral`). Each Python starter documents
+its strategy and is intended to be read, copied, modified, tested, and
+evaluated.
+
+Five teach the fundamentals of claiming territory — `claimer` (a blind
+fixed-stride sweep), `strider` (the same sweep plus periodic re-defense of
+ground already held), `hunter` (scatter widely first, then fill in),
+`wanderer` (a per-seed randomized sweep order), and `adaptive` (phase
+switching driven by the engine's own `pc`/`JUMP`).
+
+Two demonstrate Ruleset v2's defining Vulnerable Core mechanic, which the
+territorial five never touch:
+
+- `raider` — searches with `READ` for evidence of an enemy core, confirms
+  the location before committing, then attacks it. Winning outright by
+  taking a core is a different strategy from out-claiming an opponent, and
+  the search costs real budget.
+- `sentinel` — spends one action in every four re-securing its own core
+  instead of expanding, making the cost of defending measurable.
+
+None of them is an optimal strategy, and the two above generally hold less
+territory than the pure expanders — that trade-off is the lesson. Try
+`bytefray agents test raider --opponent claimer --ruleset bytefray-rules-2`
+and watch the replay.
 
 See [Writing Agents](docs/AGENT_AUTHORING.md), the
 [Agent API v1 contract](docs/AGENT_API_V1.md), and
@@ -208,9 +229,14 @@ See [Writing Agents](docs/AGENT_AUTHORING.md), the
 | Ruleset | Designer role | Runtime compatibility |
 |---|---|---|
 | `bytefray-rules-2` | Current/recommended for compatible Python direct matches | Python entrants only |
-| `bytefray-rules-1` | Legacy reproduction and VM/blob compatibility | VM/blob and Python native matches |
+| `bytefray-rules-1` | Compatibility: historical reproduction, and the only ruleset that runs VM/blob entrants | VM/blob and Python native matches |
 
-Agent Designer passes its selection explicitly. The CLI retains its
+Python agents run under either ruleset; VM/blob agents run under Ruleset v1
+only. Redcode/pMARS is separate from both — see below.
+
+Agent Designer passes its selection explicitly everywhere, including the
+Agent Development tab's development tests and pairwise evaluation, both of
+which default to Ruleset v2 as of `v3.0.0-alpha2`. The CLI retains its
 backward-compatible Ruleset-v1 default when `--ruleset` is omitted. Ruleset v2
 is a permanent, stable gameplay identity as of `v2.0.0`. Historical alpha
 identities remain readable/executable for artifact compatibility but are not
@@ -254,6 +280,11 @@ for controlled candidate analysis. See [Agent Lab](docs/AGENT_LAB.md) and
 ```bash
 bytefray run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red
 ```
+
+Redcode/pMARS matches run in an external pMARS process and do not use a
+Bytefray ruleset — not Ruleset v1, not Ruleset v2. They produce a normalized
+summary rather than a native Bytefray replay. See
+[RULES.md](docs/RULES.md)'s "Redcode/pMARS — not Ruleset v1".
 
 Windows CLI application packages include pMARS and its GPLv2 licensing
 materials. The pure Python and Linux wheels do not include a pMARS executable.

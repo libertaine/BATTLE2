@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from battle_engine.agent_api import AgentValidationError
-from battle_engine.agents import discover_agents, resolve_agent
+from battle_engine.agents import agent_runtime_label, discover_agents, resolve_agent
 from battle_engine.builtins import SUPPORTED, build_agent
 from battle_engine.core import Config, Weights
 from battle_engine.match_service import (
@@ -449,8 +449,18 @@ def main(argv: Iterable[str] | None = None) -> int:
         print("Discovered agents:")
         for name, spec in sorted(specs.items()):
             disp = f"{spec.display}" if spec.display and spec.display != name else ""
-            blob = spec.blob.name if spec.blob else "—"
-            print(f" - {name:20} {disp:20} blob={blob}")
+            # ASCII "none", not an em-dash: the frozen PyInstaller
+            # bytefray.exe mangles non-ASCII on stdout where the source
+            # build renders it correctly, so the shipped product showed a
+            # replacement character here. "none" also matches the CLI's own
+            # existing vocabulary for an absent path (`agents test` prints
+            # `result: none` / `replay: none`).
+            blob = spec.blob.name if spec.blob else "none"
+            print(f" - {name:20} {disp:20} {agent_runtime_label(spec):8} blob={blob}")
+        print(
+            "\n[Python] agents run under Ruleset v1 or v2 (v2 is current gameplay)."
+            "\n[VM] agents run under Ruleset v1 only."
+        )
         return 0
 
     # Build current Config correctly against Config.weights

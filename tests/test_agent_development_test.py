@@ -89,10 +89,14 @@ def _completed_stdout(
     winner: str,
     termination: str,
     forfeit_lines: str = "",
+    ruleset: str = "bytefray-rules-2",
 ) -> str:
     return (
         f"agent: {agent_id}\n"
         f"opponent: {opponent}\n"
+        # Real `agents test` output carries this line; the Designer reads the
+        # Ruleset it reports rather than echoing what the GUI requested.
+        f"ruleset: {ruleset}\n"
         f"seed: {seed}\n"
         f"ticks: {ticks_run}/{ticks_requested}\n"
         f"winner: {winner}\n"
@@ -1258,3 +1262,128 @@ def test_validate_still_works_alongside_test(monkeypatch, tmp_path):
         assert designer.development.btnTest.isEnabled() is True
     finally:
         designer.deleteLater()
+
+
+# ---------------------------------------------------------------------------
+# v3.0.0-alpha2: explicit Ruleset selection for development tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gui
+def test_development_test_defaults_to_ruleset_v2_and_passes_it_explicitly(
+    monkeypatch, tmp_path
+):
+    """The alpha2 GUI-default change, asserted end to end.
+
+    Before alpha2 this path passed no ``--ruleset`` at all, so every
+    Designer development test silently resolved ``bytefray agents test``'s
+    own backward-compatible Ruleset-v1 default while the Simple/Advanced
+    match tabs beside it defaulted to v2.
+    """
+
+    _make_app()
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
+    from battle_engine.agent_scaffold import create_agent
+    from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+
+    import app.agent_designer as agent_designer_module
+    from app.agent_designer import AgentDesigner
+
+    designer = AgentDesigner()
+    try:
+        create_agent("ruleset_default_agent", data_root=data_root)
+        designer.refresh_agents(select="ruleset_default_agent")
+
+        assert designer.development.selected_ruleset_id() == BYTEFRAY_RULESET_V2_ID
+
+        run_dir = tmp_path / "run"
+        result_path, replay_path = _write_result_and_replay(
+            run_dir, winner="ruleset_default_agent", termination_reason="tick_limit"
+        )
+        stdout = _completed_stdout(
+            "ruleset_default_agent",
+            result_path=result_path,
+            replay_path=replay_path,
+            summary_path=run_dir / "summary.json",
+            winner="ruleset_default_agent",
+            termination="tick_limit",
+            ruleset=BYTEFRAY_RULESET_V2_ID,
+        )
+        captured_args: list[list[str]] = []
+
+        def _capture(subcommand, arguments):
+            captured_args.append(list(arguments))
+            return _stub_command(tmp_path, stdout=stdout)
+
+        monkeypatch.setattr(agent_designer_module, "build_agents_command", _capture)
+
+        designer._on_test_agent()
+        # The in-flight status names the Ruleset, not only the opponent.
+        assert BYTEFRAY_RULESET_V2_ID in designer.development.testStatusLabel.text()
+        _wait_for_finished(designer)
+
+        args = captured_args[0]
+        assert "--ruleset" in args
+        assert args[args.index("--ruleset") + 1] == BYTEFRAY_RULESET_V2_ID
+        # And the completed result reports the Ruleset the tool itself named.
+        assert f"Ruleset: {BYTEFRAY_RULESET_V2_ID}" in designer.development.testStatusLabel.text()
+    finally:
+        designer.close()
+
+
+@pytest.mark.gui
+def test_development_test_can_select_ruleset_v1_for_python_compatibility(
+    monkeypatch, tmp_path
+):
+    """Ruleset v1 stays reachable: Python agents are valid under both."""
+
+    _make_app()
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
+    from battle_engine.agent_scaffold import create_agent
+    from battle_engine.rules import BYTEFRAY_RULESET_ID
+
+    import app.agent_designer as agent_designer_module
+    from app.agent_designer import AgentDesigner
+
+    designer = AgentDesigner()
+    try:
+        create_agent("ruleset_v1_agent", data_root=data_root)
+        designer.refresh_agents(select="ruleset_v1_agent")
+
+        combo = designer.development.rulesetCombo
+        index = combo.findData(BYTEFRAY_RULESET_ID)
+        assert index >= 0, "Ruleset v1 must remain selectable for Python compatibility testing"
+        combo.setCurrentIndex(index)
+        assert designer.development.selected_ruleset_id() == BYTEFRAY_RULESET_ID
+
+        run_dir = tmp_path / "run"
+        result_path, replay_path = _write_result_and_replay(
+            run_dir, winner="ruleset_v1_agent", termination_reason="tick_limit"
+        )
+        stdout = _completed_stdout(
+            "ruleset_v1_agent",
+            result_path=result_path,
+            replay_path=replay_path,
+            summary_path=run_dir / "summary.json",
+            winner="ruleset_v1_agent",
+            termination="tick_limit",
+            ruleset=BYTEFRAY_RULESET_ID,
+        )
+        captured_args: list[list[str]] = []
+
+        def _capture(subcommand, arguments):
+            captured_args.append(list(arguments))
+            return _stub_command(tmp_path, stdout=stdout)
+
+        monkeypatch.setattr(agent_designer_module, "build_agents_command", _capture)
+
+        designer._on_test_agent()
+        _wait_for_finished(designer)
+
+        args = captured_args[0]
+        assert args[args.index("--ruleset") + 1] == BYTEFRAY_RULESET_ID
+        assert f"Ruleset: {BYTEFRAY_RULESET_ID}" in designer.development.testStatusLabel.text()
+    finally:
+        designer.close()

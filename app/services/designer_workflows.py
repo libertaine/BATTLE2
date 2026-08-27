@@ -285,8 +285,17 @@ def build_designer_evaluation_plan(
     both_orientations: bool = True,
     mode: str = EVALUATION_MODE_PAIRWISE,
     workers: int = 1,
+    ruleset_id: str | None = None,
 ) -> DesignerEvaluationPlan:
-    """Validate and build the exact matrix the Designer will execute."""
+    """Validate and build the exact matrix the Designer will execute.
+
+    ``ruleset_id`` applies to pairwise evaluation only; group evaluation is
+    Ruleset-v2-only by construction and ignores it. ``None`` preserves the
+    exact historical pairwise behavior (``resolve_evaluation_ruleset_id``
+    maps both ``None`` and the explicit v1 identity to the same
+    ``rules_compatibility_id``, byte-identical in every downstream identity
+    hash), so callers that do not pass it are unaffected.
+    """
 
     if mode not in (EVALUATION_MODE_PAIRWISE, EVALUATION_MODE_GROUP):
         raise DesignerValidationError(f"Unsupported evaluation mode: {mode!r}.")
@@ -295,7 +304,8 @@ def build_designer_evaluation_plan(
         raise DesignerValidationError("Focus agent is required." if mode == EVALUATION_MODE_GROUP else "Candidate is required.")
     baseline = baseline_id.strip() if baseline_id else None
     opponents = tuple(opponent_ids)
-    ruleset_id = BYTEFRAY_RULESET_V2_ID if mode == EVALUATION_MODE_GROUP else None
+    if mode == EVALUATION_MODE_GROUP:
+        ruleset_id = BYTEFRAY_RULESET_V2_ID
     if mode == EVALUATION_MODE_GROUP and len(opponents) < 2:
         raise DesignerValidationError(
             "Group evaluation requires at least two roster members in addition to the focus agent."
@@ -352,8 +362,16 @@ def build_designer_evaluate_command_from_plan(
     arguments.extend(("--ticks", str(request.ticks), "--output", str(request.output_dir)))
     if request.group:
         arguments.extend(("--ruleset", BYTEFRAY_RULESET_V2_ID, "--group"))
-    elif not request.both_orientations:
-        arguments.append("--single-orientation")
+    else:
+        # Always explicit for pairwise too, so the launched evaluation can
+        # never quietly resolve `agents evaluate`'s own backward-compatible
+        # v1 default. `request.resolved_rules_compatibility_id` is exactly
+        # what the plan was validated and identity-hashed against, so the
+        # subprocess reproduces the previewed matrix rather than a
+        # differently-resolved one.
+        arguments.extend(("--ruleset", request.resolved_rules_compatibility_id))
+        if not request.both_orientations:
+            arguments.append("--single-orientation")
     if preset_name and not request.group:
         arguments.extend(("--preset", preset_name))
     if request.workers != 1:
@@ -373,6 +391,7 @@ def build_designer_evaluate_command(
     both_orientations: bool = True,
     preset_name: str | None = None,
     workers: int = 1,
+    ruleset_id: str | None = None,
 ) -> list[str]:
     """Build the ``bytefray agents evaluate`` argument list for one Designer run.
 
@@ -437,6 +456,15 @@ def build_designer_evaluate_command(
     elif seed_range_text.strip():
         arguments.extend(("--seed-range", seed_range_text.strip()))
     arguments.extend(("--ticks", str(ticks), "--output", str(output)))
+    if ruleset_id is not None:
+        # Explicit, so the launched evaluation cannot quietly resolve
+        # `agents evaluate`'s own backward-compatible v1 default, and so it
+        # matches the Ruleset the caller already used to derive this run's
+        # evaluation_id/output directory. An explicit --ruleset also takes
+        # precedence over a preset's own `ruleset` field, which is why the
+        # dialog surfaces a preset's Ruleset into its selector before this
+        # runs (see EvaluationDialog._on_preset_selected).
+        arguments.extend(("--ruleset", ruleset_id))
     if not both_orientations:
         arguments.append("--single-orientation")
     if preset_name:
