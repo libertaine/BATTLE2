@@ -18,6 +18,10 @@ AI or LLM dependency.
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+**Current releases:** [v2.0.0 stable](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
+· [v3.0.0-alpha2 prerelease](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-alpha2)
+— see [Downloads](#downloads) below.
+
 ## What is Bytefray?
 
 Bytefray is both a game and a deterministic experimentation platform:
@@ -32,6 +36,37 @@ Bytefray is both a game and a deterministic experimentation platform:
   without rerunning agent code.
 - Pairwise and multi-entrant evaluation, revision provenance, package sharing,
   and a resumable tournament service support serious iteration.
+
+## What's new in Bytefray 3.0
+
+Bytefray 3.0 (currently `v3.0.0-alpha2`, prerelease) is a product and
+presentation release, not a new gameplay Ruleset: current gameplay remains
+`bytefray-rules-2`, and Agent API v1 stays fully compatible. See
+[Rulesets](#rulesets) below and the
+[Compatibility Reference](docs/COMPATIBILITY.md) for details.
+
+Highlights over 2.0:
+
+- **Replay Viewer** — shared Bytefray branding, a whole-match timeline with
+  click/drag seeking, and an in-HUD "CORE CAPTURED" callout naming the
+  victim and captor.
+- **Agent creation** — a clearer Agent Development workflow, a second
+  "Annotated Example" scaffold, explicit Ruleset selection for development
+  tests, and sharper validation/error diagnostics.
+- **Strategy examples** — two new starters, **Raider** and **Sentinel**,
+  demonstrate deliberate Vulnerable-Core offense and defense, growing the
+  bundled Python starter set from five to seven.
+- **Strategy analysis** — win-rate/confidence-interval bars, core-capture
+  rate bars, an 11-dimension behavior-profile panel, and a `--json`
+  evaluation output mode.
+- **Evaluation workflow** — a GUI worker-count control, non-default-condition
+  disclosure, one-click access to an evaluation's output folder, and
+  explicit pairwise Ruleset selection.
+- **Distribution** — refreshed packaging/install documentation and a
+  qualified Windows installer, portable build, and Python package.
+
+See [CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27) for the full alpha2
+notes.
 
 ## How the game works
 
@@ -56,8 +91,11 @@ See the [Ruleset v2 reference](docs/RULES_V2.md) and
 ## Agent Designer
 
 <p align="center">
-  <img src="docs/screenshots/agent-designer.png" alt="Bytefray Agent Designer showing a selected Python agent in the read-only source viewer" width="900">
+  <img src="docs/screenshots/v3-agent-designer.png" alt="Bytefray Agent Designer Agent Development tab showing the Raider starter's source with Ruleset v2 explicitly selected for its development test" width="800">
 </p>
+
+**Agent Designer** — create, test, and evaluate Python agents with explicit
+Ruleset selection.
 
 Agent Designer provides a native PySide6 workflow for configuring matches and
 developing Python agents:
@@ -85,8 +123,11 @@ bytefray design
 ## Replay Viewer
 
 <p align="center">
-  <img src="docs/screenshots/replay-viewer.png" alt="Bytefray Replay Viewer showing a paused multi-entrant match, responsive entrant status, and territory history" width="800">
+  <img src="docs/screenshots/v3-replay-viewer.png" alt="Bytefray Replay Viewer showing the Raider starter capturing Claimer's core, with the active CORE CAPTURED callout, whole-match timeline, and territory HUD" width="640">
 </p>
+
+**Replay Viewer** — whole-match navigation and a visible Vulnerable-Core
+capture event.
 
 The Pygame Replay Viewer reconstructs the arena directly from a canonical
 replay; it never reruns the match. Its presentation, introduced for Beta3 and
@@ -354,6 +395,10 @@ Ruleset-v2 vulnerable-core game and scales evaluation and presentation to
 multi-entrant work, together with explicit Designer Ruleset selection,
 read-only agent-source inspection, refreshed onboarding, and current product
 screenshots.
+
+Bytefray 3.0 (`v3.0.0-alpha2`, prerelease) is the current product and
+presentation cycle on top of stable 2.0 — see
+[What's new in Bytefray 3.0](#whats-new-in-bytefray-30) above.
 
 Future 2.x ideas—replication, multi-unit entrants, communication, richer
 resource/attack mechanics, and Agent API v2—remain research, not commitments.
