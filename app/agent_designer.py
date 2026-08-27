@@ -706,6 +706,8 @@ class AgentDesigner(QMainWindow):
     ) -> DesignerEvaluationPlan:
         mode_getter = getattr(dialog, "mode", None)
         mode = mode_getter() if callable(mode_getter) else EVALUATION_MODE_PAIRWISE
+        workers_getter = getattr(dialog, "workers", None)
+        workers = workers_getter() if callable(workers_getter) else 1
         return build_designer_evaluation_plan(
             candidate_id=dialog.candidate_id(),
             baseline_id=dialog.baseline_id(),
@@ -717,6 +719,7 @@ class AgentDesigner(QMainWindow):
             data_root=self.data_root,
             both_orientations=dialog.both_orientations(),
             mode=mode,
+            workers=workers,
         )
 
     def _on_evaluation_history(self) -> None:
@@ -848,6 +851,11 @@ class AgentDesigner(QMainWindow):
         try:
             mode_getter = getattr(dialog, "mode", None)
             mode = mode_getter() if callable(mode_getter) else EVALUATION_MODE_PAIRWISE
+            # v3.0 Phase 4: same defensive-``getattr`` fallback as ``mode``
+            # above -- a dialog double that predates the worker-count
+            # control (e.g. a test fixture) still evaluates serially.
+            workers_getter = getattr(dialog, "workers", None)
+            workers = workers_getter() if callable(workers_getter) else 1
             if mode == EVALUATION_MODE_PAIRWISE:
                 # Preserve the historical pairwise command surface exactly,
                 # including preset/default resolution in the CLI.
@@ -861,6 +869,7 @@ class AgentDesigner(QMainWindow):
                     output_dir=output_dir,
                     both_orientations=dialog.both_orientations(),
                     preset_name=dialog.preset_name(),
+                    workers=workers,
                 )
             else:
                 plan = self._build_evaluation_plan(dialog, output_dir)

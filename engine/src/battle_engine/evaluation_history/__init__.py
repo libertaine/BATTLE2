@@ -36,6 +36,7 @@ from .models import (
     HealthReport,
     RevisionVerificationStatus,
     SchemaSupport,
+    effective_condition_lines,
     resolve_contained_path,
 )
 from .v1_adapter import adapt_v1
@@ -69,6 +70,7 @@ __all__ = [
     "align",
     "default_roots",
     "discover",
+    "effective_condition_lines",
     "resolve_contained_path",
     "resolve_selector",
     "verify_cell",

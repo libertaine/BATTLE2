@@ -51,6 +51,7 @@ from battle_engine.evaluation_history import (
     align,
     default_roots,
     discover,
+    effective_condition_lines,
     verify_summary,
 )
 from battle_engine.evaluation_history.behavior_adapter import cell_refs_for_behavior
@@ -390,6 +391,13 @@ def format_evaluation_summary_text(
         lines.append(f"candidate: {summary.candidate_id}  baseline: {summary.baseline_id or 'none'}")
         lines.append(f"opponents: {', '.join(summary.opponent_ids)}")
     lines.append(f"seeds: {', '.join(str(s) for s in summary.seeds)}  ticks: {summary.ticks}")
+    # v3.0 Phase 4: same non-default/experimental disclosure
+    # ``evaluations show`` already prints, via the shared
+    # ``effective_condition_lines`` -- previously CLI-only, so a non-default
+    # artifact (larger arena, different action budget/kill weight, or the
+    # experimental bounded-locality Ruleset) read no differently from a
+    # default one in the Designer's own history view.
+    lines.extend(effective_condition_lines(summary))
     lines.append(
         f"lifecycle: {summary.lifecycle_state.value} ({summary.lifecycle_state.confidence.value})  "
         f"created_at: {summary.created_at.value or 'unknown'}  "

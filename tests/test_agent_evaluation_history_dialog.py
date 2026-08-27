@@ -119,6 +119,76 @@ def test_history_dialog_lists_and_renders_selected_evaluation(tmp_path):
         assert dialog.cellsList.count() > 0
         assert dialog.revisionButton.isEnabled()
         assert dialog.compareButton.isEnabled()
+        # v3.0 Phase 4: no experimental condition was overridden here, so
+        # the disclosure must stay silent -- same "unchanged at defaults"
+        # guarantee the CLI's own `evaluations show` already gives.
+        assert "arena size" not in text
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_history_dialog_discloses_non_default_effective_conditions(tmp_path):
+    """v3.0 Phase 4 P1: the concrete parity gap the audit found -- CLI
+    `evaluations show` already discloses non-default conditions, the
+    history detail pane previously did not."""
+
+    _make_app()
+    from app.views.evaluation_history import EvaluationHistoryDialog
+
+    _run_real_evaluation(tmp_path, output_name="eval-nondefault", arena_size=1024, instr_per_tick=4)
+
+    dialog = EvaluationHistoryDialog(tmp_path)
+    try:
+        dialog.list.setCurrentRow(0)
+        text = dialog.detailText.toPlainText()
+        assert "arena size: 1024 (non-default)" in text
+        assert "action budget/tick: 4 (non-default)" in text
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_history_dialog_open_evaluation_folder_enabled_and_opens_directory(monkeypatch, tmp_path):
+    """P3: non-destructive, enabled only once a real directory is known,
+    and must go through the platform opener rather than any shell string
+    (tests mock the opener rather than actually launching Explorer)."""
+
+    _make_app()
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QDesktopServices
+
+    from app.views.evaluation_history import EvaluationHistoryDialog
+
+    _run_real_evaluation(tmp_path)
+
+    opened: list[QUrl] = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url))
+
+    dialog = EvaluationHistoryDialog(tmp_path)
+    try:
+        assert not dialog.openFolderButton.isEnabled()  # no selection yet
+        dialog.list.setCurrentRow(0)
+        assert dialog.openFolderButton.isEnabled()
+
+        entry = dialog._selected_entry()
+        dialog.openFolderButton.click()
+
+        assert len(opened) == 1
+        assert Path(opened[0].toLocalFile()) == entry.location.directory
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_history_dialog_open_evaluation_folder_disabled_with_no_selection(tmp_path):
+    _make_app()
+    from app.views.evaluation_history import EvaluationHistoryDialog
+
+    dialog = EvaluationHistoryDialog(tmp_path)
+    try:
+        assert dialog.list.count() == 0
+        assert not dialog.openFolderButton.isEnabled()
     finally:
         dialog.deleteLater()
 
@@ -756,7 +826,13 @@ def test_evaluation_comparison_dialog_ambiguous_group_never_enables_actions(tmp_
         assert not dialog.openReplayButton.isEnabled()
         detail = dialog.detailText.toPlainText()
         assert "does not guess" in detail
-        assert "evaluations show <id> --json" in detail
+        # v3.0 Phase 4 (Sec P4): the concrete schedule_ids are now surfaced
+        # directly in this read-only, copyable pane -- the ambiguity no
+        # longer forces a trip to `evaluations show <id> --json` just to
+        # identify the candidate cells.
+        assert "left_schedule_ids=" in detail
+        assert "right_schedule_ids=" in detail
+        assert "Cells list" in detail
     finally:
         dialog.deleteLater()
 

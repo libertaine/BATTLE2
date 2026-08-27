@@ -13,7 +13,6 @@ from battle_engine.agent_evaluation import (
     methodology_lines,
     resolved_arena_alignment_mode,
 )
-from battle_engine.config import Config
 from battle_engine.evaluation_analysis import EvidenceState, paired_evidence_from_verdicts
 from battle_engine.evaluation_behavior import BehaviorProfile, analyze_behavior
 from battle_engine.evaluation_capture import analyze_capture
@@ -23,7 +22,7 @@ from .behavior_adapter import cell_refs_for_behavior
 from .comparison import align
 from .discovery import AmbiguousSelectorError, adapt_any, discover, resolve_selector
 from .group_adapter import group_cell_refs
-from .models import ArtifactReadError, FieldConfidence
+from .models import ArtifactReadError, effective_condition_lines
 from .verification import verify_summary
 
 
@@ -185,41 +184,15 @@ def _print_experimental_conditions(summary) -> None:
     CLI's own conditional disclosure: nothing is printed at defaults, so
     every historical artifact's `show` output is unchanged.
 
-    Reads the artifact's own recorded `effective_conditions`, never a
-    recomputed default, and stays silent when that field is UNKNOWN rather
-    than implying a value the artifact never recorded.
+    v3.0 Phase 4: the interpretation itself (what counts as "non-default",
+    what gets printed) now lives in the shared, importable
+    ``models.effective_condition_lines`` so the Designer's evaluation-
+    history detail pane can present the identical disclosure without a
+    second definition of "experimental" to drift out of sync.
     """
 
-    if summary.effective_conditions.confidence == FieldConfidence.UNKNOWN:
-        return
-    conditions = summary.effective_conditions.value
-    if not isinstance(conditions, dict):
-        return
-    defaults = Config()
-    arena_size = conditions.get("arena_size")
-    action_budget = conditions.get("action_budget")
-    confidence = summary.effective_conditions.confidence.value
-    if isinstance(arena_size, int) and arena_size != defaults.arena_size:
-        print(f"arena size: {arena_size} (non-default) ({confidence})")
-    if isinstance(action_budget, int) and action_budget != defaults.instr_per_tick:
-        print(f"action budget/tick: {action_budget} (non-default) ({confidence})")
-    # v3 Phase 3: `weights` has always been a recorded key of
-    # `effective_conditions`; only its `kill` entry becomes variable here.
-    weights = conditions.get("weights")
-    if isinstance(weights, dict):
-        kill_weight = weights.get("kill")
-        if isinstance(kill_weight, (int, float)) and kill_weight != defaults.weights.kill:
-            print(f"kill weight: {kill_weight} (non-default) ({confidence})")
-    # v3 Phase 2: recorded only by an experimental bounded-locality
-    # evaluation, so its mere presence is the disclosure -- there is no
-    # "default" reach to compare against, and no non-locality artifact
-    # carries the key at all.
-    locality_reach = conditions.get("locality_reach")
-    if isinstance(locality_reach, int):
-        print(
-            f"locality reach: {locality_reach} (EXPERIMENTAL bounded locality) "
-            f"({confidence})"
-        )
+    for line in effective_condition_lines(summary):
+        print(line)
 
 
 def _print_show(

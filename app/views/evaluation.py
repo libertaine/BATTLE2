@@ -188,6 +188,21 @@ class EvaluationDialog(QDialog):
         self.ticksSpin.setRange(1, 2_147_483_647)
         self.ticksSpin.setValue(200)
         options_row.addRow("Ticks", self.ticksSpin)
+        # v3.0 Phase 4: GUI parity for the CLI's `agents evaluate --workers`
+        # (docs/V1_6_PHASE2_PARALLEL_EVALUATION.md) -- bounded subprocess
+        # worker parallelism, execution speed only. Default 1 matches the
+        # CLI's own serial-equivalent default; never part of `evaluation_id`
+        # (see `EvaluationRequest.workers`'s own comment), so changing it
+        # never changes what an evaluation means or its result.
+        self.workersSpin = QSpinBox()
+        self.workersSpin.setRange(1, 64)
+        self.workersSpin.setValue(1)
+        self.workersSpin.setToolTip(
+            "Number of evaluation cells to run concurrently (long-lived worker "
+            "subprocesses). Speeds up large evaluations only -- never affects "
+            "results or evaluation identity."
+        )
+        options_row.addRow("Workers", self.workersSpin)
         layout.addLayout(options_row)
 
         # v0.9 Phase 6 (Phase 5 spec Sec P): the one minimal Designer UX
@@ -357,6 +372,9 @@ class EvaluationDialog(QDialog):
 
     def ticks(self) -> int:
         return self.ticksSpin.value()
+
+    def workers(self) -> int:
+        return self.workersSpin.value()
 
     def both_orientations(self) -> bool:
         if self.mode() == EVALUATION_MODE_GROUP:

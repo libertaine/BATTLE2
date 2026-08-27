@@ -14,6 +14,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from battle_engine.agent_evaluation import ComparisonEntry, EvaluationCell, SubjectAggregate
+from battle_engine.config import Config
 from battle_engine.evaluation_analysis import EvaluationAnalysis
 from battle_engine.result_model import stable_id
 
@@ -528,6 +529,49 @@ class EvaluationSummary:
             "roster_identities": self.roster_identities.to_json(),
             "analysis": self.analysis.to_json() if self.analysis is not None else None,
         }
+
+
+def effective_condition_lines(summary: EvaluationSummary) -> list[str]:
+    """Human-readable disclosure lines for any non-default or experimental
+    recorded ``effective_conditions`` -- arena size, action budget, kill
+    weight, and (unconditionally, since it has no default) locality reach.
+
+    v3.0 Phase 4: extracted from ``evaluation_history.cli.
+    _print_experimental_conditions`` so the CLI (``evaluations show``) and
+    the Designer's evaluation-history detail pane (``app.services.
+    evaluation_history_workflows.format_evaluation_summary_text``) share one
+    interpretation of "non-default" -- the exact `config.Config()` defaults
+    -- rather than risking two definitions drifting apart. Returns an empty
+    list at default conditions (so ordinary artifacts render unchanged) and
+    stays silent when ``effective_conditions`` itself is ``UNKNOWN`` rather
+    than implying a value the artifact never recorded.
+    """
+
+    if summary.effective_conditions.confidence == FieldConfidence.UNKNOWN:
+        return []
+    conditions = summary.effective_conditions.value
+    if not isinstance(conditions, dict):
+        return []
+    defaults = Config()
+    confidence = summary.effective_conditions.confidence.value
+    lines: list[str] = []
+    arena_size = conditions.get("arena_size")
+    if isinstance(arena_size, int) and arena_size != defaults.arena_size:
+        lines.append(f"arena size: {arena_size} (non-default) ({confidence})")
+    action_budget = conditions.get("action_budget")
+    if isinstance(action_budget, int) and action_budget != defaults.instr_per_tick:
+        lines.append(f"action budget/tick: {action_budget} (non-default) ({confidence})")
+    weights = conditions.get("weights")
+    if isinstance(weights, dict):
+        kill_weight = weights.get("kill")
+        if isinstance(kill_weight, (int, float)) and kill_weight != defaults.weights.kill:
+            lines.append(f"kill weight: {kill_weight} (non-default) ({confidence})")
+    locality_reach = conditions.get("locality_reach")
+    if isinstance(locality_reach, int):
+        lines.append(
+            f"locality reach: {locality_reach} (EXPERIMENTAL bounded locality) ({confidence})"
+        )
+    return lines
 
 
 def file_modified_at(path: Path) -> str:

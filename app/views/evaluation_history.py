@@ -812,13 +812,26 @@ class EvaluationComparisonDialog(QDialog):
             return
         entry: _GapEntry = item.data(Qt.UserRole)
         if not entry.actionable:
+            # v3.0 Phase 4 (Sec P4): the only GUI path that previously told
+            # a user to leave the GUI and run
+            # `bytefray agents evaluations show <id> --json` to locate a
+            # schedule_id/artifact_dir. Those identifiers are already
+            # computed into ``entry.label`` (the same text visible in the
+            # gaps list row) -- leading with it here makes them selectable/
+            # copyable directly from this read-only detail pane, so the
+            # CLI escape hatch becomes optional rather than the only path.
+            # No pairing is ever guessed either way (Bytefray does not
+            # resolve this ambiguity automatically) -- see the module/class
+            # docstrings' "never actionable" rationale.
             self.detailText.setPlainText(
+                entry.label
+                + "\n\n"
                 "Ambiguous duplicate group: more than one match on each/either side shares "
                 "this (opponent, seed) pair with no reliable evidence for which one "
-                "corresponds to which. Bytefray does not guess a pairing here. Close this "
-                "comparison and select a concrete cell from each evaluation's Cells list, "
-                "or run 'bytefray agents evaluations show <id> --json' and locate its "
-                "schedule_id/artifact_dir."
+                "corresponds to which. Bytefray does not guess a pairing here. The "
+                "schedule_ids above identify the candidate cells directly (copyable from "
+                "this text); alternatively, close this comparison and select a concrete "
+                "cell from each evaluation's Cells list."
             )
             self._set_active_cells(None, None)
             return
@@ -1075,8 +1088,20 @@ class EvaluationHistoryDialog(QDialog):
         self.revisionButton.setEnabled(False)
         self.compareButton = QPushButton("Compare With…")
         self.compareButton.setEnabled(False)
+        # v3.0 Phase 4: non-destructive, no new mutation -- the artifact
+        # directory is already known (``summary.location.directory``, the
+        # same path every per-cell replay/result lookup in this dialog
+        # already reads from). Reuses the exact
+        # ``QDesktopServices.openUrl(QUrl.fromLocalFile(...))`` idiom
+        # ``AgentDesigner._on_open_agent_folder``/``_on_open_output_folder``
+        # and this dialog's own Restore-Files "Open Folder" button already
+        # use -- there is no separate reusable helper in this codebase to
+        # call into instead (audited before adding this).
+        self.openFolderButton = QPushButton("Open Evaluation Folder")
+        self.openFolderButton.setEnabled(False)
         roleActions.addWidget(self.revisionButton)
         roleActions.addWidget(self.compareButton)
+        roleActions.addWidget(self.openFolderButton)
         roleActions.addStretch(1)
         detailLayout.addLayout(roleActions)
 
@@ -1104,6 +1129,7 @@ class EvaluationHistoryDialog(QDialog):
         self.openReplayButton.clicked.connect(self._on_open_replay)
         self.revisionButton.clicked.connect(self._on_show_revision)
         self.compareButton.clicked.connect(self._on_compare)
+        self.openFolderButton.clicked.connect(self._on_open_evaluation_folder)
 
         self.refresh()
 
@@ -1159,11 +1185,16 @@ class EvaluationHistoryDialog(QDialog):
         self._current_verify_error = None
         self.revisionButton.setEnabled(False)
         self.compareButton.setEnabled(False)
+        self.openFolderButton.setEnabled(False)
         self.verifyStatusLabel.setText("")
         if entry is None:
             self.detailText.setPlainText("")
             self._refresh_visual_panel(None)
             return
+        # The folder is openable off the entry's own location alone -- even
+        # an unreadable evaluation.json still has a real directory, and
+        # that is exactly when a user most wants to inspect it directly.
+        self.openFolderButton.setEnabled(entry.location.directory.is_dir())
         if entry.summary is None:
             codes = ", ".join(code.value for code in entry.health.codes) or "unknown"
             details = "\n".join(f"  - {d}" for d in entry.health.detail)
@@ -1268,6 +1299,26 @@ class EvaluationHistoryDialog(QDialog):
         if cell is None or self._current_summary is None:
             return
         self.openReplayRequested.emit(self._current_summary.location.directory / cell.artifact_dir / "replay.jsonl")
+
+    # ---- Open Evaluation Folder ----
+    def _on_open_evaluation_folder(self) -> None:
+        """Reveal the selected evaluation's artifact directory (Sec P3).
+
+        Read-only and non-mutating -- opens the directory the file manager
+        already resolves ``entry.location.directory`` to, the same path
+        every per-cell replay/result lookup in this dialog already reads
+        from. Guards mirror ``AgentDesigner._on_open_agent_folder``'s
+        select-then-existence-check shape.
+        """
+
+        entry = self._selected_entry()
+        if entry is None:
+            return
+        directory = entry.location.directory
+        if not directory.is_dir():
+            QMessageBox.warning(self, "Open Evaluation Folder", f"Evaluation folder not found:\n{directory}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
 
     # ---- Revision drill-down ----
     def _on_show_revision(self) -> None:

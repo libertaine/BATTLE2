@@ -175,31 +175,76 @@ for a future pass.
 * **Ruleset-neutral**: yes.
 
 ### Phase 4 — Evaluation infrastructure
-* **Objective**: CLI/GUI parity (bring `--workers` and other CLI-only
-  evaluation controls into the Designer's evaluation dialog), separate the
-  v3-research-motivated CLI flags (`--arena-size`/`--instr-per-tick`/
-  `--kill-weight`, each of which currently cites a v3 research report in
-  its own `--help` text) from the general product-facing `agents evaluate`
-  surface, and an evaluation-artifact management/lifecycle command (list
-  with size, prune, or archive) for large runs.
-* **User-visible benefit**: large evaluations easier to start/resume/
-  inspect from the GUI; a less research-cluttered CLI help surface for
-  ordinary product use; large-run disk usage becomes manageable rather than
-  requiring OS-level file tools.
+
+**Status: complete, scope narrowed by audit evidence** — see
+[V3_PHASE4_EVALUATION_INFRASTRUCTURE.md](V3_PHASE4_EVALUATION_INFRASTRUCTURE.md).
+A targeted audit of the evaluation CLI/GUI/history layer, done before
+implementation, found the evaluation backend already richer than its GUI
+management surface, and found no evidence supporting two pieces of this
+section's original objective as first drafted: an evaluation-artifact
+list/prune/archive command, and separating the research-motivated CLI flags
+out of `agents evaluate`. Both are addressed below instead of being built.
+Delivered: GUI parity for `--workers` in the Designer's evaluation dialog;
+non-default "effective conditions" (arena size, action budget, kill weight,
+experimental locality reach) disclosed in the Designer's evaluation-history
+detail pane via the same interpretation `evaluations show` already uses (one
+shared function, not a second definition of "non-default"); a non-destructive
+"Open Evaluation Folder" action on `EvaluationHistoryDialog`; and a small
+readability fix to the one ambiguous-comparison GUI path that previously
+told the user to leave the GUI and run `evaluations show <id> --json`.
+
+* **Objective (as revised by the audit)**: CLI/GUI parity for the one
+  CLI-only evaluation control found to be safely GUI-exposable
+  (`--workers`, execution-only, never identity-bearing); GUI disclosure of
+  non-default "effective conditions" already computed and CLI-disclosed but
+  previously invisible in the Designer's own history view; a low-risk
+  artifact-folder-access affordance; a documented, evidence-based
+  disposition for the v3-research-motivated CLI flags
+  (`--arena-size`/`--instr-per-tick`/`--kill-weight`) rather than an
+  unevidenced relocation of them.
+* **Original objective, not pursued**: an evaluation-artifact
+  list-with-size/prune/archive command. No supported evaluation-artifact
+  delete, prune, archive, or filesystem-size-accounting capability existed
+  anywhere in this layer prior to Phase 4, and the audit found no evidence
+  (scale complaint, support burden, or otherwise) that one is needed yet;
+  building it would also require a new recursive filesystem-stat walk,
+  changing evaluation discovery's deliberately cheap (one-level,
+  no-per-cell-read) cost profile. Deferred, not rejected outright — should
+  be revisited if real evidence of a disk-usage problem appears.
+* **Original objective, not pursued as originally framed**: separating the
+  research-motivated CLI flags out of `agents evaluate`. No doc or
+  compatibility commitment obligates this, their `--help` text already
+  correctly discloses their research provenance and identity-bearing
+  status, and moving them risks the exact bit-for-bit reproducibility this
+  section's own exclusion already required protecting. Disposition:
+  retained as advanced/experimental evaluation controls in the CLI,
+  intentionally not added to the ordinary GUI evaluation workflow (their
+  non-default effect is what P1's disclosure surfaces after the fact, not
+  a control most users need before the fact).
+* **User-visible benefit**: users can pick evaluation parallelism from the
+  GUI without dropping to the CLI; a non-default-conditions evaluation
+  reads as non-default in the GUI history view exactly like it already does
+  in `evaluations show`, so a user is never misled into thinking a
+  research-configured run is an ordinary one; users can jump straight to an
+  evaluation's artifact folder from history instead of navigating there
+  manually.
 * **Probable files/components**: `app/views/evaluation.py`,
-  `engine/src/battle_engine/agent_evaluation.py`,
+  `app/views/evaluation_history.py`,
+  `app/services/evaluation_history_workflows.py`,
+  `app/services/designer_workflows.py`,
+  `engine/src/battle_engine/evaluation_history/models.py`,
   `engine/src/battle_engine/evaluation_history/cli.py`.
 * **Dependencies**: none; benefits from Phase 3's structured-output work if
   sequenced after it, but does not require it.
-* **Exclusions**: no evaluation identity or schema change; any relocation
-  of the research-motivated flags must preserve bit-for-bit reproducibility
-  of already-run evaluations that use them (they are already
-  identity-bearing, per `docs/V3_PHASE0_RESEARCH_BASELINE.md` §5 and
-  `docs/V3_PHASE3_OFFENSE_PAYOFF_CHARACTERIZATION.md` §5); any prune/archive
-  command must never delete without explicit confirmation and must never
-  corrupt the canonical identity of a retained artifact.
+* **Exclusions**: no evaluation identity or schema change; the
+  research-motivated flags' identity-bearing behavior
+  (`docs/V3_PHASE0_RESEARCH_BASELINE.md` §5,
+  `docs/V3_PHASE3_OFFENSE_PAYOFF_CHARACTERIZATION.md` §5) is unchanged;
+  discovery/listing stays one-level and cheap (no directory-size column, no
+  recursive stat walk, no pagination); no evaluation delete/prune/archive.
 * **Validation**: existing evaluation artifacts remain loadable and
-  identity-stable before and after.
+  identity-stable before and after; CLI and GUI disclose materially
+  equivalent effective-condition information for the same artifact.
 * **Ruleset-neutral**: yes.
 
 ### Phase 5 — Integration, distribution, qualification

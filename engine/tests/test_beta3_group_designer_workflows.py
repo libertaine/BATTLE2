@@ -108,6 +108,34 @@ def test_group_plan_preserves_duplicate_identifiers_and_self_play(tmp_path: Path
     assert "--preset" not in command
 
 
+def test_group_plan_workers_default_omits_flag_and_never_affects_identity(tmp_path: Path) -> None:
+    """v3.0 Phase 4: GUI worker-count parity for the group evaluation path
+    -- ``--workers`` is only appended when non-default, and, being pure
+    execution machinery, must never change the plan's ``evaluation_id`` or
+    matrix (mirrors ``EvaluationRequest.workers``'s own identity guarantee,
+    already covered end-to-end for the request/CLI layer by
+    ``test_v3_phase0_evaluation_conditions.test_parallel_workers_reproduce_
+    serial_results``)."""
+
+    _write_nop_agent(tmp_path, "focus")
+    _write_nop_agent(tmp_path, "other")
+
+    serial = _plan(tmp_path, ("focus", "other"))
+    assert serial.request.workers == 1
+    serial_command = build_designer_evaluate_command_from_plan(serial)
+    assert "--workers" not in serial_command
+
+    parallel = _plan(tmp_path, ("focus", "other"), workers=4)
+    assert parallel.request.workers == 4
+    parallel_command = build_designer_evaluate_command_from_plan(parallel)
+    assert parallel_command[parallel_command.index("--workers") + 1] == "4"
+
+    assert parallel.evaluation_id == serial.evaluation_id
+    assert tuple(cell.schedule_id for cell in parallel.matrix) == tuple(
+        cell.schedule_id for cell in serial.matrix
+    )
+
+
 def test_group_plan_rejects_invalid_roster_and_baseline(tmp_path: Path) -> None:
     for agent_id in ("focus", "a", "b", "baseline"):
         _write_nop_agent(tmp_path, agent_id)

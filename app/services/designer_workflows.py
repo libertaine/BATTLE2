@@ -284,6 +284,7 @@ def build_designer_evaluation_plan(
     data_root: Path,
     both_orientations: bool = True,
     mode: str = EVALUATION_MODE_PAIRWISE,
+    workers: int = 1,
 ) -> DesignerEvaluationPlan:
     """Validate and build the exact matrix the Designer will execute."""
 
@@ -331,6 +332,7 @@ def build_designer_evaluation_plan(
         both_orientations=both_orientations,
         ruleset_id=ruleset_id,
         group=mode == EVALUATION_MODE_GROUP,
+        workers=workers,
     )
     # Specs are intentionally passed through: the preview matrix is the
     # same fully validated plan shape run() will construct, not a Qt-side
@@ -354,6 +356,8 @@ def build_designer_evaluate_command_from_plan(
         arguments.append("--single-orientation")
     if preset_name and not request.group:
         arguments.extend(("--preset", preset_name))
+    if request.workers != 1:
+        arguments.extend(("--workers", str(request.workers)))
     return build_agents_command("evaluate", arguments)
 
 
@@ -368,6 +372,7 @@ def build_designer_evaluate_command(
     output_dir: Path,
     both_orientations: bool = True,
     preset_name: str | None = None,
+    workers: int = 1,
 ) -> list[str]:
     """Build the ``bytefray agents evaluate`` argument list for one Designer run.
 
@@ -392,6 +397,10 @@ def build_designer_evaluate_command(
     preset for display), so the preset can never silently supply a value
     the Designer isn't already sending; this is authoritative-parser reuse,
     not a second resolution path (Sec 14 of the governing spec).
+
+    v3.0 Phase 4: ``workers`` mirrors the CLI's own ``--workers`` default
+    (``1``, serial) -- only appended when non-default, so an ordinary
+    (serial) Designer evaluation's argument list is unchanged.
     """
 
     candidate = candidate_id.strip()
@@ -432,6 +441,8 @@ def build_designer_evaluate_command(
         arguments.append("--single-orientation")
     if preset_name:
         arguments.extend(("--preset", preset_name))
+    if workers != 1:
+        arguments.extend(("--workers", str(workers)))
     return build_agents_command("evaluate", arguments)
 
 

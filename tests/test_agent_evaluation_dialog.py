@@ -296,6 +296,118 @@ def test_designer_evaluate_command_includes_single_orientation_flag_only_when_un
 
 
 @pytest.mark.gui
+def test_evaluation_dialog_workers_control_defaults_to_one(tmp_path):
+    """v3.0 Phase 4: GUI parity for CLI `agents evaluate --workers` -- the
+    control defaults to the CLI's own serial-equivalent default (1)."""
+
+    _make_app()
+    from app.views.evaluation import EvaluationDialog
+
+    dialog = EvaluationDialog(
+        [("Candidate", "candidate"), ("Opponent", "opponent")],
+        default_candidate="candidate",
+        default_output=tmp_path / "out",
+    )
+    try:
+        assert dialog.workers() == 1
+        dialog.workersSpin.setValue(4)
+        assert dialog.workers() == 4
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
+def test_designer_evaluate_command_includes_workers_flag_only_when_non_default(
+    monkeypatch, tmp_path
+):
+    """v3.0 Phase 4: the Designer must only append `--workers N` when it
+    differs from the CLI's own default -- an ordinary (serial) evaluation's
+    argument list stays unchanged, mirroring the `--single-orientation`
+    precedent above."""
+
+    _make_app()
+    from app.agent_designer import AgentDesigner
+    from app.services.agent_catalog import AgentRow
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
+    designer = AgentDesigner()
+    try:
+        designer.development.setAgents(
+            [
+                AgentRow(name="candidate", path="agents/candidate", blob_path=None, meta={"kind": "python"}),
+                AgentRow(name="opponent", path="agents/opponent", blob_path=None, meta={"kind": "python"}),
+            ]
+        )
+        designer.development.selectAgent("candidate")
+
+        captured_commands = []
+
+        class _RecordingDialog:
+            workers_value = 1
+
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return True
+
+            def candidate_id(self):
+                return "candidate"
+
+            def baseline_id(self):
+                return None
+
+            def opponent_ids(self):
+                return ("opponent",)
+
+            def seeds_text(self):
+                return "1"
+
+            def seed_range_text(self):
+                return ""
+
+            def ticks(self):
+                return 10
+
+            def both_orientations(self):
+                return True
+
+            def output_path(self):
+                return tmp_path / "designer-eval-out"
+
+            def preset_name(self):
+                return None
+
+            def workers(self):
+                return _RecordingDialog.workers_value
+
+        monkeypatch.setattr("app.agent_designer.EvaluationDialog", _RecordingDialog)
+
+        class _FakeProc:
+            def start(self):
+                pass
+
+        def _fake_start_process(command, env, working_directory, *, label):
+            captured_commands.append(command)
+            designer._proc = _FakeProc()
+            return designer._proc
+
+        monkeypatch.setattr(designer, "_start_process", _fake_start_process)
+
+        _RecordingDialog.workers_value = 1
+        designer._on_evaluate()
+        assert "--workers" not in captured_commands[0]
+
+        designer._proc = None
+        designer._active_workflow = None
+        _RecordingDialog.workers_value = 6
+        designer._on_evaluate()
+        assert captured_commands[1][captured_commands[1].index("--workers") + 1] == "6"
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
 def test_results_dialog_shows_orientation_methodology_and_per_cell_orientation(tmp_path):
     """v0.9 Phase 6 (Phase 5 spec Sec P): results presentation exposes both
     the shared methodology disclosure and each cell's own orientation."""

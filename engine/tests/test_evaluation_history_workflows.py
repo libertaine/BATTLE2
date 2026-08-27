@@ -514,6 +514,73 @@ def test_distinct_opponent_ids_dedupes_preserving_first_occurrence_order(tmp_pat
 
 
 # ---------------------------------------------------------------------------
+# Effective-condition disclosure (v3.0 Phase 4 CLI/GUI parity)
+# ---------------------------------------------------------------------------
+
+
+def test_format_evaluation_summary_text_hides_default_conditions(tmp_path: Path):
+    """At ordinary defaults, the Designer's history detail pane must render
+    exactly as it did before Phase 4 -- no experimental-condition noise for
+    the overwhelming majority of evaluations that never override them."""
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    path = _run_evaluation(tmp_path, "eval-default")
+
+    summary, verify_error = load_evaluation_summary(path, verify=False)
+    assert verify_error is None
+    text = format_evaluation_summary_text(summary)
+    assert "arena size" not in text
+    assert "action budget" not in text
+    assert "kill weight" not in text
+    assert "locality reach" not in text
+
+
+def test_format_evaluation_summary_text_discloses_non_default_conditions(tmp_path: Path):
+    """The exact CLI/GUI parity gap Phase 4 closes: a non-default artifact
+    (larger arena, different action budget, different kill weight) must
+    read as non-default in the Designer's history view, not just in
+    ``bytefray agents evaluations show`` -- using the identical wording
+    (Sec "Effective conditions"), via the one shared
+    ``effective_condition_lines`` interpretation."""
+
+    _write_python_agent(tmp_path, "candidate")
+    _write_python_agent(tmp_path, "opponent")
+    path = _run_evaluation(
+        tmp_path, "eval-nondefault", arena_size=1024, instr_per_tick=4, kill_weight=9.0
+    )
+
+    summary, verify_error = load_evaluation_summary(path, verify=False)
+    assert verify_error is None
+    text = format_evaluation_summary_text(summary)
+    assert "arena size: 1024 (non-default)" in text
+    assert "action budget/tick: 4 (non-default)" in text
+    assert "kill weight: 9" in text and "(non-default)" in text
+    # Ordering parity with `evaluation_history.cli._print_show`: the
+    # disclosure sits between the seeds/ticks line and lifecycle.
+    assert text.index("ticks:") < text.index("arena size") < text.index("lifecycle:")
+
+
+def test_effective_condition_lines_silent_for_recovered_v1_defaults(tmp_path: Path):
+    """A v1 (pre-Phase-0) artifact never recorded ``effective_conditions``
+    at all -- the v1 adapter recovers it as certain (arena size/action
+    budget/kill weight were not yet configurable, so a v1 evaluation always
+    ran at defaults), not unknown. Either way the disclosure must stay
+    silent: an artifact that (as far as anyone can tell) ran at defaults
+    must never be presented as if it were non-default."""
+
+    from battle_engine.evaluation_history import effective_condition_lines
+
+    path = _v1_fixture(tmp_path)
+    summary, _ = load_evaluation_summary(path, verify=False)
+    assert summary.effective_conditions.confidence in (
+        FieldConfidence.RECOVERED,
+        FieldConfidence.UNKNOWN,
+    )
+    assert effective_condition_lines(summary) == []
+
+
+# ---------------------------------------------------------------------------
 # Agent revision provenance
 # ---------------------------------------------------------------------------
 
