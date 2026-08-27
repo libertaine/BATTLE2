@@ -136,12 +136,18 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-**Alpha prerelease:** Bytefray v3.0.0-alpha1 (presentation, agent-creation,
-strategy-analysis, and evaluation-workflow improvements on unchanged
-`bytefray-rules-2` gameplay) is qualified and pending publication — see
-[CHANGELOG.md](CHANGELOG.md#300-alpha1---2026-08-26) for details. Once
-published, prerelease downloads appear on the
-[GitHub Releases page](https://github.com/libertaine/Bytefray/releases).
+**Alpha prerelease:** [Bytefray v3.0.0-alpha1](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-alpha1)
+— presentation, agent-creation, strategy-analysis, and evaluation-workflow
+improvements on unchanged `bytefray-rules-2` gameplay. See
+[CHANGELOG.md](CHANGELOG.md#300-alpha1---2026-08-26) for details.
+
+| Package | Download | Notes |
+|---|---|---|
+| Windows installer | [Bytefray-Setup-3.0.0-alpha1.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/Bytefray-Setup-3.0.0-alpha1.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
+| Portable Windows applications | [bytefray-3.0.0-alpha1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/bytefray-3.0.0-alpha1-windows.zip) | Complete onedir layouts for all four executables |
+| Python wheel | [bytefray-3.0.0a1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/bytefray-3.0.0a1-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-3.0.0a1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/bytefray-3.0.0a1.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/SHA256SUMS.txt) | SHA-256 values for alpha1 assets |
 
 **Stable release:** [Bytefray v2.0.0](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
 — Vulnerable Core. Promotes the qualified `v2.0.0-rc2` candidate with no
