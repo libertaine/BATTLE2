@@ -956,8 +956,10 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: Phase 5 (integration & distribution) qualification complete;
-`v3.0.0-alpha1` publication pending.** Bytefray v3.0 is a **product** release
+**Status: `v3.0.0-alpha1` published; `v3.0.0-alpha2` (strategy examples and
+Ruleset clarity) qualification complete, publication pending. Phase 6
+(release candidate / final release decision) not yet started.** Bytefray
+v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
 evaluation infrastructure, and distribution quality. See
@@ -1034,6 +1036,23 @@ and `tools/agent_designer.spec` bundled the original "blank" agent-scaffold
 template but never the Phase 2 "Annotated Example" template, so the frozen
 Windows builds silently lacked it). No gameplay, Ruleset, Agent API, or
 scoring change; `bytefray-rules-2` ships unchanged as v3.0's active Ruleset.
+
+**`v3.0.0-alpha2` (strategy examples & Ruleset clarity) qualification is
+complete** — see
+[V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md](V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md).
+Scope came from a read-only post-alpha1 product-content audit, not from a
+new phase. Two bundled starters (`raider`, `sentinel`) now demonstrate
+Ruleset v2's Vulnerable Core mechanic, which no existing starter engaged
+with at all, derived as independently maintained product copies of frozen
+research reference agents rather than as edits or re-exposures of the
+benchmark artifacts. The Agent Designer's Python workflows now state and
+select the Ruleset they use — Agent Development tests and pairwise
+evaluation both previously inherited the CLI's Ruleset-v1 default silently
+and now default to `bytefray-rules-2` — and `bytefray agents` listing marks
+each entry `[Python]`/`[VM]`. The audit's rejection of a dedicated
+`VM / Redcode` Designer tab was re-verified and honored. No gameplay,
+Ruleset, Agent API, or schema change; the frozen v2 benchmark population
+verifies with zero drift before and after.
 
 ## After v1.0
 

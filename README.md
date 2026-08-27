@@ -141,6 +141,11 @@ environment variables, see [Installation](INSTALL.md).
 improvements on unchanged `bytefray-rules-2` gameplay. See
 [CHANGELOG.md](CHANGELOG.md#300-alpha1---2026-08-26) for details.
 
+A second alpha, `v3.0.0-alpha2` — two new starter strategies demonstrating
+the Vulnerable Core mechanic, plus explicit Ruleset selection in the Agent
+Designer — is qualified and pending publication. See
+[CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27).
+
 | Package | Download | Notes |
 |---|---|---|
 | Windows installer | [Bytefray-Setup-3.0.0-alpha1.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/Bytefray-Setup-3.0.0-alpha1.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |

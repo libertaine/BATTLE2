@@ -2,6 +2,68 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [3.0.0-alpha2] - 2026-08-27
+
+### Strategy examples and Ruleset clarity
+
+A small second **alpha prerelease**. `bytefray-rules-2` gameplay is
+unchanged, Agent API v1 is unchanged, and every existing compatible agent
+remains valid. See
+[V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md](docs/V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md)
+for this alpha's qualification record.
+
+- **New starter strategies** — two bundled Python starters demonstrate
+  Ruleset v2's defining Vulnerable Core mechanic, which none of the five
+  existing territorial starters engage with at all:
+  - **Raider** actively searches for a vulnerable enemy core with `READ`,
+    confirms the location before committing, and then attacks it. It also
+    demonstrates the structural fix for the most common Agent API v1
+    correctness mistake: recording the address a `READ` is waiting on so
+    `Observation.last_read` is consumed exactly once rather than re-read
+    stale.
+  - **Sentinel** deliberately spends one action in every four re-securing
+    its own core instead of expanding, making the cost of defending
+    measurable.
+
+  Neither is an optimal strategy, and both typically hold less territory
+  than the pure expansion starters — that trade-off is the lesson. Both are
+  independently maintained product agents derived from frozen research
+  reference agents, not copies of the benchmark artifacts themselves, and
+  neither is a benchmark member.
+- **Ruleset clarity** — the Agent Designer now states, and lets you choose,
+  the Ruleset it actually uses:
+  - Agent Development's development tests gained an explicit Ruleset
+    control, **now defaulting to `bytefray-rules-2`**. Previously this path
+    passed no `--ruleset` at all and silently inherited the CLI's
+    backward-compatible Ruleset-v1 default while the Simple/Advanced match
+    tabs beside it defaulted to v2. The completed-test result reports the
+    Ruleset the tool itself ran under. Ruleset v1 remains selectable for
+    Python compatibility testing. **This is an intentional GUI-default
+    behavior change**; the CLI's own default is unchanged.
+  - Pairwise evaluation gained the same explicit control, also defaulting
+    to `bytefray-rules-2`, and always sends `--ruleset` explicitly rather
+    than inheriting a default. A preset that names its own Ruleset is
+    surfaced into the selector rather than silently overridden. Group
+    evaluation remains Ruleset-v2-only, unchanged. No existing evaluation's
+    identity or resume behavior moves.
+  - `bytefray agents` listing now marks each entry `[Python]` or `[VM]`,
+    the same vocabulary the Designer's match selectors already use, with a
+    short legend stating which Rulesets each runtime kind can use. No
+    persisted schema changed.
+  - Ruleset descriptions now state the compatibility rule in both
+    directions: Ruleset v2 runs Python agents only; Ruleset v1 also runs
+    Python agents and is the only Bytefray ruleset that runs VM/blob
+    agents. The Ruleset v1 option is labeled "Compatibility (Python and
+    VM/blob)" rather than "Legacy / VM compatibility", which understated
+    its Python support.
+- **Fixed** — the `bytefray agents` listing used a non-ASCII placeholder for
+  "no blob", which the frozen Windows executable rendered as a replacement
+  character where the source build did not. It is now ASCII `none`.
+- **VM/blob compatibility** is unchanged and remains Ruleset-v1-only.
+  **Redcode/pMARS** remains external interoperability that uses no Bytefray
+  Ruleset at all — no product or UI text assigns it one, and no Designer
+  VM/Redcode tab was added.
+
 ## [3.0.0-alpha1] - 2026-08-26
 
 ### Bytefray 3.0 — first alpha prerelease
