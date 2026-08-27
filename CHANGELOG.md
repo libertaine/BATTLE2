@@ -2,6 +2,76 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [3.0.0-alpha1] - 2026-08-26
+
+### Bytefray 3.0 — first alpha prerelease
+
+This is an **alpha prerelease**, not a stable release. Bytefray v3.0 is a
+product cycle, not a gameplay cycle: it ships `bytefray-rules-2` unchanged
+(the closed v3 Ruleset research program found no evidence justifying a
+gameplay-semantic change — see
+[V3_RULESET_RESEARCH_SUMMARY.md](docs/V3_RULESET_RESEARCH_SUMMARY.md)) and
+focuses on presentation, agent creation, strategy analysis, evaluation
+infrastructure, and distribution quality. See
+[V3_PRODUCT_SCOPE.md](docs/V3_PRODUCT_SCOPE.md) for the full product thesis
+and [V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md](docs/V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md)
+for this alpha's integration/distribution qualification record.
+
+- **Presentation** — the Replay Viewer's header band carries shared
+  Bytefray branding; a restrained "CORE CAPTURED" callout appears in the
+  top HUD band during normal forward playback when a core-capture event
+  occurs, naming the victim (and captor, when attributable), then
+  disappears automatically; and a whole-match timeline with click/drag
+  seeking sits in the footer band alongside existing playback controls. No
+  Ruleset, scoring, scheduler, Agent API, or replay-schema change.
+- **Agent creation** — a second, self-contained "Annotated Example"
+  scaffold template (`bytefray agents create --template annotated`, and the
+  matching Agent Designer New Agent choice) alongside the original blank
+  template; a Development-tab Reload affordance wired into Validate/Test;
+  and selectable/copyable status and error text.
+- **Strategy analysis** — a `--json` mode for `agents evaluate`; visual
+  win-rate/confidence-interval and behavior-profile widgets in both the
+  live-run results dialog and the evaluation-history dialog; and two
+  disclosed v1.6 Phase 6 evaluation-comparison defects resolved. Evidence
+  presentation only — no Elo/Glicko, composite rating, clustering, or
+  AI-generated strategic text.
+- **Evaluation infrastructure** — `EvaluationHistoryDialog` gained the
+  CLI's existing non-default-condition disclosure and an "Open Evaluation
+  Folder" action; the Designer's Evaluate dialog gained the CLI's
+  already-shipped `--workers` worker-pool control (confirmed
+  identity-inert); and a GUI comparison-ambiguity state now discloses the
+  detail in place instead of directing the user back to the CLI.
+- **Distribution** — fixed a real, previously-shipped packaging gap where
+  `tools/bytefray.spec` and `tools/agent_designer.spec` bundled the
+  original "blank" agent-scaffold template but never the Annotated Example
+  template added above, so the frozen Windows builds silently lacked it;
+  corrected stale `1.6.0`-era filenames/version references in
+  [INSTALL.md](INSTALL.md), [docs/LINUX_INSTALL.md](docs/LINUX_INSTALL.md),
+  and [SECURITY.md](SECURITY.md) that had drifted from the already-current
+  `2.0.0` line; and qualified the Windows portable/installer, Python
+  wheel/sdist, and integrated create → validate → test → evaluate → replay
+  workflow against the packaged product, not only a source checkout.
+
+### Compatibility
+
+- **Ruleset v2** (`bytefray-rules-2`) ships unchanged as v3.0's active
+  gameplay identity, alongside frozen Ruleset v1.
+- **Agent API v1 is unchanged** — there is no Agent API v2 in this release;
+  every existing compatible agent continues to run unmodified.
+- No result/replay/evaluation artifact schema change. Historical artifacts
+  of every prior version remain readable.
+
+### Scope boundaries
+
+This alpha is a distribution/integration checkpoint on top of Phases 1-4,
+not a new development phase — see
+[V3_PRODUCT_SCOPE.md](docs/V3_PRODUCT_SCOPE.md) §5 for the full v3.0
+non-goals list (no new Ruleset, no Agent API v2, no scheduler rewrite, no
+new scoring/rating system, among others). Feedback is explicitly sought on
+product experience — agent-creation clarity, evaluation-result
+understandability, and Replay Viewer usability — not on Ruleset-3 gameplay,
+which remains on hold.
+
 ## [2.0.0] - 2026-08-24
 
 ### Bytefray 2.0 — stable release

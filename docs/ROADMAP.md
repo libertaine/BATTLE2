@@ -956,7 +956,8 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: Phase 2 complete.** Bytefray v3.0 is a **product** release
+**Status: Phase 5 (integration & distribution) qualification complete;
+`v3.0.0-alpha1` publication pending.** Bytefray v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
 evaluation infrastructure, and distribution quality. See
@@ -993,6 +994,46 @@ handlers are original defensive design, not a masked historical bug; and
 real, driven before/after screenshots. Strategy-analysis presentation was
 explicitly held out of scope for Phase 3. No Ruleset, Agent API, scoring,
 or provenance change.
+
+**Phase 3 (strategy analysis) is complete** — see
+[V3_PHASE3_STRATEGY_ANALYSIS.md](V3_PHASE3_STRATEGY_ANALYSIS.md). Directed
+at four questions a user should be able to answer after an evaluation
+without cross-referencing separate CLI/GUI text — who won and how
+convincingly, what each agent actually did, why a matchup may have favored
+one side, and where to inspect the evidence — this phase audited Bytefray's
+existing analytics first, then structured and surfaced that data: a
+`--json` mode for `agents evaluate`, visual win-rate/confidence-interval
+and behavior-profile widgets wired into both the live-run results dialog
+and the evaluation-history dialog, and two disclosed v1.6 Phase 6 defects
+resolved along the way. Explicitly excluded, by direction: any Elo/Glicko
+or composite rating, clustering, and AI-generated strategic text. No
+Ruleset, Agent API, scoring, scheduler, or artifact-schema change.
+
+**Phase 4 (evaluation infrastructure) is complete** — see
+[V3_PHASE4_EVALUATION_INFRASTRUCTURE.md](V3_PHASE4_EVALUATION_INFRASTRUCTURE.md).
+Closed a real GUI/CLI parity gap rather than adding new evaluation
+machinery: `EvaluationHistoryDialog` gained the CLI's existing
+non-default-condition disclosure (arena size, action budget, kill weight,
+experimental locality reach) and an "Open Evaluation Folder" action; the
+Designer's Evaluate dialog gained the CLI's already-shipped `--workers`
+worker-pool control (confirmed identity-inert — `evaluation_id`/
+`schedule_id` are unaffected by worker count); and one GUI comparison state
+that previously told the user to leave the GUI and run `evaluations show
+--json` to locate a `schedule_id` now discloses that detail in place. No
+evaluation-artifact delete/prune/archive capability was added — none exists
+in this layer, and Phase 4 did not add one. No Ruleset, Agent API, or
+schema change.
+
+**Phase 5 (integration & distribution) qualification is complete** — see
+[V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md](V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md).
+Proves the composed Phase 0-4 product installs, launches, and runs the full
+create → validate → test → evaluate → replay workflow from packaged
+Windows and Python-wheel distributions, not just a source checkout — fixing
+a real, previously-shipped packaging gap along the way (`tools/bytefray.spec`
+and `tools/agent_designer.spec` bundled the original "blank" agent-scaffold
+template but never the Phase 2 "Annotated Example" template, so the frozen
+Windows builds silently lacked it). No gameplay, Ruleset, Agent API, or
+scoring change; `bytefray-rules-2` ships unchanged as v3.0's active Ruleset.
 
 ## After v1.0
 

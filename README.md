@@ -136,6 +136,13 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
+**Alpha prerelease:** Bytefray v3.0.0-alpha1 (presentation, agent-creation,
+strategy-analysis, and evaluation-workflow improvements on unchanged
+`bytefray-rules-2` gameplay) is qualified and pending publication — see
+[CHANGELOG.md](CHANGELOG.md#300-alpha1---2026-08-26) for details. Once
+published, prerelease downloads appear on the
+[GitHub Releases page](https://github.com/libertaine/Bytefray/releases).
+
 **Stable release:** [Bytefray v2.0.0](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
 — Vulnerable Core. Promotes the qualified `v2.0.0-rc2` candidate with no
 software change; adds the permanent Ruleset v2 (`bytefray-rules-2`)
@@ -272,6 +279,11 @@ See [pMARS build/runtime guidance](tools/pmars/README.md) and
 - Windows AMD64 installer and portable package with four onedir applications:
   `bytefray`, `bytefray-cli`, `bytefray-agent-designer`, and
   `bytefray-replay-viewer`
+- **macOS is not a currently supported or tested distribution target.**
+  No macOS build, packaging, or CI job exists; the pure Python wheel may
+  work there in principle (Pygame and PySide6 both publish macOS wheels
+  upstream) but this is untested and unsupported. Report macOS results as
+  a GitHub issue if you try it.
 
 The primary dispatcher is `bytefray`; obsolete predecessor command and
 executable names are not supported. Internal `battle_engine`/`battle_client`
