@@ -3,10 +3,11 @@
 ## Supported release line
 
 Bytefray follows a single stable release line. Security fixes are made
-against the latest `1.x` release; there are no older maintained major
-versions. See [CHANGELOG.md](CHANGELOG.md) for release history and
-[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for what "1.x" guarantees
-(Ruleset, Agent API, and schema stability) do and do not cover.
+against the latest stable release (currently the `2.x` line); there are no
+older maintained major versions. See [CHANGELOG.md](CHANGELOG.md) for release
+history and [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for what each
+major line guarantees (Ruleset, Agent API, and schema stability) do and do
+not cover.
 
 ## Reporting a vulnerability
 
