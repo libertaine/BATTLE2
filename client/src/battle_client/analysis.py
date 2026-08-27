@@ -15,11 +15,12 @@ spec's §6 for the one deliberate behavior boundary correction --
 
 from __future__ import annotations
 
+import bisect
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from battle_engine.replay import EngineEvent
+from battle_engine.replay import AgentEvent, EngineEvent, KillDeathEvent, RuntimeEvent
 
 from battle_client.session import ReplaySession, ReplayState
 
@@ -131,6 +132,63 @@ def events_near_tick(
     """
     at_or_before = [pair for pair in events if pair[0] <= tick]
     return at_or_before[-window:] if window > 0 else []
+
+
+def timeline_event_marks(
+    events: Sequence[tuple[int, EngineEvent]],
+) -> tuple[tuple[int, str | None], ...]:
+    """Each recorded event reduced to ``(tick, affected_agent_id)``.
+
+    Used to mark where notable moments sit along a whole-match timeline. The
+    "affected agent" is the event's own victim (a kill/death or a runtime
+    forfeit) or its acting agent (a historical ``AgentEvent``), and is
+    ``None`` when the event names no agent at all -- never guessed. Nothing
+    here classifies *why* an entrant died: a core capture is distinguished
+    from an ordinary kill only by ``AgentState.termination_reason``, which is
+    tick state rather than event data, and ``battle_client.replay_status``
+    remains the single place that check lives.
+
+    Duplicates are collapsed, so several events naming the same agent on the
+    same tick contribute one mark rather than overdrawing each other. The
+    result stays in ascending tick order, matching
+    :func:`collect_match_events`'s own ordering.
+    """
+    marks: list[tuple[int, str | None]] = []
+    seen: set[tuple[int, str | None]] = set()
+    for tick, event in events:
+        if isinstance(event, (KillDeathEvent, RuntimeEvent)):
+            agent_id: str | None = event.victim
+        elif isinstance(event, AgentEvent):
+            agent_id = event.agent_id
+        else:  # pragma: no cover - EngineEvent is a closed union
+            agent_id = None
+        key = (tick, agent_id)
+        if key not in seen:
+            seen.add(key)
+            marks.append(key)
+    return tuple(marks)
+
+
+def nearest_recorded_tick(recorded_ticks: Sequence[int], tick: int) -> int | None:
+    """The recorded tick closest to ``tick``, or ``None`` if there are none.
+
+    ``recorded_ticks`` is assumed strictly increasing (as
+    ``ReplaySession.recorded_ticks`` guarantees). A canonical replay records
+    every integer tick, so this is an identity for any in-range request; it
+    exists for the sparse legacy case, where an arbitrary requested tick may
+    fall in a gap and ``ReplaySession.seek`` would reject it. Ties (a request
+    exactly between two recorded ticks) resolve to the earlier one, so the
+    mapping is deterministic rather than dependent on rounding direction.
+    """
+    if not recorded_ticks:
+        return None
+    index = bisect.bisect_left(recorded_ticks, tick)
+    if index == 0:
+        return recorded_ticks[0]
+    if index >= len(recorded_ticks):
+        return recorded_ticks[-1]
+    before, after = recorded_ticks[index - 1], recorded_ticks[index]
+    return after if (after - tick) < (tick - before) else before
 
 
 @dataclass(frozen=True)

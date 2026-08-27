@@ -3,15 +3,22 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from battle_client.analysis import SelectedCellInfo, collect_match_events
-from battle_client.hud_layout import calculate_layout
+from battle_client.analysis import (
+    SelectedCellInfo,
+    collect_match_events,
+    timeline_event_marks,
+)
+from battle_client.hud_layout import FOOTER_HEIGHT, MIN_VIEWER_SIZE, calculate_layout
 from battle_client.player import PlaybackController
 from battle_client.renderers.pygame_renderer import (
     ACTIVITY_WINDOW_TICKS,
+    AGENT_COLORS,
     CAPTURE_CALLOUT_DURATION_TICKS,
     CAPTURE_CALLOUT_FADE_TICKS,
     HELP_TEXT,
     HUD_CHAR_WIDTH_PX,
+    TIMELINE_PLAYHEAD_COLOR,
+    TIMELINE_TRACK_COLOR,
     CoreCaptureAttribution,
     PygameRenderer,
     activity_intensity,
@@ -309,9 +316,11 @@ def test_configure_window_uses_display_margin_and_preferred_viewport():
     assert renderer._display_safe_bounds == (1728, 972)
     assert renderer.scale == 30
     # Beta1 Phase 4: the window is the arena (960x480, unchanged) plus the
-    # fixed-height top HUD and footer bands (100 + 60 = 160px) -- see
-    # hud_layout.TOP_BAND_HEIGHT/FOOTER_HEIGHT.
-    assert set_mode_calls == [((960, 640), 1)]
+    # fixed-height top HUD and footer bands -- see hud_layout.
+    # TOP_BAND_HEIGHT/FOOTER_HEIGHT. The footer grew by FOOTER_TIMELINE_BLOCK
+    # when the v3.0 match timeline strip was added to it; the arena's own
+    # 960x480 is unaffected, which is what this assertion is really pinning.
+    assert set_mode_calls == [((960, 100 + 480 + FOOTER_HEIGHT), 1)]
     # The source checkout ships assets/branding/bytefray-icon.png, so this
     # runs for real (not mocked) -- see get_branding_icon_path.
     assert len(set_icon_calls) == 1
@@ -705,8 +714,15 @@ class _FakeFont:
 
 
 class _FakeDraw:
+    def __init__(self):
+        # Recorded so a geometry-bearing overlay (e.g. the footer's match
+        # timeline) can be asserted on without a real display. Every entry
+        # is (surface, color, rect, width); older tests that only need
+        # "does not raise" simply ignore it.
+        self.rects = []
+
     def rect(self, surface, color, rect, width=0):
-        pass
+        self.rects.append((surface, color, rect, width))
 
     def line(self, surface, color, start, end):
         pass
@@ -1805,3 +1821,213 @@ def test_capture_callout_renders_without_crashing_across_window_sizes(
     statuses = get_entrant_statuses(session, match_events=collect_match_events(session))
 
     renderer._draw_capture_callout(controller, statuses)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Match timeline (v3.0) -- see docs/V3_MATCH_TIMELINE.md.
+# ---------------------------------------------------------------------------
+def _timeline_renderer(tmp_path, window_size=(960, 600)):
+    """A band renderer wired to the real two-entrant capture session, with
+    its timeline marks derived the same way ``run()`` derives them."""
+    session = _v2_two_entrant_session(tmp_path)  # ticks 0..2, kill event at 2
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer(window_size, entrant_count=2, arena_size=32)
+    renderer._match_events = collect_match_events(session)
+    renderer._timeline_marks = timeline_event_marks(renderer._match_events)
+    renderer._ruleset_label = "bytefray-rules-2"
+    return renderer, controller
+
+
+def test_timeline_marks_come_from_the_real_replays_recorded_events(tmp_path):
+    renderer, _controller = _timeline_renderer(tmp_path)
+
+    # The fixture records exactly one event: B kills A at tick 2.
+    assert renderer._timeline_marks == ((2, "A"),)
+
+
+def test_timeline_draws_a_track_a_playhead_and_a_mark_inside_the_footer(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path)
+    layout = renderer._layout
+    tx, ty, tw, th = layout.footer_timeline_rect
+    footer_y = layout.window_size[1] - layout.footer_height
+
+    renderer._draw_timeline(controller)
+
+    drawn = [rect for _surface, _color, rect, _width in renderer.pg.draw.rects]
+    assert drawn, "the timeline drew nothing"
+    # Every drawn rect stays inside the footer band (the playhead deliberately
+    # overhangs the track by a pixel, but never past the band itself).
+    for x, y, w, h in drawn:
+        assert footer_y <= y and y + h <= layout.window_size[1]
+        assert tx <= x and x + w <= tx + tw
+    assert (tx, ty, tw, th) in drawn
+    colors = [color for _surface, color, _rect, _width in renderer.pg.draw.rects]
+    assert AGENT_COLORS["A"] in colors  # the entrant-colored mark for A's death
+    assert TIMELINE_PLAYHEAD_COLOR in colors
+
+
+def test_timeline_playhead_tracks_the_current_tick(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path)
+    rect = renderer._layout.footer_timeline_rect
+
+    positions = []
+    for tick in (0, 1, 2):
+        controller.session.seek(tick)
+        renderer.pg.draw.rects.clear()
+        renderer._draw_timeline(controller)
+        positions.append(
+            next(
+                r[0]
+                for _s, color, r, _w in renderer.pg.draw.rects
+                if color == TIMELINE_PLAYHEAD_COLOR
+            )
+        )
+
+    assert positions == sorted(positions)
+    assert positions[0] == rect[0]
+    assert positions[-1] > positions[0]
+
+
+def test_timeline_draws_nothing_before_a_layout_exists(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path)
+    renderer._layout = None
+
+    renderer._draw_timeline(controller)  # must not raise
+
+    assert renderer.pg.draw.rects == []
+
+
+def test_timeline_draws_nothing_when_the_footer_omitted_its_track(tmp_path):
+    """A window too short for a full footer has a degenerate timeline rect."""
+    renderer, controller = _timeline_renderer(tmp_path)
+    renderer._layout = calculate_layout((640, FOOTER_HEIGHT - 10), 2, (8, 4))
+
+    renderer._draw_timeline(controller)
+
+    assert renderer.pg.draw.rects == []
+
+
+def test_timeline_click_seeks_to_the_tick_under_the_cursor(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path)
+    tx, ty, tw, _th = renderer._layout.footer_timeline_rect
+    controller.session.restart()
+
+    handled = renderer._timeline_seek(controller, (tx + tw - 1, ty + 1))
+
+    assert handled is True
+    assert controller.session.current_tick == 2  # the replay's final tick
+
+
+def test_timeline_click_at_the_left_edge_seeks_to_the_first_tick(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path)
+    tx, ty, _tw, _th = renderer._layout.footer_timeline_rect
+    controller.session.seek(2)
+
+    assert renderer._timeline_seek(controller, (tx, ty + 1)) is True
+    assert controller.session.current_tick == 0
+
+
+def test_timeline_seek_pauses_playback_like_every_other_navigation(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path)
+    tx, ty, tw, _th = renderer._layout.footer_timeline_rect
+    controller.play()
+    assert controller.playing is True
+
+    renderer._timeline_seek(controller, (tx + tw // 2, ty + 1))
+
+    assert controller.playing is False
+
+
+def test_timeline_seek_ignores_a_position_off_the_track(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path)
+    _tx, ty, _tw, _th = renderer._layout.footer_timeline_rect
+    controller.session.seek(1)
+
+    assert renderer._timeline_seek(controller, (10, ty - 40)) is False
+    assert controller.session.current_tick == 1
+    assert controller.playing is False
+
+
+def test_clicking_the_timeline_begins_a_drag_and_skips_the_other_hit_targets(tmp_path):
+    """A grab on the track must not also fall through to arena cell
+    selection, and must arm the per-frame drag path."""
+    renderer, controller = _timeline_renderer(tmp_path)
+    tx, ty, tw, _th = renderer._layout.footer_timeline_rect
+
+    renderer._handle_click(controller, (tx + tw // 2, ty + 1))
+
+    assert renderer._timeline_scrubbing is True
+    assert renderer._selected_address is None
+
+
+def test_clicking_off_the_timeline_does_not_begin_a_drag(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path)
+
+    renderer._handle_click(controller, (5, 5))  # the top HUD band
+
+    assert renderer._timeline_scrubbing is False
+
+
+def test_dragging_across_the_timeline_walks_the_replay(tmp_path):
+    """Successive drag positions resolve to successive ticks -- the same path
+    ``_loop`` drives once per frame from the mouse's current position."""
+    renderer, controller = _timeline_renderer(tmp_path)
+    tx, ty, tw, _th = renderer._layout.footer_timeline_rect
+
+    visited = []
+    for fraction in (0.0, 0.5, 1.0, 0.0):
+        renderer._timeline_seek(controller, (tx + int(fraction * (tw - 1)), ty + 1))
+        visited.append(controller.session.current_tick)
+
+    assert visited == [0, 1, 2, 0]
+
+
+def test_a_timeline_seek_clears_an_in_progress_capture_callout(tmp_path):
+    """Scrubbing is a seek, so it obeys the callout's existing rule that a
+    transient notification never survives a non-linear tick jump."""
+    renderer, controller = _timeline_renderer(tmp_path)
+    tx, ty, tw, _th = renderer._layout.footer_timeline_rect
+    session = controller.session
+    session.seek(0)
+    renderer._advance_transient_effects(session.current_state)
+    for _ in range(2):  # walk forward so the tick-2 capture genuinely triggers
+        session.step_forward()
+        renderer._advance_transient_effects(session.current_state)
+    assert renderer._active_capture_callout is not None
+
+    renderer._timeline_seek(controller, (tx + tw // 2, ty + 1))
+    renderer._advance_transient_effects(session.current_state)
+
+    assert renderer._active_capture_callout is None
+    assert renderer._capture_callout_queue == []
+
+
+def test_timeline_renders_at_the_minimum_supported_viewport(tmp_path):
+    renderer, controller = _timeline_renderer(tmp_path, window_size=MIN_VIEWER_SIZE)
+    layout = renderer._layout
+    assert layout.footer_timeline_rect[2] > 0
+
+    renderer._draw_timeline(controller)
+
+    drawn = [rect for _s, _c, rect, _w in renderer.pg.draw.rects]
+    assert drawn
+    footer_y = MIN_VIEWER_SIZE[1] - layout.footer_height
+    for _x, y, _w, h in drawn:
+        assert footer_y <= y and y + h <= MIN_VIEWER_SIZE[1]
+
+
+def test_timeline_of_an_eventless_match_still_shows_progress(tmp_path):
+    """Most recorded matches contain no events at all; the track must still
+    draw its own body and playhead rather than degrading to nothing."""
+    session = _v2_three_entrant_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 600), entrant_count=3, arena_size=48)
+    renderer._match_events = collect_match_events(session)
+    renderer._timeline_marks = timeline_event_marks(renderer._match_events)
+    assert renderer._timeline_marks == ()
+
+    renderer._draw_timeline(controller)
+
+    colors = [color for _s, color, _r, _w in renderer.pg.draw.rects]
+    assert TIMELINE_PLAYHEAD_COLOR in colors
+    assert TIMELINE_TRACK_COLOR in colors

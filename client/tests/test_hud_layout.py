@@ -12,9 +12,13 @@ from __future__ import annotations
 
 from itertools import combinations
 
+import pytest
 from battle_client.hud_layout import (
+    COMPACT_HELP_TEXT,
+    EXPANDED_HELP_LINES,
     FOOTER_GRAPH_MIN_WINDOW_WIDTH,
     FOOTER_HEIGHT,
+    FOOTER_PADDING,
     MAX_TOP_BAND_FRACTION,
     MIN_USEFUL_ARENA_HEIGHT,
     MIN_VIEWER_SIZE,
@@ -28,6 +32,9 @@ from battle_client.hud_layout import (
     format_playback_line,
     format_terminal_state_line,
     integer_scale_to_fit,
+    timeline_contains,
+    timeline_tick_for_x,
+    timeline_x_for_tick,
     truncate_with_ellipsis,
 )
 from battle_client.replay_status import CoreStatus, EntrantReplayStatus
@@ -607,3 +614,145 @@ def test_playback_line_shows_tick_status_and_speed():
 def test_playback_line_handles_unknown_final_tick():
     line = format_playback_line(tick=0, final_tick=None, status_label="PLAYING", speed=2.0)
     assert "Tick 0/?" in line
+
+
+# ---------------------------------------------------------------------------
+# Match timeline (v3.0) -- see docs/V3_MATCH_TIMELINE.md.
+# ---------------------------------------------------------------------------
+def _footer_rects(layout):
+    return {
+        "timeline": layout.footer_timeline_rect,
+        "text": layout.footer_text_rect,
+        "graph": layout.footer_graph_rect,
+    }
+
+
+@pytest.mark.parametrize("window_size", [(640, 480), (800, 600), (960, 600), (1280, 800)])
+@pytest.mark.parametrize("entrant_count", [1, 2, 3, 5, 12])
+def test_footer_timeline_tiles_the_footer_without_overlapping_anything(
+    window_size, entrant_count
+):
+    layout = calculate_layout(window_size, entrant_count, (32, 16))
+    rects = _footer_rects(layout)
+    timeline = rects["timeline"]
+
+    assert timeline[2] > 0 and timeline[3] > 0
+    # Strictly inside the footer band, so the arena above is never touched.
+    footer_y = window_size[1] - layout.footer_height
+    assert footer_y <= timeline[1]
+    assert timeline[1] + timeline[3] <= window_size[1]
+    assert not _overlaps(timeline, layout.arena_rect)
+    assert not _overlaps(timeline, rects["text"])
+    assert not _overlaps(timeline, rects["graph"])
+    # The track sits above the text/graph columns it shares the band with.
+    assert timeline[1] + timeline[3] <= rects["text"][1]
+
+
+def test_footer_timeline_is_omitted_when_the_footer_had_to_be_clipped():
+    """A window too short for a whole footer band degrades to no timeline
+    rather than overlapping the text it would otherwise sit above -- the
+    same guard the territory graph already uses."""
+    layout = calculate_layout((640, FOOTER_HEIGHT - 10), 2, (32, 16))
+
+    assert layout.footer_height < FOOTER_HEIGHT
+    assert layout.footer_timeline_rect[2] == 0
+    assert layout.footer_timeline_rect[3] == 0
+
+
+def test_minimum_viewport_card_geometry_is_unchanged_by_the_timeline_band():
+    """The timeline's height was chosen so the footer's growth is absorbed by
+    _top_height_cap's arena reservation, not by re-flowing entrant cards.
+    These are the pre-timeline grids at the supported 640x480 minimum."""
+    assert calculate_layout(MIN_VIEWER_SIZE, 2, (32, 16)).card_columns == 2
+    five = calculate_layout(MIN_VIEWER_SIZE, 5, (32, 16))
+    assert (five.card_mode, five.card_columns, five.card_rows) == ("compact", 3, 2)
+    twelve = calculate_layout(MIN_VIEWER_SIZE, 12, (32, 16))
+    assert (twelve.card_mode, twelve.card_columns, twelve.card_rows) == ("compact", 4, 3)
+
+
+@pytest.mark.parametrize("entrant_count", [1, 2, 3, 4, 5, 8, 12])
+def test_arena_keeps_its_useful_height_floor_with_the_timeline_present(entrant_count):
+    layout = calculate_layout(MIN_VIEWER_SIZE, entrant_count, (32, 16))
+
+    assert layout.arena_viewport_rect[3] >= MIN_USEFUL_ARENA_HEIGHT
+
+
+def test_timeline_x_for_tick_spans_the_whole_track():
+    rect = (10, 0, 101, 6)
+
+    assert timeline_x_for_tick(0, 0, 100, rect) == 10
+    assert timeline_x_for_tick(50, 0, 100, rect) == 60
+    assert timeline_x_for_tick(100, 0, 100, rect) == 110
+
+
+def test_timeline_x_for_tick_clamps_an_out_of_range_tick_to_an_end():
+    rect = (10, 0, 101, 6)
+
+    assert timeline_x_for_tick(-40, 0, 100, rect) == 10
+    assert timeline_x_for_tick(500, 0, 100, rect) == 110
+
+
+def test_timeline_x_for_tick_uses_a_non_zero_first_tick_as_the_origin():
+    """A sparse replay need not start at tick 0; the track still spans only
+    what was actually recorded."""
+    rect = (0, 0, 101, 6)
+
+    assert timeline_x_for_tick(200, 200, 300, rect) == 0
+    assert timeline_x_for_tick(300, 200, 300, rect) == 100
+
+
+def test_timeline_x_for_tick_pins_a_single_tick_replay_to_the_track_end():
+    assert timeline_x_for_tick(7, 7, 7, (0, 0, 50, 6)) == 49
+
+
+def test_timeline_tick_for_x_inverts_timeline_x_for_tick():
+    rect = (6, 0, 401, 6)
+
+    for tick in (0, 1, 137, 399, 400):
+        x = timeline_x_for_tick(tick, 0, 400, rect)
+        assert timeline_tick_for_x(x, 0, 400, rect) == tick
+
+
+def test_timeline_tick_for_x_clamps_a_drag_that_leaves_the_track():
+    rect = (10, 0, 101, 6)
+
+    assert timeline_tick_for_x(-999, 0, 100, rect) == 0
+    assert timeline_tick_for_x(9999, 0, 100, rect) == 100
+
+
+def test_timeline_helpers_are_safe_on_a_degenerate_track():
+    """The omitted-timeline rect must never produce a division or an
+    off-track coordinate."""
+    degenerate = (6, 400, 0, 0)
+
+    assert timeline_tick_for_x(50, 0, 100, degenerate) is None
+    assert timeline_x_for_tick(50, 0, 100, degenerate) == 6
+    assert timeline_contains(degenerate, (6, 400)) is False
+
+
+def test_timeline_contains_matches_the_track_and_its_vertical_grab_margin():
+    rect = (10, 100, 100, 6)
+
+    assert timeline_contains(rect, (10, 100)) is True
+    assert timeline_contains(rect, (109, 105)) is True
+    # Just above/below the drawn track still grabs it (footer padding).
+    assert timeline_contains(rect, (50, 97)) is True
+    assert timeline_contains(rect, (50, 108)) is True
+    # Further away, and outside it horizontally, does not.
+    assert timeline_contains(rect, (50, 96)) is False
+    assert timeline_contains(rect, (50, 110)) is False
+    assert timeline_contains(rect, (9, 102)) is False
+    assert timeline_contains(rect, (110, 102)) is False
+
+
+def test_help_lines_still_fit_their_footer_columns_at_the_minimum_width():
+    """Both help variants gained a timeline hint; neither may start
+    ellipsising at the supported 640px minimum (see _draw_footer's own
+    max_chars budget, which uses hud_layout-independent HUD_CHAR_WIDTH_PX=7)."""
+    layout = calculate_layout(MIN_VIEWER_SIZE, 2, (32, 16))
+    compact_budget = layout.footer_text_rect[2] // 7
+    expanded_budget = (MIN_VIEWER_SIZE[0] - 2 * FOOTER_PADDING) // 7
+
+    assert len(COMPACT_HELP_TEXT) <= compact_budget
+    for line in EXPANDED_HELP_LINES:
+        assert len(line) <= expanded_budget

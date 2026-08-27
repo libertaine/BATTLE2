@@ -57,7 +57,9 @@ from battle_client.analysis import (
     collect_match_events,
     compute_territory_history,
     events_near_tick,
+    nearest_recorded_tick,
     selected_cell_info,
+    timeline_event_marks,
 )
 from battle_client.hud_layout import (
     CARD_LINE_HEIGHT,
@@ -75,6 +77,9 @@ from battle_client.hud_layout import (
     format_match_header_lines,
     format_playback_line,
     integer_scale_to_fit,
+    timeline_contains,
+    timeline_tick_for_x,
+    timeline_x_for_tick,
     truncate_with_ellipsis,
 )
 from battle_client.player import PlaybackController
@@ -186,6 +191,19 @@ CAPTURE_CALLOUT_FADE_TICKS = 8
 # collapses into one "+N more" summary line -- keeps the box concise even
 # for a hypothetical many-entrant match with several simultaneous captures.
 CAPTURE_CALLOUT_MAX_LINES = 4
+# Match timeline (the footer's whole-match scrub track). Deliberately
+# low-contrast chrome: the track and its elapsed fill sit at the same
+# brightness as the existing footer panel border and dim text, so the
+# playhead -- the one thing that moves -- is what the eye follows.
+TIMELINE_TRACK_COLOR: tuple[int, int, int] = (30, 30, 35)
+TIMELINE_TRACK_BORDER: tuple[int, int, int] = PANEL_BORDER
+TIMELINE_ELAPSED_COLOR: tuple[int, int, int] = (58, 62, 76)
+TIMELINE_PLAYHEAD_COLOR: tuple[int, int, int] = TEXT_COLOR
+# Event marks are drawn in the affected entrant's own arena color, so a
+# mark on the track and that entrant's card/territory share one identity.
+TIMELINE_MARK_HEIGHT = 4
+TIMELINE_MARK_WIDTH = 2
+
 CAPTURE_CALLOUT_BG: tuple[int, int, int] = (20, 16, 10)
 CAPTURE_CALLOUT_MAX_WIDTH = 360
 CAPTURE_CALLOUT_MARGIN = 40
@@ -680,6 +698,17 @@ class PygameRenderer:
         # is always, once loaded.
         self._selected_address: int | None = None
 
+        # Match-timeline state. ``_timeline_marks`` is derived once in run()
+        # from the same self._match_events cache the footer already uses --
+        # no second event scan. ``_timeline_scrubbing`` is true only between
+        # a mouse-down that grabbed the track and its matching mouse-up;
+        # while it is set, _loop resolves the *current* mouse position once
+        # per frame rather than handling every queued MOUSEMOTION, which
+        # bounds a drag to at most one ReplaySession.seek per frame no
+        # matter how many motion events the platform delivers.
+        self._timeline_marks: tuple[tuple[int, str | None], ...] = ()
+        self._timeline_scrubbing = False
+
         # Territory-history trend graph (Phase 7b Slice 3): precomputed once
         # in run() by compute_territory_history, never recomputed per frame.
         self._territory_history = TerritoryHistory(ticks=(), percentages={})
@@ -814,6 +843,9 @@ class PygameRenderer:
         # Scans every recorded tick once; see _match_events's docstring in
         # __init__ for why this is cached rather than redone per frame.
         self._match_events = collect_match_events(session)
+        # Reduces the already-collected events above to their timeline
+        # marks; no additional pass over the replay.
+        self._timeline_marks = timeline_event_marks(self._match_events)
         # Also walks every recorded tick once (restoring the cursor
         # afterward); see compute_territory_history's docstring.
         self._territory_history = compute_territory_history(session)
@@ -1005,8 +1037,19 @@ class PygameRenderer:
                     self._handle_window_resize((w, h))
                 elif event.type == pg.MOUSEBUTTONDOWN and event.button == 1:
                     self._handle_click(controller, event.pos)
+                elif event.type == pg.MOUSEBUTTONUP and event.button == 1:
+                    self._timeline_scrubbing = False
             if not running:
                 break
+
+            # A timeline drag is resolved from the mouse's current position
+            # once per frame rather than from every queued MOUSEMOTION, so a
+            # fast drag costs at most one seek per frame. Held deliberately
+            # before controller.update(): _timeline_seek pauses playback, and
+            # a scrub should not be fighting an auto-advance in the same
+            # frame.
+            if self._timeline_scrubbing:
+                self._timeline_seek(controller, pg.mouse.get_pos())
 
             controller.update(elapsed_ms / 1000.0)
             self._advance_transient_effects(controller.session.current_state)
@@ -1014,12 +1057,18 @@ class PygameRenderer:
             pg.display.flip()
 
     def _handle_click(self, controller: PlaybackController, pos: tuple[int, int]) -> None:
-        """Seek to the footer's clickable event message, or select an arena
-        cell, for a click at ``pos``.
+        """Grab the timeline, seek to the footer's clickable event
+        message, or select an arena cell, for a click at ``pos``.
 
-        The footer's event message takes priority when both could apply: a
-        click resolving to its (single) event tick seeks and returns
-        immediately, without also touching cell selection.
+        The three hit targets are disjoint bands by construction (see
+        ``hud_layout.calculate_layout``), so their order is about intent
+        rather than overlap resolution: the timeline is checked first
+        because grabbing it also begins a drag (see ``_timeline_scrubbing``),
+        which must not be started by a click that merely landed near it.
+
+        The footer's event message takes priority over the arena when both
+        could apply: a click resolving to its (single) event tick seeks and
+        returns immediately, without also touching cell selection.
         ``ReplaySession.seek`` is called directly rather than through
         ``PlaybackController`` because seeking to an arbitrary already-
         recorded tick isn't one of the controller's own navigation
@@ -1035,6 +1084,10 @@ class PygameRenderer:
         the renderer has a real screen -- e.g. in a unit test that never
         called ``run()``) leaves the current selection untouched.
         """
+        if self._timeline_seek(controller, pos):
+            self._timeline_scrubbing = True
+            return
+
         if self._event_panel_origin is not None and self._event_panel_size is not None:
             tick = resolve_event_click(
                 self._event_panel_ticks,
@@ -1296,6 +1349,119 @@ class PygameRenderer:
             max(1, math.ceil(cell_h)),
         )
         self.pg.draw.rect(self.screen, SELECTION_COLOR, rect, 2)
+
+    def _draw_timeline(self, controller: PlaybackController) -> None:
+        """Draw the footer's whole-match timeline: an elapsed-progress track
+        across every recorded tick, a mark at each tick that recorded an
+        event, and the playhead at the current tick.
+
+        Complements, rather than repeats, the two things already in the
+        footer. The territory graph beside it plots a *trailing window* of
+        ownership; this plots the *whole match* and is the only control that
+        can reach an arbitrary tick. The core-capture callout announces a
+        capture as playback passes it; this shows where that moment sits so
+        it can be returned to afterwards.
+
+        Reads only ``self._timeline_marks`` (derived once in ``run()``) and
+        the session's own first/final recorded ticks -- no replay
+        reconstruction, no per-frame event scan. A no-op whenever no layout
+        has been computed yet (a unit test that never called ``run()``) or
+        the footer was too short for a timeline rect at all (see
+        ``hud_layout.calculate_layout``'s ``show_timeline``).
+        """
+        layout = self._layout
+        if layout is None:
+            return
+        rect = layout.footer_timeline_rect
+        tx, ty, tw, th = rect
+        if tw <= 0 or th <= 0:
+            return
+        session = controller.session
+        recorded = session.recorded_ticks
+        if not recorded:
+            return
+        first_tick, final_tick = recorded[0], recorded[-1]
+        current_tick = session.current_state.tick
+
+        self.pg.draw.rect(self.screen, TIMELINE_TRACK_COLOR, self.pg.Rect(tx, ty, tw, th))
+
+        playhead_x = timeline_x_for_tick(current_tick, first_tick, final_tick, rect)
+        elapsed_w = max(0, playhead_x - tx)
+        if elapsed_w > 0:
+            self.pg.draw.rect(
+                self.screen, TIMELINE_ELAPSED_COLOR, self.pg.Rect(tx, ty, elapsed_w, th)
+            )
+
+        # Drawn above the elapsed fill but below the playhead: where the two
+        # are merely close, the mark stays readable beside the playhead;
+        # where they resolve to the same pixel, the playhead wins, which is
+        # the right precedence for the only element that moves.
+        mark_y = ty + (th - TIMELINE_MARK_HEIGHT) // 2
+        for mark_tick, agent_id in self._timeline_marks:
+            color = (
+                AGENT_COLORS.get(agent_id, DEFAULT_AGENT_COLOR)
+                if agent_id is not None
+                else DEFAULT_AGENT_COLOR
+            )
+            # timeline_x_for_tick returns the mark's left edge, so a mark on
+            # the final tick would otherwise start at the last pixel of the
+            # track and finish just past it. Clamped by its own width, the
+            # last mark ends flush with the track instead.
+            mark_x = min(
+                timeline_x_for_tick(mark_tick, first_tick, final_tick, rect),
+                tx + tw - TIMELINE_MARK_WIDTH,
+            )
+            self.pg.draw.rect(
+                self.screen,
+                color,
+                self.pg.Rect(mark_x, mark_y, TIMELINE_MARK_WIDTH, TIMELINE_MARK_HEIGHT),
+            )
+
+        self.pg.draw.rect(
+            self.screen, TIMELINE_TRACK_BORDER, self.pg.Rect(tx, ty, tw, th), 1
+        )
+        # Clamped by its own width for the same reason as the marks above:
+        # the playhead at the final tick reads as "at the end" rather than
+        # spilling one pixel past the track.
+        head_x = min(playhead_x, tx + tw - 2)
+        self.pg.draw.rect(
+            self.screen, TIMELINE_PLAYHEAD_COLOR, self.pg.Rect(head_x, ty - 1, 2, th + 2)
+        )
+
+    def _timeline_seek(self, controller: PlaybackController, pos: tuple[int, int]) -> bool:
+        """Seek to the tick a click/drag at ``pos`` selects on the timeline.
+
+        Returns whether ``pos`` was on the track at all, so a caller can tell
+        "handled here" from "try the next hit target". The requested tick is
+        snapped to a genuinely recorded one before seeking (see
+        ``battle_client.analysis.nearest_recorded_tick``) -- ``ReplaySession.
+        seek`` rejects a tick that falls in a sparse legacy replay's gap, and
+        an arbitrary pixel position can land in one.
+
+        Playback is paused first, matching every other navigation command in
+        ``PlaybackController`` (see its class docstring): a manual seek while
+        auto-playing would otherwise be overridden by the next ``update()``.
+        A seek that resolves to the tick already on screen is skipped, so
+        holding the mouse still during a drag costs nothing.
+        """
+        layout = self._layout
+        if layout is None:
+            return False
+        rect = layout.footer_timeline_rect
+        if not timeline_contains(rect, pos):
+            return False
+        session = controller.session
+        recorded = session.recorded_ticks
+        if not recorded:
+            return False
+        requested = timeline_tick_for_x(pos[0], recorded[0], recorded[-1], rect)
+        if requested is None:
+            return False
+        target = nearest_recorded_tick(recorded, requested)
+        controller.pause()
+        if target is not None and target != session.current_tick:
+            session.seek(target)
+        return True
 
     def _draw_footer_graph(self, state: ReplayState, rect: tuple[int, int, int, int]) -> None:
         """Draw the compact territory-history trend panel at ``rect``
@@ -1572,9 +1738,9 @@ class PygameRenderer:
             self.screen.blit(rendered, (cx, cy + index * CARD_LINE_HEIGHT))
 
     def _draw_footer(self, controller: PlaybackController) -> None:
-        """Draw the bottom footer band: tick/playback/speed, one compact
-        status/event message, controls/help, and the territory-history
-        graph.
+        """Draw the bottom footer band: the whole-match timeline,
+        tick/playback/speed, one compact status/event message,
+        controls/help, and the territory-history graph.
 
         Also updates ``self._event_panel_*`` (read by ``_handle_click``) to
         reflect whether the status/event message line drawn this frame is
@@ -1592,8 +1758,9 @@ class PygameRenderer:
         band_rect = self.pg.Rect(0, footer_y, layout.window_size[0], layout.footer_height)
         self.pg.draw.rect(self.screen, PANEL_BG, band_rect)
         self.pg.draw.line(self.screen, PANEL_BORDER, (0, footer_y), (layout.window_size[0], footer_y))
+        self._draw_timeline(controller)
 
-        tx, ty, tw, _th = layout.footer_text_rect
+        tx, ty, tw, text_h = layout.footer_text_rect
         status_label = "PLAYING" if controller.playing else "PAUSED"
         if session.at_end and not controller.playing:
             status_label = "PAUSED (end)"
@@ -1642,7 +1809,10 @@ class PygameRenderer:
         # help variants fit their intended columns without ellipsis.
         max_chars = max(6, tw // HUD_CHAR_WIDTH_PX)
         for index, text in enumerate(lines):
-            if (index + 1) * FOOTER_LINE_HEIGHT > layout.footer_height:
+            # Bounded by the text rect's own height rather than the whole
+            # band's: the timeline strip above it is part of the band but
+            # not available to text.
+            if (index + 1) * FOOTER_LINE_HEIGHT > text_h:
                 break
             rendered = self.hud_font.render(truncate_with_ellipsis(text, max_chars), True, TEXT_COLOR)
             self.screen.blit(rendered, (tx, ty + index * FOOTER_LINE_HEIGHT))

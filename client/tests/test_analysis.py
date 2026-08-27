@@ -10,11 +10,14 @@ from battle_client.analysis import (
     collect_match_events,
     compute_territory_history,
     events_near_tick,
+    nearest_recorded_tick,
     selected_cell_info,
     territory_summary,
+    timeline_event_marks,
 )
 from battle_client.session import ReplaySession, ReplayState
 from battle_engine.replay import (
+    AgentEvent,
     AgentState,
     KillDeathEvent,
     MatchConfiguration,
@@ -466,3 +469,76 @@ def test_analysis_module_imports_without_pulling_in_pygame():
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Match-timeline marks and recorded-tick snapping (v3.0).
+# ---------------------------------------------------------------------------
+def test_timeline_event_marks_names_the_affected_entrant_per_event_kind():
+    events = [
+        (4, KillDeathEvent("kill", "A", "B")),
+        (9, KillDeathEvent("death", "C", None)),
+        (11, RuntimeEvent("forfeit", "D", "invalid_action")),
+        (14, AgentEvent("claim", "B")),
+    ]
+
+    assert timeline_event_marks(events) == ((4, "A"), (9, "C"), (11, "D"), (14, "B"))
+
+
+def test_timeline_event_marks_reports_no_agent_rather_than_guessing_one():
+    """An ``AgentEvent`` need not name an actor; the mark stays anonymous
+    instead of being attributed to somebody."""
+    assert timeline_event_marks([(3, AgentEvent("claim", None))]) == ((3, None),)
+
+
+def test_timeline_event_marks_collapses_duplicates_on_the_same_tick():
+    """Several events naming the same entrant at one tick would otherwise
+    draw the identical mark repeatedly at the identical pixel."""
+    events = [
+        (7, KillDeathEvent("kill", "A", "B")),
+        (7, KillDeathEvent("death", "A", None)),
+        (7, KillDeathEvent("kill", "C", "B")),
+    ]
+
+    assert timeline_event_marks(events) == ((7, "A"), (7, "C"))
+
+
+def test_timeline_event_marks_preserves_ascending_tick_order():
+    events = [(1, KillDeathEvent("kill", "A", "B")), (99, KillDeathEvent("kill", "B", "C"))]
+
+    assert [tick for tick, _agent in timeline_event_marks(events)] == [1, 99]
+
+
+def test_timeline_event_marks_of_an_eventless_match_is_empty():
+    """The common case: most recorded matches run to the tick limit with no
+    events at all, and the track simply shows progress."""
+    assert timeline_event_marks([]) == ()
+
+
+def test_nearest_recorded_tick_is_an_identity_for_a_canonical_replay():
+    recorded = tuple(range(6))
+
+    assert [nearest_recorded_tick(recorded, t) for t in recorded] == list(recorded)
+
+
+def test_nearest_recorded_tick_snaps_into_a_sparse_replays_gap():
+    recorded = (0, 10, 40)
+
+    assert nearest_recorded_tick(recorded, 9) == 10
+    assert nearest_recorded_tick(recorded, 12) == 10
+    assert nearest_recorded_tick(recorded, 33) == 40
+
+
+def test_nearest_recorded_tick_breaks_an_exact_tie_deterministically():
+    assert nearest_recorded_tick((0, 10), 5) == 0
+
+
+def test_nearest_recorded_tick_clamps_outside_the_recorded_range():
+    recorded = (5, 6, 7)
+
+    assert nearest_recorded_tick(recorded, -100) == 5
+    assert nearest_recorded_tick(recorded, 100) == 7
+
+
+def test_nearest_recorded_tick_of_an_empty_replay_is_none():
+    assert nearest_recorded_tick((), 3) is None

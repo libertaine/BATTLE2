@@ -13,9 +13,9 @@ Two governing rules, both enforced by construction here:
 * **The arena shows the battle. The HUD explains the battle.** Every rect
   this module hands back tiles the window into non-overlapping bands: a top
   HUD band (match header + one card per entrant), a middle arena band, and
-  a bottom footer band (playback/tick, one compact status line, controls,
-  and the territory-history graph). The arena band is never covered by any
-  of the others.
+  a bottom footer band (the whole-match timeline, playback/tick, one
+  compact status line, controls, and the territory-history graph). The
+  arena band is never covered by any of the others.
 * **The Replay Viewer renders the Phase-3 status model; it does not decide
   what a core, capture, death, or winner means.** Every formatting function
   below only ever reads already-derived fields off ``EntrantReplayStatus``/
@@ -75,7 +75,31 @@ TOP_BAND_HEIGHT = (
 FOOTER_LINE_HEIGHT = 16
 FOOTER_LINES = 3  # tick/playback/speed, status/event message, controls
 FOOTER_PADDING = 6
-FOOTER_HEIGHT = FOOTER_PADDING * 2 + FOOTER_LINES * FOOTER_LINE_HEIGHT
+
+# The match timeline: a thin full-width scrub track across the top of the
+# footer band, spanning the whole match from its first to its final recorded
+# tick (unlike the territory graph beside it, which deliberately shows only a
+# trailing window). Recorded matches run from tens to a couple of thousand
+# ticks while the keyboard's coarsest step is ten ticks, so without a
+# position-proportional track there is no way to reach an arbitrary point in a
+# long replay at all.
+#
+# The 8px total (FOOTER_TIMELINE_BLOCK) is a deliberate ceiling, not a
+# stylistic preference. _top_height_cap reserves MIN_USEFUL_ARENA_HEIGHT out
+# of whatever the footer leaves, so every pixel the footer gains is taken
+# from the top band's cap at the supported 640x480 minimum. Eight pixels is
+# the largest growth at which every existing entrant-count layout there --
+# including the densest twelve-entrant compact roster, which needs a 156px
+# cap for its four-column grid -- keeps the exact card geometry it had before
+# this band existed. A taller track would silently re-flow that roster into
+# narrower columns. The strip itself stays an easy mouse target regardless:
+# timeline_contains widens the grab area vertically past the drawn track.
+FOOTER_TIMELINE_HEIGHT = 6
+FOOTER_TIMELINE_GAP = 2
+FOOTER_TIMELINE_BLOCK = FOOTER_TIMELINE_HEIGHT + FOOTER_TIMELINE_GAP
+FOOTER_HEIGHT = (
+    FOOTER_PADDING * 2 + FOOTER_TIMELINE_BLOCK + FOOTER_LINES * FOOTER_LINE_HEIGHT
+)
 
 # The territory-history trend graph (relocated off the arena, see
 # docs/V2_0_BETA1_PHASE4_REPLAY_HUD.md) lives in the right side of the
@@ -106,6 +130,7 @@ class ViewerLayout:
     arena_rect: Rect
     arena_scale: int
     footer_text_rect: Rect
+    footer_timeline_rect: Rect
     footer_graph_rect: Rect
     footer_height: int
 
@@ -259,17 +284,32 @@ def calculate_layout(
             arena_h,
         )
 
+    # The timeline occupies the top of the footer band and pushes the text
+    # columns and graph below it. It is omitted (degenerate zero-size rect)
+    # whenever the footer itself had to be clipped -- the same "only when the
+    # band is at its full designed height" guard show_graph already uses --
+    # so a pathologically short window degrades instead of overlapping.
+    show_timeline = footer_h == FOOTER_HEIGHT
+    timeline_rect: Rect = (
+        FOOTER_PADDING,
+        footer_y + FOOTER_PADDING,
+        max(0, window_w - 2 * FOOTER_PADDING) if show_timeline else 0,
+        FOOTER_TIMELINE_HEIGHT if show_timeline else 0,
+    )
+    content_offset = FOOTER_PADDING + FOOTER_TIMELINE_BLOCK if show_timeline else 0
+    content_y = footer_y + content_offset
+
     show_graph = window_w >= FOOTER_GRAPH_MIN_WINDOW_WIDTH and footer_h == FOOTER_HEIGHT
     graph_w = FOOTER_GRAPH_WIDTH if show_graph else 0
-    graph_h = footer_h - 2 * FOOTER_PADDING if show_graph else 0
+    graph_h = footer_h - content_offset - FOOTER_PADDING if show_graph else 0
     graph_rect: Rect = (
         max(0, window_w - graph_w - FOOTER_PADDING),
-        footer_y + FOOTER_PADDING,
+        content_y,
         graph_w,
-        graph_h,
+        max(0, graph_h),
     )
     text_w = max(0, graph_rect[0] - FOOTER_PADDING * 2) if show_graph else max(0, window_w - FOOTER_PADDING * 2)
-    footer_text_rect: Rect = (FOOTER_PADDING, footer_y, text_w, footer_h)
+    footer_text_rect: Rect = (FOOTER_PADDING, content_y, text_w, max(0, footer_h - content_offset))
 
     return ViewerLayout(
         window_size=(window_w, window_h),
@@ -283,6 +323,7 @@ def calculate_layout(
         arena_rect=arena_rect,
         arena_scale=arena_scale,
         footer_text_rect=footer_text_rect,
+        footer_timeline_rect=timeline_rect,
         footer_graph_rect=graph_rect,
         footer_height=footer_h,
     )
@@ -424,10 +465,10 @@ def format_entrant_card_lines(
     return identity, compact_status
 
 
-COMPACT_HELP_TEXT = "Space play/pause · arrows step · Shift+arrows seek · ? controls"
+COMPACT_HELP_TEXT = "Space play/pause · arrows step · drag timeline · ? controls"
 EXPANDED_HELP_LINES = (
-    "Space play/pause · arrows step · Shift+arrows seek 10 · Home/End first/last",
-    "+/- speed · [/] zoom · 0 fit · T trails · click inspect/seek · Esc/Q quit · ? close",
+    "Space play/pause · arrows step · Shift+arrows seek 10 · Home/End first/last · Esc/Q quit",
+    "+/- speed · [/] zoom · 0 fit · T trails · drag timeline · click inspect/seek · ? close",
 )
 
 
@@ -492,6 +533,63 @@ def format_playback_line(*, tick: int, final_tick: int | None, status_label: str
     return f"Tick {tick}/{total}   [{status_label}]   speed {speed:g}x"
 
 
+# ---------------------------------------------------------------------------
+# Match-timeline coordinate math -- pure, inverse-consistent, no drawing.
+# Both directions are deliberately defined over the *whole* match (first to
+# final recorded tick), so the track always represents the same span no
+# matter where playback currently is.
+# ---------------------------------------------------------------------------
+def timeline_x_for_tick(tick: int, first_tick: int, final_tick: int, rect: Rect) -> int:
+    """The x pixel inside ``rect`` that represents ``tick``.
+
+    Clamped into ``rect`` horizontally, so an out-of-range tick pins to an
+    end rather than drawing outside the track. A single-tick replay
+    (``final_tick == first_tick``) has no span to divide by and reports the
+    track's right edge, matching "this replay is entirely complete".
+    """
+    rx, _ry, rw, _rh = rect
+    if rw <= 0:
+        return rx
+    span = final_tick - first_tick
+    if span <= 0:
+        return rx + rw - 1
+    fraction = min(1.0, max(0.0, (tick - first_tick) / span))
+    return rx + round(fraction * (rw - 1))
+
+
+def timeline_tick_for_x(x: int, first_tick: int, final_tick: int, rect: Rect) -> int | None:
+    """The tick a click/drag at horizontal position ``x`` selects.
+
+    The inverse of :func:`timeline_x_for_tick`, clamped to the replay's
+    recorded range so a drag that leaves the track's ends still resolves to
+    its first/final tick instead of an impossible one. Returns ``None`` only
+    for a degenerate (zero-width) track -- i.e. a footer too short to show a
+    timeline at all. The result is a tick *number*, not necessarily a
+    *recorded* tick: a caller seeking a possibly-sparse legacy replay must
+    still snap it (see ``battle_client.analysis.nearest_recorded_tick``).
+    """
+    rx, _ry, rw, _rh = rect
+    if rw <= 0:
+        return None
+    fraction = min(1.0, max(0.0, (x - rx) / (rw - 1))) if rw > 1 else 0.0
+    return first_tick + round(fraction * (final_tick - first_tick))
+
+
+def timeline_contains(rect: Rect, pos: tuple[int, int], *, grab_padding: int = 3) -> bool:
+    """Whether a click at ``pos`` should be treated as grabbing the track.
+
+    ``grab_padding`` widens the vertical hit area only: a 10px-tall strip is
+    an unforgiving mouse target, and the rows immediately above/below it are
+    footer padding that no other control claims. Horizontally the track is
+    already full width, so it is matched exactly. Always ``False`` for a
+    degenerate rect.
+    """
+    rx, ry, rw, rh = rect
+    if rw <= 0 or rh <= 0:
+        return False
+    return rx <= pos[0] < rx + rw and ry - grab_padding <= pos[1] < ry + rh + grab_padding
+
+
 __all__ = [
     "CARD_GAP",
     "CARD_LINES",
@@ -508,6 +606,9 @@ __all__ = [
     "FOOTER_LINES",
     "FOOTER_LINE_HEIGHT",
     "FOOTER_PADDING",
+    "FOOTER_TIMELINE_BLOCK",
+    "FOOTER_TIMELINE_GAP",
+    "FOOTER_TIMELINE_HEIGHT",
     "HEADER_LINES",
     "HEADER_LINE_HEIGHT",
     "MAX_TOP_BAND_FRACTION",
@@ -527,5 +628,8 @@ __all__ = [
     "format_playback_line",
     "format_terminal_state_line",
     "integer_scale_to_fit",
+    "timeline_contains",
+    "timeline_tick_for_x",
+    "timeline_x_for_tick",
     "truncate_with_ellipsis",
 ]
