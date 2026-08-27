@@ -956,9 +956,8 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: `v3.0.0-alpha1` published; `v3.0.0-alpha2` (strategy examples and
-Ruleset clarity) qualification complete, publication pending. Phase 6
-(release candidate / final release decision) not yet started.** Bytefray
+**Status: `v3.0.0-alpha1` and `v3.0.0-alpha2` published. Phase 6 (release
+candidate / final release decision) not yet started.** Bytefray
 v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
@@ -1037,8 +1036,7 @@ template but never the Phase 2 "Annotated Example" template, so the frozen
 Windows builds silently lacked it). No gameplay, Ruleset, Agent API, or
 scoring change; `bytefray-rules-2` ships unchanged as v3.0's active Ruleset.
 
-**`v3.0.0-alpha2` (strategy examples & Ruleset clarity) qualification is
-complete** — see
+**`v3.0.0-alpha2` (strategy examples & Ruleset clarity) is published** — see
 [V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md](V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md).
 Scope came from a read-only post-alpha1 product-content audit, not from a
 new phase. Two bundled starters (`raider`, `sentinel`) now demonstrate

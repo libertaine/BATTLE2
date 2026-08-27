@@ -141,10 +141,19 @@ environment variables, see [Installation](INSTALL.md).
 improvements on unchanged `bytefray-rules-2` gameplay. See
 [CHANGELOG.md](CHANGELOG.md#300-alpha1---2026-08-26) for details.
 
-A second alpha, `v3.0.0-alpha2` — two new starter strategies demonstrating
-the Vulnerable Core mechanic, plus explicit Ruleset selection in the Agent
-Designer — is qualified and pending publication. See
-[CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27).
+**Latest alpha:** [Bytefray v3.0.0-alpha2](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-alpha2)
+— two new starter strategies demonstrating the Vulnerable Core mechanic
+(`raider`, `sentinel`), plus explicit Ruleset selection in the Agent
+Designer, on unchanged `bytefray-rules-2` gameplay. See
+[CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27) for details.
+
+| Package | Download | Notes |
+|---|---|---|
+| Windows installer | [Bytefray-Setup-3.0.0-alpha2.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/Bytefray-Setup-3.0.0-alpha2.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
+| Portable Windows applications | [bytefray-3.0.0-alpha2-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/bytefray-3.0.0-alpha2-windows.zip) | Complete onedir layouts for all four executables |
+| Python wheel | [bytefray-3.0.0a2-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/bytefray-3.0.0a2-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-3.0.0a2.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/bytefray-3.0.0a2.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/SHA256SUMS.txt) | SHA-256 values for alpha2 assets |
 
 | Package | Download | Notes |
 |---|---|---|

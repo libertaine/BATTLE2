@@ -435,7 +435,19 @@ findings; the pre-existing `app/` debt is unchanged and out of scope.
 
 ## 15. CI
 
-See §19 — recorded at publication time.
+Required CI is **green on the exact candidate commit**
+`cb12adf8b9071849283cd422cac3f62f626efaa0`
+([run 33117967573](https://github.com/libertaine/Bytefray/actions/runs/33117967573)),
+all six jobs succeeded:
+
+| Job | Result |
+|---|---|
+| `test-linux-core (3.10)` | success |
+| `test-linux-core (3.11)` | success |
+| `test-linux-core (3.12)` | success |
+| `test-linux-core (3.13)` | success |
+| `build-linux-wheel` | success |
+| `build-windows-exe` | success |
 
 ## 16. Compatibility
 
@@ -472,16 +484,58 @@ No evaluation identity moves: `None` and explicit v1 resolve identically.
 | G8 — Full tests | **PASS** — default suite and GUI suite green |
 | G9 — Static gates | **PASS** — Ruff clean; both canonical mypy gates clean |
 | G10 — End-to-end replay | **PASS** — frozen-exe-produced core capture visible in the packaged Replay Viewer with callout, marker, and seeking |
-| G11 — CI | see §19 |
-| G12 — Clean tree / version consistency | see §19 |
+| G11 — CI | **PASS** — green on `cb12adf`, all six jobs (§15) |
+| G12 — Clean tree / version consistency | **PASS** — tree clean at tag time; `pyproject.toml` `3.0.0a2`, `installer.iss` AppVersion `3.0.0a2` / ReleaseTag `3.0.0-alpha2`, built wheel/sdist `3.0.0a2`, installed wheel reports `Bytefray 3.0.0a2` |
 
 ## 18. Verdict
 
-Recorded at publication time — see §19.
+### V3.0.0-ALPHA2 QUALIFIED — PUBLISH PRERELEASE
+
+All twelve mandatory gates pass. The frozen research evidence is intact
+(zero benchmark drift), VM compatibility is preserved, Redcode/pMARS stays
+accurately separate, and the two productized lessons are demonstrated by
+real matches from real packaged builds rather than asserted.
 
 ## 19. Publication result
 
-Recorded at publication time.
+Published as a GitHub **prerelease**, not merged to `main`. No RC1 was
+created; Phase 6 remains a separate, unstarted effort.
+
+| Item | Value |
+|---|---|
+| Tag | `v3.0.0-alpha2` (annotated) |
+| Tagged commit | `cb12adf8b9071849283cd422cac3f62f626efaa0` — the exact CI-verified commit |
+| Release URL | <https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-alpha2> |
+| Feature commit | `477be68` — starters + Designer Ruleset work |
+| Release-prep commit | `cb12adf` — version bump, CHANGELOG, ROADMAP, README |
+| Branch | `v3.0-development`, pushed |
+
+Artifacts uploaded — the same four classes alpha1 shipped, plus checksums:
+
+| Asset | SHA-256 |
+|---|---|
+| `Bytefray-Setup-3.0.0-alpha2.exe` | `f8413da9a1db3a3fad34fc0c8fb255a80dc9ef096cf508221aa0699590e901a2` |
+| `bytefray-3.0.0-alpha2-windows.zip` | `4b5132cebc3b65603d6cd91629ed22429ad08ba0fbc3af87f2ad759e3e489eb5` |
+| `bytefray-3.0.0a2-py3-none-any.whl` | `df7393d98d4beb51189b5e5a7eb44f727507d26e2824fa14d93c66e9805725ed` |
+| `bytefray-3.0.0a2.tar.gz` | `62c6144444db7f533c4bddbc2c1e647cfcd21d14ce250a00a87de4d43a03eb77` |
+| `SHA256SUMS.txt` | (index of the above) |
+
+Every uploaded asset was re-downloaded from the published release and its
+digest recomputed; all four match the locally built values.
+
+Pre-publication artifact verification:
+
+- the installer was built by `tools/installer.iss` via Inno Setup 6, from
+  the same `dist\windows` trees `tools/build_win.ps1` produced (its own GUI
+  startup and `agents create` smoke checks passed);
+- all four frozen application trees were confirmed to contain `raider` and
+  `sentinel` (except the Replay Viewer, which bundles no starter agents by
+  design);
+- the portable ZIP was extracted and its `bytefray.exe` reported
+  `Bytefray 3.0.0a2`, listed all eleven starters with correct runtime
+  labels, and ran `raider` vs `claimer` under `bytefray-rules-2` to a core
+  capture at tick 182;
+- the wheel was installed into a clean venv and reproduced the same result.
 
 ## 20. Deferred maintenance findings
 
