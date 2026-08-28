@@ -2,6 +2,54 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [3.0.0-rc1] - 2026-08-27
+
+### Bytefray 3.0 — release candidate 1
+
+The first **release candidate** for Bytefray v3.0. `bytefray-rules-2` remains
+v3.0's unchanged active gameplay identity, Agent API v1 is unchanged, and
+`bytefray-rules-1`/VM-blob compatibility is unchanged; Redcode/pMARS remains
+retained external interoperability outside the Bytefray Ruleset system.
+Bytefray v3.0 is now treated as **feature-complete**: this entry summarizes
+the whole v3.0 release (alpha1 + alpha2 combined), not just what changed
+since alpha2. See
+[V3_RC1_QUALIFICATION.md](docs/V3_RC1_QUALIFICATION.md) for the full RC1
+qualification record and [V3_RULESET_RESEARCH_SUMMARY.md](docs/V3_RULESET_RESEARCH_SUMMARY.md)
+for the closed research program behind the "no Ruleset-3" decision.
+
+- **Agent creation** — a second "Annotated Example" scaffold alongside the
+  original blank template (CLI and Agent Designer both), a Development-tab
+  Reload affordance wired into Validate/Test, selectable/copyable
+  diagnostics text, and two new bundled Python starters, **Raider** and
+  **Sentinel**, that demonstrate deliberate Vulnerable-Core offense and
+  defense (growing the Python starter set from five to seven).
+- **Replay Viewer** — shared Bytefray branding, a whole-match timeline with
+  click/drag seeking, and an in-HUD "CORE CAPTURED" callout naming the
+  victim and captor.
+- **Strategy analysis** — visual win-rate/confidence-interval bars,
+  core-capture rate bars, an 11-dimension behavior-profile panel, and a
+  `--json` structured evaluation output mode.
+- **Evaluation workflow** — a GUI worker-count control, non-default-condition
+  disclosure in evaluation history, one-click access to an evaluation's
+  output folder, and explicit Ruleset selection for both Agent Development
+  tests and pairwise evaluation (both now default to `bytefray-rules-2`;
+  Ruleset v1 remains selectable for Python compatibility testing; the CLI's
+  own default is unchanged).
+- **CLI** — `bytefray agents` now marks each discovered agent `[Python]` or
+  `[VM]` with a short legend, so runtime-kind/Ruleset compatibility is
+  visible without cross-referencing documentation.
+- **Distribution** — a qualified Windows installer and portable build, wheel
+  and sdist, a fixed frozen-build packaging gap (the "Annotated Example"
+  template and both new starters are confirmed present in every packaged
+  distribution), and corrected/expanded installation documentation
+  (unsigned-installer SmartScreen disclosure, macOS distribution position,
+  current-version examples).
+- **Compatibility** — no change to `bytefray-rules-2` gameplay, Agent API v1,
+  result/replay schemas, or scoring/scheduler/core-capture semantics.
+  `bytefray-rules-1` and VM/blob entrants remain fully supported.
+  Redcode/pMARS remains a separate, external interoperability path that uses
+  no Bytefray Ruleset.
+
 ## [3.0.0-alpha2] - 2026-08-27
 
 ### Strategy examples and Ruleset clarity

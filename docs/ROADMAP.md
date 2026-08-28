@@ -957,7 +957,8 @@ report.
 ## v3.0 — Product Development
 
 **Status: `v3.0.0-alpha1` and `v3.0.0-alpha2` published. Phase 6 (release
-candidate / final release decision) not yet started.** Bytefray
+candidate qualification) complete; `v3.0.0-rc1` qualified and pending
+publication.** Bytefray
 v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
@@ -1051,6 +1052,25 @@ each entry `[Python]`/`[VM]`. The audit's rejection of a dedicated
 `VM / Redcode` Designer tab was re-verified and honored. No gameplay,
 Ruleset, Agent API, or schema change; the frozen v2 benchmark population
 verifies with zero drift before and after.
+
+**Phase 6 (release candidate qualification) is complete; `v3.0.0-rc1` is
+qualified and pending publication** — see
+[V3_RC1_QUALIFICATION.md](V3_RC1_QUALIFICATION.md). v3.0 is treated as
+feature-complete as of this phase: qualification re-ran the full test
+suites, Ruff, both canonical mypy targets, and the frozen-benchmark
+verification (9/9, zero drift, before and after), re-verified Ruleset v1/v2/
+VM/Redcode compatibility with no semantic change, and rebuilt and
+re-qualified the Windows installer, Windows portable ZIP, wheel, and sdist
+at the `3.0.0rc1` identity. No new agent, gameplay mechanic, Ruleset
+control, replay feature, evaluation metric, or Designer tab was added. Two
+known, previously-disclosed gaps remain and are recorded rather than
+fabricated: the installer's admin-elevated install/uninstall lifecycle
+still needs a session with interactive UAC approval, and Linux GUI
+(visible/input) qualification remains unexercised beyond the existing
+headless Linux CI and Xvfb startup-smoke workflow — neither is treated as a
+release blocker, consistent with alpha1/alpha2 precedent. RC1 stays on
+`v3.0-development`; per prior Bytefray release precedent, it is not merged
+to `main` until final `v3.0.0`.
 
 ## After v1.0
 

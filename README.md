@@ -188,6 +188,13 @@ improvements on unchanged `bytefray-rules-2` gameplay. See
 Designer, on unchanged `bytefray-rules-2` gameplay. See
 [CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27) for details.
 
+`v3.0.0-rc1`, the first v3.0 **release candidate**, is qualified and pending
+publication. Bytefray v3.0 is now treated as feature-complete: RC1 combines
+everything from alpha1 and alpha2 above with distribution re-qualification
+and no new product work. See
+[CHANGELOG.md](CHANGELOG.md#300-rc1---2026-08-27) and
+[V3_RC1_QUALIFICATION.md](docs/V3_RC1_QUALIFICATION.md) for details.
+
 | Package | Download | Notes |
 |---|---|---|
 | Windows installer | [Bytefray-Setup-3.0.0-alpha2.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/Bytefray-Setup-3.0.0-alpha2.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
