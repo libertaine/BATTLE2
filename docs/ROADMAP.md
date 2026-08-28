@@ -956,9 +956,8 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: `v3.0.0-alpha1` and `v3.0.0-alpha2` published. Phase 6 (release
-candidate qualification) complete; `v3.0.0-rc1` qualified and pending
-publication.** Bytefray
+**Status: `v3.0.0-alpha1`, `v3.0.0-alpha2`, and `v3.0.0-rc1` published.**
+Bytefray
 v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
@@ -1054,7 +1053,7 @@ Ruleset, Agent API, or schema change; the frozen v2 benchmark population
 verifies with zero drift before and after.
 
 **Phase 6 (release candidate qualification) is complete; `v3.0.0-rc1` is
-qualified and pending publication** — see
+published** — see
 [V3_RC1_QUALIFICATION.md](V3_RC1_QUALIFICATION.md). v3.0 is treated as
 feature-complete as of this phase: qualification re-ran the full test
 suites, Ruff, both canonical mypy targets, and the frozen-benchmark

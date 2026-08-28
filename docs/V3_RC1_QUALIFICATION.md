@@ -436,11 +436,20 @@ of §8's full suite run. No new bundled-data gap was found.
 ## 16. CI
 
 Required CI was confirmed green on this cycle's starting commit
-(`82fb818`, before any RC-stage change) as a baseline. The RC-stage fix
-(§4) and release-prep commits were pushed and re-verified on the exact
-resulting commit before tagging — see §21/§22 (Publication) for the run
-ID and job results recorded once publication actually occurred, consistent
-with alpha1/alpha2's own placeholder-then-fill pattern.
+(`82fb818`, before any RC-stage change) as a baseline. After the §4 fix and
+the three RC-stage commits were pushed, CI run
+[`33134652215`](https://github.com/libertaine/Bytefray/actions/runs/33134652215)
+ran against the exact candidate commit `6a11fff` and completed **green**,
+all six jobs:
+
+| Job | Result |
+|---|---|
+| `test-linux-core (3.10)` | success |
+| `test-linux-core (3.11)` | success |
+| `test-linux-core (3.12)` | success |
+| `test-linux-core (3.13)` | success |
+| `build-linux-wheel` | success |
+| `build-windows-exe` | success |
 
 ---
 
@@ -515,25 +524,73 @@ GitHub Release assets after publication (§22).
 
 ---
 
+## 20a. Verdict
+
+### V3.0.0-RC1 QUALIFIED — PUBLISH RELEASE CANDIDATE
+
+All fifteen gates pass. The two disclosed limitations (installer
+interactive UAC lifecycle, Linux GUI visible/input qualification) are
+unchanged, previously twice-disclosed session-environment constraints, not
+product defects or regressions, and neither gate's own wording requires
+them exercised to pass (G7: "verified... with any limitation explicitly
+assessed"; G9: "GUI status explicitly recorded"). The one genuine defect
+class discovered during qualification (§4) was fixed and re-verified
+end to end before this verdict was reached.
+
+---
+
 ## 21. CI and tagging record
 
-Filled in immediately after the actions in CLAUDE.md §24/§20 of the
-governing task are performed against this report's qualified commit — see
-the assistant's final chat response for the authoritative record of the
-exact commit SHA pushed, the CI run ID and job results on that commit, and
-the tag creation.
+Three commits were pushed to `v3.0-development` for this phase:
+`572406e` (fix), `7424d22` (release-prep), `6a11fff` (this qualification
+report). Remote HEAD verified to match local exactly
+(`6a11fffa987e153d957969fd6394c0596cfe6fcc`) immediately before tagging;
+working tree confirmed clean at that point. CI run `33134652215` (§16)
+completed green on that exact commit. The annotated tag `v3.0.0-rc1` was
+created directly at `6a11fff` (`git tag -a v3.0.0-rc1 ... 6a11fff`) and
+pushed; `gh api repos/libertaine/Bytefray/git/tags/<tag-object-sha>`
+confirmed the tag object's `object.sha` is `6a11fff`, independent of the
+release API's cosmetic `targetCommitish` field.
 
 ---
 
 ## 22. Publication result
 
-Filled in immediately after publication, following the same
-placeholder-then-fill pattern alpha1 and alpha2 both used (a later, small
-`docs: mark v3.0.0-rc1 published` commit records the tag, release URL, and
-re-verified asset checksums) — see the assistant's final chat response for
-whatever occurred by the end of this session, since a gate failure at §16
-CI or user-directed hold at publication would leave this section
-recording that outcome instead.
+Published as a GitHub **prerelease** (`isDraft: false`, `isPrerelease:
+true`), not merged to `main` — `main` remains untouched by any v3.0 commit,
+consistent with §6's precedent finding.
+
+| Item | Value |
+|---|---|
+| Tag | `v3.0.0-rc1` (annotated) |
+| Tagged commit | `6a11fffa987e153d957969fd6394c0596cfe6fcc` — the exact CI-verified commit |
+| Release URL | <https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc1> |
+| Fix commit | `572406e` — the two frozen-console ASCII defects (§4) |
+| Release-prep commit | `7424d22` — version bump, CHANGELOG, ROADMAP, README |
+| Qualification-report commit | `6a11fff` — this document |
+| Branch | `v3.0-development`, pushed |
+
+Artifacts uploaded — the same four classes alpha1/alpha2 shipped, plus
+checksums:
+
+| Asset | SHA-256 |
+|---|---|
+| `Bytefray-Setup-3.0.0-rc1.exe` | `2b5464ac74bf95588aa8e716fbd61dac25ae883e880d153347cb1f4b3c32e821` |
+| `bytefray-3.0.0-rc1-windows.zip` | `ac07668bb2106aa6493144f44373db20667ca66760a5f9a3d0754d214718afa7` |
+| `bytefray-3.0.0rc1-py3-none-any.whl` | `3e6684cc41f7467280267431ef1c13302828a09f3b797a14887865e4e11ddea2` |
+| `bytefray-3.0.0rc1.tar.gz` | `bb83c82684d745af6f7f781ee9b53a508ebb052a08bb0ee89d49158a79a13a9e` |
+| `SHA256SUMS.txt` | (index of the above) |
+
+Every uploaded asset was re-downloaded from the published release
+(`gh release download v3.0.0-rc1`) and its digest recomputed; all four
+match the locally built values exactly (§18).
+
+A follow-up commit (`docs: mark v3.0.0-rc1 published`) updates
+`README.md`'s Downloads section and top current-release line with live
+download links, and `docs/ROADMAP.md`'s status line, from "qualified and
+pending publication" to "published" — the same post-publication pattern
+alpha1 (`43d52f2`) and alpha2 (`300d5e4`) both used, so the tagged commit
+itself never claims a publication that had not yet happened.
 
 ---
 

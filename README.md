@@ -19,7 +19,7 @@ AI or LLM dependency.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Current releases:** [v2.0.0 stable](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
-· [v3.0.0-alpha2 prerelease](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-alpha2)
+· [v3.0.0-rc1 prerelease](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc1)
 — see [Downloads](#downloads) below.
 
 ## What is Bytefray?
@@ -39,10 +39,11 @@ Bytefray is both a game and a deterministic experimentation platform:
 
 ## What's new in Bytefray 3.0
 
-Bytefray 3.0 (currently `v3.0.0-alpha2`, prerelease) is a product and
+Bytefray 3.0 (currently `v3.0.0-rc1`, release candidate) is a product and
 presentation release, not a new gameplay Ruleset: current gameplay remains
-`bytefray-rules-2`, and Agent API v1 stays fully compatible. See
-[Rulesets](#rulesets) below and the
+`bytefray-rules-2`, and Agent API v1 stays fully compatible. v3.0 is now
+feature-complete; RC1 combines the alpha1/alpha2 work below with
+distribution re-qualification. See [Rulesets](#rulesets) below and the
 [Compatibility Reference](docs/COMPATIBILITY.md) for details.
 
 Highlights over 2.0:
@@ -65,8 +66,8 @@ Highlights over 2.0:
 - **Distribution** — refreshed packaging/install documentation and a
   qualified Windows installer, portable build, and Python package.
 
-See [CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27) for the full alpha2
-notes.
+See [CHANGELOG.md](CHANGELOG.md#300-rc1---2026-08-27) for the full v3.0
+release notes.
 
 ## How the game works
 
@@ -188,12 +189,20 @@ improvements on unchanged `bytefray-rules-2` gameplay. See
 Designer, on unchanged `bytefray-rules-2` gameplay. See
 [CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27) for details.
 
-`v3.0.0-rc1`, the first v3.0 **release candidate**, is qualified and pending
-publication. Bytefray v3.0 is now treated as feature-complete: RC1 combines
-everything from alpha1 and alpha2 above with distribution re-qualification
-and no new product work. See
-[CHANGELOG.md](CHANGELOG.md#300-rc1---2026-08-27) and
+**Release candidate:** [Bytefray v3.0.0-rc1](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc1)
+— the first v3.0 release candidate. Bytefray v3.0 is now treated as
+feature-complete: RC1 combines everything from alpha1 and alpha2 above with
+distribution re-qualification and two frozen-console display fixes, and no
+new product work. See [CHANGELOG.md](CHANGELOG.md#300-rc1---2026-08-27) and
 [V3_RC1_QUALIFICATION.md](docs/V3_RC1_QUALIFICATION.md) for details.
+
+| Package | Download | Notes |
+|---|---|---|
+| Windows installer | [Bytefray-Setup-3.0.0-rc1.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/Bytefray-Setup-3.0.0-rc1.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
+| Portable Windows applications | [bytefray-3.0.0-rc1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/bytefray-3.0.0-rc1-windows.zip) | Complete onedir layouts for all four executables |
+| Python wheel | [bytefray-3.0.0rc1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/bytefray-3.0.0rc1-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-3.0.0rc1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/bytefray-3.0.0rc1.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/SHA256SUMS.txt) | SHA-256 values for rc1 assets |
 
 | Package | Download | Notes |
 |---|---|---|
@@ -403,7 +412,7 @@ multi-entrant work, together with explicit Designer Ruleset selection,
 read-only agent-source inspection, refreshed onboarding, and current product
 screenshots.
 
-Bytefray 3.0 (`v3.0.0-alpha2`, prerelease) is the current product and
+Bytefray 3.0 (`v3.0.0-rc1`, release candidate) is the current product and
 presentation cycle on top of stable 2.0 — see
 [What's new in Bytefray 3.0](#whats-new-in-bytefray-30) above.
 
