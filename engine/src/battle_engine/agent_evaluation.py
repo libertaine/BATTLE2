@@ -4127,12 +4127,12 @@ def methodology_lines(
         "Entrant orientation: both"
         if orientation_mode == ORIENTATION_MODE_BOTH
         else (
-            "Entrant orientation: candidate-first only — does not generalize "
+            "Entrant orientation: candidate-first only -- does not generalize "
             "across entrant order"
         )
     )
     alignment_line = (
-        f"Arena alignment: {arena_alignment_mode} — translation robustness not evaluated"
+        f"Arena alignment: {arena_alignment_mode} -- translation robustness not evaluated"
     )
     return orientation_line, alignment_line
 

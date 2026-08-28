@@ -688,6 +688,22 @@ def test_methodology_lines_never_claim_unbiased_or_fully_robust():
         assert "bias-free" not in text
 
 
+def test_methodology_lines_are_pure_ascii():
+    """Regression: a frozen PyInstaller build's console renders a non-ASCII
+    character (e.g. an em dash) in printed CLI output as a replacement
+    character instead of the source glyph, even though a source `python`
+    invocation in the same console renders it correctly -- the same defect
+    class `test_cli_agent_listing.py` already guards the agent listing
+    against. Found live in the `agents evaluate --group` summary during
+    v3.0.0-rc1 qualification (an em dash in both `methodology_lines`
+    strings); fixed to ASCII `--` and pinned here so it cannot regress in
+    this function specifically.
+    """
+    for mode in (ORIENTATION_MODE_BOTH, ORIENTATION_MODE_CANDIDATE_FIRST_ONLY):
+        for line in methodology_lines(mode):
+            assert line.isascii(), f"non-ASCII in methodology line: {line!r}"
+
+
 def test_both_orientation_cells_never_flagged_as_duplicate_condition_coordinate(tmp_path):
     """Regression: a candidate_first and opponent_first cell for the same
     (opponent, seed) legitimately share `condition_occurrence_index` (Sec

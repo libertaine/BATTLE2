@@ -28,3 +28,19 @@ def test_headless_client_processes_replay_without_pygame(tmp_path, capsys):
     assert "HEADER arena=32" in output
     assert "TICK score={}" in output
     assert "[    ] END" in output
+
+
+def test_help_text_is_pure_ascii(capsys):
+    """Regression: a frozen PyInstaller build's console renders a non-ASCII
+    character (e.g. an em dash) in printed CLI output as a replacement
+    character instead of the source glyph, even though a source `python`
+    invocation in the same console renders it correctly. Found live in this
+    parser's `description` (an em dash) during v3.0.0-rc1 qualification;
+    fixed to ASCII `--` and pinned here so it cannot regress.
+    """
+    try:
+        main(["--help"])
+    except SystemExit:
+        pass
+    output = capsys.readouterr().out
+    assert output.isascii(), f"non-ASCII in --help output: {output!r}"
