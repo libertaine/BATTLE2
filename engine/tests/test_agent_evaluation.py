@@ -771,6 +771,33 @@ def test_artifact_paths_are_relative_to_evaluation_directory(tmp_path):
 
 
 def test_cli_dry_run_prints_matrix_and_runs_nothing(tmp_path, monkeypatch, capsys):
+    """Pinned to explicit --ruleset bytefray-rules-1 so the matrix-size math
+    (2 seeds x 1 opponent x 1 orientation, no placement multiplication)
+    stays simple and stable -- this test is about the dry-run mechanism,
+    not about which Ruleset is the product default. See
+    test_cli_dry_run_omitted_ruleset_defaults_to_v2_matrix below for
+    coverage of the RC1 default-Ruleset-defect fix itself.
+    """
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = main(
+        [
+            "cand", "--opponents", "opp", "--seeds", "1,2", "--dry-run",
+            "--single-orientation", "--ruleset", "bytefray-rules-1",
+        ]
+    )
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "matches: 2" in captured.out
+    assert not (tmp_path / "runs" / "evaluations").exists()
+
+
+def test_cli_dry_run_omitted_ruleset_defaults_to_v2_matrix(tmp_path, monkeypatch, capsys):
+    """RC1 default-Ruleset-defect fix: evaluation entrants are always
+    Python, so an omitted --ruleset now resolves to v2's standard 1v1
+    methodology (3 placements) instead of silently inheriting v1's.
+    """
     scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
     _write_python_agent(tmp_path, "opp", NOP_ACTION)
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
@@ -779,7 +806,9 @@ def test_cli_dry_run_prints_matrix_and_runs_nothing(tmp_path, monkeypatch, capsy
     )
     assert exit_code == 0
     captured = capsys.readouterr()
-    assert "matches: 2" in captured.out
+    assert "ruleset: bytefray-rules-2" in captured.out
+    # 2 seeds x 1 opponent x 1 orientation x 3 standard v2 placements.
+    assert "matches: 6" in captured.out
     assert not (tmp_path / "runs" / "evaluations").exists()
 
 
@@ -809,7 +838,32 @@ def test_cli_seeds_and_seed_range_are_mutually_exclusive(tmp_path, monkeypatch):
 
 
 def test_cli_default_seed_is_config_default(tmp_path, monkeypatch, capsys):
+    """Pinned to explicit --ruleset bytefray-rules-1: the single-seed
+    Config() default is v1 evaluation methodology's own behavior. See
+    test_cli_default_seed_is_standard_v2_seeds_when_ruleset_omitted below
+    for the now-default v2 methodology's 5-seed default.
+    """
     from battle_engine.config import Config
+
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = main(
+        ["cand", "--opponents", "opp", "--dry-run", "--ruleset", "bytefray-rules-1"]
+    )
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert f"seeds: {Config().seed}" in captured.out
+
+
+def test_cli_default_seed_is_standard_v2_seeds_when_ruleset_omitted(
+    tmp_path, monkeypatch, capsys
+):
+    """RC1 default-Ruleset-defect fix: an omitted --ruleset now resolves to
+    v2 (evaluation entrants are always Python), so the standard 5-seed v2
+    default applies -- not v1's single-seed Config() default.
+    """
+    from battle_engine.agent_evaluation import STANDARD_V2_SEEDS
 
     scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
     _write_python_agent(tmp_path, "opp", NOP_ACTION)
@@ -817,20 +871,28 @@ def test_cli_default_seed_is_config_default(tmp_path, monkeypatch, capsys):
     exit_code = main(["cand", "--opponents", "opp", "--dry-run"])
     assert exit_code == 0
     captured = capsys.readouterr()
-    assert f"seeds: {Config().seed}" in captured.out
+    assert "ruleset: bytefray-rules-2" in captured.out
+    assert f"seeds: {', '.join(str(seed) for seed in STANDARD_V2_SEEDS)}" in captured.out
 
 
 def test_cli_dry_run_json_prints_structured_matrix_preview(tmp_path, monkeypatch, capsys):
     """v3.0 Phase 3: ``--dry-run --json`` must emit valid, parseable JSON --
     never the human matrix text ``--dry-run`` alone prints -- so a script
     passing ``--json`` never has to special-case the dry-run combination.
+
+    Pinned to explicit --ruleset bytefray-rules-1 for the same reason as
+    test_cli_dry_run_prints_matrix_and_runs_nothing: this test is about the
+    JSON structure, not about which Ruleset is the product default.
     """
 
     scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
     _write_python_agent(tmp_path, "opp", NOP_ACTION)
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     exit_code = main(
-        ["cand", "--opponents", "opp", "--seeds", "1,2", "--dry-run", "--single-orientation", "--json"]
+        [
+            "cand", "--opponents", "opp", "--seeds", "1,2", "--dry-run",
+            "--single-orientation", "--json", "--ruleset", "bytefray-rules-1",
+        ]
     )
     assert exit_code == 0
     captured = capsys.readouterr()
@@ -850,6 +912,39 @@ def test_cli_json_full_run_includes_behavior_and_null_analysis_without_baseline(
     without one -- while ``behavior`` (a single-subject metric) is always
     populated for a pairwise run, and ``capture``/``group_analysis`` stay
     ``None`` for a v1, non-group run.
+
+    Pinned to explicit --ruleset bytefray-rules-1: this test is specifically
+    about v1's shape (no capture evidence). See
+    test_cli_json_full_run_omitted_ruleset_includes_capture_by_default below
+    for the now-default v2 run, which does populate ``capture``.
+    """
+
+    scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
+    _write_python_agent(tmp_path, "opp", NOP_ACTION)
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = main(
+        [
+            "cand", "--opponents", "opp", "--seeds", "1", "--ticks", "10", "--json",
+            "--ruleset", "bytefray-rules-1",
+        ]
+    )
+    assert exit_code == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["schema"] == SCHEMA_NAME
+    assert data["analysis"] is None
+    assert data["behavior"] is not None
+    assert data["capture"] is None
+    assert data["group_analysis"] is None
+
+
+def test_cli_json_full_run_omitted_ruleset_includes_capture_by_default(
+    tmp_path, monkeypatch, capsys
+):
+    """RC1 default-Ruleset-defect fix: an omitted --ruleset now resolves to
+    v2 by default (evaluation entrants are always Python), so an ordinary
+    ``bytefray agents evaluate`` run's ``--json`` output populates
+    ``capture`` evidence without the caller ever passing --ruleset -- the
+    same current-gameplay convergence as ``bytefray run``/``agents test``.
     """
 
     scaffold_create_agent("cand", data_root=tmp_path, resource_root=ROOT)
@@ -861,10 +956,7 @@ def test_cli_json_full_run_includes_behavior_and_null_analysis_without_baseline(
     assert exit_code == 0
     data = json.loads(capsys.readouterr().out)
     assert data["schema"] == SCHEMA_NAME
-    assert data["analysis"] is None
-    assert data["behavior"] is not None
-    assert data["capture"] is None
-    assert data["group_analysis"] is None
+    assert data["capture"] is not None
 
 
 def test_cli_json_full_run_with_baseline_includes_analysis(tmp_path, monkeypatch, capsys):

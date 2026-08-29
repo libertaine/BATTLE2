@@ -652,10 +652,16 @@ def test_new_both_orientations_evaluation_vs_legacy_leaves_opponent_first_unmatc
 
 
 def test_cli_default_run_reports_both_orientations_methodology(tmp_path, monkeypatch, capsys):
+    """Pinned to explicit --ruleset bytefray-rules-1: "Arena alignment:
+    fixed" is v1 methodology's own disclosure text (v2 discloses
+    "ruleset_v2_standard_placements" instead -- see
+    test_agent_evaluation.py's dry-run tests for that coverage)."""
     _write_python_agent(tmp_path, "cand")
     _write_python_agent(tmp_path, "opp")
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
-    exit_code = main(["cand", "--opponents", "opp", "--seeds", "1", "--dry-run"])
+    exit_code = main(
+        ["cand", "--opponents", "opp", "--seeds", "1", "--dry-run", "--ruleset", "bytefray-rules-1"]
+    )
     assert exit_code == 0
     out = capsys.readouterr().out
     assert "matches: 2" in out
@@ -665,11 +671,16 @@ def test_cli_default_run_reports_both_orientations_methodology(tmp_path, monkeyp
 
 
 def test_cli_single_orientation_flag_reproduces_legacy_matrix_and_label(tmp_path, monkeypatch, capsys):
+    """Pinned to explicit --ruleset bytefray-rules-1 for the same reason as
+    test_cli_default_run_reports_both_orientations_methodology above."""
     _write_python_agent(tmp_path, "cand")
     _write_python_agent(tmp_path, "opp")
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     exit_code = main(
-        ["cand", "--opponents", "opp", "--seeds", "1", "--dry-run", "--single-orientation"]
+        [
+            "cand", "--opponents", "opp", "--seeds", "1", "--dry-run",
+            "--single-orientation", "--ruleset", "bytefray-rules-1",
+        ]
     )
     assert exit_code == 0
     out = capsys.readouterr().out

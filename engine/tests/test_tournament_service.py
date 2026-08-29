@@ -130,9 +130,61 @@ def test_mixed_division_is_rejected_before_artifacts(tmp_path):
 
 
 def test_ruleset_id_omitted_defaults_to_v1(tmp_path):
+    """Direct TournamentService/TournamentRequest library usage: ``None``
+    keeps resolving to Ruleset v1 exactly as before the RC1 default-
+    Ruleset-defect fix -- that fix changes only tournament_cli.main()'s CLI
+    boundary (see the two CLI-level tests below), never this library
+    default, so every direct/test/tool caller stays byte-for-byte
+    unaffected."""
     result = TournamentService().run(_request(tmp_path, entrants=_entrants(2), rounds=1))
     envelope = json.loads((result.matches[0].artifact_dir / "result.json").read_text())
     assert envelope["ruleset_id"] == "bytefray-rules-1"
+
+
+def test_cli_ruleset_omitted_defaults_to_v2_for_all_python_roster(tmp_path, monkeypatch):
+    """RC1 default-Ruleset-defect fix (sec 13): a Python-only tournament
+    roster with --ruleset omitted now resolves to Ruleset v2 through the
+    real `bytefray tournament` CLI entry point, matching `bytefray run`'s
+    own Python-only resolution."""
+    root = tmp_path / "root"
+    _write_python_agent(root, "alpha_agent")
+    _write_python_agent(root, "beta_agent")
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(root))
+    output = tmp_path / "out"
+
+    exit_code = tournament_cli_main(
+        [
+            "alpha_agent", "beta_agent", "--rounds", "1", "--ticks", "5",
+            "--output", str(output), "--quiet",
+        ]
+    )
+    assert exit_code == 0
+    result_paths = sorted(output.rglob("result.json"))
+    assert result_paths, "expected at least one tournament match result artifact"
+    for path in result_paths:
+        assert json.loads(path.read_text())["ruleset_id"] == "bytefray-rules-2"
+
+
+def test_cli_ruleset_omitted_defaults_to_v1_for_all_vm_roster(tmp_path, monkeypatch):
+    """RC1 default-Ruleset-defect fix (sec 9/13): an all-VM tournament
+    roster with --ruleset omitted must keep resolving to Ruleset v1 through
+    the real `bytefray tournament` CLI entry point -- convenient VM
+    workflows are unaffected by the Python-only default."""
+    root = tmp_path / "root"
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(root))
+    output = tmp_path / "out"
+
+    exit_code = tournament_cli_main(
+        [
+            "writer", "runner", "--rounds", "1", "--ticks", "5",
+            "--output", str(output), "--quiet",
+        ]
+    )
+    assert exit_code == 0
+    result_paths = sorted(output.rglob("result.json"))
+    assert result_paths, "expected at least one tournament match result artifact"
+    for path in result_paths:
+        assert json.loads(path.read_text())["ruleset_id"] == "bytefray-rules-1"
 
 
 def test_permanent_v2_rejects_vm_entrants_per_match_with_no_artifacts(tmp_path):

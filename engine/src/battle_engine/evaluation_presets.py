@@ -435,7 +435,10 @@ def _print_show(preset: EvaluationPreset) -> None:
     elif preset.seed_range is not None:
         print(f"seed_range: {preset.seed_range[0]}:{preset.seed_range[1]}")
     else:
-        print("seeds: (not set by this preset -- explicit override, or the ordinary single-seed default)")
+        print(
+            "seeds: (not set by this preset -- explicit override, or the ordinary "
+            "default for the resolved Ruleset: 5 standard seeds for v2, 1 for v1)"
+        )
     print(f"ticks: {preset.ticks if preset.ticks is not None else '(not set -- ordinary default)'}")
     _unset = "(not set -- ordinary default)"
     print(f"arena_size: {preset.arena_size if preset.arena_size is not None else _unset}")
@@ -444,7 +447,10 @@ def _print_show(preset: EvaluationPreset) -> None:
         f"{preset.instr_per_tick if preset.instr_per_tick is not None else _unset}"
     )
     print(f"orientation: {preset.orientation or '(not set -- ordinary default: both)'}")
-    print(f"ruleset: {preset.ruleset_id or '(not set -- ordinary default: bytefray-rules-1)'}")
+    print(
+        "ruleset: "
+        f"{preset.ruleset_id or '(not set -- ordinary default: bytefray-rules-2, evaluation entrants are always Python)'}"
+    )
     print(
         "This preset supplies a partial EvaluationRequest: any field it does not set falls "
         "back to the ordinary CLI default, and any explicit CLI flag always overrides it. It "

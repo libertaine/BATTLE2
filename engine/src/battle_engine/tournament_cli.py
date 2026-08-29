@@ -13,7 +13,7 @@ from battle_engine.config import Config, Weights
 from battle_engine.match_service import MatchEntrant
 from battle_engine.paths import get_data_root
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID, resolve_omitted_ruleset_id
 from battle_engine.starters import ensure_starter_agents
 from battle_engine.tournament_service import (
     TournamentConfigurationError,
@@ -54,7 +54,10 @@ def _parser() -> argparse.ArgumentParser:
         choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
         default=None,
         help=(
-            f"gameplay Ruleset identity (default: {BYTEFRAY_RULESET_ID}). "
+            "gameplay Ruleset identity. If omitted, Python-only rosters use "
+            f"{BYTEFRAY_RULESET_V2_ID} and VM/blob-only rosters use "
+            f"{BYTEFRAY_RULESET_ID}; a mixed Python/VM roster without an "
+            f"explicit choice uses {BYTEFRAY_RULESET_ID}. "
             f"{BYTEFRAY_RULESET_V2_ID} supports Python entrants only. Affects "
             "gameplay semantics and is recorded in each match's result/replay "
             "artifacts."
@@ -133,6 +136,12 @@ def main(argv: list[str] | None = None) -> int:
             _resolve_entrant(root, name, index * spacing)
             for index, name in enumerate(args.agents)
         )
+        # RC1 default-Ruleset-defect fix: resolve an omitted --ruleset from
+        # the resolved roster's entrant kinds, mirroring `bytefray run`'s
+        # own resolution. An explicit --ruleset is returned unchanged.
+        resolved_ruleset_id = resolve_omitted_ruleset_id(
+            args.ruleset, {entrant.kind for entrant in entrants}
+        )
         output = (
             args.output.expanduser().resolve()
             if args.output is not None
@@ -159,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
                 seed=args.seed,
                 retry_failures=args.retry_failed,
                 verbose=False,
-                ruleset_id=args.ruleset,
+                ruleset_id=resolved_ruleset_id,
             )
         )
     except (AgentValidationError, TournamentConfigurationError, OSError, ValueError) as exc:

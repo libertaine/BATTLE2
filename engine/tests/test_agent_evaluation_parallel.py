@@ -356,6 +356,10 @@ def test_workers_flag_rejects_non_positive():
 
 
 def test_workers_flag_parses_and_threads_through_cli(matrix_agents: Path, monkeypatch, capsys):
+    """Pinned to explicit --ruleset bytefray-rules-1 so the expected cell
+    count (3 opponents x 2 seeds x 1 orientation, no placement
+    multiplication) stays simple -- this test is about --workers threading
+    through the CLI, not about which Ruleset is the product default."""
     monkeypatch.setenv("BYTEFRAY_ROOT", str(matrix_agents))
     exit_code = evaluate_main(
         [
@@ -372,6 +376,8 @@ def test_workers_flag_parses_and_threads_through_cli(matrix_agents: Path, monkey
             "--output",
             str(matrix_agents / "cli-out"),
             "--quiet",
+            "--ruleset",
+            "bytefray-rules-1",
         ]
     )
     assert exit_code == 0

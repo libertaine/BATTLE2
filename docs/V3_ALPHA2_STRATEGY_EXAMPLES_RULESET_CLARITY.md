@@ -579,3 +579,21 @@ qualification.
   for any future bundled-data directory.
 - Deferred findings 1–4 above are candidate RC-cycle cleanups, none
   release-blocking.
+
+---
+
+### Addendum (2026-08-29) — the deferred CLI default was fixed after RC1
+
+This §21 finding — the CLI's own `--ruleset` still fell back to Ruleset v1
+on omission, deferred here as "the last remaining place" and again
+re-reviewed as still-open in `V3_RC1_QUALIFICATION.md` — was **not** left
+implicit forever. It was found to be an actual RC1-qualification-blocking
+defect (a bare `bytefray run`/`agents test`/`agents evaluate` invocation
+gave a materially different game, with no vulnerable-core capture
+available, from what Agent Designer's converged v2 default gave) and
+corrected on `v3.0-development` as an input to `v3.0.0-rc2`. See
+[V3_RC1_DEFAULT_RULESET_DEFECT.md](V3_RC1_DEFAULT_RULESET_DEFECT.md) for the
+fix. This addendum does not alter this alpha's own experiment, evidence, or
+verdict above — alpha2's scope was, correctly, the GUI defaults only — it
+records that the open question this section raised was later resolved, and
+how.

@@ -619,7 +619,13 @@ def test_forfeit_line_present_on_tested_agent_forfeit(tmp_path, monkeypatch, cap
     assert "forfeit: raises stage=action code=agent_action_failed" in captured.out
 
 
-def test_cli_ruleset_flag_omitted_defaults_to_v1(tmp_path, monkeypatch, capsys):
+def test_cli_ruleset_flag_omitted_defaults_to_v2(tmp_path, monkeypatch, capsys):
+    """RC1 default-Ruleset-defect fix: `agents test` entrants are always
+    Python, so an omitted --ruleset now resolves to current Python gameplay
+    (v2), matching Agent Designer's own default -- not the historical v1
+    fallback (see test_cli_ruleset_flag_explicit_v1_succeeds below for that
+    still-available explicit choice).
+    """
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
 
@@ -627,7 +633,7 @@ def test_cli_ruleset_flag_omitted_defaults_to_v1(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "ruleset: bytefray-rules-1" in captured.out
+    assert "ruleset: bytefray-rules-2" in captured.out
 
 
 def test_cli_ruleset_flag_explicit_v2_succeeds_and_prints_identity(
@@ -642,6 +648,23 @@ def test_cli_ruleset_flag_explicit_v2_succeeds_and_prints_identity(
     assert exit_code == 0
     assert captured.err == ""
     assert "ruleset: bytefray-rules-2" in captured.out
+    assert "Traceback" not in captured.out
+
+
+def test_cli_ruleset_flag_explicit_v1_succeeds_and_prints_identity(
+    tmp_path, monkeypatch, capsys
+):
+    """An explicit --ruleset always remains authoritative over the new
+    Python-only omitted default (RC1 default-Ruleset-defect fix, sec 7)."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    scaffold_create_agent("example", data_root=tmp_path, resource_root=ROOT)
+
+    exit_code = main(["example", "--ticks", "5", "--ruleset", "bytefray-rules-1"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert captured.err == ""
+    assert "ruleset: bytefray-rules-1" in captured.out
     assert "Traceback" not in captured.out
 
 

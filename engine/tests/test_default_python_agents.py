@@ -337,3 +337,33 @@ def test_raider_searches_with_reads_and_commits_contiguous_bursts(data_root: Pat
         data_root, "raider", opponent="claimer", seed=1, ticks=200
     )
     assert longest >= 8, f"raider's longest contiguous write run was {longest}"
+
+
+def test_cli_omitted_ruleset_python_match_reaches_core_capture(
+    data_root: Path, monkeypatch
+) -> None:
+    """RC1 default-Ruleset-defect fix, gameplay-level regression proof (sec
+    18): a real ``bytefray agents test`` CLI invocation for the shipped
+    offensive starter (Raider) against a suitable Python opponent
+    (Claimer), with --ruleset omitted, must resolve to Ruleset v2 and
+    mechanically reach vulnerable-core capture -- not merely report a
+    v2 ruleset string. Reproduces this exact deterministic seed/tick
+    matchup's documented v3.0.0-alpha2 evidence (raider captures claimer's
+    core at tick 182 of 400, seed 1), but now via a CLI invocation that
+    never names a Ruleset at all -- proving the omitted-Ruleset CLI default
+    executes real Ruleset-v2 semantics, not just a parser string."""
+    from battle_engine.agent_test import main as agent_test_main
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
+    exit_code = agent_test_main(["raider", "--opponent", "claimer", "--seed", "1", "--ticks", "400"])
+    assert exit_code == 0
+
+    result_paths = sorted((data_root / "runs" / "agents_test" / "raider").rglob("result.json"))
+    assert len(result_paths) == 1, "expected exactly one development-test result artifact"
+    result = json.loads(result_paths[0].read_text(encoding="utf-8"))
+
+    assert result["ruleset_id"] == BYTEFRAY_RULESET_V2_ID
+    termination_reasons = {entrant["agent_id"]: entrant["termination_reason"] for entrant in result["entrants"]}
+    assert "core_captured" in termination_reasons.values(), (
+        f"no entrant was core-captured; termination reasons were {termination_reasons!r}"
+    )

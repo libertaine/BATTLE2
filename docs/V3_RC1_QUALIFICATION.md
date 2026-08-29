@@ -622,3 +622,29 @@ itself never claims a publication that had not yet happened.
   found still accurate and still non-blocking; they remain open questions
   for whenever the project next revisits them, not RC1 or final v3.0.0
   work.
+
+---
+
+### Addendum (2026-08-29) — the CLI's Ruleset-v1-by-default behavior was an RC defect
+
+This document classified the CLI's own `--ruleset` omission (still
+resolving to Ruleset v1) as non-blocking and deferred it (§23 above,
+inherited from alpha2's own §21). Later Ruleset research established that
+this is materially more than a documentation gap: independent execution of
+the shipped starter agents showed a Ruleset-v1 game launched by omitting
+`--ruleset` **cannot terminate through vulnerable-core capture at all**,
+while the Agent Designer's converged v2 default can. A new user running
+apparently equivalent Python-agent matches through the CLI and the Designer
+therefore received materially different gameplay — a genuine RC1 default-
+product-gameplay-inconsistency defect, not merely an implicit CLI default
+worth documenting someday.
+
+This was corrected on `v3.0-development` as an input to `v3.0.0-rc2`,
+without moving the `v3.0.0-rc1` tag or editing this qualification record's
+own findings above. See
+[V3_RC1_DEFAULT_RULESET_DEFECT.md](V3_RC1_DEFAULT_RULESET_DEFECT.md) for
+the reproduction, root cause, fix, and regression evidence. This addendum
+invalidates one inference in §23's closing discussion (that the deferred
+CLI default was non-blocking) — it does not invalidate any of this
+document's own RC1 qualification evidence or gate results, which describe
+what was verified about v3.0.0-rc1 as tagged and remain accurate.

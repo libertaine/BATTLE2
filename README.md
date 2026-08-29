@@ -307,11 +307,15 @@ only. Redcode/pMARS is separate from both — see below.
 
 Agent Designer passes its selection explicitly everywhere, including the
 Agent Development tab's development tests and pairwise evaluation, both of
-which default to Ruleset v2 as of `v3.0.0-alpha2`. The CLI retains its
-backward-compatible Ruleset-v1 default when `--ruleset` is omitted. Ruleset v2
-is a permanent, stable gameplay identity as of `v2.0.0`. Historical alpha
-identities remain readable/executable for artifact compatibility but are not
-normal product choices.
+which default to Ruleset v2 as of `v3.0.0-alpha2`. The CLI (`bytefray run`,
+`agents test`, `agents evaluate`, `tournament`) resolves an omitted
+`--ruleset` the same way: Python-only matches default to Ruleset v2 and
+VM/blob-only matches default to Ruleset v1, so an ordinary Python match
+gets the same current gameplay through either front end. A mixed
+Python/VM request without an explicit `--ruleset` keeps the historical
+Ruleset v1 default. Ruleset v2 is a permanent, stable gameplay identity as
+of `v2.0.0`. Historical alpha identities remain readable/executable for
+artifact compatibility but are not normal product choices.
 
 Detailed references:
 

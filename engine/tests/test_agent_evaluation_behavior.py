@@ -181,7 +181,14 @@ def test_live_cli_behavior_block_present_without_baseline(tmp_path: Path, capsys
     """Behavior must not be gated behind --baseline the way evidence: is --
     it is a description of the candidate alone, computable with or without
     a baseline (Sec 6 of the design doc: outcome-comparison concerns
-    should never gate a behavior-only measurement)."""
+    should never gate a behavior-only measurement).
+
+    Pinned to explicit --ruleset bytefray-rules-1: v2 methodology prints its
+    own unrelated "capture/core evidence:" block regardless of --baseline,
+    which would collide with this test's substring check on "evidence:" --
+    this test is about Phase 4's baseline-gated comparison block, not v2's
+    capture evidence.
+    """
 
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     _write_agent(tmp_path, "writer_agent", WRITE_ACTION)
@@ -194,6 +201,7 @@ def test_live_cli_behavior_block_present_without_baseline(tmp_path: Path, capsys
             "--ticks", "20",
             "--single-orientation",
             "--output", str(tmp_path / "eval-out"),
+            "--ruleset", "bytefray-rules-1",
         ]
     )
     out = capsys.readouterr().out

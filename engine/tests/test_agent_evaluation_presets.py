@@ -295,8 +295,16 @@ def test_preset_name_never_appears_in_evaluation_id_payload(three_agents, monkey
 
 
 def test_orientation_omitted_from_preset_defaults_to_both(three_agents, monkeypatch, capsys):
+    """Preset pins --ruleset bytefray-rules-1 (no placement multiplication)
+    so the expected match count stays a simple orientation-only count --
+    this test is about orientation defaulting, not the RC1 default-Ruleset-
+    defect fix's Python-only omitted-Ruleset -> v2 policy."""
     monkeypatch.setenv("BYTEFRAY_ROOT", str(three_agents))
-    _write_preset(three_agents, "no_orientation", {"opponents": ["opp_a"], "seeds": [1]})
+    _write_preset(
+        three_agents,
+        "no_orientation",
+        {"opponents": ["opp_a"], "seeds": [1], "ruleset": "bytefray-rules-1"},
+    )
     exit_code = evaluate_main(["candidate", "--preset", "no_orientation", "--dry-run"])
     assert exit_code == 0
     assert "matches: 2" in capsys.readouterr().out  # 1 subject x 1 opp x 1 seed x 2 orientations
@@ -304,7 +312,11 @@ def test_orientation_omitted_from_preset_defaults_to_both(three_agents, monkeypa
 
 def test_orientation_preset_explicit_both(three_agents, monkeypatch, capsys):
     monkeypatch.setenv("BYTEFRAY_ROOT", str(three_agents))
-    _write_preset(three_agents, "both", {"opponents": ["opp_a"], "seeds": [1], "orientation": "both"})
+    _write_preset(
+        three_agents,
+        "both",
+        {"opponents": ["opp_a"], "seeds": [1], "orientation": "both", "ruleset": "bytefray-rules-1"},
+    )
     exit_code = evaluate_main(["candidate", "--preset", "both", "--dry-run"])
     assert exit_code == 0
     assert "matches: 2" in capsys.readouterr().out
@@ -313,7 +325,12 @@ def test_orientation_preset_explicit_both(three_agents, monkeypatch, capsys):
 def test_orientation_preset_explicit_single(three_agents, monkeypatch, capsys):
     monkeypatch.setenv("BYTEFRAY_ROOT", str(three_agents))
     _write_preset(
-        three_agents, "single", {"opponents": ["opp_a"], "seeds": [1], "orientation": "candidate_first_only"}
+        three_agents,
+        "single",
+        {
+            "opponents": ["opp_a"], "seeds": [1], "orientation": "candidate_first_only",
+            "ruleset": "bytefray-rules-1",
+        },
     )
     exit_code = evaluate_main(["candidate", "--preset", "single", "--dry-run"])
     assert exit_code == 0
@@ -322,7 +339,11 @@ def test_orientation_preset_explicit_single(three_agents, monkeypatch, capsys):
 
 def test_cli_override_preset_both_to_single(three_agents, monkeypatch, capsys):
     monkeypatch.setenv("BYTEFRAY_ROOT", str(three_agents))
-    _write_preset(three_agents, "both", {"opponents": ["opp_a"], "seeds": [1], "orientation": "both"})
+    _write_preset(
+        three_agents,
+        "both",
+        {"opponents": ["opp_a"], "seeds": [1], "orientation": "both", "ruleset": "bytefray-rules-1"},
+    )
     exit_code = evaluate_main(
         ["candidate", "--preset", "both", "--single-orientation", "--dry-run"]
     )
@@ -333,7 +354,12 @@ def test_cli_override_preset_both_to_single(three_agents, monkeypatch, capsys):
 def test_cli_override_preset_single_to_both(three_agents, monkeypatch, capsys):
     monkeypatch.setenv("BYTEFRAY_ROOT", str(three_agents))
     _write_preset(
-        three_agents, "single", {"opponents": ["opp_a"], "seeds": [1], "orientation": "candidate_first_only"}
+        three_agents,
+        "single",
+        {
+            "opponents": ["opp_a"], "seeds": [1], "orientation": "candidate_first_only",
+            "ruleset": "bytefray-rules-1",
+        },
     )
     exit_code = evaluate_main(
         ["candidate", "--preset", "single", "--both-orientations", "--dry-run"]
@@ -388,6 +414,12 @@ def test_preset_workers_1_2_4_produce_identical_evaluation(three_agents, monkeyp
 
 
 def test_resume_authority_modified_preset_is_rejected_not_reinterpreted(three_agents, monkeypatch, capsys):
+    """Pinned to explicit --ruleset bytefray-rules-1 throughout (preset and
+    the final explicit-flags resume alike, so evaluation_id stays
+    consistent across every step): this test is about resume authority
+    (preset vs. explicit flags), not about which Ruleset is the product
+    default, and the fixed 18-cell arithmetic depends on v1's no-placement-
+    multiplication methodology."""
     monkeypatch.setenv("BYTEFRAY_ROOT", str(three_agents))
     for name in ("opp_c", "opp_d", "opp_e", "opp_f"):
         _write_agent(three_agents, name)
@@ -395,7 +427,10 @@ def test_resume_authority_modified_preset_is_rejected_not_reinterpreted(three_ag
     _write_preset(
         three_agents,
         "growing",
-        {"opponents": opponents, "seeds": [1, 2, 3], "ticks": 5, "orientation": "candidate_first_only"},
+        {
+            "opponents": opponents, "seeds": [1, 2, 3], "ticks": 5,
+            "orientation": "candidate_first_only", "ruleset": "bytefray-rules-1",
+        },
     )
     out_dir = three_agents / "eval-out"
 
@@ -428,7 +463,10 @@ def test_resume_authority_modified_preset_is_rejected_not_reinterpreted(three_ag
     _write_preset(
         three_agents,
         "growing",
-        {"opponents": opponents[:-1], "seeds": [1, 2, 3], "ticks": 5, "orientation": "candidate_first_only"},
+        {
+            "opponents": opponents[:-1], "seeds": [1, 2, 3], "ticks": 5,
+            "orientation": "candidate_first_only", "ruleset": "bytefray-rules-1",
+        },
     )
 
     exit_code = evaluate_main(
@@ -461,6 +499,7 @@ def test_resume_authority_modified_preset_is_rejected_not_reinterpreted(three_ag
         [
             "candidate", "--opponents", ",".join(opponents), "--seeds", "1,2,3", "--ticks", "5",
             "--single-orientation", "--output", str(out_dir), "--quiet",
+            "--ruleset", "bytefray-rules-1",
         ]
     )
     assert exit_code == 0
@@ -484,7 +523,13 @@ def test_preset_originated_evaluation_readable_by_evaluation_history(three_agent
     from battle_engine.evaluation_history import discovery
 
     monkeypatch.setenv("BYTEFRAY_ROOT", str(three_agents))
-    _write_preset(three_agents, "standard", {"opponents": ["opp_a"], "seeds": [1], "ticks": 5})
+    # Pinned to explicit v1 (no placement multiplication): this test is
+    # about evaluation_history discovery/adaptation, not Ruleset defaulting.
+    _write_preset(
+        three_agents,
+        "standard",
+        {"opponents": ["opp_a"], "seeds": [1], "ticks": 5, "ruleset": "bytefray-rules-1"},
+    )
     out_dir = three_agents / "runs" / "evaluations" / "via-preset"
     exit_code = evaluate_main(
         ["candidate", "--preset", "standard", "--single-orientation", "--output", str(out_dir), "--quiet"]

@@ -250,6 +250,12 @@ def test_successful_pmars_match_writes_summary_but_no_replay(monkeypatch, tmp_pa
         ),
     )
 
+    # RC1 default-Ruleset-defect fix, Redcode/pMARS isolation (sec 10): this
+    # invocation omits --ruleset (as every redcode94 invocation always has),
+    # and the CLI's new omitted-Ruleset resolution seam lives entirely past
+    # this mode's own early return in cli.main -- structurally unreachable
+    # from this path. Assert the result never gets a Bytefray Ruleset id
+    # stamped onto it regardless.
     assert cli.main(
         [
             "--mode", "redcode94", "--red-a", str(warrior_a), "--red-b", str(warrior_b),
@@ -263,6 +269,9 @@ def test_successful_pmars_match_writes_summary_but_no_replay(monkeypatch, tmp_pa
     assert canonical["schema_version"] == 1
     assert canonical["mode"] == "redcode94"
     assert canonical["replay"] is None
+    assert canonical["ruleset_id"] is None
+    summary = json.loads(replay.with_name("summary.json").read_text())
+    assert "ruleset_id" not in summary
 
 
 def test_gui_service_subprocess_receives_same_traceback_free_failure(tmp_path):

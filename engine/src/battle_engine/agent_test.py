@@ -57,7 +57,7 @@ from battle_engine.python_runtime import (
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID, resolve_omitted_ruleset_id
 
 REFERENCE_OPPONENT_NAME = "reference"
 DEFAULT_TICKS = 200
@@ -985,10 +985,11 @@ def _parser() -> argparse.ArgumentParser:
         choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
         default=None,
         help=(
-            f"gameplay Ruleset identity (default: {BYTEFRAY_RULESET_ID}). "
-            f"{BYTEFRAY_RULESET_V2_ID} supports Python entrants only. Affects "
-            "gameplay semantics and is recorded in the match's result/replay "
-            "artifacts."
+            f"gameplay Ruleset identity. If omitted, defaults to "
+            f"{BYTEFRAY_RULESET_V2_ID} -- agents test entrants are always "
+            f"Python. {BYTEFRAY_RULESET_V2_ID} supports Python entrants only. "
+            "Affects gameplay semantics and is recorded in the match's "
+            "result/replay artifacts."
         ),
     )
     return parser
@@ -1002,6 +1003,14 @@ def main(argv: list[str] | None = None) -> int:
     # --timeout. Direct library callers (existing tests, other tooling)
     # keep test_agent()'s own unsupervised default unless they opt in.
     effective_timeout = DEFAULT_AGENT_TIMEOUT if args.timeout is None else args.timeout
+    # RC1 default-Ruleset-defect fix: `agents test` entrants (the tested
+    # agent and its opponent) are always Python -- _resolve_python_entrant
+    # rejects anything else -- so an omitted --ruleset resolves to current
+    # Python gameplay here, matching `bytefray run`'s own Python-only
+    # resolution. test_agent()'s own `ruleset_id=None` default (used by
+    # every direct library/test caller that never goes through this CLI)
+    # is untouched -- only this CLI boundary resolves the omission.
+    resolved_ruleset_id = resolve_omitted_ruleset_id(args.ruleset, {"python"})
 
     try:
         outcome = test_agent(
@@ -1011,7 +1020,7 @@ def main(argv: list[str] | None = None) -> int:
             ticks=args.ticks,
             timeout=effective_timeout,
             trace=args.trace,
-            ruleset_id=args.ruleset,
+            ruleset_id=resolved_ruleset_id,
         )
     except AgentTestError as exc:
         _print_tool_error(args.agent_id, exc)

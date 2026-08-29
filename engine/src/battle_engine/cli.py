@@ -26,7 +26,7 @@ from battle_engine.pmars import PMarsError, run_pmars
 from battle_engine.python_runtime import PythonEntrantInitializationError
 from battle_engine.result_model import ResultEnvelope, stable_id, write_json_atomic
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID, resolve_omitted_ruleset_id
 from battle_engine.starters import ensure_starter_agents
 
 DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
@@ -200,7 +200,10 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
         default=None,
         help=(
-            f"gameplay Ruleset identity (default: {BYTEFRAY_RULESET_ID}). "
+            "gameplay Ruleset identity. If omitted, Python-only matches use "
+            f"{BYTEFRAY_RULESET_V2_ID} and VM/blob matches use "
+            f"{BYTEFRAY_RULESET_ID}; a mixed Python/VM match without an "
+            f"explicit choice uses {BYTEFRAY_RULESET_ID}. "
             f"{BYTEFRAY_RULESET_V2_ID} supports Python entrants only. Affects "
             "gameplay semantics and is recorded in the match's result/replay "
             "artifacts."
@@ -422,6 +425,43 @@ def _resolve_agent(
     sys.exit(2)
 
 
+def _requested_entrant_kind(
+    letter: str, spec: dict[str, Any], args: argparse.Namespace, root: Path
+) -> str | None:
+    """Determine slot ``letter``'s runtime kind without building its bytecode.
+
+    Mirrors ``_resolve_agent``'s own precedence chain (env-JSON spec, direct
+    blob flag, discovery, built-in fallback) exactly, minus anything that
+    requires a resolved start address -- so the omitted-Ruleset default
+    (which start-address *placement* itself depends on, via
+    ``resolve_direct_match_starts``) can be computed before any agent is
+    built. Returns ``None`` when the slot has no requested entrant at all
+    (mirrors ``_resolve_agent``'s own "not requested" case for an omitted
+    ``--c-type``); every other outcome errors identically to
+    ``_resolve_agent`` once agent construction actually runs, so a wrong
+    guess here can never let an invalid invocation execute -- it can only
+    affect which Ruleset an already-valid invocation defaults to.
+    """
+    if spec and letter in spec:
+        return "vm"  # env-JSON entrants are always blob/builtin (vm).
+
+    if getattr(args, f"{letter.lower()}_blob"):
+        return "vm"
+
+    agent_name = getattr(args, f"{letter.lower()}_type")
+    if not agent_name:
+        return None
+
+    try:
+        spec_obj = resolve_agent(root, agent_name)
+    except (AgentValidationError, SystemExit):
+        spec_obj = None
+
+    if spec_obj is not None and spec_obj.kind == "python":
+        return "python"
+    return "vm"
+
+
 # ----------------------------
 # Main
 # ----------------------------
@@ -614,6 +654,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     }
 
     env_spec, spec_dir = _load_agents_spec_from_env()
+    root = _data_root()
 
     # Resolve effective start addresses once, before any agent is built --
     # builtin construction bakes ``start`` into the agent's own bytecode
@@ -627,8 +668,26 @@ def main(argv: Iterable[str] | None = None) -> int:
     supplied_starts = [args.a_start, args.b_start]
     if c_requested:
         supplied_starts.append(args.c_start)
+
+    # RC1 default-Ruleset-defect fix: resolve an omitted --ruleset from the
+    # requested entrants' runtime kinds -- known here without building any
+    # agent's bytecode (see _requested_entrant_kind) -- before it is used
+    # for placement or match execution, so both honor the exact same
+    # resolved identity every downstream artifact records. An explicit
+    # --ruleset is returned unchanged.
+    requested_kinds = {
+        kind
+        for kind in (
+            _requested_entrant_kind("A", env_spec, args, root),
+            _requested_entrant_kind("B", env_spec, args, root),
+            _requested_entrant_kind("C", env_spec, args, root) if c_requested else None,
+        )
+        if kind is not None
+    }
+    resolved_ruleset_id = resolve_omitted_ruleset_id(args.ruleset, requested_kinds)
+
     resolved_starts = resolve_direct_match_starts(
-        ruleset_id=args.ruleset,
+        ruleset_id=resolved_ruleset_id,
         arena_size=cfg.arena_size,
         entrant_count=entrant_count,
         supplied_starts=supplied_starts,
@@ -719,7 +778,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 max_ticks=args.ticks,
                 replay_path=replay_path,
                 verbose=not args.quiet,
-                ruleset_id=args.ruleset,
+                ruleset_id=resolved_ruleset_id,
             )
         )
     except (
@@ -758,7 +817,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             "kill_w": cfg.weights.kill,
             "territory_w": cfg.weights.territory,
             "territory_bucket": cfg.weights.territory_bucket,
-            "ruleset_id": args.ruleset or BYTEFRAY_RULESET_ID,
+            "ruleset_id": resolved_ruleset_id,
         },
         "agents": {
             "A": nameA,
@@ -774,7 +833,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     if not args.quiet:
         print(
             f"Winner: {effective_winner}; "
-            f"ruleset: {args.ruleset or BYTEFRAY_RULESET_ID}; "
+            f"ruleset: {resolved_ruleset_id}; "
             f"result: {match_result.result_path}; "
             f"replay: {replay_path}; "
             f"summary: {summary_path}"

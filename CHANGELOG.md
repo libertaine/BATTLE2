@@ -2,6 +2,28 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [Unreleased]
+
+### Fixed
+
+- **CLI/GUI default-Ruleset divergence (RC1 defect).** Changed omitted
+  Ruleset resolution for new CLI gameplay: Python-only matches (`bytefray
+  run`, `agents test`, `agents evaluate`, `tournament`) now default to
+  Ruleset v2, matching Agent Designer's current gameplay default;
+  VM/blob-only matches continue to default to Ruleset v1, and a mixed
+  Python/VM request without an explicit `--ruleset` keeps its existing
+  Ruleset-v1 default and incompatibility behavior. Explicit `--ruleset`
+  selections are unchanged. This fixes materially different CLI/GUI
+  behavior around vulnerable-core capture: a new user running an ordinary
+  Python-agent match through the CLI with no `--ruleset` previously got a
+  Ruleset-v1 game (no core-capture termination available) while the same
+  agents through Agent Designer got Ruleset v2; both now converge. This is
+  a default-selection policy correction, not an engine or gameplay-rules
+  change -- `bytefray-rules-1` and `bytefray-rules-2` semantics are both
+  unchanged, and a historical evaluation/tournament artifact that recorded
+  an omitted-Ruleset run under v1 still means v1. See
+  [V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/V3_RC1_DEFAULT_RULESET_DEFECT.md).
+
 ## [3.0.0-rc1] - 2026-08-27
 
 ### Bytefray 3.0 — release candidate 1

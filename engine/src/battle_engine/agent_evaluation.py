@@ -94,6 +94,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID, normalize_ruleset_id
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    resolve_omitted_ruleset_id,
 )
 
 SCHEMA_NAME = "bytefray.evaluation"
@@ -3974,11 +3975,12 @@ def _parser() -> argparse.ArgumentParser:
         choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
         default=None,
         help=(
-            f"gameplay Ruleset identity (default: {BYTEFRAY_RULESET_ID}, the historical "
-            f"evaluation methodology, unchanged). {BYTEFRAY_RULESET_V2_ID} runs the "
-            "balanced Ruleset-v2 1v1 methodology: standard placement set, standard seed "
-            "set default, and capture/core evidence. See "
-            "docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
+            f"gameplay Ruleset identity. If omitted (and no --preset supplies one), "
+            f"defaults to {BYTEFRAY_RULESET_V2_ID} -- evaluation entrants are always "
+            f"Python. {BYTEFRAY_RULESET_V2_ID} runs the balanced Ruleset-v2 1v1 "
+            "methodology: standard placement set, standard seed set default, and "
+            f"capture/core evidence. {BYTEFRAY_RULESET_ID} keeps the historical v1 "
+            "evaluation methodology. See docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
         ),
     )
     parser.add_argument(
@@ -4761,14 +4763,26 @@ def main(argv: list[str] | None = None) -> int:
     # v2.0.0-beta2 Phase 1: resolved before seeds -- the standard v2 seed
     # default (below) depends on whether this evaluation is v1 or v2
     # methodology. Same three-tier resolution as every other option
-    # (explicit CLI > --preset > ordinary default); "ordinary default" here
-    # is `None` (v1, unchanged), never silently promoted to v2.
+    # (explicit CLI > --preset > ordinary default).
     ruleset_id = args.ruleset
     if ruleset_id is None and preset is not None:
         ruleset_id = preset.ruleset_id
-    resolved_is_v2 = ruleset_id is not None and is_ruleset_v2_methodology(
-        resolve_evaluation_ruleset_id(ruleset_id)
-    )
+    if ruleset_id is None:
+        # RC1 default-Ruleset-defect fix: evaluation entrants are always
+        # Python (EvaluationService._validate requires it for candidate,
+        # baseline, and every opponent), so an "ordinary default" left by
+        # both CLI and --preset now resolves to current Python gameplay --
+        # the same convergence `bytefray run`/`bytefray agents test` get --
+        # instead of silently inheriting the historical v1 methodology.
+        # resolve_evaluation_ruleset_id's own `None` -> v1 default is
+        # untouched for direct EvaluationRequest/EvaluationService library
+        # callers that never go through this CLI. This also means an
+        # omitted --ruleset with --group now satisfies --group's existing
+        # v2-methodology requirement instead of failing closed on it --
+        # pairwise and group no longer diverge merely because one passed
+        # an explicit Ruleset and the other inherited a stale default.
+        ruleset_id = resolve_omitted_ruleset_id(None, {"python"})
+    resolved_is_v2 = is_ruleset_v2_methodology(resolve_evaluation_ruleset_id(ruleset_id))
 
     try:
         if args.group and (args.single_orientation or args.both_orientations):

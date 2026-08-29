@@ -102,7 +102,11 @@ def _write_python_agent(root: Path, name: str) -> None:
     )
 
 
-def test_ruleset_flag_omitted_defaults_to_v1(tmp_path):
+def test_ruleset_flag_omitted_defaults_to_v1_for_vm_entrants(tmp_path):
+    """RC1 default-Ruleset-defect fix, VM-compatibility guarantee (sec 9):
+    an all-VM match with --ruleset omitted must keep resolving to Ruleset
+    v1 exactly as before -- fixing the Python default must never make
+    ordinary VM commands start failing or silently change ruleset."""
     replay = tmp_path / "match" / "replay.jsonl"
     result = _run(
         "-m", "battle_engine.cli",
@@ -116,6 +120,51 @@ def test_ruleset_flag_omitted_defaults_to_v1(tmp_path):
     assert canonical["ruleset_id"] == "bytefray-rules-1"
     header = json.loads(replay.read_text().splitlines()[0])
     assert header["ruleset_id"] == "bytefray-rules-1"
+
+
+def test_ruleset_flag_omitted_defaults_to_v2_for_python_entrants(tmp_path, monkeypatch):
+    """RC1 default-Ruleset-defect fix (sec 3/4): a Python-only match with
+    --ruleset omitted now resolves to Ruleset v2, the same current-gameplay
+    default Agent Designer has used since v3.0.0-alpha2 -- not the
+    historical Ruleset-v1 fallback every native execution path used to
+    fall back to. This is the core regression this fix exists to prevent."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _write_python_agent(tmp_path, "alpha_agent")
+    _write_python_agent(tmp_path, "beta_agent")
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "3", "--arena", "128", "--seed", "7",
+        "--a-type", "alpha_agent", "--b-type", "beta_agent", "--b-start", "64",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    canonical = json.loads((replay.parent / "result.json").read_text())
+    assert canonical["ruleset_id"] == "bytefray-rules-2"
+    header = json.loads(replay.read_text().splitlines()[0])
+    assert header["ruleset_id"] == "bytefray-rules-2"
+
+
+def test_ruleset_flag_omitted_mixed_runtime_fails_cleanly(tmp_path, monkeypatch):
+    """A mixed Python/VM roster with --ruleset omitted keeps its existing,
+    Ruleset-independent rejection (NativeMatchService.run's homogeneous-
+    composition guard fires before any Ruleset is even consulted) -- the
+    RC1 default-Ruleset-defect fix does not change this."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _write_python_agent(tmp_path, "alpha_agent")
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "3", "--arena", "128", "--seed", "7",
+        "--a-type", "alpha_agent", "--b-type", "runner", "--b-start", "64",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2
+    assert "all VM entrants or all Python entrants" in result.stderr
+    assert not replay.exists()
+    assert not (replay.parent / "result.json").exists()
 
 
 def test_ruleset_flag_explicit_v1(tmp_path):

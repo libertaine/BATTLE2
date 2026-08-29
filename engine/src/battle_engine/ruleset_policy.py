@@ -324,6 +324,71 @@ def resolve_ruleset_policy(ruleset_id: str) -> RulesetPolicy:
         raise UnknownRulesetError(ruleset_id) from None
 
 
+# Which entrant runtime kinds :func:`resolve_omitted_ruleset_id` treats as
+# "Python-only". A closed, explicit set -- not "everything except vm" --
+# matching this module's own preference for finite tables over open-ended
+# checks (see ``_RULESET_POLICIES``'s docstring).
+_PYTHON_ONLY_KINDS: frozenset[str] = frozenset({"python"})
+
+
+def resolve_omitted_ruleset_id(
+    requested_ruleset_id: str | None, runtime_kinds: Iterable[str]
+) -> str:
+    """Resolve one product-facing CLI/API entry point's optional ``--ruleset``.
+
+    This is the RC1 default-Ruleset-defect fix: the seam a user-facing
+    caller (``bytefray run``, ``bytefray agents test``, ``bytefray agents
+    evaluate``, ``bytefray tournament``) calls, with the entrant runtime
+    kinds it already knows for *this* request, to turn a caller's omitted
+    ``--ruleset`` into the same current-gameplay identity Agent Designer has
+    used since v3.0.0-alpha2 (see ``app/services/ruleset_options.py``),
+    instead of the historical Ruleset-v1 identity every native execution
+    path fell back to before this fix.
+
+    ``requested_ruleset_id`` is ``None`` for "the caller omitted --ruleset"
+    and any other value for "the caller explicitly selected this Ruleset".
+    An explicit selection is always returned unchanged -- this function
+    never validates, corrects, or overrides one, including a selection that
+    a downstream runtime-compatibility check (
+    :meth:`RulesetPolicy.unsupported_runtime_kinds`, raised as
+    ``RulesetRuntimeUnsupportedError``) will go on to reject as
+    incompatible with ``runtime_kinds``. Only an omitted Ruleset is ever
+    resolved here.
+
+    ``runtime_kinds`` is the resolved entrant ``kind`` set for this
+    specific request (``MatchEntrant.kind`` values: ``"python"``/``"vm"``,
+    or an evaluation/tournament roster's equivalent). An omitted Ruleset
+    resolves to :data:`BYTEFRAY_RULESET_V2_ID` exactly when every requested
+    entrant is Python (a non-empty subset of :data:`_PYTHON_ONLY_KINDS`);
+    every other case -- VM-only, mixed Python/VM, or an empty/unknown kind
+    set -- resolves to the frozen :data:`~battle_engine.rules.
+    BYTEFRAY_RULESET_ID` (Ruleset v1), exactly the historical omitted
+    default. A mixed Python/VM roster therefore still resolves to Ruleset
+    v1 here (v1 imposes no runtime-kind restriction, so it always executes
+    a mixed roster); this function never itself raises for an incompatible
+    composition -- that stays ``NativeMatchService``'s job, unchanged, and
+    is only reachable from an *explicit* incompatible selection, never from
+    an omitted one.
+
+    Callers that construct their own ``MatchRequest``/``EvaluationRequest``/
+    ``TournamentRequest`` directly (existing tests, research tools in
+    ``tools/``, and any other library caller that never goes through one of
+    the product CLIs above) are completely unaffected: none of those types'
+    own ``ruleset_id: str | None = None`` defaults change meaning by this
+    function existing. Only a CLI entry point that explicitly calls this
+    function, and then threads its return value into the request it
+    constructs, sees the new omitted-Ruleset behavior -- see each CLI
+    module's own ``main()`` for where that happens.
+    """
+
+    if requested_ruleset_id is not None:
+        return requested_ruleset_id
+    kinds = frozenset(runtime_kinds)
+    if kinds and kinds <= _PYTHON_ONLY_KINDS:
+        return BYTEFRAY_RULESET_V2_ID
+    return BYTEFRAY_RULESET_ID
+
+
 __all__ = [
     "BYTEFRAY_RULESET_V2_ALPHA1_ID",
     "BYTEFRAY_RULESET_V2_ALPHA11_ID",
@@ -338,5 +403,6 @@ __all__ = [
     "TerminationDecision",
     "TerminationReason",
     "UnknownRulesetError",
+    "resolve_omitted_ruleset_id",
     "resolve_ruleset_policy",
 ]
