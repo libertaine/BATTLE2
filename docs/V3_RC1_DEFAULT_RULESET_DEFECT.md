@@ -250,6 +250,14 @@ passes.
   `--retry-failed`) rather than silently blended into standings. This
   mechanism is pre-existing and was not modified by this fix — it was only
   verified to still correctly cover the new scenario.
+- **Verified live, not just by code inspection** (RC2 qualification pass,
+  §21 below): a tournament was run explicitly under `bytefray-rules-1`
+  (simulating a pre-fix artifact), then the identical nominal command was
+  re-run with `--ruleset` omitted (now resolving to v2). The old match was
+  correctly reported `status: corrupted`, `error_code:
+  resumed_result_mismatch`, excluded from standings (0 played for both
+  entrants) — never silently reinterpreted as a v2 result. `--retry-failed`
+  then produced a clean, fresh `bytefray-rules-2` result for that match.
 
 ## 11. Tournament behavior
 
@@ -439,7 +447,43 @@ RC2 is authorized.
 
 Committed locally on `v3.0-development` at `13798b4` ("fix: default Python
 CLI gameplay to ruleset v2"), two commits ahead of the still-untouched
-`v3.0.0-rc1` tag (`ad5ff8a5`). Not pushed and not tagged, per this task's
-own instructions and this repository's standing practice of gating
-release-prep (tagging, publishing, merging to `main`) as a separate,
-explicitly authorized step from a feature/fix commit.
+`v3.0.0-rc1` tag (`ad5ff8a5`). Per explicit authorization from the user,
+the branch was then pushed to `origin` and a narrow, adversarial RC2
+qualification pass (§21) was run against the exact pushed candidate
+commit — the actions below happened after publication of this section's
+original text, and are recorded here rather than by editing the verdict
+above.
+
+## 21. RC2 qualification pass (narrow, adversarial around this fix only)
+
+Run against candidate `2e9ef51` (`docs: record the RC1 default-Ruleset-
+defect fix's own commit hash`, HEAD of `v3.0-development` after push). No
+feature work was added; this pass exists to prove the corrected default
+policy did not disturb the otherwise-qualified RC1 product.
+
+| Step | Result |
+|---|---|
+| Push `v3.0-development` to `origin` | Clean fast-forward, `5995dfc..2e9ef51` |
+| CI on the exact candidate commit (GitHub Actions run [33278290827](https://github.com/libertaine/Bytefray/actions/runs/33278290827)) | **success**, all 6 jobs: `test-linux-core` (3.10, 3.11, 3.12, 3.13), `build-linux-wheel`, `build-windows-exe` |
+| Windows build (`tools/build_win.ps1`) | Success — all four frozen apps (`bytefray`, `bytefray-cli`, `bytefray-agent-designer`, `bytefray-replay-viewer`) built; the script's own built-in GUI-import/startup smoke and `agents create` smoke both passed |
+| Explicit omitted/explicit Ruleset matrix, run against the **frozen `bytefray.exe`** (not source) | **10/10 checks passed**: Python-only omitted → v2 (2 pairs), Python explicit v1 → v1, Python explicit v2 → v2, VM-only omitted → v1 (2 pairs), VM explicit v1 → v1, VM explicit v2 → clean rejection, mixed omitted → clean rejection, `agents test raider --opponent claimer --seed 1 --ticks 400` (no `--ruleset`) → `ruleset: bytefray-rules-2`, `termination: last_agent_standing` at tick 182/400 — the exact alpha2 capture evidence, reproduced from the packaged executable |
+| Evaluation/tournament resume check, live (not just code inspection) | See §10's added bullet: a `bytefray-rules-1` tournament artifact, re-targeted by an omitted-`--ruleset` rerun (now v2), was correctly reported `corrupted`/`resumed_result_mismatch` and excluded from standings; `--retry-failed` then produced a clean fresh `bytefray-rules-2` result. No silent v1→v2 reinterpretation occurred |
+| Windows installer build (`ISCC.exe tools/installer.iss`, Inno Setup 6) | Successful compile, `dist/installer/Bytefray-Setup-3.0.0-rc1.exe` (~102.8 MB, consistent size with prior builds); confirmed `raider`/`sentinel` present in all three qualifying frozen trees (`bytefray`, `bytefray-cli`, `bytefray-agent-designer`) |
+| Installer live install/uninstall lifecycle (UAC-elevated) | **Not attempted** — same structural limitation this repository's own RC1/alpha1/alpha2 qualification records already disclosed across three prior releases (no interactive UAC approval available from this kind of session); this fix touches no packaging-relevant file (no new starter agent, no new data file, no spec change), so it carries no new risk on this axis beyond what RC1 already qualified |
+
+**Local build-artifact note:** `dist/installer/Bytefray-Setup-3.0.0-rc1.exe`
+was overwritten locally by this pass's installer build (version was not
+bumped — see §18/§22). `dist/` is gitignored and this is a transient local
+build directory only; the actual published `v3.0.0-rc1` GitHub Release
+asset and its recorded SHA-256 (`V3_RC1_QUALIFICATION.md` §21) are
+untouched.
+
+**Version bump and tag/publish were deliberately not performed in this
+pass** — both remain gated on a separate, explicit go-ahead (§22).
+
+## 22. RC2 version/tag — awaiting go-ahead
+
+Per §18's recommendation, `v3.0.0-rc2` / `3.0.0rc2` version-bump,
+release-prep, tagging, and publication are the only remaining steps in
+the user's own RC2 flow. None were performed by this pass. A separate,
+explicit authorization is required before proceeding to that step.
