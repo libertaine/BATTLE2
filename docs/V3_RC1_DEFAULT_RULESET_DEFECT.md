@@ -434,3 +434,12 @@ gameplay mechanic is implicated.
 This document does not itself qualify `v3.0.0-rc2` — that requires a
 separate, dedicated release-candidate qualification pass once (and if)
 RC2 is authorized.
+
+## 20. Commit
+
+Committed locally on `v3.0-development` at `13798b4` ("fix: default Python
+CLI gameplay to ruleset v2"), two commits ahead of the still-untouched
+`v3.0.0-rc1` tag (`ad5ff8a5`). Not pushed and not tagged, per this task's
+own instructions and this repository's standing practice of gating
+release-prep (tagging, publishing, merging to `main`) as a separate,
+explicitly authorized step from a feature/fix commit.
