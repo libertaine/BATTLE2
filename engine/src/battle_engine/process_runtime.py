@@ -8,7 +8,7 @@ Provides a research-only multi-process execution harness supporting:
 
 Strictly adheres to:
 - Entrant-level fairness under chunked scheduler (K=2, rotating start)
-- Fixed entrant total action quota invariant (Q_total = instr_per_tick)
+- Explicit disrupted-quota policy (lost quota or fair redistribution)
 - Pure deterministic execution (no OS threads/processes)
 """
 
@@ -21,7 +21,7 @@ from typing import Any
 
 from battle_engine.agent_api import ActionKind, AgentAction
 from battle_engine.config import Config
-from battle_engine.ruleset_policy import RulesetPolicy
+from battle_engine.ruleset_policy import RULESET_V4_ALPHA1, RulesetPolicy
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.vm import VM
@@ -40,6 +40,13 @@ class ProcessRole(str, enum.Enum):
     ATTACKER = "attacker"
     EXPANDER = "expander"
     GENERALIST = "generalist"
+
+
+class DisruptedQuotaPolicy(str, enum.Enum):
+    """How an entrant's per-tick quota behaves while processes are disrupted."""
+
+    LOST = "lost"
+    FAIR_REDISTRIBUTION = "fair_redistribution"
 
 
 @dataclass
@@ -70,7 +77,9 @@ class ProcessTelemetry:
     total_reads: int = 0
     total_writes: int = 0
     total_passes: int = 0
+    disruption_hits_received: int = 0
     total_disrupted_ticks: int = 0
+    disrupted_match_ticks: set[int] = field(default_factory=set)
     positions_visited: set[int] = field(default_factory=set)
     addresses_read: set[int] = field(default_factory=set)
     addresses_written: set[int] = field(default_factory=set)
@@ -147,21 +156,29 @@ class ProcessMatchController:
         model: ProcessModel = ProcessModel.MODEL_A_CURSOR,
         ruleset_policy: RulesetPolicy | None = None,
         disruption_duration: int = 0,  # 0 = disabled (indestructible)
+        disrupted_quota_policy: DisruptedQuotaPolicy = DisruptedQuotaPolicy.FAIR_REDISTRIBUTION,
         max_move_delta: int = 64,
     ):
         self.config = config
         self.entrant_specs = entrant_specs
         self.max_ticks = max_ticks
         self.model = model
-        self.ruleset_policy = ruleset_policy or RulesetPolicy(
-            ruleset_id="bytefray-rules-4-alpha1",
-            supported_runtime_kinds=frozenset({"python"}),
-            scheduler_mode="chunked",
-            scheduler_chunk_size=2,
-            scheduler_rotate_start=True,
-        )
+        self.ruleset_policy = ruleset_policy or RULESET_V4_ALPHA1
         self.disruption_duration = disruption_duration
+        self.disrupted_quota_policy = DisruptedQuotaPolicy(disrupted_quota_policy)
         self.max_move_delta = max_move_delta
+
+        for spec in entrant_specs:
+            if not spec.processes:
+                raise ValueError(f"entrant {spec.agent_id!r} must define at least one process")
+            if any(p.quota_share < 0 for p in spec.processes):
+                raise ValueError(f"entrant {spec.agent_id!r} has a negative process quota share")
+            declared_quota = sum(p.quota_share for p in spec.processes)
+            if declared_quota != config.instr_per_tick:
+                raise ValueError(
+                    f"entrant {spec.agent_id!r} process quota shares total {declared_quota}; "
+                    f"expected {config.instr_per_tick}"
+                )
 
         self.vm = VM(config.arena_size)
         self.scoring = ScoringPolicy(config.weights)
@@ -202,11 +219,60 @@ class ProcessMatchController:
                 p.reset()
                 if p.position is None:
                     p.position = start
+                else:
+                    unnormalized_position = p.position
+                    p.position %= config.arena_size
+                    if unnormalized_position != p.position:
+                        p.telemetry.positions_visited.discard(unnormalized_position)
                 p.telemetry.positions_visited.add(p.position)
+
+        self._states_by_agent_id = {st.agent_id: st for st in self.states}
 
     def _circular_dist(self, a: int, b: int) -> int:
         d = abs(a - b)
         return min(d, self.config.arena_size - d)
+
+    def _effective_process_quotas(
+        self,
+        spec: ProcessEntrantSpec,
+        tick: int,
+    ) -> dict[ProcessInstance, int]:
+        """Return explicit per-process limits for this tick's current eligibility.
+
+        Fair redistribution uses proportional largest remainders. Equal
+        remainders are resolved by stable ``process_id`` rather than process
+        list position, so permuting a valid entrant specification does not
+        alter the effective allocation.
+        """
+
+        def preserve_aliased_id_limits(
+            allocations: dict[ProcessInstance, int],
+        ) -> dict[ProcessInstance, int]:
+            limits_by_id: dict[str, int] = {}
+            for process, limit in allocations.items():
+                limits_by_id[process.process_id] = limits_by_id.get(process.process_id, 0) + limit
+            return {process: limits_by_id[process.process_id] for process in allocations}
+
+        eligible = [p for p in spec.processes if not p.is_disrupted(tick)]
+        if self.disrupted_quota_policy == DisruptedQuotaPolicy.LOST:
+            return preserve_aliased_id_limits({p: p.quota_share for p in eligible})
+        if not eligible:
+            return {}
+
+        total_weight = sum(p.quota_share for p in eligible)
+        if total_weight <= 0:
+            return {}
+
+        quota = self.config.instr_per_tick
+        allocations = {p: (quota * p.quota_share) // total_weight for p in eligible}
+        remainder_slots = quota - sum(allocations.values())
+        remainder_order = sorted(
+            eligible,
+            key=lambda p: (-(quota * p.quota_share % total_weight), p.process_id),
+        )
+        for p in remainder_order[:remainder_slots]:
+            allocations[p] += 1
+        return preserve_aliased_id_limits(allocations)
 
     def run(self) -> dict[str, Any]:
         """Execute the match to completion."""
@@ -222,6 +288,13 @@ class ProcessMatchController:
 
             for st in self.states:
                 st.cpu_used = 0
+
+            for spec in self.entrant_specs:
+                if not self._states_by_agent_id[spec.agent_id].alive:
+                    continue
+                for p in spec.processes:
+                    if p.is_disrupted(tick):
+                        p.telemetry.disrupted_match_ticks.add(tick)
 
             # Per-tick process turn tracking
             proc_actions_this_tick: dict[str, dict[str, int]] = {
@@ -240,24 +313,16 @@ class ProcessMatchController:
                     return
                 spec = next(s for s in self.entrant_specs if s.agent_id == st.agent_id)
 
-                # Select next eligible process
+                # Select the next process within its explicit effective quota.
                 active_proc: ProcessInstance | None = None
+                effective_quotas = self._effective_process_quotas(spec, _tick)
                 for p in spec.processes:
-                    if p.is_disrupted(_tick):
-                        continue
-                    if _proc_actions[st.agent_id][p.process_id] < p.quota_share:
+                    if _proc_actions[st.agent_id][p.process_id] < effective_quotas.get(p, 0):
                         active_proc = p
                         break
 
                 if active_proc is None:
-                    # Fallback to any non-disrupted process if quota remains
-                    for p in spec.processes:
-                        if not p.is_disrupted(_tick):
-                            active_proc = p
-                            break
-
-                if active_proc is None:
-                    return  # All processes disrupted
+                    return
 
                 # Build Observation
                 last_res = last_obs_results[st.agent_id][active_proc.process_id]
@@ -347,15 +412,21 @@ class ProcessMatchController:
                     active_proc.telemetry.addresses_written.add(target_addr)
 
 
-                    # Stage 4 Disruption check: if writing to enemy process anchor
+                    # R4b shared-location blast: every live enemy process whose
+                    # current anchor occupies this cell is disrupted. Friendly
+                    # processes are immune even when co-located.
                     if self.disruption_duration > 0:
                         for other_spec in self.entrant_specs:
                             if other_spec.agent_id == st.agent_id:
                                 continue
+                            if not self._states_by_agent_id[other_spec.agent_id].alive:
+                                continue
                             for other_p in other_spec.processes:
                                 if other_p.position is not None and other_p.position == target_addr:
                                     other_p.disrupted_until_tick = _tick + self.disruption_duration
+                                    other_p.telemetry.disruption_hits_received += 1
                                     other_p.telemetry.total_disrupted_ticks += self.disruption_duration
+                                    other_p.telemetry.disrupted_match_ticks.add(_tick)
 
                 last_obs_results[st.agent_id][active_proc.process_id] = res_info
 
@@ -419,7 +490,9 @@ class ProcessMatchController:
                     "reads": p.telemetry.total_reads,
                     "writes": p.telemetry.total_writes,
                     "passes": p.telemetry.total_passes,
+                    "disruption_hits_received": p.telemetry.disruption_hits_received,
                     "disrupted_ticks": p.telemetry.total_disrupted_ticks,
+                    "distinct_disrupted_ticks": len(p.telemetry.disrupted_match_ticks),
                     "positions_count": len(p.telemetry.positions_visited),
                     "reads_count": len(p.telemetry.addresses_read),
                     "writes_count": len(p.telemetry.addresses_written),

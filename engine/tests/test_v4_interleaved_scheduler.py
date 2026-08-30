@@ -1,12 +1,13 @@
-"""v4 research: characterization and qualification tests for interleaved scheduling.
+"""v4 research: characterization and qualification tests for chunked scheduling.
 
 Tests:
 1. Direct unit verification of ``run_interleaved_quota``: round-robin order,
    mid-tick death handling, quota=1 parity with sequential quota.
-2. Ruleset policy dispatch: ``BYTEFRAY_RULESET_V4_ALPHA1_ID`` dispatches to
-   ``run_interleaved_quota`` while all v1/v2/v3 policies retain sequential quota.
+2. Ruleset policy dispatch: ``BYTEFRAY_RULESET_V4_ALPHA1_ID`` selects K=2
+   chunked quota with deterministic rotating start, while v1/v2/v3 retain
+   sequential quota.
 3. End-to-end match execution under ``bytefray-rules-4-alpha1``:
-   - interleaved action sequence verification
+   - K=2 rotating action-sequence verification
    - strict determinism (repeatable match outcome and replay digest)
    - replay readability
 """
@@ -301,7 +302,7 @@ def test_interleaved_vs_sequential_quota_parity_at_quota_one() -> None:
 
 
 def test_ruleset_policy_dispatch_modes() -> None:
-    """Confirm that existing rulesets use sequential and v4 uses interleaved."""
+    """Confirm that existing rulesets use sequential and v4 uses K=2 rotating."""
     policy_v1 = resolve_ruleset_policy(BYTEFRAY_RULESET_ID)
     policy_v2 = resolve_ruleset_policy(BYTEFRAY_RULESET_V2_ID)
     policy_v3 = resolve_ruleset_policy(BYTEFRAY_RULESET_V3_ALPHA1_ID)
@@ -310,7 +311,9 @@ def test_ruleset_policy_dispatch_modes() -> None:
     assert policy_v1.scheduler_mode == "sequential"
     assert policy_v2.scheduler_mode == "sequential"
     assert policy_v3.scheduler_mode == "sequential"
-    assert policy_v4.scheduler_mode == "interleaved"
+    assert policy_v4.scheduler_mode == "chunked"
+    assert policy_v4.scheduler_chunk_size == 2
+    assert policy_v4.scheduler_rotate_start is True
 
     # Verify run_scheduler execution
     states = [_MockState("A"), _MockState("B")]
@@ -321,7 +324,7 @@ def test_ruleset_policy_dispatch_modes() -> None:
     policy_v4.run_scheduler(states, 2, lambda s, slot: calls_v4.append((s.agent_id, slot)))
 
     assert calls_v2 == [("A", 0), ("A", 1), ("B", 0), ("B", 1)]
-    assert calls_v4 == [("A", 0), ("B", 0), ("A", 1), ("B", 1)]
+    assert calls_v4 == [("A", 0), ("A", 1), ("B", 0), ("B", 1)]
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +359,7 @@ def _python_entrant(
 
 
 def test_interleaved_end_to_end_match_interleaving_and_determinism(tmp_path: Path) -> None:
-    """Run a match under bytefray-rules-4-alpha1 and verify interleaving and determinism."""
+    """Run v4-alpha1 and verify K=2 rotating order and determinism."""
     # Entrant A writes 100, 101, 102
     src_a = b"""from battle_engine.agent_api import ActionKind, AgentAction
 class Agent:
@@ -428,13 +431,15 @@ def create_agent():
     snapshots = [s for s in iter_replay(tmp_path / "run1" / "replay.jsonl") if isinstance(s, TickSnapshot)]
     # Snapshot 0 is tick 0 (init), snapshot 1 is tick 1, snapshot 2 is tick 2
     assert len(snapshots) == 3
-    # Check that in tick 1, memory_diffs interleaves A and B writes:
-    # A wrote 100, B wrote 200, A wrote 101, B wrote 201, A wrote 102, B wrote 202, A wrote 103, B wrote 203
+    # Tick 1 starts with A and alternates two-action chunks.
     tick1_diffs = snapshots[1].memory_diffs
-    assert len(tick1_diffs) == 8
-    expected_diff_owners = ["A", "B", "A", "B", "A", "B", "A", "B"]
-    actual_diff_owners = [diff.owner for diff in tick1_diffs]
-    assert actual_diff_owners == expected_diff_owners
+    assert [diff.owner for diff in tick1_diffs] == ["A", "B", "A", "B"]
+    assert [diff.length for diff in tick1_diffs] == [2, 2, 2, 2]
+
+    # Tick 2 rotates the starting entrant to B.
+    tick2_diffs = snapshots[2].memory_diffs
+    assert [diff.owner for diff in tick2_diffs] == ["B", "A", "B", "A"]
+    assert [diff.length for diff in tick2_diffs] == [2, 2, 2, 2]
 
 
 def test_v4_end_to_end_match_rotating_start_determinism(tmp_path: Path) -> None:
@@ -527,6 +532,5 @@ def create_agent():
     tick2_diffs = snapshots[2].memory_diffs
     assert [d.owner for d in tick2_diffs] == ["B", "A", "B", "A"]
     assert [d.length for d in tick2_diffs] == [2, 2, 2, 2]
-
 
 

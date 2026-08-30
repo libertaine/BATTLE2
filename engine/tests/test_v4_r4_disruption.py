@@ -1,4 +1,5 @@
-"""Bytefray v4 Research R4 Process Disruption Challenge."""
+"""Corrected R4 disruption economics under the normative v4 scheduler."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -6,6 +7,7 @@ from typing import Any
 from battle_engine.agent_api import ActionKind, AgentAction
 from battle_engine.config import Config, Weights
 from battle_engine.process_runtime import (
+    DisruptedQuotaPolicy,
     ProcessEntrantSpec,
     ProcessInstance,
     ProcessMatchController,
@@ -14,104 +16,149 @@ from battle_engine.process_runtime import (
     ProcessRole,
 )
 
-
-def build_distributed_entrant(name: str = "Multi") -> ProcessEntrantSpec:
-    """Two processes: Base Defender (at 100) and Remote Scout (at 900)."""
-    def def_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
-        state["runs"] = state.get("runs", 0) + 1
-        return AgentAction(ActionKind.WRITE, operand=120, value=0x11)
-        
-    def scout_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
-        state["runs"] = state.get("runs", 0) + 1
-        return AgentAction(ActionKind.WRITE, operand=920, value=0x22)
-        
-    return ProcessEntrantSpec(name, "multi_proc", [
-        ProcessInstance("base", ProcessRole.DEFENDER, initial_position=100, reach=50, quota_share=4, logic=def_logic),
-        ProcessInstance("scout", ProcessRole.SCOUT, initial_position=900, reach=50, quota_share=4, logic=scout_logic),
-    ])
+CONFIG = Config(arena_size=1024, instr_per_tick=8, seed=1, weights=Weights())
+R4B_DURATION = 1
 
 
-def build_mono_entrant(name: str = "Mono") -> ProcessEntrantSpec:
-    """One concentrated process: Base Defender (at 100) with Q=8."""
-    def mono_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
-        state["runs"] = state.get("runs", 0) + 1
-        return AgentAction(ActionKind.WRITE, operand=120, value=0x33)
-        
-    return ProcessEntrantSpec(name, "mono_proc", [
-        ProcessInstance("mono", ProcessRole.DEFENDER, initial_position=100, reach=50, quota_share=8, logic=mono_logic),
-    ])
+def _service_writer(address: int, value: int):
+    def logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+        by_tick = state.setdefault("callbacks_by_tick", {})
+        by_tick[obs.tick] = by_tick.get(obs.tick, 0) + 1
+        state["service_actions"] = state.get("service_actions", 0) + 1
+        return AgentAction(ActionKind.WRITE, operand=address, value=value)
+
+    return logic
 
 
-def build_attacker(target_anchor: int, delay_ticks: int = 0) -> ProcessEntrantSpec:
-    """Attacker that writes exactly to the opponent's anchor to disrupt them."""
-    def atk_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
-        if obs.tick <= delay_ticks:
-            return AgentAction(ActionKind.NOP)
-        # Spam disruption at target anchor
-        return AgentAction(ActionKind.WRITE, operand=target_anchor, value=0xFF)
-        
-    return ProcessEntrantSpec("Attacker", "atk", [
-        ProcessInstance("atk_proc", ProcessRole.ATTACKER, initial_position=target_anchor, reach=50, quota_share=8, logic=atk_logic),
-    ])
-
-
-def test_r4_disruption_tradeoff() -> None:
-    config = Config(arena_size=1024, instr_per_tick=8, seed=1, weights=Weights())
-    
-    # 1. Multi vs Attacker (Attacker targets the Scout at 900 starting tick 2)
-    # The scout gets disrupted every tick after tick 1.
-    multi = build_distributed_entrant()
-    atk_multi = build_attacker(target_anchor=900, delay_ticks=1)
-    
-    ctrl_multi = ProcessMatchController(
-        config, 
-        [multi, atk_multi], 
-        max_ticks=5, 
-        model=ProcessModel.MODEL_C_MOVABLE_ANCHOR,
-        disruption_duration=1,  # Disrupted through end of current/next tick
+def _distributed_entrant() -> ProcessEntrantSpec:
+    return ProcessEntrantSpec(
+        "victim",
+        "distributed",
+        [
+            ProcessInstance(
+                "base",
+                ProcessRole.DEFENDER,
+                initial_position=100,
+                reach=50,
+                quota_share=4,
+                logic=_service_writer(120, 0x11),
+            ),
+            ProcessInstance(
+                "scout",
+                ProcessRole.SCOUT,
+                initial_position=900,
+                reach=50,
+                quota_share=4,
+                logic=_service_writer(920, 0x22),
+            ),
+        ],
     )
-    ctrl_multi.run()
-    
-    base_runs = multi.processes[0].telemetry.total_actions
-    scout_runs = multi.processes[1].telemetry.total_actions
-    total_multi_runs = base_runs + scout_runs
-    scout_disrupted = multi.processes[1].telemetry.total_disrupted_ticks
-    
-    print("\n--- Distributed vs Attacker ---")
-    print(f"Total Actions: {total_multi_runs} (Base: {base_runs}, Scout: {scout_runs})")
-    print(f"Scout Disrupted Ticks: {scout_disrupted}")
-    
-    # Assert quota reallocation: The total actions should still be 40 (5 ticks * 8)
-    # Even though the scout was disrupted from tick 2 onwards.
-    assert total_multi_runs == 40
-    # Scout should only have acted in tick 1 (4 actions)
-    # Wait, the attacker writes on tick 2. Disruption applies to tick 2 (if written early enough) or tick 3.
-    assert scout_runs < 20
-    assert base_runs > 20
-    
-    # 2. Mono vs Attacker (Attacker targets the Mono at 100 starting tick 2)
-    mono = build_mono_entrant()
-    atk_mono = build_attacker(target_anchor=100, delay_ticks=1)
-    
-    ctrl_mono = ProcessMatchController(
-        config, 
-        [mono, atk_mono], 
-        max_ticks=5, 
-        model=ProcessModel.MODEL_C_MOVABLE_ANCHOR,
-        disruption_duration=1,
+
+
+def _monolithic_entrant() -> ProcessEntrantSpec:
+    return ProcessEntrantSpec(
+        "victim",
+        "monolith",
+        [
+            ProcessInstance(
+                "mono",
+                ProcessRole.GENERALIST,
+                initial_position=100,
+                reach=50,
+                quota_share=8,
+                logic=_service_writer(120, 0x33),
+            )
+        ],
     )
-    ctrl_mono.run()
-    
-    mono_runs = mono.processes[0].telemetry.total_actions
-    mono_disrupted = mono.processes[0].telemetry.total_disrupted_ticks
-    
-    print("\n--- Monolithic vs Attacker ---")
-    print(f"Total Actions: {mono_runs}")
-    print(f"Mono Disrupted Ticks: {mono_disrupted}")
-    
-    # Mono has no backup process. When disrupted, its quota is lost completely!
-    assert mono_runs < 40
 
 
-if __name__ == "__main__":
-    test_r4_disruption_tradeoff()
+def _optimized_attacker(target_anchor: int, hit_ticks: set[int]) -> ProcessEntrantSpec:
+    def logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+        if obs.tick in hit_ticks and state.get("last_hit_tick") != obs.tick:
+            state["last_hit_tick"] = obs.tick
+            state["disruption_writes"] = state.get("disruption_writes", 0) + 1
+            return AgentAction(ActionKind.WRITE, operand=target_anchor, value=0xFF)
+        state["other_actions"] = state.get("other_actions", 0) + 1
+        return AgentAction(ActionKind.WRITE, operand=(target_anchor + 30) % 1024, value=0xEE)
+
+    return ProcessEntrantSpec(
+        "attacker",
+        "optimized_attacker",
+        [
+            ProcessInstance(
+                "attacker",
+                ProcessRole.ATTACKER,
+                initial_position=target_anchor,
+                reach=50,
+                quota_share=8,
+                logic=logic,
+            )
+        ],
+    )
+
+
+def _run(
+    victim: ProcessEntrantSpec,
+    attacker: ProcessEntrantSpec,
+    *,
+    duration: int,
+    ticks: int = 10,
+) -> ProcessMatchController:
+    controller = ProcessMatchController(
+        CONFIG,
+        [victim, attacker],
+        max_ticks=ticks,
+        model=ProcessModel.MODEL_C_MOVABLE_ANCHOR,
+        disruption_duration=duration,
+        disrupted_quota_policy=DisruptedQuotaPolicy.FAIR_REDISTRIBUTION,
+    )
+    controller.run()
+    return controller
+
+
+def test_d1_optimized_suppression_denies_remote_service_without_losing_victim_quota() -> None:
+    control = _distributed_entrant()
+    control_attacker = _optimized_attacker(900, set(range(1, 11)))
+    _run(control, control_attacker, duration=0)
+
+    victim = _distributed_entrant()
+    attacker = _optimized_attacker(900, set(range(1, 11)))
+    _run(victim, attacker, duration=R4B_DURATION)
+
+    base, scout = victim.processes
+    attacker_process = attacker.processes[0]
+    callbacks_denied = control.processes[1].telemetry.total_actions - scout.telemetry.total_actions
+    disruption_writes = attacker_process.local_state["disruption_writes"]
+
+    assert [base.telemetry.total_actions, scout.telemetry.total_actions] == [80, 0]
+    assert base.telemetry.total_actions + scout.telemetry.total_actions == 80
+    assert scout.local_state.get("service_actions", 0) == 0
+    assert scout.telemetry.disrupted_match_ticks == set(range(1, 11))
+    assert scout.telemetry.disruption_hits_received == 10
+    assert callbacks_denied == 40
+    assert disruption_writes == 10
+    assert callbacks_denied / disruption_writes == 4
+    assert attacker_process.local_state["other_actions"] == 70
+    assert disruption_writes / attacker_process.telemetry.total_actions == 0.125
+
+
+def test_d1_monolith_is_severely_but_not_totally_suppressed_under_rotation() -> None:
+    control = _monolithic_entrant()
+    control_attacker = _optimized_attacker(100, set(range(1, 11)))
+    _run(control, control_attacker, duration=0)
+
+    victim = _monolithic_entrant()
+    attacker = _optimized_attacker(100, set(range(1, 11)))
+    _run(victim, attacker, duration=R4B_DURATION)
+
+    process = victim.processes[0]
+    attacker_process = attacker.processes[0]
+    callbacks_denied = control.processes[0].telemetry.total_actions - process.telemetry.total_actions
+    disruption_writes = attacker_process.local_state["disruption_writes"]
+
+    assert process.local_state["callbacks_by_tick"] == {1: 2, 3: 2, 5: 2, 7: 2, 9: 2}
+    assert process.telemetry.total_actions == 10
+    assert callbacks_denied == 70
+    assert disruption_writes == 10
+    assert callbacks_denied / disruption_writes == 7
+    assert process.telemetry.disrupted_match_ticks == set(range(1, 11))

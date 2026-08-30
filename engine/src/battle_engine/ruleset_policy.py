@@ -282,14 +282,15 @@ RULESET_V3_ALPHA1 = RulesetPolicy(
 )
 
 
-# v4 research: experimental fine-grained interleaved scheduling identity.
-# Evaluates round-robin interleaved execution against block-sequential execution
-# under identical Ruleset v2 core/observable semantics.
+# v4 research: K=2 chunked round-robin with deterministic rotating start.
+# R0/R0b/R0c selected this policy as the scheduler research closure.
 BYTEFRAY_RULESET_V4_ALPHA1_ID = "bytefray-rules-4-alpha1"
 RULESET_V4_ALPHA1 = RulesetPolicy(
     ruleset_id=BYTEFRAY_RULESET_V4_ALPHA1_ID,
     supported_runtime_kinds=frozenset({"python"}),
-    scheduler_mode="interleaved",
+    scheduler_mode="chunked",
+    scheduler_chunk_size=2,
+    scheduler_rotate_start=True,
 )
 
 
@@ -433,4 +434,3 @@ __all__ = [
     "resolve_omitted_ruleset_id",
     "resolve_ruleset_policy",
 ]
-
