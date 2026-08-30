@@ -36,9 +36,16 @@ def test_process_entrant_action_quota_invariant() -> None:
         for i in range(4)
     ]
     spec = ProcessEntrantSpec("A", "quad_test", procs)
+    
+    # Add passive opponent to prevent single-entrant early termination
+    def passive_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+        return AgentAction(ActionKind.NOP)
+    passive_spec = ProcessEntrantSpec("B", "passive", [
+        ProcessInstance("p_pass", ProcessRole.GENERALIST, 0, None, 8, passive_logic)
+    ])
 
     config = Config(arena_size=1024, instr_per_tick=8, seed=1, weights=Weights())
-    controller = ProcessMatchController(config, [spec], max_ticks=5, model=ProcessModel.MODEL_A_CURSOR)
+    controller = ProcessMatchController(config, [spec, passive_spec], max_ticks=5, model=ProcessModel.MODEL_A_CURSOR)
     controller.run()
 
     # In 5 ticks, entrant executed exactly 5 * 8 = 40 actions
@@ -122,9 +129,16 @@ def test_model_c_movable_anchor_and_move_cost() -> None:
             logic=lambda obs, state: AgentAction(ActionKind.MOVE, operand=30),
         )
     ])
+    
+    # Add passive opponent to prevent single-entrant early termination
+    def passive_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+        return AgentAction(ActionKind.NOP)
+    passive_spec = ProcessEntrantSpec("B", "passive", [
+        ProcessInstance("p_pass", ProcessRole.GENERALIST, 0, None, 8, passive_logic)
+    ])
 
     config = Config(arena_size=1024, instr_per_tick=8, seed=1, weights=Weights())
-    controller = ProcessMatchController(config, [spec_a], max_ticks=2, model=ProcessModel.MODEL_C_MOVABLE_ANCHOR)
+    controller = ProcessMatchController(config, [spec_a, passive_spec], max_ticks=2, model=ProcessModel.MODEL_C_MOVABLE_ANCHOR)
     controller.run()
 
     proc = spec_a.processes[0]
