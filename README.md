@@ -78,7 +78,7 @@ Current research findings and candidates include:
   current research branch.
 
 These are provisional research results, not a finalized v4 specification or
-release roadmap. See the [scheduler](V4_SCHEDULER_RESEARCH.md),
+release roadmap. See the [scheduler](docs/research/v4/V4_SCHEDULER_RESEARCH.md),
 [process-semantics](docs/research/v4/V4_PROCESS_SEMANTICS_RESEARCH.md),
 [process-equivalence](docs/research/v4/V4_PROCESS_EQUIVALENCE_RESEARCH.md),
 and [dynamic-process](docs/research/v4/V4_DYNAMIC_PROCESS_ECONOMICS_RESEARCH.md)
@@ -355,7 +355,7 @@ summary rather than a native Bytefray replay. See
 
 Windows CLI application packages include pMARS and its GPLv2 licensing
 materials. The pure Python and Linux wheels do not include a pMARS executable.
-See [pMARS build/runtime guidance](tools/pmars/README.md) and
+See [pMARS build/runtime guidance](README.md) and
 `third_party_licenses/`.
 
 ## Documentation

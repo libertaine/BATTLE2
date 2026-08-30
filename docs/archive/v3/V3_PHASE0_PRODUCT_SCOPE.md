@@ -99,7 +99,7 @@ compromise:
 ## 4. Software-version vs Ruleset distinction
 
 Already documented as a general policy in
-[COMPATIBILITY.md](COMPATIBILITY.md)'s independent-axes table (project
+[COMPATIBILITY.md](../../COMPATIBILITY.md)'s independent-axes table (project
 version, Agent API version, Ruleset identity, artifact schema versions,
 evaluation methodology, agent revision identity, source fingerprint
 versions, agent package format — each independent, a change to one never
@@ -371,7 +371,7 @@ this audit.
 See [V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) §7 and
 the new "Agent lifecycle: mutation, evolution, and replication economics"
 and "Execution-trace / intent semantics" sections added to
-[FUTURE_PLANS.md](FUTURE_PLANS.md) by this phase (§17 below). Framed
+[FUTURE_PLANS.md](../../FUTURE_PLANS.md) by this phase (§17 below). Framed
 explicitly as candidates requiring separate hypothesis-driven
 qualification — no mechanics designed, no `bytefray-rules-3` promised.
 

@@ -38,5 +38,5 @@ local-model findings are advisory and non-authoritative, and are never a
 substitute for tests, reproduction, source inspection, or release
 validation. Ollama is not required to build, install, or run Bytefray,
 create or run agents, execute tests, use Agent Designer, run CI, or
-produce a release. See [tools/local_ai/README.md](../tools/local_ai/README.md)
+produce a release. See [tools/local_ai/README.md](../README.md)
 for the full policy and current tooling status.

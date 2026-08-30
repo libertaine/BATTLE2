@@ -354,7 +354,7 @@ every change designed so a v1-methodology request's hash payload is
   non-zero-start Python `match_id` had to exist for refreshing it to be
   necessary. For every match that genuinely ran at `start=0`, the identity
   is unchanged; for one that did not, this is a deliberate, one-time
-  identity transition — see [COMPATIBILITY.md](COMPATIBILITY.md)'s
+  identity transition — see [COMPATIBILITY.md](../../COMPATIBILITY.md)'s
   "Placement" note for the full, corrected compatibility statement and its
   tournament-resume consequence. The one place this *did* require
   refreshing a pinned golden value is `test_ruleset_v1_equivalence.py`'s

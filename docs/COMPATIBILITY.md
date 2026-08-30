@@ -78,12 +78,12 @@ Ruleset v1 contract and its bump policy.
 
 Bytefray v3.0 is a software-version bump, not a Ruleset bump. The closed v3
 research program (see
-[V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md)) found no
+[V3_RULESET_RESEARCH_SUMMARY.md](archive/v3/V3_RULESET_RESEARCH_SUMMARY.md)) found no
 evidence justifying a gameplay-semantic change, so v3.0 software runs
 `bytefray-rules-2` unchanged — exactly the independent-axes relationship
 this document's own axis table already states (project/package version is
 one axis, Ruleset identity is a separate one). See
-[V3_PRODUCT_SCOPE.md](V3_PRODUCT_SCOPE.md) for the v3.0 compatibility
+[V3_PRODUCT_SCOPE.md](archive/v3/V3_PRODUCT_SCOPE.md) for the v3.0 compatibility
 freeze and the gate that would need to hold before any future release
 reopens Ruleset research.
 
@@ -174,7 +174,7 @@ compatibility guarantees hold:
 - **Explicit `bytefray-rules-2`.** A new methodology: a standard,
   mechanically-derived three-placement set, a standard five-seed default,
   and capture/core evidence — see
-  [V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md).
+  [V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](archive/v2/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md).
   Uses a second, additive schema/identity version,
   `SCHEMA_VERSION_V2`/`IDENTITY_VERSION_V2` (5) — there is no historical
   `bytefray-rules-2` evaluation artifact to preserve compatibility with,
@@ -221,7 +221,7 @@ one-time identity transition** (the same kind of transition
 pairwise "one cell per opponent." Requires `--ruleset bytefray-rules-2`;
 every non-`--group` evaluation (v1 or Phase 1's pairwise v2) is completely
 unaffected — see
-[V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md).
+[V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](archive/v2/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md).
 Uses a third, additive schema/identity version,
 `SCHEMA_VERSION_V2_GROUP`/`IDENTITY_VERSION_V2_GROUP` (6) — as with Phase
 1's version 5, there is no historical group-evaluation artifact to

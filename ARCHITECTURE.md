@@ -15,7 +15,7 @@ default Python starter-agent roster added in v0.6.1, and the
 `bytefray agents evaluations list/show/compare` added in v0.7). It
 supersedes the v0.2-era architecture document; that superseded text
 remains available in git history (see the `v0.2.0` tag) and in
-[`docs/V0_2_MIGRATION.md`](docs/V0_2_MIGRATION.md) for migration context.
+[`docs/V0_2_MIGRATION.md`](docs/archive/v1/V0_2_MIGRATION.md) for migration context.
 This document describes what exists today (see "v0.4.0 delivery history",
 "Agent Lab (v0.5.0)", "Agent Evaluation (v0.6.0)", "Default Agent
 Build-Out (v0.6.1)", and "Evaluation History (v0.7)" at the end for how

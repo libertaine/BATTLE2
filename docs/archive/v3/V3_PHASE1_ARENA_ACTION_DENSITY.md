@@ -94,7 +94,7 @@ grid.
 ### 3.3 The declared main grid (Phase 1P)
 
 Declared in
-[`v3_phase1_arena_action_grid.json`](../engine/src/battle_engine/data/benchmarks/v3_phase1_arena_action_grid.json)
+[`v3_phase1_arena_action_grid.json`](../../../engine/src/battle_engine/data/benchmarks/v3_phase1_arena_action_grid.json)
 **before** any main-grid result was inspected, with
 `declared_before_interpretation: true`, a per-axis rationale on every
 value, and this stopping criterion:
@@ -607,7 +607,7 @@ archetype with another rather than balancing them.
 ## 12. Beta2 Phase 4 §17 ecology rubric
 
 The five criteria are used **verbatim** from
-[docs/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md)
+[docs/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](../v2/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md)
 §17. No replacement rubric was created; the supplementary measurements
 above are reported alongside, never in place of, the five criteria.
 

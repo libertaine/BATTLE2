@@ -31,7 +31,7 @@ Key findings:
 
 ### Issue A: Core-Capture Attribution in $N \ge 3$ Entrant Matches
 
-- **Reproduction Status**: **Confirmed Defect**. Characterized via unit and end-to-end tests in [`engine/tests/test_v3_preflight_characterization.py`](file:///d:/Projects/BATTLE2/engine/tests/test_v3_preflight_characterization.py).
+- **Reproduction Status**: **Confirmed Defect**. Characterized via unit and end-to-end tests in [`engine/tests/test_v3_preflight_characterization.py`](../../../engine/tests/test_v3_preflight_characterization.py).
 - **Minimal Reproducer**:
   - Entrant 1 (Attacker B, slot 0) writes to Defender A's last core cell.
   - Entrant 2 (Defender A, slot 1) writes to that same core cell (reclaiming it).
@@ -49,7 +49,7 @@ Key findings:
 
 ### Issue B: Captured-Entrant Territory Scoring
 
-- **Reproduction Status**: **Confirmed Discrepancy**. Characterized in [`engine/tests/test_v3_preflight_characterization.py`](file:///d:/Projects/BATTLE2/engine/tests/test_v3_preflight_characterization.py).
+- **Reproduction Status**: **Confirmed Discrepancy**. Characterized in [`engine/tests/test_v3_preflight_characterization.py`](../../../engine/tests/test_v3_preflight_characterization.py).
 - **Minimal Reproducer**:
   - Entrant A owns 128 arena cells (2 buckets of 64).
   - Entrant B core-captures Entrant A on tick $T$.

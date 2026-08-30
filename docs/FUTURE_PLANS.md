@@ -93,12 +93,12 @@ Candidate, with one Exploratory sub-item.**
   observed win rates and an exact paired candidate-vs-baseline
   significance test (exact sign test / exact McNemar test) over discordant
   paired conditions, with by-opponent/by-orientation breakdowns -- see
-  [V1_6_PHASE4_EVALUATION_ANALYSIS.md](V1_6_PHASE4_EVALUATION_ANALYSIS.md).
+  [V1_6_PHASE4_EVALUATION_ANALYSIS.md](archive/v1/V1_6_PHASE4_EVALUATION_ANALYSIS.md).
 - ~~Behavior profiling.~~ Delivered in v1.6.0 Phase 5: a derived
   `behavior:` profile (survival, write activity, territory occupancy/
   retention/spread, kill interaction), overall and split by orientation/
   opponent, kept structurally independent of outcome -- see
-  [V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
+  [V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](archive/v1/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
   Deliberately narrower than a full behavioral-similarity system: no
   clustering, no archetype naming, no composite "strategy score," and no
   combined behavioral-distance scalar (per-dimension deltas only) --
@@ -127,7 +127,7 @@ Reusable, named **evaluation presets** (`bytefray agents evaluate --preset
 <name>`, a hand-authored `bytefray.evaluation_preset` YAML file supplying
 default opponent/seed/ticks/orientation values) shipped in v1.6.0 Phase 3
 -- see
-[V1_6_PHASE3_EVALUATION_PRESETS.md](V1_6_PHASE3_EVALUATION_PRESETS.md).
+[V1_6_PHASE3_EVALUATION_PRESETS.md](archive/v1/V1_6_PHASE3_EVALUATION_PRESETS.md).
 Deliberately scoped as an input-construction convenience only: no built-in
 preset catalog, no behavior profiling or benchmark/reference-population
 semantics -- those remain open items above, to be reconsidered with
@@ -141,7 +141,7 @@ evidence in hand rather than assumed.
 
 - **Parallel evaluation** -- delivered in v1.6.0 Phase 2 (bounded local
   subprocess-worker pool via `--workers N`; see
-  [V1_6_PHASE2_PARALLEL_EVALUATION.md](V1_6_PHASE2_PARALLEL_EVALUATION.md)).
+  [V1_6_PHASE2_PARALLEL_EVALUATION.md](archive/v1/V1_6_PHASE2_PARALLEL_EVALUATION.md)).
 - **Large evaluation matrices** -- exercised up to 2,000 cells in Phase 2's
   own stress qualification; no architectural blocker found at that scale.
 
@@ -161,14 +161,14 @@ change the nature of the game enough to require a new rules compatibility
 identity, or a future ruleset entirely, separate from the ones `bytefray-rules-1`
 and (as of v2.0.0-beta1) `bytefray-rules-2` freeze. **None of this is a
 2.0 requirement** beyond what the beta1 plan
-([V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)) already scopes.
+([V2_0_BETA1_PLAN.md](archive/v2/V2_0_BETA1_PLAN.md)) already scopes.
 
 A first architecture/research pass over exactly these candidates —
 advanced offensive mechanics, arena/field-size, multiple execution
 processes, replication, and translation/placement — is recorded in
-[V2_0_ALPHA_ARCHITECTURE.md](V2_0_ALPHA_ARCHITECTURE.md). The eleven-alpha
+[V2_0_ALPHA_ARCHITECTURE.md](archive/v2/V2_0_ALPHA_ARCHITECTURE.md). The eleven-alpha
 research program that followed it is now complete and closed (see
-[V2_0_ALPHA_RESEARCH_SUMMARY.md](V2_0_ALPHA_RESEARCH_SUMMARY.md) and
+[V2_0_ALPHA_RESEARCH_SUMMARY.md](archive/v2/V2_0_ALPHA_RESEARCH_SUMMARY.md) and
 `docs/ROADMAP.md`'s "v2.0 Alpha Research — Complete" section); it validated
 exactly one of the candidates below — a Python-side vulnerable-core
 mortality mechanic with owner-maintained core observability — into the
@@ -183,8 +183,8 @@ rebalancing, and two successive defensive-scoring-event designs against
 the shipped `bytefray-rules-2` ecology. Its conclusion was **no Ruleset
 change is currently justified**, and it closed without creating a stable
 `bytefray-rules-3`. See
-[V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) for the
-navigable index and [V3_RESEARCH_CLOSEOUT.md](V3_RESEARCH_CLOSEOUT.md) for
+[V3_RULESET_RESEARCH_SUMMARY.md](archive/v3/V3_RULESET_RESEARCH_SUMMARY.md) for the
+navigable index and [V3_RESEARCH_CLOSEOUT.md](archive/v3/V3_RESEARCH_CLOSEOUT.md) for
 the full final report. Each item below is updated with what v3 actually
 found, on the same discipline the alpha program's own disposition updates
 followed: findings are recorded, not asserted, and a rejected hypothesis is
@@ -199,7 +199,7 @@ to search while making a *defended* core the only kind findable — the wrong
 incentive. Alpha.11 resolved this with an owner-maintained non-blank
 invariant (`CORE_BEACON_BYTE`), validated across a 1,316-match corpus, and
 it is now part of the beta1 semantic contract
-([V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)). Recorded here, rather than left buried
+([V2_0_BETA1_PLAN.md](archive/v2/V2_0_BETA1_PLAN.md)). Recorded here, rather than left buried
 under "advanced offensive mechanics" below, because it is the single most
 consequential finding the alpha program produced.
 
@@ -224,7 +224,7 @@ defense compensation, not a decay/maintenance mechanic — the two are
 different ideas and should not be conflated. That sweep found raising
 `weights.territory` "fixes" defense's win share only by diluting Phase 3's
 offense-payoff correction back toward its pre-correction state; see
-[V3_PHASE4_DEFENSE_PAYOFF_CHARACTERIZATION.md](V3_PHASE4_DEFENSE_PAYOFF_CHARACTERIZATION.md)
+[V3_PHASE4_DEFENSE_PAYOFF_CHARACTERIZATION.md](archive/v3/V3_PHASE4_DEFENSE_PAYOFF_CHARACTERIZATION.md)
 §10. A genuine decay/maintenance mechanic remains untested by either
 program.
 
@@ -250,7 +250,7 @@ primitives — `READ`/`WRITE`/ownership, plus additive `MOVE`/`LOCAL_READ`/
 — with no `ATTACK`/`DEFEND` action ever implemented or found necessary. An
 explicit `DEFEND` action was named as a *possible* (not recommended)
 category if defense's deficit is ever revisited; see
-[V3_RESEARCH_CLOSEOUT.md](V3_RESEARCH_CLOSEOUT.md) Sec 8.
+[V3_RESEARCH_CLOSEOUT.md](archive/v3/V3_RESEARCH_CLOSEOUT.md) Sec 8.
 
 ### Arena / field-size research
 
@@ -264,8 +264,8 @@ magnitude collapse onto one dimensionless configured density,
 `S = (instr_per_tick × ticks) / arena_size`. The shipped default sits at or
 adjacent to the optimum of the tested space; no tested region scored
 better on the verbatim Beta2 §17 ecology rubric. See
-[V3_PHASE1_ARENA_ACTION_DENSITY.md](V3_PHASE1_ARENA_ACTION_DENSITY.md) and
-[V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) §5. A
+[V3_PHASE1_ARENA_ACTION_DENSITY.md](archive/v3/V3_PHASE1_ARENA_ACTION_DENSITY.md) and
+[V3_RULESET_RESEARCH_SUMMARY.md](archive/v3/V3_RULESET_RESEARCH_SUMMARY.md) §5. A
 follow-on finding (the closeout, Sec 9–13) shows *absolute* action quota
 (not density) independently controls reaction-opportunity topology near
 the fixed `CORE_SIZE` constant — recorded as a research-methodology
@@ -351,7 +351,7 @@ the strongest candidate for requiring an Agent API v2 change (redefining
 additive-only design: two new optional, `None`-default observation/context
 fields and three new action kinds that a stable-Ruleset agent never emits.
 `AGENT_API_VERSION` was not bumped anywhere in the v3 program. See
-[V3_PHASE2_LOCALITY_FEASIBILITY.md](V3_PHASE2_LOCALITY_FEASIBILITY.md)
+[V3_PHASE2_LOCALITY_FEASIBILITY.md](archive/v3/V3_PHASE2_LOCALITY_FEASIBILITY.md)
 §21.
 
 ### Agent lifecycle: mutation, evolution, and replication economics
@@ -401,7 +401,7 @@ new observable execution telemetry — recording *why* an action was taken
 damage), as a first-class engine-derived fact rather than something
 reconstructed from ownership diffs — could succeed where ownership history
 provably cannot. See
-[V3_RESEARCH_CLOSEOUT.md](V3_RESEARCH_CLOSEOUT.md) Sec 8 and Sec 25 for the
+[V3_RESEARCH_CLOSEOUT.md](archive/v3/V3_RESEARCH_CLOSEOUT.md) Sec 8 and Sec 25 for the
 full reasoning, including the explicit warning that any such telemetry
 would need its own anti-gaming analysis (self-reported "this was
 defensive" intent is trivially gameable) before being worth pursuing. This
@@ -416,7 +416,7 @@ versioned future ruleset rather than a silent mutation of an existing one:
   frozen by v0.10 (see [ROADMAP.md](ROADMAP.md)).
 - **Ruleset v2** (`bytefray-rules-2`) — the beta candidate emerging from
   the v2.0 alpha program (`v2.0.0-beta1`, see [ROADMAP.md](ROADMAP.md) and
-  [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)), distinct from every historical alpha
+  [V2_0_BETA1_PLAN.md](archive/v2/V2_0_BETA1_PLAN.md)), distinct from every historical alpha
   identity that preceded it, and Bytefray's current, permanent, stable
   Ruleset as of `v2.0.0`.
 - **`bytefray-rules-3-alpha1`** — one experimental, explicitly non-stable
@@ -424,13 +424,13 @@ versioned future ruleset rather than a silent mutation of an existing one:
   2's research (never merged, never exposed on any product CLI's
   `--ruleset` choices). It is **not** `bytefray-rules-3`; the locality
   mechanic it carried was rejected (see
-  [V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) §4), and
+  [V3_RULESET_RESEARCH_SUMMARY.md](archive/v3/V3_RULESET_RESEARCH_SUMMARY.md) §4), and
   no stable Ruleset 3 exists.
 - **Later ruleset(s)** — any future experimental multiprocessing/
   replication/advanced-combat variant, versioned separately from all of
   the above. Bytefray v3.0 software development does not require, and does
   not create, one — see
-  [V3_PRODUCT_SCOPE.md](V3_PRODUCT_SCOPE.md).
+  [V3_PRODUCT_SCOPE.md](archive/v3/V3_PRODUCT_SCOPE.md).
 
 Historical evaluations must remain interpretable according to the rules
 under which they were produced — this is the same honesty principle
