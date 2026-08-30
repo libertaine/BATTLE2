@@ -14,13 +14,14 @@ evaluation and tournament tools, and a complete command-line workflow. Agents
 can be written by hand or with any external tooling. Bytefray itself has no
 AI or LLM dependency.
 
-[![GitHub release](https://img.shields.io/github/v/release/libertaine/Bytefray?include_prereleases&label=current%20release)](https://github.com/libertaine/Bytefray/releases)
+[![GitHub stable release](https://img.shields.io/github/v/release/libertaine/Bytefray?label=stable%20release)](https://github.com/libertaine/Bytefray/releases/latest)
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Current releases:** [v3.0.0 stable](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
-· [v2.0.0 stable](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
-— see [Downloads](#downloads) below.
+**Current stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
+— see [Downloads](#downloads) below. Earlier [v2.0.0](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
+and [v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0)
+releases remain available for historical and compatibility use.
 
 ## What is Bytefray?
 
@@ -37,40 +38,52 @@ Bytefray is both a game and a deterministic experimentation platform:
 - Pairwise and multi-entrant evaluation, revision provenance, package sharing,
   and a resumable tournament service support serious iteration.
 
-## What's new in Bytefray 3.0
+## Bytefray v4 research
 
-Bytefray 3.0 (`v3.0.0`, stable) is a product and presentation release, not a
-new gameplay Ruleset: current gameplay remains `bytefray-rules-2`, and
-Agent API v1 stays fully compatible. v3.0.0 promotes the qualified
-`v3.0.0-rc2` candidate with no software change: RC1 combined the
-alpha1/alpha2 work below with distribution re-qualification, and RC2 fixed
-a single RC1 defect (an omitted CLI `--ruleset` no longer diverges from
-Agent Designer's Ruleset-v2 default for Python-only matches — see
-[Rulesets](#rulesets) below). See the
-[Compatibility Reference](docs/COMPATIBILITY.md) for details.
+Bytefray v3.0.0 is the current stable published product. Work on the separate
+[`v4-research`](https://github.com/libertaine/Bytefray/tree/v4-research)
+branch is an evidence-driven exploration of a narrower, deeper Python-first
+direction. The goal is to simplify future gameplay and agent design while
+retaining determinism, reproducibility, replayability, and controlled
+evaluation. Research-only rulesets, harnesses, and APIs are not supported
+public interfaces or promises of final v4 behavior or compatibility.
 
-Highlights over 2.0:
+Current research findings and candidates include:
 
-- **Replay Viewer** — shared Bytefray branding, a whole-match timeline with
-  click/drag seeking, and an in-HUD "CORE CAPTURED" callout naming the
-  victim and captor.
-- **Agent creation** — a clearer Agent Development workflow, a second
-  "Annotated Example" scaffold, explicit Ruleset selection for development
-  tests, and sharper validation/error diagnostics.
-- **Strategy examples** — two new starters, **Raider** and **Sentinel**,
-  demonstrate deliberate Vulnerable-Core offense and defense, growing the
-  bundled Python starter set from five to seven.
-- **Strategy analysis** — win-rate/confidence-interval bars, core-capture
-  rate bars, an 11-dimension behavior-profile panel, and a `--json`
-  evaluation output mode.
-- **Evaluation workflow** — a GUI worker-count control, non-default-condition
-  disclosure, one-click access to an evaluation's output folder, and
-  explicit pairwise Ruleset selection.
-- **Distribution** — refreshed packaging/install documentation and a
-  qualified Windows installer, portable build, and Python package.
+- **Scheduler foundation (R0/R0b/R0c closed)** — the current candidate is
+  deterministic chunked round-robin scheduling with chunk size `K=2` and a
+  rotating starting seat based on immutable original seat order. Dead entrants
+  are skipped without collapsing that rotation topology, and each entrant's
+  total action quota remains fixed. The experiments substantially reduced the
+  identified structural reaction and seat-order biases; they do not establish
+  that every possible scheduler bias is eliminated.
+- **Process semantics (R1/R1b closed)** — independent logical action cursors
+  with global arena reach, process-local state, and entrant-shared coordination
+  state were the simplest strong candidate tested. Static reach limits,
+  movement, physical occupancy, and process disruption did not justify their
+  added complexity in those experiments. Exact differential testing then
+  showed that a mailbox-aware monolithic controller can reproduce the tested
+  fixed-process Model A behavior action-for-action, so logical process identity
+  is currently an organizational abstraction rather than a proven unique
+  strategic capability.
+- **Dynamic process economics (R2 closed)** — a conditional design analysis
+  found no irreducible capability in spawning, retirement, or quota
+  reallocation under the tested global-reach model, so the current research
+  recommendation is not to add a dynamic process economy. No dynamic process
+  API was implemented. Spatial process models remain a possible later research
+  boundary, not a current v4 requirement.
+- **Future API and compatibility scope** — Agent API v2 and the long-term scope
+  of Ruleset v1, VM/blob execution, and Redcode/pMARS remain product decisions
+  subject to qualification. None has been removed from v3.0.0 or from the
+  current research branch.
 
-See [CHANGELOG.md](CHANGELOG.md#300---2026-08-30) for the full v3.0
-release notes.
+These are provisional research results, not a finalized v4 specification or
+release roadmap. See the [scheduler](V4_SCHEDULER_RESEARCH.md),
+[process-semantics](docs/research/v4/V4_PROCESS_SEMANTICS_RESEARCH.md),
+[process-equivalence](docs/research/v4/V4_PROCESS_EQUIVALENCE_RESEARCH.md),
+and [dynamic-process](docs/research/v4/V4_DYNAMIC_PROCESS_ECONOMICS_RESEARCH.md)
+reports for the evidence and scope limits. For shipped v3 features, see the
+[v3.0.0 release notes](CHANGELOG.md#300---2026-08-30).
 
 ## How the game works
 
@@ -181,18 +194,23 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-**Bytefray v3.0.0 final release:** promoted from the qualified `v3.0.0-rc2`
-candidate with no software change; in final artifact and CI qualification,
-not yet published.
+**Current stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
+— promotes the qualified `v3.0.0-rc2` candidate with no software change.
+`bytefray-rules-2` remains v3.0's active gameplay identity, Agent API v1 is
+unchanged, and RC2's CLI/GUI default-Ruleset fix carries forward.
 
-**Current published prerelease:** [Bytefray v3.0.0-rc2](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc2)
-— fixes RC1's CLI/GUI default-Ruleset divergence and is the frozen candidate
-for final verification, not yet the stable 3.0 line.
+| Package | Download | Notes |
+|---|---|---|
+| Windows installer | [Bytefray-Setup-3.0.0.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/Bytefray-Setup-3.0.0.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
+| Portable Windows applications | [bytefray-3.0.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0-windows.zip) | Complete onedir layouts for all four executables |
+| Python wheel | [bytefray-3.0.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-3.0.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/SHA256SUMS.txt) | SHA-256 values for 3.0.0 assets |
 
 Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)
 for the alpha1/alpha2/rc1/rc2 prereleases that led up to v3.0.0.
 
-**Stable release:** [Bytefray v2.0.0](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
+**Previous major release:** [Bytefray v2.0.0](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
 — Vulnerable Core. Promotes the qualified `v2.0.0-rc2` candidate with no
 software change; adds the permanent Ruleset v2 (`bytefray-rules-2`)
 alongside frozen Ruleset v1.
@@ -205,8 +223,10 @@ alongside frozen Ruleset v1.
 | Source archive | [bytefray-2.0.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v2.0.0/bytefray-2.0.0.tar.gz) | Python/source workflows |
 | Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v2.0.0/SHA256SUMS.txt) | SHA-256 values for 2.0.0 assets |
 
-Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)
-for the previous stable v1.6.0 line and historical alpha/beta/RC prereleases.
+See [Bytefray v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0)
+for the earlier stable 1.x line and the
+[GitHub Releases page](https://github.com/libertaine/Bytefray/releases) for
+historical alpha, beta, and release-candidate builds.
 
 Windows installer data defaults to `%ProgramData%\Bytefray`; regular Windows
 wheel installs default to `%LOCALAPPDATA%\Bytefray`. `BYTEFRAY_ROOT` explicitly
@@ -388,12 +408,11 @@ multi-entrant work, together with explicit Designer Ruleset selection,
 read-only agent-source inspection, refreshed onboarding, and current product
 screenshots.
 
-Bytefray 3.0 (`v3.0.0`, stable) is the current product and presentation
-cycle on top of stable 2.0 — see
-[What's new in Bytefray 3.0](#whats-new-in-bytefray-30) above.
-
-Future 2.x ideas—replication, multi-unit entrants, communication, richer
-resource/attack mechanics, and Agent API v2—remain research, not commitments.
+Bytefray v3.0.0 is the current stable published product and presentation
+release on top of the stable Ruleset-v2 game. Active work on the separate
+v4 research branch is summarized in [Bytefray v4 research](#bytefray-v4-research)
+above. Its scheduler, process, API, and compatibility findings remain
+provisional research rather than released behavior or commitments.
 
 See the [detailed roadmap and complete milestone history](docs/ROADMAP.md),
 [release-by-release changelog](CHANGELOG.md), and maturity-labeled
