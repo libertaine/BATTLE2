@@ -956,10 +956,9 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: `v3.0.0-alpha1`, `v3.0.0-alpha2`, and `v3.0.0-rc1` published;
-`v3.0.0-rc2` qualified and pending publication (fixes an RC1 default-
-Ruleset defect; no new product work).**
-Bytefray
+**Status: `v3.0.0-alpha1`, `v3.0.0-alpha2`, `v3.0.0-rc1`, and `v3.0.0-rc2`
+published.** `v3.0.0-rc2` fixes an RC1 default-Ruleset defect; no new
+product work. Bytefray
 v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
@@ -1073,7 +1072,7 @@ release blocker, consistent with alpha1/alpha2 precedent. RC1 stays on
 `v3.0-development`; per prior Bytefray release precedent, it is not merged
 to `main` until final `v3.0.0`.
 
-**`v3.0.0-rc2` is qualified and pending publication** — see
+**`v3.0.0-rc2` is published** — see
 [V3_RC1_DEFAULT_RULESET_DEFECT.md](V3_RC1_DEFAULT_RULESET_DEFECT.md). Found
 after RC1 was tagged: an omitted CLI `--ruleset` resolved to Ruleset v1 for
 Python-only matches, while Agent Designer already defaulted to Ruleset v2 —

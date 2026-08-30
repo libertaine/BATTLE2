@@ -439,9 +439,11 @@ gameplay mechanic is implicated.
 
 ### DEFAULT-RULESET DEFECT FIXED — READY FOR RC2 QUALIFICATION
 
-This document does not itself qualify `v3.0.0-rc2` — that requires a
-separate, dedicated release-candidate qualification pass once (and if)
-RC2 is authorized.
+This verdict reflects the state at the point the fix landed. §21 and §22
+record what happened next: a narrow, adversarial RC2 qualification pass
+around this fix specifically (not a from-scratch equivalent of
+`V3_RC1_QUALIFICATION.md`), followed by explicit user authorization to
+version-bump, tag, and publish. `v3.0.0-rc2` is now published — see §22.
 
 ## 20. Commit
 
@@ -481,9 +483,62 @@ untouched.
 **Version bump and tag/publish were deliberately not performed in this
 pass** — both remain gated on a separate, explicit go-ahead (§22).
 
-## 22. RC2 version/tag — awaiting go-ahead
+## 22. RC2 version, tag, and publication
 
-Per §18's recommendation, `v3.0.0-rc2` / `3.0.0rc2` version-bump,
-release-prep, tagging, and publication are the only remaining steps in
-the user's own RC2 flow. None were performed by this pass. A separate,
-explicit authorization is required before proceeding to that step.
+Performed after explicit user authorization ("proceed with 3.0.0rc2 and
+publishing v3.0.0-rc2"), following the exact two-commit prepare/publish
+pattern `v3.0.0-rc1` itself used:
+
+- **Version bump** (`release: prepare Bytefray v3.0.0-rc2`, `b684a44`):
+  `pyproject.toml` `3.0.0rc1` → `3.0.0rc2`; `tools/installer.iss`
+  `AppVersion`/`ReleaseTag` → `3.0.0rc2` / `3.0.0-rc2`; `CHANGELOG.md`'s
+  `[Unreleased]` entry retitled to the dated `[3.0.0-rc2]` entry;
+  `README.md`/`docs/ROADMAP.md` noted RC2 as qualified and pending
+  publication, demoting RC1's own label to "First release candidate" (the
+  same pattern alpha1 used once alpha2 shipped).
+- **Rebuilt artifacts at the new version** — the RC2 qualification pass's
+  own frozen build (§21) had been built *before* the version bump and still
+  reported `3.0.0rc1`; it was discarded and rebuilt. A stray
+  `__pycache__` directory under `engine/src/battle_engine/data/
+  reference_agents/core_defender/` (a local, gitignored artifact from this
+  session's own earlier test runs, never committed) was found and removed
+  after it caused `tools/check_wheel.py` to correctly reject a
+  bytecode-contaminated wheel; the wheel was then rebuilt clean and
+  validated.
+- **Verified at the new version**: `bytefray.exe --version` and a clean
+  venv installing the wheel both report `Bytefray 3.0.0rc2`; the full
+  10-check frozen-`bytefray.exe` Ruleset matrix (§21) was re-run against
+  the rebuilt `3.0.0rc2` executable and passed 10/10 again, including the
+  `raider`-vs-`claimer` core-capture reproduction.
+- **Tag**: `v3.0.0-rc2` (annotated, object `bb4a853`, commit `b684a44`),
+  pushed to `origin`.
+- **Published**: GitHub prerelease at
+  <https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc2>, target
+  `v3.0-development`, `isPrerelease: true`. Assets: `Bytefray-Setup-3.0.0-rc2.exe`,
+  `bytefray-3.0.0-rc2-windows.zip`, `bytefray-3.0.0rc2-py3-none-any.whl`,
+  `bytefray-3.0.0rc2.tar.gz`, `SHA256SUMS.txt`.
+- **Post-publication verification**: every asset was re-downloaded from
+  the published release (`gh release download v3.0.0-rc2`) and its digest
+  recomputed; all four match the locally built values exactly:
+
+  ```text
+  bcb3b839c1a4b1bdd12aeb1a696a57bb6a12b5add9a8743d1f3de634f850d3f9  Bytefray-Setup-3.0.0-rc2.exe
+  387e4163f6f2838e10b205ebb72caff2795681bd169a23570d87da72042274e8  bytefray-3.0.0-rc2-windows.zip
+  b737e10cd1f3f35fce669a40ed1624df6aec4909b3aef03af626ade9839ecf46  bytefray-3.0.0rc2-py3-none-any.whl
+  d56ab364d1c28d060e4844bbb6270f310b2e7144321ed41a7b6cd13049ab7537  bytefray-3.0.0rc2.tar.gz
+  ```
+
+- **Follow-up commit** (`docs: mark v3.0.0-rc2 published`) updates
+  `README.md`'s Downloads section and top current-release line, and
+  `docs/ROADMAP.md`'s status line, from "qualified and pending
+  publication" to "published" with live download links — the identical
+  post-publication pattern `v3.0.0-rc1`, alpha1, and alpha2 all used, so
+  no commit along the way ever claimed a publication that had not yet
+  happened.
+
+This document does not itself constitute a full, independent RC2
+qualification record in the shape of `V3_RC1_QUALIFICATION.md` — it
+records the fix, the narrow adversarial RC2 pass run around it (§21), and
+this publication. `v3.0.0-rc1` was never moved, retagged, or rewritten;
+`v3.0.0-rc2` supersedes it as the current release candidate on
+`v3.0-development`, not merged to `main`.
