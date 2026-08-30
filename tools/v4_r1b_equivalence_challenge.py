@@ -4,6 +4,13 @@ Adversarial validation of the R1 multi-process conclusion.
 Tests whether a monolithic Python control loop with a mailbox routing architecture
 can faithfully replicate the strategic capability of a true multi-process entrant
 under the exact same K=2 chunked scheduler.
+
+This is exact deterministic differential testing, not a statistical study:
+every role's logic here is a pure function of its observation and its own
+local state, Config.seed is not consumed anywhere in process_runtime.py or
+process_agents.py, and neither controller uses randomness. Each
+(opponent, seat order) combination therefore has exactly one possible
+outcome -- there is no seed dimension to sample over.
 """
 
 from __future__ import annotations
@@ -76,29 +83,51 @@ def instrument_monolithic(spec):
     return traces
 
 
-def run_equivalence_test(opp_factory, ticks=100, seed=42) -> bool:
-    cfg = lambda: Config(arena_size=4096, instr_per_tick=8, seed=seed,
+def run_equivalence_test(opp_factory, ticks=100, focal_first=True) -> bool:
+    # Config.seed is not consumed anywhere in process_runtime.py or
+    # process_agents.py, and no role logic here uses randomness -- every run
+    # of this experiment is fully deterministic given (opponent, seat order).
+    # There is deliberately no seed parameter/loop: looping over seed values
+    # would re-run the identical computation and could misleadingly read as
+    # independent statistical samples. This is exact deterministic
+    # differential testing, not a statistical comparison.
+    cfg = lambda: Config(arena_size=4096, instr_per_tick=8,
                          win_mode="score_fallback",
                          weights=Weights(alive=1.0, kill=5.0, territory=1.0, territory_bucket=64))
 
     # Run genuine
     g_spec = make_triple_process_def_scout_atk("A", alloc=(4, 2, 2))
     g_traces = instrument_genuine(g_spec)
-    cg = ProcessMatchController(cfg(), [g_spec, opp_factory("B")], max_ticks=ticks, model=ProcessModel.MODEL_A_CURSOR)
-    cg.run()
+    g_opp = opp_factory("B")
+    g_entrants = [g_spec, g_opp] if focal_first else [g_opp, g_spec]
+    cg = ProcessMatchController(cfg(), g_entrants, max_ticks=ticks, model=ProcessModel.MODEL_A_CURSOR)
+    g_result = cg.run()
 
     # Run mailbox monolith
     m_spec = make_monolithic_triple_sim("A")
     m_traces = instrument_monolithic(m_spec)
-    cm = ProcessMatchController(cfg(), [m_spec, opp_factory("B")], max_ticks=ticks, model=ProcessModel.MODEL_A_CURSOR)
-    cm.run()
+    m_opp = opp_factory("B")
+    m_entrants = [m_spec, m_opp] if focal_first else [m_opp, m_spec]
+    cm = ProcessMatchController(cfg(), m_entrants, max_ticks=ticks, model=ProcessModel.MODEL_A_CURSOR)
+    m_result = cm.run()
 
     if len(g_traces) != len(m_traces):
         return False
-    
+
     for g, m in zip(g_traces, m_traces):
         if g["act_k"] != m["act_k"] or g["act_o"] != m["act_o"] or g["act_v"] != m["act_v"]:
             return False
+
+    # Survival/termination equivalence: same winner/reason/tick count, and the
+    # same per-agent alive outcome (not just implied by arena/score equality).
+    if g_result["winner"] != m_result["winner"] or g_result["reason"] != m_result["reason"]:
+        return False
+    if g_result["ticks_run"] != m_result["ticks_run"]:
+        return False
+    g_alive = {st.agent_id: st.alive for st in cg.states}
+    m_alive = {st.agent_id: st.alive for st in cm.states}
+    if g_alive != m_alive:
+        return False
 
     return (cg.vm.arena == cm.vm.arena and
             cg.vm.writer == cm.vm.writer and
@@ -122,18 +151,23 @@ def main() -> None:
 
     all_pass = True
     results = {}
-    
+
+    # Both entrant-list seat orders are exercised (focal-then-opponent and
+    # opponent-then-focal) since seat/slot assignment determines core_base
+    # placement and chunked-scheduler rotation offset -- a genuine
+    # equivalence claim must not depend on which slot the focal entrant
+    # happens to occupy. With only two entrants here (focal + one opponent
+    # archetype at a time, never three at once), this is the full space of
+    # seat orderings rather than a subset of the six permutations of three.
     for opp_name, opp_factory in opponents:
         print(f"\nTesting against {opp_name}...")
-        for seed in [0, 42, 99]:
-            ok = run_equivalence_test(opp_factory, ticks=50, seed=seed)
-            if ok:
-                print(f"  Seed {seed:3}: PASS")
-            else:
-                print(f"  Seed {seed:3}: FAIL")
+        for focal_first in (True, False):
+            seat = "A,B" if focal_first else "B,A"
+            ok = run_equivalence_test(opp_factory, ticks=50, focal_first=focal_first)
+            print(f"  Seat [{seat}]: {'PASS' if ok else 'FAIL'}")
             if not ok:
                 all_pass = False
-            results[f"{opp_name}_s{seed}"] = ok
+            results[f"{opp_name}_{seat.replace(',', '')}"] = ok
 
     out_file = args.output / "r1b_equivalence_results.json"
     out_file.write_text(json.dumps(results, indent=2), encoding="utf-8")
