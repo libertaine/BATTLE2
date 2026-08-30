@@ -127,6 +127,75 @@ def test_chunked_quota_rotating_start_order() -> None:
     assert calls_t3 == [("C", 0), ("A", 0), ("B", 0), ("C", 1), ("A", 1), ("B", 1)]
 
 
+def test_chunked_quota_2_entrants_rotation() -> None:
+    """In 2-entrant matches, rotating start alternates the first-mover entrant each tick."""
+    states = [_MockState("A"), _MockState("B")]
+    t1, t2, t3 = [], [], []
+
+    run_chunked_quota(states, 2, lambda s, slot: t1.append((s.agent_id, slot)), chunk_size=2, rotate_start=True, tick=1)
+    run_chunked_quota(states, 2, lambda s, slot: t2.append((s.agent_id, slot)), chunk_size=2, rotate_start=True, tick=2)
+    run_chunked_quota(states, 2, lambda s, slot: t3.append((s.agent_id, slot)), chunk_size=2, rotate_start=True, tick=3)
+
+    assert t1 == [("A", 0), ("A", 1), ("B", 0), ("B", 1)]
+    assert t2 == [("B", 0), ("B", 1), ("A", 0), ("A", 1)]
+    assert t3 == [("A", 0), ("A", 1), ("B", 0), ("B", 1)]
+
+
+def test_chunked_quota_4_entrants_rotation() -> None:
+    """In 4-entrant matches, rotating start cycles through all 4 entrant starting positions."""
+    states = [_MockState("A"), _MockState("B"), _MockState("C"), _MockState("D")]
+    t_orders: list[list[str]] = []
+
+    for tick in range(1, 6):
+        order: list[str] = []
+        run_chunked_quota(
+            states,
+            1,
+            lambda s, slot, _ord=order: _ord.append(s.agent_id),
+            chunk_size=1,
+            rotate_start=True,
+            tick=tick,
+        )
+        t_orders.append(order)
+
+    assert t_orders == [
+        ["A", "B", "C", "D"],  # Tick 1
+        ["B", "C", "D", "A"],  # Tick 2
+        ["C", "D", "A", "B"],  # Tick 3
+        ["D", "A", "B", "C"],  # Tick 4
+        ["A", "B", "C", "D"],  # Tick 5
+    ]
+
+
+def test_chunked_quota_dead_entrant_rotation_semantics() -> None:
+    """When an entrant dies, rotation follows original seat indices with the dead entrant skipped (Option A)."""
+    states = [_MockState("A"), _MockState("B", alive=False), _MockState("C"), _MockState("D")]
+    t_orders: list[list[str]] = []
+
+    for tick in range(1, 6):
+        order: list[str] = []
+        run_chunked_quota(
+            states,
+            1,
+            lambda s, slot, _ord=order: _ord.append(s.agent_id),
+            chunk_size=1,
+            rotate_start=True,
+            tick=tick,
+        )
+        t_orders.append(order)
+
+    # B is dead (skipped in all ticks):
+    assert t_orders == [
+        ["A", "C", "D"],  # Tick 1: [A, (B), C, D]
+        ["C", "D", "A"],  # Tick 2: [(B), C, D, A]
+        ["C", "D", "A"],  # Tick 3: [C, D, A, (B)]
+        ["D", "A", "C"],  # Tick 4: [D, A, (B), C]
+        ["A", "C", "D"],  # Tick 5: [A, (B), C, D]
+    ]
+
+
+
+
 def test_chunked_quota_mid_chunk_death() -> None:
     """If an entrant dies on turn 1 of a 4-turn chunk, remaining turns in that chunk are skipped."""
     states = [_MockState("A"), _MockState("B")]
@@ -366,4 +435,98 @@ def create_agent():
     expected_diff_owners = ["A", "B", "A", "B", "A", "B", "A", "B"]
     actual_diff_owners = [diff.owner for diff in tick1_diffs]
     assert actual_diff_owners == expected_diff_owners
+
+
+def test_v4_end_to_end_match_rotating_start_determinism(tmp_path: Path) -> None:
+    """A match with chunk_size=2 and rotate_start=True is bit-for-bit deterministic and rotates first mover."""
+    src_a = b"""from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, ctx):
+        self.idx = 0
+    def act(self, obs):
+        addr = 100 + self.idx
+        self.idx += 1
+        return AgentAction(ActionKind.WRITE, addr, 0x11)
+def create_agent():
+    return Agent()
+"""
+    src_b = b"""from battle_engine.agent_api import ActionKind, AgentAction
+class Agent:
+    def reset(self, ctx):
+        self.idx = 0
+    def act(self, obs):
+        addr = 200 + self.idx
+        self.idx += 1
+        return AgentAction(ActionKind.WRITE, addr, 0x22)
+def create_agent():
+    return Agent()
+"""
+    entrants1 = (
+        _python_entrant(tmp_path / "run1", "agent_a", src_a, slot="A", start=0),
+        _python_entrant(tmp_path / "run1", "agent_b", src_b, slot="B", start=2000),
+    )
+
+    config = Config(
+        arena_size=4096,
+        instr_per_tick=4,
+        seed=42,
+        win_mode="score_fallback",
+        weights=Weights(alive=1.0, kill=5.0, territory=1.0, territory_bucket=64),
+    )
+    req1 = MatchRequest(
+        config=config,
+        entrants=entrants1,
+        max_ticks=2,
+        replay_path=tmp_path / "run1" / "replay.jsonl",
+        ruleset_id=V4_INTERLEAVED,
+        scheduler_chunk_size=2,
+        scheduler_rotate_start=True,
+        verbose=False,
+    )
+    service = NativeMatchService()
+    res1 = service.run(req1)
+
+    # Re-run for determinism check
+    entrants2 = (
+        _python_entrant(tmp_path / "run2", "agent_a", src_a, slot="A", start=0),
+        _python_entrant(tmp_path / "run2", "agent_b", src_b, slot="B", start=2000),
+    )
+
+
+    req2 = MatchRequest(
+        config=config,
+        entrants=entrants2,
+        max_ticks=2,
+        replay_path=tmp_path / "run2" / "replay.jsonl",
+        ruleset_id=V4_INTERLEAVED,
+        scheduler_chunk_size=2,
+        scheduler_rotate_start=True,
+        verbose=False,
+    )
+    res2 = service.run(req2)
+
+    # Determinism checks
+    assert res1.winner == res2.winner
+    assert res1.score == res2.score
+    assert res1.replay_sha256 == res2.replay_sha256
+    assert res1.ticks_run == res2.ticks_run == 2
+
+    # Verify replay contents
+    snapshots = [s for s in iter_replay(tmp_path / "run1" / "replay.jsonl") if isinstance(s, TickSnapshot)]
+    assert len(snapshots) == 3
+    # Tick 1 (rotate_start: tick 1 offset 0 -> A starts):
+    # Pass 0 (slots 0..1): A writes 2 cells (coalesced), then B writes 2 cells (coalesced)
+    # Pass 1 (slots 2..3): A writes 2 cells (coalesced), then B writes 2 cells (coalesced)
+    tick1_diffs = snapshots[1].memory_diffs
+    assert [d.owner for d in tick1_diffs] == ["A", "B", "A", "B"]
+    assert [d.length for d in tick1_diffs] == [2, 2, 2, 2]
+
+    # Tick 2 (rotate_start: tick 2 offset 1 -> B starts):
+    # Pass 0 (slots 0..1): B writes 2 cells (coalesced), then A writes 2 cells (coalesced)
+    # Pass 1 (slots 2..3): B writes 2 cells (coalesced), then A writes 2 cells (coalesced)
+    tick2_diffs = snapshots[2].memory_diffs
+    assert [d.owner for d in tick2_diffs] == ["B", "A", "B", "A"]
+    assert [d.length for d in tick2_diffs] == [2, 2, 2, 2]
+
+
 
