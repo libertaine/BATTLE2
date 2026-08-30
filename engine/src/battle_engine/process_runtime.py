@@ -387,13 +387,12 @@ class ProcessMatchController:
             )
 
             alive_count = sum(1 for st in self.states if st.alive)
-            if (len(self.states) > 1 and alive_count <= 1) or (len(self.states) == 1 and alive_count == 0):
+            if alive_count <= 1:
                 break
-
 
         # Calculate results
         living = [st for st in self.states if st.alive]
-        if len(self.states) > 1 and len(living) == 1:
+        if len(living) == 1:
             winner = living[0].agent_id
             reason = "last_agent_standing"
         elif len(living) == 0:
@@ -402,11 +401,10 @@ class ProcessMatchController:
         else:
             # Score fallback
             scores = {st.agent_id: self.score[st.agent_id] for st in living}
-            max_score = max(scores.values()) if scores else 0.0
+            max_score = max(scores.values())
             top_agents = [aid for aid, sc in scores.items() if sc == max_score]
             winner = top_agents[0] if len(top_agents) == 1 else "tie"
             reason = "tick_limit"
-
 
         # Entrant summaries
         entrants_summary = {}
