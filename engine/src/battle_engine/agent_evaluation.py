@@ -94,6 +94,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID, normalize_ruleset_id
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
     resolve_omitted_ruleset_id,
 )
 
@@ -481,8 +482,9 @@ def resolve_evaluation_ruleset_id(ruleset_id: str | None) -> str:
 #: Which resolved rules-compatibility ids select the v2 evaluation
 #: methodology. Finite and explicit, never a prefix check.
 _V2_METHODOLOGY_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID}
+    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA1_ID}
 )
+
 
 
 def is_ruleset_v2_methodology(rules_compatibility_id: str) -> bool:
@@ -3081,12 +3083,15 @@ class EvaluationService:
             BYTEFRAY_RULESET_ID,
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V3_ALPHA1_ID,
+            BYTEFRAY_RULESET_V4_ALPHA1_ID,
         ):
             raise EvaluationConfigurationError(
                 f"Unsupported evaluation --ruleset {request.ruleset_id!r}; expected "
-                f"{BYTEFRAY_RULESET_ID!r}, {BYTEFRAY_RULESET_V2_ID!r}, or "
-                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}."
+                f"{BYTEFRAY_RULESET_ID!r}, {BYTEFRAY_RULESET_V2_ID!r}, "
+                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}, or "
+                f"{BYTEFRAY_RULESET_V4_ALPHA1_ID!r}."
             )
+
         # v3 Phase 2: fail closed on a reach that would be silently
         # discarded. A request that names a reach it will not get would
         # write artifacts describing conditions it did not run under.

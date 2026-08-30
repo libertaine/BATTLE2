@@ -52,6 +52,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
     RulesetPolicy,
     resolve_ruleset_policy,
 )
@@ -323,8 +324,9 @@ class OverlappingCoreError(ValueError):
 # alpha identities are deliberately still excluded: their execution
 # semantics are frozen.
 _CORE_PLACEMENT_GUARDED_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID}
+    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA1_ID}
 )
+
 
 
 def _validate_v2_core_placement(

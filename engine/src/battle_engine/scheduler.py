@@ -56,4 +56,24 @@ def run_sequential_quota(
             execute_slot(state, slot)
 
 
-__all__ = ["run_sequential_quota"]
+def run_interleaved_quota(
+    states: Iterable[StateT],
+    quota: int,
+    execute_slot: Callable[[StateT, int], None],
+) -> None:
+    """Give each live state in ``states`` up to ``quota`` turns in round-robin interleaved order.
+
+    For each slot in ``range(quota)``, each live entrant in ``states`` executes one action,
+    skipping states that are not alive.
+    """
+
+    state_list = list(states) if not isinstance(states, list) else states
+    for slot in range(quota):
+        for state in state_list:
+            if not state.alive:
+                continue
+            execute_slot(state, slot)
+
+
+__all__ = ["run_interleaved_quota", "run_sequential_quota"]
+

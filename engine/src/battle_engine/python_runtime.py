@@ -38,6 +38,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ALPHA11_ID,
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
     RULESET_V1,
     RulesetPolicy,
     TerminationReason,
@@ -134,6 +135,9 @@ VULNERABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
         # locality result that differed because the core mechanic also
         # differed would answer no question Phase 2 asks.
         BYTEFRAY_RULESET_V3_ALPHA1_ID,
+        # v4 research: the interleaved scheduler experiment changes *scheduling*,
+        # nothing else. Inherits vulnerable and observable core from Ruleset v2.
+        BYTEFRAY_RULESET_V4_ALPHA1_ID,
     }
 )
 OBSERVABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
@@ -141,8 +145,10 @@ OBSERVABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
         BYTEFRAY_RULESET_V2_ALPHA11_ID,
         BYTEFRAY_RULESET_V2_ID,
         BYTEFRAY_RULESET_V3_ALPHA1_ID,
+        BYTEFRAY_RULESET_V4_ALPHA1_ID,
     }
 )
+
 
 # ---------------------------------------------------------------------------
 # v3 research Phase 2: experimental bounded locality

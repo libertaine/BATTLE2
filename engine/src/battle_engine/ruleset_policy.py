@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.scheduler import StateT, run_sequential_quota
+from battle_engine.scheduler import StateT, run_interleaved_quota, run_sequential_quota
 
 
 class TerminationReason(str, Enum):
@@ -83,6 +83,7 @@ class RulesetPolicy:
 
     ruleset_id: str
     supported_runtime_kinds: frozenset[str] | None = None
+    scheduler_mode: str = "sequential"
 
     def unsupported_runtime_kinds(self, kinds: Iterable[str]) -> frozenset[str]:
         """Return which of ``kinds`` this Ruleset does not support executing.
@@ -107,16 +108,18 @@ class RulesetPolicy:
         quota: int,
         execute_slot: Callable[[StateT, int], None],
     ) -> None:
-        """Run this Ruleset's sequential-quota entrant scheduler.
+        """Run this Ruleset's entrant scheduler.
 
-        Ruleset v1 has exactly one scheduling rule
-        (:func:`battle_engine.scheduler.run_sequential_quota`); this method
-        is the seam through which VM, unsupervised Python, and supervised
-        Python execution obtain it, in place of importing the scheduler
-        module directly.
+        Dispatches to :func:`battle_engine.scheduler.run_interleaved_quota`
+        when ``scheduler_mode == "interleaved"``, otherwise to
+        :func:`battle_engine.scheduler.run_sequential_quota`.
         """
 
-        run_sequential_quota(states, quota, execute_slot)
+        if self.scheduler_mode == "interleaved":
+            run_interleaved_quota(states, quota, execute_slot)
+        else:
+            run_sequential_quota(states, quota, execute_slot)
+
 
     def resolve_termination(
         self,
@@ -270,6 +273,17 @@ RULESET_V3_ALPHA1 = RulesetPolicy(
 )
 
 
+# v4 research: experimental fine-grained interleaved scheduling identity.
+# Evaluates round-robin interleaved execution against block-sequential execution
+# under identical Ruleset v2 core/observable semantics.
+BYTEFRAY_RULESET_V4_ALPHA1_ID = "bytefray-rules-4-alpha1"
+RULESET_V4_ALPHA1 = RulesetPolicy(
+    ruleset_id=BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    supported_runtime_kinds=frozenset({"python"}),
+    scheduler_mode="interleaved",
+)
+
+
 class UnknownRulesetError(LookupError):
     """A Ruleset ID has no known policy.
 
@@ -305,7 +319,9 @@ _RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
     RULESET_V2_ALPHA11.ruleset_id: RULESET_V2_ALPHA11,
     RULESET_V2.ruleset_id: RULESET_V2,
     RULESET_V3_ALPHA1.ruleset_id: RULESET_V3_ALPHA1,
+    RULESET_V4_ALPHA1.ruleset_id: RULESET_V4_ALPHA1,
 }
+
 
 
 def resolve_ruleset_policy(ruleset_id: str) -> RulesetPolicy:
@@ -394,11 +410,13 @@ __all__ = [
     "BYTEFRAY_RULESET_V2_ALPHA11_ID",
     "BYTEFRAY_RULESET_V2_ID",
     "BYTEFRAY_RULESET_V3_ALPHA1_ID",
+    "BYTEFRAY_RULESET_V4_ALPHA1_ID",
     "RULESET_V1",
     "RULESET_V2",
     "RULESET_V2_ALPHA1",
     "RULESET_V2_ALPHA11",
     "RULESET_V3_ALPHA1",
+    "RULESET_V4_ALPHA1",
     "RulesetPolicy",
     "TerminationDecision",
     "TerminationReason",
@@ -406,3 +424,4 @@ __all__ = [
     "resolve_omitted_ruleset_id",
     "resolve_ruleset_policy",
 ]
+
