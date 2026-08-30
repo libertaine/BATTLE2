@@ -542,3 +542,22 @@ records the fix, the narrow adversarial RC2 pass run around it (§21), and
 this publication. `v3.0.0-rc1` was never moved, retagged, or rewritten;
 `v3.0.0-rc2` supersedes it as the current release candidate on
 `v3.0-development`, not merged to `main`.
+
+## 23. Promoted to v3.0.0 (stable)
+
+Per explicit user authorization ("Go ahead and release into main. This can
+be the current release version"), `v3.0.0-rc2` was promoted to the stable
+`v3.0.0` release, following the identical pattern this repository's own
+`v2.0.0-rc2` → `v2.0.0` promotion used: a version-bump/documentation-only
+`release: prepare Bytefray v3.0.0` commit (`dbc38e7`), rebuilt/re-verified
+artifacts (wheel, sdist, frozen Windows build, installer, portable ZIP —
+all re-passing the 10-check Ruleset matrix and the `raider`-vs-`claimer`
+core-capture reproduction), an annotated `v3.0.0` tag on that exact commit,
+a clean fast-forward merge of `v3.0-development` into `main` (`main` had
+received zero prior v3.0 commits, so no divergent history existed to
+reconcile), a stable (non-prerelease) GitHub Release with all five assets
+verified hash-identical post-publication, and a `docs: mark v3.0.0
+published` follow-up commit. See `docs/ROADMAP.md`'s `## v3.0.0 — Product
+and Presentation` section for the full record. `v3.0.0-rc1` and
+`v3.0.0-rc2` remain published, immutable prereleases; neither was moved,
+retagged, or rewritten by this promotion.

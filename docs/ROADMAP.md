@@ -956,9 +956,8 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: `v3.0.0-alpha1`, `v3.0.0-alpha2`, `v3.0.0-rc1`, and `v3.0.0-rc2`
-published; `v3.0.0` final release qualified and pending publication**
-(promotes the qualified RC2 candidate with no software change). Bytefray
+**Status: PUBLISHED.** `v3.0.0` is the current stable release, merged to
+`main`. Bytefray
 v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
@@ -1091,16 +1090,33 @@ stayed on `v3.0-development`, not merged to `main`, until promoted below.
 
 ## v3.0.0 — Product and Presentation
 
-**Status: qualified and pending publication.** `v3.0.0` promotes the
-qualified `v3.0.0-rc2` candidate to the stable 3.0 line with no engine, UI,
-schema, or evaluation-methodology change since RC2 — a version/
-documentation-only release. `bytefray-rules-2` becomes v3.0's permanent
-active gameplay identity (unchanged since `v2.0.0`); Agent API v1,
-`bytefray-rules-1`/VM-blob compatibility, and Redcode/pMARS external
-interoperability are all unchanged. `v3.0-development` is fast-forward
-merged into `main` at the exact `v3.0.0-rc2`-qualified commit plus this
-version-bump/documentation commit — no software content differs from the
-RC2 candidate already qualified in the sections above.
+**Status: PUBLISHED.** `v3.0.0` was tagged and published as the stable
+GitHub Release on August 30, 2026, promoting the qualified `v3.0.0-rc2`
+candidate to the stable 3.0 line with no engine, UI, schema, or
+evaluation-methodology change since RC2 — a version/documentation-only
+release. `bytefray-rules-2` becomes v3.0's permanent active gameplay
+identity (unchanged since `v2.0.0`); Agent API v1, `bytefray-rules-1`/
+VM-blob compatibility, and Redcode/pMARS external interoperability are all
+unchanged.
+
+The exact tagged commit `dbc38e79e1e9c1ac033d21cdb60f85edb8f042a1` passed CI
+green (all six jobs: Python 3.10-3.13 core matrix, Linux wheel build,
+Windows frozen-build) on `v3.0-development` before `v3.0-development` was
+fast-forward merged into `main` at that identical commit — `main` had
+received zero prior v3.0 commits, so the merge was a clean fast-forward
+with no divergent history to reconcile. The wheel and sdist were rebuilt
+and reinstalled into a clean venv (`bytefray --version` reports `Bytefray
+3.0.0`) and validated with `tools/check_wheel.py`; the Windows frozen build
+was rebuilt (`bytefray.exe --version` reports `3.0.0`) and re-passed the
+full 10-check omitted/explicit Ruleset matrix against the frozen
+executable, including the `raider`-vs-`claimer` core-capture reproduction;
+the Windows installer and portable ZIP were rebuilt at `3.0.0`. All five
+[published assets](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
+were independently downloaded and verified hash-identical to the locally
+built artifacts. No RC2→3.0.0 software delta exists beyond version
+metadata and documentation — RC2's own full qualification (default suite
+2375 passed, GUI suite 226 passed, frozen benchmark 9/9 zero drift, Ruff
+and both mypy gates clean) therefore applies unchanged to this release.
 
 See [V3_RC1_QUALIFICATION.md](V3_RC1_QUALIFICATION.md) for the RC1
 qualification record and [V3_RC1_DEFAULT_RULESET_DEFECT.md](V3_RC1_DEFAULT_RULESET_DEFECT.md)

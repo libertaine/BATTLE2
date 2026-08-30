@@ -181,13 +181,18 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-**Bytefray v3.0.0 final release:** promoted from the qualified `v3.0.0-rc2`
-candidate with no software change; in final artifact and CI qualification,
-not yet published.
+**Stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
+— promotes the qualified `v3.0.0-rc2` candidate with no software change.
+`bytefray-rules-2` remains v3.0's active gameplay identity, Agent API v1 is
+unchanged, and RC2's CLI/GUI default-Ruleset fix carries forward.
 
-**Current published prerelease:** [Bytefray v3.0.0-rc2](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc2)
-— fixes RC1's CLI/GUI default-Ruleset divergence and is the frozen candidate
-for final verification, not yet the stable 3.0 line.
+| Package | Download | Notes |
+|---|---|---|
+| Windows installer | [Bytefray-Setup-3.0.0.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/Bytefray-Setup-3.0.0.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
+| Portable Windows applications | [bytefray-3.0.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0-windows.zip) | Complete onedir layouts for all four executables |
+| Python wheel | [bytefray-3.0.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-3.0.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/SHA256SUMS.txt) | SHA-256 values for 3.0.0 assets |
 
 Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)
 for the alpha1/alpha2/rc1/rc2 prereleases that led up to v3.0.0.
