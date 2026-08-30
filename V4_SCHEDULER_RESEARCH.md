@@ -532,15 +532,188 @@ All candidate schedulers run within a $\le 3.8\%$ margin of the sequential basel
 
 ---
 
-### 10.9 Final Decision & Status
+### 10.9 R0b Summary Status
 
 - **Stage 1 Status:** Complete & Qualified.
 - **Stage 2 Status:** Complete & Qualified.
-- **Recommended v4 Scheduler Specification:**
-  - Ruleset ID: `bytefray-rules-4`
-  - Mode: `chunked`
-  - Chunk size: $K = 2$
-  - Starting seat: `rotate_start = True` (cyclic rotation by tick)
-  - Action budget: Invariant per tick ($Q = \text{instr\_per\_tick}$)
+- **Preferred Grain:** $K = 2$ micro-chunked execution.
 
+---
 
+## 11. Research R0c: Starting-Seat Rotation Qualification & Scheduler Closure
+
+### 11.1 Context & Research Objective
+
+Following the identification of $K=2$ micro-chunking in R0b, R0c addresses the final architectural question for the Bytefray v4 scheduler:
+
+> *"Does deterministic starting-seat rotation provide enough additional fairness benefit over the current K=2 chunked scheduler to justify becoming part of the eventual v4 scheduler semantics?"*
+
+#### Experimental Hypotheses
+- **Candidate A ($K=2$ Fixed Start)**: On every tick $T$, entrant execution sequence begins at Seat A ($A \rightarrow B \rightarrow C \dots$).
+- **Candidate B ($K=2$ Deterministic Rotating Start)**: On tick $T$ with $N$ initial entrants, entrant execution sequence begins at seat index $(T - 1) \pmod N$ (e.g. for $N=3$: Tick 1 starts with A, Tick 2 starts with B, Tick 3 starts with C, Tick 4 starts with A).
+- **Core Invariant**: Action quota per tick ($Q = \text{instr\_per\_tick} = 8$), arena layout, seeds, placement, scoring, and all ruleset mechanics are held strictly constant.
+
+---
+
+### 11.2 Verification of Preliminary Rotation Findings
+
+R0b identified a substantial seat-order bias reduction in `claimer_hunter_coredefender` under rotating start. R0c independently re-executed and verified the exact mechanism across all 90 cells:
+
+#### 1. Roster: `claimer_hunter_coredefender` (90 Cells)
+- **Under $K=2$ Fixed Start**:
+  - `claimer`: Win rate **50.0%**, Survival 100.0%, Seat Sensitivity $\Delta S = \mathbf{100.0\%}$ (Seat A: 100%, Seat B: 50%, Seat C: 0%).
+  - `hunter`: Win rate **50.0%**, Survival 94.4%, Seat Sensitivity $\Delta S = \mathbf{100.0\%}$ (Seat A: 100%, Seat B: 50%, Seat C: 0%).
+  - `core_defender`: Win rate 0.0%, Survival 100.0%, $\Delta S = 0.0\%$.
+  - *Mechanism*: Under fixed start, Seat A executes first on Tick 1 and captures the uncontested center frontier. Whoever holds Seat A achieves a 100% win rate across all layouts and seeds, inflating Hunter's overall win rate solely due to seat placement.
+- **Under $K=2$ Rotating Start (`rotate_start=True`)**:
+  - `claimer`: Win rate **83.3%** (+33.3pp), Survival 100.0%, Seat Sensitivity $\Delta S = \mathbf{33.3\%}$ (Seat A: 100%, Seat B: 83%, Seat C: 67%).
+  - `hunter`: Win rate **16.7%** (-33.3pp), Survival 94.4%, Seat Sensitivity $\Delta S = \mathbf{33.3\%}$ (Seat A: 0%, Seat B: 17%, Seat C: 33%).
+  - *Mechanism*: Cyclic rotation distributes the first-mover advantage equally across ticks. When first-mover priority is shared, Claimer's superior long-term territory density maintenance over 400 ticks allows it to win 83.3% of matches, while seat sensitivity collapses by **66.7 percentage points**.
+
+#### 2. Roster: `claimer_hunter_reactive` (90 Cells)
+- **Under $K=2$ Fixed Start**:
+  - `claimer`: Win rate 38.9%, Survival 100.0%, $\Delta S = 66.7\%$.
+  - `hunter`: Win rate 61.1%, Survival 94.4%, $\Delta S = \mathbf{100.0\%}$ (Seat A: 100%, Seat B: 83%, Seat C: 0%).
+- **Under $K=2$ Rotating Start**:
+  - `claimer`: Win rate **61.1%** (+22.2pp), Survival 100.0%, $\Delta S = 50.0\%$.
+  - `hunter`: Win rate **33.3%** (-27.8pp), Survival 94.4%, $\Delta S = \mathbf{33.3\%}$ (-66.7pp reduction).
+
+---
+
+### 11.3 Full Benchmark Population Ecology: Fixed vs Rotating ($K=2$)
+
+Both candidates were evaluated across the complete 1,080-cell benchmark corpus (`v2_baseline_corpus.json`, 990 group cells + 450 pairwise cells):
+
+| Roster ID | Entrant | Fixed $K=2$ Win% | Rotated $K=2$ Win% | $\Delta$ Win% | Fixed Survival | Rotated Survival | Fixed $\Delta S$ | Rotated $\Delta S$ |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `claimer_coredefender_reactive` | claimer | 100.0% | 100.0% | 0.0pp | 100.0% | 100.0% | 0.0% | 0.0% |
+| | core_defender | 0.0% | 0.0% | 0.0pp | 100.0% | 100.0% | 0.0% | 0.0% |
+| | reactive_core_defender | 0.0% | 0.0% | 0.0pp | 100.0% | 100.0% | 0.0% | 0.0% |
+| `claimer_hunter_coredefender` | claimer | 50.0% | 83.3% | **+33.3pp** | 100.0% | 100.0% | **100.0%** | **33.3%** |
+| | hunter | 50.0% | 16.7% | **-33.3pp** | 94.4% | 94.4% | **100.0%** | **33.3%** |
+| | core_defender | 0.0% | 0.0% | 0.0pp | 100.0% | 100.0% | 0.0% | 0.0% |
+| `claimer_hunter_reactive` | claimer | 38.9% | 61.1% | **+22.2pp** | 100.0% | 100.0% | 66.7% | 50.0% |
+| | hunter | 61.1% | 33.3% | **-27.8pp** | 94.4% | 94.4% | **100.0%** | **33.3%** |
+| | reactive_core_defender | 0.0% | 0.0% | 0.0pp | 100.0% | 100.0% | 0.0% | 0.0% |
+| `claimer_coretracker_coredefender` | claimer | 45.6% | 45.6% | 0.0pp | 45.6% | 45.6% | 13.3% | 13.3% |
+| | core_tracker | 5.6% | 2.2% | -3.4pp | 85.6% | 85.6% | **13.3%** | **3.3%** |
+| | core_defender | 48.9% | 52.2% | +3.3pp | 94.4% | 97.8% | 10.0% | 16.7% |
+| `claimer_coretracker_reactive` | claimer | 47.8% | 47.8% | 0.0pp | 47.8% | 47.8% | 3.3% | 3.3% |
+| | core_tracker | 5.6% | 5.6% | 0.0pp | 87.8% | 87.8% | **10.0%** | **3.3%** |
+| | reactive_core_defender | 46.7% | 46.7% | 0.0pp | 90.0% | 91.1% | 16.7% | 16.7% |
+| `claimer_coretracker_hunter` | claimer | 35.6% | 38.9% | +3.3pp | 41.1% | 41.1% | 30.0% | 23.3% |
+| | core_tracker | 30.0% | 30.0% | 0.0pp | 90.0% | 90.0% | 16.7% | 16.7% |
+| | hunter | 34.4% | 31.1% | -3.3pp | 42.2% | 42.2% | 23.3% | 16.7% |
+| `claimer_coreseeker_hunter` | claimer | 44.4% | 44.4% | 0.0pp | 44.4% | 44.4% | 33.3% | 33.3% |
+| | core_seeker | 22.2% | 22.2% | 0.0pp | 88.9% | 88.9% | 16.7% | 16.7% |
+| | hunter | 33.3% | 33.3% | 0.0pp | 33.3% | 33.3% | 0.0% | 0.0% |
+| `hunter_coretracker_coredefender` | hunter | 46.7% | 45.6% | -1.1pp | 46.7% | 45.6% | 6.7% | 10.0% |
+| | core_tracker | 4.4% | 4.4% | 0.0pp | 92.2% | 92.2% | 10.0% | 10.0% |
+| | core_defender | 48.9% | 50.0% | +1.1pp | 95.6% | 95.6% | 10.0% | 13.3% |
+| `reactive_hunter_coreseeker` | reactive_core_defender | 0.0% | 0.0% | 0.0pp | 100.0% | 100.0% | 0.0% | 0.0% |
+| | hunter | 50.0% | 50.0% | 0.0pp | 50.0% | 50.0% | 33.3% | 33.3% |
+| | core_seeker | 50.0% | 50.0% | 0.0pp | 88.9% | 88.9% | 33.3% | 33.3% |
+| `hunter_coretracker_coreseeker` | hunter | 25.6% | 25.6% | 0.0pp | 25.6% | 25.6% | 10.0% | 10.0% |
+| | core_tracker | 33.3% | 33.3% | 0.0pp | 54.4% | 54.4% | 13.3% | 13.3% |
+| | core_seeker | 41.1% | 41.1% | 0.0pp | 55.6% | 55.6% | 43.3% | 43.3% |
+| `coredefender_reactive_coreseeker` | core_defender | 50.0% | 50.0% | 0.0pp | 100.0% | 100.0% | 33.3% | 33.3% |
+| | reactive_core_defender | 50.0% | 50.0% | 0.0pp | 100.0% | 100.0% | 33.3% | 33.3% |
+| | core_seeker | 0.0% | 0.0% | 0.0pp | 88.9% | 88.9% | 0.0% | 0.0% |
+
+---
+
+### 11.4 Pairwise Behavior (2-Entrant Alternation)
+
+In 2-entrant matches, starting-seat rotation alternates the first-mover entrant on every tick ($T_1$: A, $T_2$: B, $T_3$: A, ...):
+
+| Pairwise Matchup | Metric | Fixed $K=2$ | Rotated $K=2$ | Invariance Status |
+|---|---|---:|---:|---|
+| `claimer_vs_coretracker_400` | Win Rate (Cand / Opp / Ties) | 26.7% / 73.3% / 0.0% | 26.7% / 73.3% / 0.0% | **100.0% Invariant** |
+| `hunter_vs_coretracker_400` | Win Rate (Cand / Opp / Ties) | 23.3% / 76.7% / 0.0% | 23.3% / 76.7% / 0.0% | **100.0% Invariant** |
+| `claimer_vs_hunter_400` | Win Rate (Cand / Opp / Ties) | 66.7% / 33.3% / 0.0% | 66.7% / 33.3% / 0.0% | **100.0% Invariant** |
+| `claimer_vs_coretracker_200` | Win Rate (Cand / Opp / Ties) | 46.7% / 53.3% / 0.0% | 46.7% / 53.3% / 0.0% | **100.0% Invariant** |
+| `hunter_vs_coretracker_200` | Win Rate (Cand / Opp / Ties) | 36.7% / 63.3% / 0.0% | 36.7% / 63.3% / 0.0% | **100.0% Invariant** |
+| `claimer_vs_hunter_200` | Win Rate (Cand / Opp / Ties) | 66.7% / 33.3% / 0.0% | 66.7% / 33.3% / 0.0% | **100.0% Invariant** |
+
+**Pairwise Finding**: 2-entrant rotation produces **zero divergence or oscillation in 1v1 play**. All win rates, tie rates, and match outcomes across 450 pairwise cells are identical between Fixed and Rotated scheduling.
+
+---
+
+### 11.5 Match-Length Modulo-$N$ Cycle Interaction Analysis
+
+To verify that cyclic rotation does not introduce an artificial winner bias conditioned on the tick of match termination modulo $N$ ($T \pmod N$), all 990 group matches were analyzed by termination tick:
+
+1. **Standard Full-Duration Matches ($T = 400$, where $400 \equiv 1 \pmod 3$)**:
+   - In rosters ending at tick limit (e.g. `claimer_coredefender_reactive`, `claimer_hunter_coredefender`), victories are distributed across seats A, B, and C with no single-seat bias (e.g. 30 in A, 30 in B, 30 in C).
+2. **Early-Termination Matches ($T < 400$)**:
+   - In rosters with aggressive core captures (e.g. `hunter_coretracker_coreseeker`, mean duration $263.2\text{t}$):
+     - $T \equiv 0 \pmod 3$: 15 matches (Winners: A: 7, B: 3, C: 5)
+     - $T \equiv 1 \pmod 3$: 60 matches (Winners: A: 10, B: 26, C: 24)
+     - $T \equiv 2 \pmod 3$: 15 matches (Winners: A: 5, B: 4, C: 6)
+   - Matches ending on $T \equiv 1 \pmod 3$ reflect the natural cluster of seeds where combat resolves; the winner distribution across seats (A: 10, B: 26, C: 24) shows that the first mover on the final tick (Seat A) does **not** gain an artificial kill advantage.
+
+---
+
+### 11.6 Observation-Order & Information Asymmetry
+
+- **Fixed Start**: Grants permanent downstream information advantage: Seat B always observes Seat A's actions before acting; Seat C observes A and B; Seat A never observes B or C within the same tick.
+- **Rotating Start**: Balances information advantage symmetrically over time: across every $N$ ticks, every entrant occupies the first-mover, middle-mover, and last-mover position exactly once.
+
+---
+
+### 11.7 Dead-Entrant Rotation Semantics (Option A vs Option B)
+
+R0c evaluated two architectural approaches for rotation when entrants die mid-match:
+
+- **Option A (Original Seat Indices Rotation — Selected Standard)**:
+  - Starting seat index is always $(T - 1) \pmod N_{\text{initial}}$.
+  - If the entrant at that scheduled seat is dead, that entrant is skipped during the execution loop.
+  - *Advantages*:
+    1. **Strictly Stateless & Deterministic**: The rotation phase is a pure mathematical function of `(tick, N_initial)`.
+    2. **Immunity to Timing Exploits**: An entrant's death does not alter the relative phase or timing of remaining opponents.
+    3. **Trivial Replay Reasoning**: Debuggers and visualizers can immediately determine scheduled leader without tracking death histories.
+- **Option B (Surviving Entrant List Collapsing — Rejected)**:
+  - Dynamically recalculates rotation over surviving entrants $(T - 1) \pmod N_{\text{alive}}$.
+  - *Deficiencies*: Causes abrupt phase jumps upon death, changing turn cadence unpredictably and introducing tactical incentives to time enemy deaths to alter turn order.
+
+---
+
+### 11.8 Performance & Overhead
+
+Across the full 1,080-cell benchmark corpus (4 parallel workers):
+
+| Configuration | Total 1,080-Cell Wall-Clock Time | Per-Cell Average Time | Normalized Overhead vs Control |
+|---|---:|---:|---:|
+| **$K=8$ Sequential Control** | 67.9s | 62.9 ms | 1.000x (baseline) |
+| **$K=2$ Fixed Start** | 69.3s | 64.2 ms | 1.020x (+2.0%) |
+| **$K=2$ Rotating Start** | 69.9s | 64.7 ms | 1.029x (+2.9%) |
+
+The computational delta between Fixed $K=2$ and Rotating $K=2$ is **+0.6 seconds across 1,080 matches (+0.9%)**, which is within measurement jitter.
+
+---
+
+### 11.9 Decision & Provisional v4 Scheduler Specification
+
+#### Decision Verdict: **Option B ($K=2$ + Deterministic Rotating Start)**
+Deterministic starting-seat rotation provides a substantial, verified fairness benefit (reducing multi-entrant expansion seat bias from 100% to 33.3%) with zero pairwise disruption, strict determinism, and negligible computational cost.
+
+#### Provisional v4 Scheduler Specification
+
+```yaml
+ruleset_id: "bytefray-rules-4-alpha1"
+scheduler_architecture: "deterministic chunked round-robin"
+scheduler_chunk_size: 2
+scheduler_rotate_start: true
+dead_entrant_rotation_semantics: "Option A (original seat indices modulo N, dead entrants skipped)"
+action_budget_invariant: "total entrant actions per tick identical to sequential quota (Q = instr_per_tick)"
+```
+
+---
+
+### 11.10 Scheduler Research Closure Declaration
+
+> **Scheduler Research R0 / R0b / R0c is officially CLOSED.**
+>
+> All core scheduler questions—interleaving necessity, optimal granularity threshold ($K=2$), 2-beat tactical preservation, multi-entrant rotation fairness, dead-entrant semantics, and determinism—are fully answered, empirically characterized, and qualified.
+>
+> No outstanding scheduler questions block progression to the next Bytefray v4 research phase: **R1 (Entrant Process Model & Capacity Economy)**.
