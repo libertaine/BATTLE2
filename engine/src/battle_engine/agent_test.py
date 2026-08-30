@@ -272,59 +272,10 @@ def test_agent(
     kill_weight: float | None = None,
     alive_weight: float | None = None,
     territory_weight: float | None = None,
+    scheduler_chunk_size: int | None = None,
+    scheduler_rotate_start: bool = False,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
-    """Run one short, real development match for ``agent_id``.
-
-    ``ruleset_id``/``agent_start``/``opponent_start`` are v2.0.0-alpha.1's
-    additive selectors (see ``docs/V2_0_ALPHA_ARCHITECTURE.md`` Sec 6):
-    ``ruleset_id`` defaults to ``None`` (``MatchRequest``'s own default,
-    resolving to the frozen Ruleset v1 identity). Both start addresses
-    default to ``None`` (omitted), resolved via
-    :func:`battle_engine.placement.resolve_direct_match_starts` exactly as
-    ``bytefray run``'s own CLI resolves omitted ``--a-start``/``--b-start``
-    (v2.0.0-rc2; see that function's docstring): under Ruleset v1 an
-    omitted start still resolves to ``0`` -- the exact literal value every
-    existing caller already saw via the historical hardcoded
-    ``MatchEntrant.python(..., 0, ...)`` construction this replaces, so
-    every caller that leaves both at their defaults under Ruleset v1 sees
-    byte-for-byte unchanged behavior. Under the permanent Ruleset v2
-    identity, an omitted start instead resolves to a deterministic,
-    non-overlapping two-seat spread layout -- v2.0.0-rc1 shipped this
-    function with a same-address ``0``/``0`` default that collapsed both
-    entrants' vulnerable cores onto one window under Ruleset v2, exactly
-    the release-blocking defect ``bytefray run`` had; this is that same fix
-    applied to this function's own independent default. This module's own
-    evaluation tooling (``battle_engine.agent_evaluation``) always passes
-    explicit, already-non-overlapping start values for both parameters and
-    is unaffected either way.
-
-    Returns a :class:`DevelopmentTestOutcome` for any completed match
-    (win/loss/tie/forfeit/death/tick-limit -- all exit ``0`` at the CLI
-    layer) or an :class:`InitializationFailureOutcome` when the tested
-    agent, or an explicitly selected ``--opponent``, fails to initialize
-    before tick zero (also exit ``0``: both are user-provided agent code,
-    and the evaluation still succeeded -- it just found nothing to run).
-    Raises :class:`AgentTestError` for every tool/infrastructure failure
-    (exit ``2``) -- an unknown/non-Python test agent or opponent, the
-    internal bundled ``reference`` opponent failing to initialize, or any
-    other failure that is not a fact about evaluated user code. Any
-    exception not already one of the typed failures above (a bug in this
-    module, not the agent under test) is caught once here and reported as
-    an ``agent_test_internal_error`` diagnostic, mirroring
-    ``agent_validation.validate_agent``'s identical top-level catch-all.
-
-    ``run_dir``, when given, is used verbatim as the run's artifact
-    directory (created with ``exist_ok=True`` -- the caller owns its
-    lifecycle) instead of this function's own default
-    ``<data_root>/runs/agents_test/<agent_id>/<run_label>/`` (created with
-    ``exist_ok=False``). Every existing caller leaves this ``None`` and
-    sees byte-for-byte unchanged behavior; only
-    ``battle_engine.agent_evaluation`` passes it, to place each evaluation
-    cell's artifacts under its own ``matches/`` tree while reusing this
-    function as the per-cell executor (see ``docs/specs/agent_evaluation.md``
-    Sec 6).
-    """
-
+    """Run one short, real development match for ``agent_id``."""
     try:
         return _test_agent(
             agent_id,
@@ -345,6 +296,8 @@ def test_agent(
             kill_weight=kill_weight,
             alive_weight=alive_weight,
             territory_weight=territory_weight,
+            scheduler_chunk_size=scheduler_chunk_size,
+            scheduler_rotate_start=scheduler_rotate_start,
         )
     except AgentTestError:
         raise
@@ -379,16 +332,13 @@ def _test_agent(
     kill_weight: float | None = None,
     alive_weight: float | None = None,
     territory_weight: float | None = None,
+    scheduler_chunk_size: int | None = None,
+    scheduler_rotate_start: bool = False,
 ) -> DevelopmentTestOutcome | InitializationFailureOutcome:
     root = (data_root or get_data_root()).expanduser().resolve()
     resources = resource_root or get_resource_root()
     effective_seed = Config().seed if seed is None else seed
     effective_ticks = DEFAULT_TICKS if ticks is None else ticks
-    # Unlike --seed/--ticks, None here means "unsupervised" (this
-    # function's own default, matching every existing caller/test's
-    # v0.4.0 behavior exactly), not "apply the CLI's 5s default" -- only
-    # main() resolves a bare `bytefray agents test` invocation's implicit
-    # timeout to DEFAULT_AGENT_TIMEOUT. See docs/specs/agent_lab.md §7.
     effective_timeout = timeout
 
     tested_spec = _resolve_python_entrant(agent_id, data_root=root, role="test agent")
@@ -431,19 +381,6 @@ def _test_agent(
 
     replay_path = run_dir / "replay.jsonl"
     trace_path = (run_dir / "trace.jsonl") if trace else None
-    # v3 Phase 0D: `None` means "this executor's historical default"
-    # (`Config()`'s own field default), exactly like `seed`/`ticks` above --
-    # so every existing caller that omits these two builds a byte-identical
-    # `Config` and therefore a byte-identical `canonical_match_id`. Only an
-    # explicit value from a controlled arena/action-budget experiment
-    # (docs/V3_PHASE0_RESEARCH_BASELINE.md) ever changes it. Deliberately
-    # NOT a Ruleset-semantics change: `arena_size`/`instr_per_tick` are
-    # per-match *configuration*, which docs/RULES.md's "Configuration values
-    # are not Ruleset identity" already separates from gameplay identity.
-    # v3 Phase 3 extends this to `weights.kill` by the identical contract:
-    # `None` reproduces `Config()`'s own default `Weights` unchanged; only
-    # an explicit value from the payoff-characterization experiment
-    # (docs/V3_PHASE3_OFFENSE_PAYOFF_CHARACTERIZATION.md) ever changes it.
     _config_defaults = Config()
     match_config = Config(
         seed=effective_seed,
@@ -481,7 +418,10 @@ def _test_agent(
         agent_call_timeout=effective_timeout,
         ruleset_id=ruleset_id,
         locality_reach=locality_reach,
+        scheduler_chunk_size=scheduler_chunk_size,
+        scheduler_rotate_start=scheduler_rotate_start,
     )
+
 
     try:
         match_result = NativeMatchService().run(request)
@@ -632,25 +572,10 @@ def test_agents(
     kill_weight: float | None = None,
     alive_weight: float | None = None,
     territory_weight: float | None = None,
+    scheduler_chunk_size: int | None = None,
+    scheduler_rotate_start: bool = False,
 ) -> GroupTestOutcome | GroupInitializationFailureOutcome:
-    """Run one short, real N-entrant (N >= 2) development match.
-
-    The N-entrant generalization of :func:`test_agent`, added for
-    v2.0.0-beta2 Phase 2's multi-entrant evaluation methodology.
-    :func:`test_agent`/:func:`_test_agent` are completely unmodified by
-    this addition -- not even refactored to share an internal helper, so
-    the extremely well-tested 1v1 path carries zero risk from this new
-    code. Executes through the identical ``NativeMatchService`` production
-    boundary every other native match uses.
-
-    Raises :class:`AgentTestError` for tool/infrastructure failures (fewer
-    than two entrants, a duplicate seat label, an unknown/non-Python
-    entrant). Any exception not already one of the typed failures above is
-    caught once here and reported as an ``agent_test_internal_error``
-    diagnostic, mirroring :func:`test_agent`'s identical top-level
-    catch-all.
-    """
-
+    """Run one short, real N-entrant (N >= 2) development match."""
     try:
         return _test_agents(
             entrants,
@@ -667,6 +592,8 @@ def test_agents(
             kill_weight=kill_weight,
             alive_weight=alive_weight,
             territory_weight=territory_weight,
+            scheduler_chunk_size=scheduler_chunk_size,
+            scheduler_rotate_start=scheduler_rotate_start,
         )
     except AgentTestError:
         raise
@@ -697,7 +624,10 @@ def _test_agents(
     kill_weight: float | None = None,
     alive_weight: float | None = None,
     territory_weight: float | None = None,
+    scheduler_chunk_size: int | None = None,
+    scheduler_rotate_start: bool = False,
 ) -> GroupTestOutcome | GroupInitializationFailureOutcome:
+
     if len(entrants) < 2:
         raise _tool_error(
             stage="discovery",
@@ -770,7 +700,10 @@ def _test_agents(
         agent_call_timeout=effective_timeout,
         ruleset_id=ruleset_id,
         locality_reach=locality_reach,
+        scheduler_chunk_size=scheduler_chunk_size,
+        scheduler_rotate_start=scheduler_rotate_start,
     )
+
 
     try:
         match_result = NativeMatchService().run(request)

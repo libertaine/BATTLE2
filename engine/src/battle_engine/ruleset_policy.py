@@ -28,10 +28,11 @@ from dataclasses import dataclass
 from enum import Enum
 
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.scheduler import StateT, run_interleaved_quota, run_sequential_quota
+from battle_engine.scheduler import StateT, run_chunked_quota
 
 
 class TerminationReason(str, Enum):
+
     """Why a completed Ruleset-v1 match stopped.
 
     A ``str`` subclass so its ``.value`` -- the persisted/serialized form
@@ -84,6 +85,8 @@ class RulesetPolicy:
     ruleset_id: str
     supported_runtime_kinds: frozenset[str] | None = None
     scheduler_mode: str = "sequential"
+    scheduler_chunk_size: int | None = None
+    scheduler_rotate_start: bool = False
 
     def unsupported_runtime_kinds(self, kinds: Iterable[str]) -> frozenset[str]:
         """Return which of ``kinds`` this Ruleset does not support executing.
@@ -107,18 +110,24 @@ class RulesetPolicy:
         states: Iterable[StateT],
         quota: int,
         execute_slot: Callable[[StateT, int], None],
+        *,
+        tick: int = 1,
     ) -> None:
         """Run this Ruleset's entrant scheduler.
 
-        Dispatches to :func:`battle_engine.scheduler.run_interleaved_quota`
-        when ``scheduler_mode == "interleaved"``, otherwise to
-        :func:`battle_engine.scheduler.run_sequential_quota`.
+        Dispatches to :func:`battle_engine.scheduler.run_chunked_quota`.
         """
 
-        if self.scheduler_mode == "interleaved":
-            run_interleaved_quota(states, quota, execute_slot)
-        else:
-            run_sequential_quota(states, quota, execute_slot)
+        chunk_size = quota if self.scheduler_mode == "sequential" else (self.scheduler_chunk_size or 1)
+        run_chunked_quota(
+            states,
+            quota,
+            execute_slot,
+            chunk_size=chunk_size,
+            rotate_start=self.scheduler_rotate_start,
+            tick=tick,
+        )
+
 
 
     def resolve_termination(

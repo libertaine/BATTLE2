@@ -16,13 +16,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
 
 from battle_engine.config import Config, Weights
 from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
 from battle_engine.replay import TickSnapshot, iter_replay
-
 from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
@@ -30,7 +27,127 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     resolve_ruleset_policy,
 )
-from battle_engine.scheduler import run_interleaved_quota, run_sequential_quota
+from battle_engine.scheduler import (
+    run_chunked_quota,
+    run_interleaved_quota,
+    run_sequential_quota,
+)
+
+
+def test_chunked_quota_k2_order() -> None:
+
+    """With K=2 and quota=4, live states run 2 turns per pass: A(0,1), B(0,1), A(2,3), B(2,3)."""
+    states = [_MockState("A"), _MockState("B")]
+    calls: list[tuple[str, int]] = []
+
+    run_chunked_quota(states, 4, lambda s, slot: calls.append((s.agent_id, slot)), chunk_size=2)
+
+    assert calls == [
+        ("A", 0),
+        ("A", 1),
+        ("B", 0),
+        ("B", 1),
+        ("A", 2),
+        ("A", 3),
+        ("B", 2),
+        ("B", 3),
+    ]
+
+
+def test_chunked_quota_k4_order() -> None:
+    """With K=4 and quota=8, live states run 4 turns per pass: A(0..3), B(0..3), A(4..7), B(4..7)."""
+    states = [_MockState("A"), _MockState("B")]
+    calls: list[tuple[str, int]] = []
+
+    run_chunked_quota(states, 8, lambda s, slot: calls.append((s.agent_id, slot)), chunk_size=4)
+
+    expected = [
+        ("A", 0),
+        ("A", 1),
+        ("A", 2),
+        ("A", 3),
+        ("B", 0),
+        ("B", 1),
+        ("B", 2),
+        ("B", 3),
+        ("A", 4),
+        ("A", 5),
+        ("A", 6),
+        ("A", 7),
+        ("B", 4),
+        ("B", 5),
+        ("B", 6),
+        ("B", 7),
+    ]
+    assert calls == expected
+
+
+def test_chunked_quota_non_divisible_partial_final_chunk() -> None:
+    """With K=3 and quota=7, final pass runs remaining 1 slot (slot 6)."""
+    states = [_MockState("A"), _MockState("B")]
+    calls: list[tuple[str, int]] = []
+
+    run_chunked_quota(states, 7, lambda s, slot: calls.append((s.agent_id, slot)), chunk_size=3)
+
+    expected = [
+        ("A", 0),
+        ("A", 1),
+        ("A", 2),
+        ("B", 0),
+        ("B", 1),
+        ("B", 2),
+        ("A", 3),
+        ("A", 4),
+        ("A", 5),
+        ("B", 3),
+        ("B", 4),
+        ("B", 5),
+        ("A", 6),
+        ("B", 6),
+    ]
+    assert calls == expected
+
+
+def test_chunked_quota_rotating_start_order() -> None:
+    """With rotate_start=True, entrant order rotates cyclically by tick."""
+    states = [_MockState("A"), _MockState("B"), _MockState("C")]
+    calls_t1: list[tuple[str, int]] = []
+    calls_t2: list[tuple[str, int]] = []
+    calls_t3: list[tuple[str, int]] = []
+
+    # Tick 1: offset 0 -> [A, B, C]
+    run_chunked_quota(states, 2, lambda s, slot: calls_t1.append((s.agent_id, slot)), chunk_size=1, rotate_start=True, tick=1)
+    # Tick 2: offset 1 -> [B, C, A]
+    run_chunked_quota(states, 2, lambda s, slot: calls_t2.append((s.agent_id, slot)), chunk_size=1, rotate_start=True, tick=2)
+    # Tick 3: offset 2 -> [C, A, B]
+    run_chunked_quota(states, 2, lambda s, slot: calls_t3.append((s.agent_id, slot)), chunk_size=1, rotate_start=True, tick=3)
+
+    assert calls_t1 == [("A", 0), ("B", 0), ("C", 0), ("A", 1), ("B", 1), ("C", 1)]
+    assert calls_t2 == [("B", 0), ("C", 0), ("A", 0), ("B", 1), ("C", 1), ("A", 1)]
+    assert calls_t3 == [("C", 0), ("A", 0), ("B", 0), ("C", 1), ("A", 1), ("B", 1)]
+
+
+def test_chunked_quota_mid_chunk_death() -> None:
+    """If an entrant dies on turn 1 of a 4-turn chunk, remaining turns in that chunk are skipped."""
+    states = [_MockState("A"), _MockState("B")]
+    calls: list[tuple[str, int]] = []
+
+    def execute_slot(s: _MockState, slot: int) -> None:
+        calls.append((s.agent_id, slot))
+        if s.agent_id == "A" and slot == 1:
+            s.alive = False
+
+    run_chunked_quota(states, 4, execute_slot, chunk_size=4)
+
+    assert calls == [
+        ("A", 0),
+        ("A", 1),  # dies here; slots 2, 3 for A skipped
+        ("B", 0),
+        ("B", 1),
+        ("B", 2),
+        ("B", 3),
+    ]
+
 
 V4_INTERLEAVED = BYTEFRAY_RULESET_V4_ALPHA1_ID
 

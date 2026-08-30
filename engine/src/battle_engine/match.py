@@ -104,7 +104,11 @@ class MatchRunner:
             state.vm.step(agent)
             agent.cpu_used += 1
 
-        self.ruleset_policy.run_scheduler(state.agents, state.instr_per_tick, execute_slot)
+        self.ruleset_policy.run_scheduler(
+            state.agents, state.instr_per_tick, execute_slot, tick=state.tick
+        )
+
+
 
     def _attribute_deaths(self, events: list[dict[str, Any]]) -> None:
         state = self.state

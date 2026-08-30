@@ -56,6 +56,50 @@ def run_sequential_quota(
             execute_slot(state, slot)
 
 
+def run_chunked_quota(
+    states: Iterable[StateT],
+    quota: int,
+    execute_slot: Callable[[StateT, int], None],
+    *,
+    chunk_size: int = 1,
+    rotate_start: bool = False,
+    tick: int = 1,
+) -> None:
+    """Give each live state in ``states`` up to ``quota`` turns in chunked round-robin order.
+
+    - If ``chunk_size >= quota`` and ``not rotate_start``: equivalent to sequential block execution.
+    - If ``chunk_size == 1`` and ``not rotate_start``: equivalent to single-action round-robin interleaving.
+    - If ``1 < chunk_size < quota``: each live entrant executes ``min(chunk_size, remaining)`` actions per pass.
+    - If ``rotate_start`` is True: for each tick, the entrant sequence is cyclically rotated by
+      ``(tick - 1) % len(states)`` so each entrant takes turns being the first mover in the tick.
+    """
+
+    state_list = list(states)
+    n_states = len(state_list)
+    if n_states == 0 or quota <= 0:
+
+        return
+
+    if rotate_start and n_states > 1:
+        offset = (tick - 1) % n_states
+        state_order = state_list[offset:] + state_list[:offset]
+    else:
+        state_order = state_list
+
+    effective_chunk = max(1, chunk_size)
+    num_passes = (quota + effective_chunk - 1) // effective_chunk
+    for p in range(num_passes):
+        start_slot = p * effective_chunk
+        end_slot = min((p + 1) * effective_chunk, quota)
+        for state in state_order:
+            if not state.alive:
+                continue
+            for slot in range(start_slot, end_slot):
+                if not state.alive:
+                    break
+                execute_slot(state, slot)
+
+
 def run_interleaved_quota(
     states: Iterable[StateT],
     quota: int,
@@ -67,13 +111,8 @@ def run_interleaved_quota(
     skipping states that are not alive.
     """
 
-    state_list = list(states) if not isinstance(states, list) else states
-    for slot in range(quota):
-        for state in state_list:
-            if not state.alive:
-                continue
-            execute_slot(state, slot)
+    run_chunked_quota(states, quota, execute_slot, chunk_size=1)
 
 
-__all__ = ["run_interleaved_quota", "run_sequential_quota"]
+__all__ = ["run_chunked_quota", "run_interleaved_quota", "run_sequential_quota"]
 

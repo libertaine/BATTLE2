@@ -153,6 +153,9 @@ class MatchRequest:
     # persisted artifacts (see ``_reproducibility``), so a locality result
     # always discloses the reach it actually ran under.
     locality_reach: int | None = None
+    scheduler_chunk_size: int | None = None
+    scheduler_rotate_start: bool = False
+
 
 
 @dataclass(frozen=True)
@@ -1123,6 +1126,13 @@ class NativeMatchService:
         # fails closed for any unrecognized ID instead of silently executing
         # as Ruleset v1.
         ruleset_policy = resolve_ruleset_policy(_resolve_ruleset_id(request))
+        if request.scheduler_chunk_size is not None or request.scheduler_rotate_start:
+            ruleset_policy = replace(
+                ruleset_policy,
+                scheduler_chunk_size=request.scheduler_chunk_size,
+                scheduler_rotate_start=request.scheduler_rotate_start,
+            )
+
 
         # Beta1 Phase 2's authoritative runtime-compatibility boundary:
         # ``kinds`` (already validated as homogeneous above) and

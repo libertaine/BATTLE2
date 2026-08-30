@@ -1187,6 +1187,9 @@ class EvaluationRequest:
     # fingerprint`, and `Config.weights` already carries it into
     # `canonical_match_id`'s `reproducibility` block.
     kill_weight: float | None = None
+    scheduler_chunk_size: int | None = None
+    scheduler_rotate_start: bool = False
+
 
     @property
     def resolved_locality_reach(self) -> int | None:
@@ -2334,6 +2337,8 @@ def _evaluation_dispatcher_loop(
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
     kill_weight: float | None = None,
+    scheduler_chunk_size: int | None = None,
+    scheduler_rotate_start: bool = False,
 ) -> None:
     """One dispatcher thread's body: owns exactly one worker subprocess handle
     for its entire lifetime, processing cells strictly one at a time against
@@ -2367,7 +2372,10 @@ def _evaluation_dispatcher_loop(
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
             kill_weight=kill_weight,
+            scheduler_chunk_size=scheduler_chunk_size,
+            scheduler_rotate_start=scheduler_rotate_start,
         )
+
         if call_result.status == WorkerCallStatus.OK:
             payload = call_result.payload or {}
             resolved_cell = _cell_from_wire(payload["cell"])
@@ -2823,7 +2831,10 @@ class EvaluationService:
                         instr_per_tick=request.instr_per_tick,
                         locality_reach=request.resolved_locality_reach,
                         kill_weight=request.kill_weight,
+                        scheduler_chunk_size=request.scheduler_chunk_size,
+                        scheduler_rotate_start=request.scheduler_rotate_start,
                     )
+
                     if ingest(result):
                         break
             else:
@@ -2944,7 +2955,10 @@ class EvaluationService:
                     request.instr_per_tick,
                     request.resolved_locality_reach,
                     request.kill_weight,
+                    request.scheduler_chunk_size,
+                    request.scheduler_rotate_start,
                 ),
+
                 daemon=True,
             )
             for handle in handles
@@ -3376,6 +3390,8 @@ class EvaluationService:
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
         kill_weight: float | None = None,
+        scheduler_chunk_size: int | None = None,
+        scheduler_rotate_start: bool = False,
     ) -> CellExecutionResult:
         """Execute one cell. Pure apart from filesystem I/O under ``cell.artifact_
         dir`` and reading agent source under ``data_root``/the default data
@@ -3420,6 +3436,8 @@ class EvaluationService:
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
                 kill_weight=kill_weight,
+                scheduler_chunk_size=scheduler_chunk_size,
+                scheduler_rotate_start=scheduler_rotate_start,
             )
 
         # v0.9 Phase 6 (Phase 5 spec Sec H.1/T.4): `candidate_first` reuses
@@ -3474,7 +3492,10 @@ class EvaluationService:
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
                 kill_weight=kill_weight,
+                scheduler_chunk_size=scheduler_chunk_size,
+                scheduler_rotate_start=scheduler_rotate_start,
             )
+
         except AgentTestError as exc:
             return CellExecutionResult(
                 cell=replace(
@@ -3557,6 +3578,8 @@ class EvaluationService:
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
         kill_weight: float | None = None,
+        scheduler_chunk_size: int | None = None,
+        scheduler_rotate_start: bool = False,
     ) -> CellExecutionResult:
         """The multi-entrant generalization of the pairwise branch of
         :meth:`_execute_cell` (v2.0.0-beta2 Phase 2).
@@ -3589,7 +3612,10 @@ class EvaluationService:
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
                 kill_weight=kill_weight,
+                scheduler_chunk_size=scheduler_chunk_size,
+                scheduler_rotate_start=scheduler_rotate_start,
             )
+
         except AgentTestError as exc:
             return CellExecutionResult(
                 cell=replace(
