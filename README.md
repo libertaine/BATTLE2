@@ -18,8 +18,8 @@ AI or LLM dependency.
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Current releases:** [v2.0.0 stable](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
-· [v3.0.0-rc2 prerelease](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc2)
+**Current releases:** [v3.0.0 stable](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
+· [v2.0.0 stable](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
 — see [Downloads](#downloads) below.
 
 ## What is Bytefray?
@@ -39,13 +39,14 @@ Bytefray is both a game and a deterministic experimentation platform:
 
 ## What's new in Bytefray 3.0
 
-Bytefray 3.0 (currently `v3.0.0-rc2`, release candidate) is a product and
-presentation release, not a new gameplay Ruleset: current gameplay remains
-`bytefray-rules-2`, and Agent API v1 stays fully compatible. v3.0 is now
-feature-complete; RC1 combined the alpha1/alpha2 work below with
-distribution re-qualification, and RC2 fixed a single RC1 defect (an
-omitted CLI `--ruleset` no longer diverges from Agent Designer's Ruleset-v2
-default for Python-only matches — see [Rulesets](#rulesets) below). See the
+Bytefray 3.0 (`v3.0.0`, stable) is a product and presentation release, not a
+new gameplay Ruleset: current gameplay remains `bytefray-rules-2`, and
+Agent API v1 stays fully compatible. v3.0.0 promotes the qualified
+`v3.0.0-rc2` candidate with no software change: RC1 combined the
+alpha1/alpha2 work below with distribution re-qualification, and RC2 fixed
+a single RC1 defect (an omitted CLI `--ruleset` no longer diverges from
+Agent Designer's Ruleset-v2 default for Python-only matches — see
+[Rulesets](#rulesets) below). See the
 [Compatibility Reference](docs/COMPATIBILITY.md) for details.
 
 Highlights over 2.0:
@@ -68,7 +69,7 @@ Highlights over 2.0:
 - **Distribution** — refreshed packaging/install documentation and a
   qualified Windows installer, portable build, and Python package.
 
-See [CHANGELOG.md](CHANGELOG.md#300-rc2---2026-08-29) for the full v3.0
+See [CHANGELOG.md](CHANGELOG.md#300---2026-08-30) for the full v3.0
 release notes.
 
 ## How the game works
@@ -180,65 +181,16 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-**Alpha prerelease:** [Bytefray v3.0.0-alpha1](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-alpha1)
-— presentation, agent-creation, strategy-analysis, and evaluation-workflow
-improvements on unchanged `bytefray-rules-2` gameplay. See
-[CHANGELOG.md](CHANGELOG.md#300-alpha1---2026-08-26) for details.
+**Bytefray v3.0.0 final release:** promoted from the qualified `v3.0.0-rc2`
+candidate with no software change; in final artifact and CI qualification,
+not yet published.
 
-**Latest alpha:** [Bytefray v3.0.0-alpha2](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-alpha2)
-— two new starter strategies demonstrating the Vulnerable Core mechanic
-(`raider`, `sentinel`), plus explicit Ruleset selection in the Agent
-Designer, on unchanged `bytefray-rules-2` gameplay. See
-[CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27) for details.
+**Current published prerelease:** [Bytefray v3.0.0-rc2](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc2)
+— fixes RC1's CLI/GUI default-Ruleset divergence and is the frozen candidate
+for final verification, not yet the stable 3.0 line.
 
-**First release candidate:** [Bytefray v3.0.0-rc1](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc1)
-— the first v3.0 release candidate. Bytefray v3.0 is now treated as
-feature-complete: RC1 combines everything from alpha1 and alpha2 above with
-distribution re-qualification and two frozen-console display fixes, and no
-new product work. See [CHANGELOG.md](CHANGELOG.md#300-rc1---2026-08-27) and
-[V3_RC1_QUALIFICATION.md](docs/V3_RC1_QUALIFICATION.md) for details.
-
-**Latest release candidate:** [Bytefray v3.0.0-rc2](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc2)
-— fixes a single defect found in RC1 after tagging: an omitted CLI
-`--ruleset` resolved to Ruleset v1 for Python-only matches while Agent
-Designer already defaulted to Ruleset v2, giving CLI and GUI users
-materially different gameplay for the same nominal action. No other
-product work changed. See
-[CHANGELOG.md](CHANGELOG.md#300-rc2---2026-08-29) and
-[V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/V3_RC1_DEFAULT_RULESET_DEFECT.md)
-for details.
-
-| Package | Download | Notes |
-|---|---|---|
-| Windows installer | [Bytefray-Setup-3.0.0-rc2.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc2/Bytefray-Setup-3.0.0-rc2.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-3.0.0-rc2-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc2/bytefray-3.0.0-rc2-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-3.0.0rc2-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc2/bytefray-3.0.0rc2-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-3.0.0rc2.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc2/bytefray-3.0.0rc2.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc2/SHA256SUMS.txt) | SHA-256 values for rc2 assets |
-
-| Package | Download | Notes |
-|---|---|---|
-| Windows installer | [Bytefray-Setup-3.0.0-rc1.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/Bytefray-Setup-3.0.0-rc1.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-3.0.0-rc1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/bytefray-3.0.0-rc1-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-3.0.0rc1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/bytefray-3.0.0rc1-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-3.0.0rc1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/bytefray-3.0.0rc1.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-rc1/SHA256SUMS.txt) | SHA-256 values for rc1 assets |
-
-| Package | Download | Notes |
-|---|---|---|
-| Windows installer | [Bytefray-Setup-3.0.0-alpha2.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/Bytefray-Setup-3.0.0-alpha2.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-3.0.0-alpha2-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/bytefray-3.0.0-alpha2-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-3.0.0a2-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/bytefray-3.0.0a2-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-3.0.0a2.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/bytefray-3.0.0a2.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha2/SHA256SUMS.txt) | SHA-256 values for alpha2 assets |
-
-| Package | Download | Notes |
-|---|---|---|
-| Windows installer | [Bytefray-Setup-3.0.0-alpha1.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/Bytefray-Setup-3.0.0-alpha1.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-3.0.0-alpha1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/bytefray-3.0.0-alpha1-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-3.0.0a1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/bytefray-3.0.0a1-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-3.0.0a1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/bytefray-3.0.0a1.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0-alpha1/SHA256SUMS.txt) | SHA-256 values for alpha1 assets |
+Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)
+for the alpha1/alpha2/rc1/rc2 prereleases that led up to v3.0.0.
 
 **Stable release:** [Bytefray v2.0.0](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
 — Vulnerable Core. Promotes the qualified `v2.0.0-rc2` candidate with no
@@ -436,8 +388,8 @@ multi-entrant work, together with explicit Designer Ruleset selection,
 read-only agent-source inspection, refreshed onboarding, and current product
 screenshots.
 
-Bytefray 3.0 (`v3.0.0-rc2`, release candidate) is the current product and
-presentation cycle on top of stable 2.0 — see
+Bytefray 3.0 (`v3.0.0`, stable) is the current product and presentation
+cycle on top of stable 2.0 — see
 [What's new in Bytefray 3.0](#whats-new-in-bytefray-30) above.
 
 Future 2.x ideas—replication, multi-unit entrants, communication, richer

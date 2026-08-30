@@ -957,8 +957,8 @@ report.
 ## v3.0 — Product Development
 
 **Status: `v3.0.0-alpha1`, `v3.0.0-alpha2`, `v3.0.0-rc1`, and `v3.0.0-rc2`
-published.** `v3.0.0-rc2` fixes an RC1 default-Ruleset defect; no new
-product work. Bytefray
+published; `v3.0.0` final release qualified and pending publication**
+(promotes the qualified RC2 candidate with no software change). Bytefray
 v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
@@ -1087,7 +1087,27 @@ default suite (2375 passed), GUI suite (226 passed), frozen benchmark (9/9,
 zero drift), Ruff, and both canonical mypy gates all re-verified green; CI
 green on the exact candidate commit; a frozen-executable Ruleset matrix and
 a live evaluation/tournament resume-safety demonstration both passed. RC2
-stays on `v3.0-development`, not merged to `main`.
+stayed on `v3.0-development`, not merged to `main`, until promoted below.
+
+## v3.0.0 — Product and Presentation
+
+**Status: qualified and pending publication.** `v3.0.0` promotes the
+qualified `v3.0.0-rc2` candidate to the stable 3.0 line with no engine, UI,
+schema, or evaluation-methodology change since RC2 — a version/
+documentation-only release. `bytefray-rules-2` becomes v3.0's permanent
+active gameplay identity (unchanged since `v2.0.0`); Agent API v1,
+`bytefray-rules-1`/VM-blob compatibility, and Redcode/pMARS external
+interoperability are all unchanged. `v3.0-development` is fast-forward
+merged into `main` at the exact `v3.0.0-rc2`-qualified commit plus this
+version-bump/documentation commit — no software content differs from the
+RC2 candidate already qualified in the sections above.
+
+See [V3_RC1_QUALIFICATION.md](V3_RC1_QUALIFICATION.md) for the RC1
+qualification record and [V3_RC1_DEFAULT_RULESET_DEFECT.md](V3_RC1_DEFAULT_RULESET_DEFECT.md)
+for the RC2 defect fix and its own qualification pass — together they
+cover the full v3.0.0 release. `v3.0.0-alpha1`, `v3.0.0-alpha2`,
+`v3.0.0-rc1`, and `v3.0.0-rc2` remain published, immutable prereleases;
+none was moved, retagged, or rewritten by this promotion.
 
 ## After v1.0
 
