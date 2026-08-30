@@ -189,12 +189,22 @@ improvements on unchanged `bytefray-rules-2` gameplay. See
 Designer, on unchanged `bytefray-rules-2` gameplay. See
 [CHANGELOG.md](CHANGELOG.md#300-alpha2---2026-08-27) for details.
 
-**Release candidate:** [Bytefray v3.0.0-rc1](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc1)
+**First release candidate:** [Bytefray v3.0.0-rc1](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0-rc1)
 — the first v3.0 release candidate. Bytefray v3.0 is now treated as
 feature-complete: RC1 combines everything from alpha1 and alpha2 above with
 distribution re-qualification and two frozen-console display fixes, and no
 new product work. See [CHANGELOG.md](CHANGELOG.md#300-rc1---2026-08-27) and
 [V3_RC1_QUALIFICATION.md](docs/V3_RC1_QUALIFICATION.md) for details.
+
+`v3.0.0-rc2`, the second v3.0 **release candidate**, is qualified and
+pending publication. It fixes a single defect found in RC1 after tagging —
+an omitted CLI `--ruleset` resolved to Ruleset v1 for Python-only matches
+while Agent Designer already defaulted to Ruleset v2, giving CLI and GUI
+users materially different gameplay for the same nominal action. No other
+product work changed. See
+[CHANGELOG.md](CHANGELOG.md#300-rc2---2026-08-29) and
+[V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/V3_RC1_DEFAULT_RULESET_DEFECT.md)
+for details.
 
 | Package | Download | Notes |
 |---|---|---|

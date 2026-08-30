@@ -956,7 +956,9 @@ report.
 
 ## v3.0 — Product Development
 
-**Status: `v3.0.0-alpha1`, `v3.0.0-alpha2`, and `v3.0.0-rc1` published.**
+**Status: `v3.0.0-alpha1`, `v3.0.0-alpha2`, and `v3.0.0-rc1` published;
+`v3.0.0-rc2` qualified and pending publication (fixes an RC1 default-
+Ruleset defect; no new product work).**
 Bytefray
 v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
@@ -1070,6 +1072,23 @@ headless Linux CI and Xvfb startup-smoke workflow — neither is treated as a
 release blocker, consistent with alpha1/alpha2 precedent. RC1 stays on
 `v3.0-development`; per prior Bytefray release precedent, it is not merged
 to `main` until final `v3.0.0`.
+
+**`v3.0.0-rc2` is qualified and pending publication** — see
+[V3_RC1_DEFAULT_RULESET_DEFECT.md](V3_RC1_DEFAULT_RULESET_DEFECT.md). Found
+after RC1 was tagged: an omitted CLI `--ruleset` resolved to Ruleset v1 for
+Python-only matches, while Agent Designer already defaulted to Ruleset v2 —
+a new user got materially different gameplay (no vulnerable-core capture
+available) from the same nominal CLI/GUI action. Corrected with a shared,
+runtime-kind-aware resolver (`battle_engine.ruleset_policy.
+resolve_omitted_ruleset_id`) that every product CLI entry point now calls;
+explicit `--ruleset` selections, VM/blob convenience, mixed-runtime
+rejection, Redcode/pMARS isolation, and evaluation/tournament resume safety
+are all unchanged. No engine, gameplay-rules, or schema change. Full
+default suite (2375 passed), GUI suite (226 passed), frozen benchmark (9/9,
+zero drift), Ruff, and both canonical mypy gates all re-verified green; CI
+green on the exact candidate commit; a frozen-executable Ruleset matrix and
+a live evaluation/tournament resume-safety demonstration both passed. RC2
+stays on `v3.0-development`, not merged to `main`.
 
 ## After v1.0
 

@@ -2,7 +2,17 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
-## [Unreleased]
+## [3.0.0-rc2] - 2026-08-29
+
+### Bytefray 3.0 — release candidate 2
+
+The second **release candidate** for Bytefray v3.0, fixing one defect found
+in RC1 after it was tagged and published: `bytefray-rules-2` remains v3.0's
+unchanged active gameplay identity, Agent API v1 is unchanged, and
+`bytefray-rules-1`/VM-blob compatibility is unchanged. No new product
+feature was added; see
+[V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/V3_RC1_DEFAULT_RULESET_DEFECT.md)
+for the full defect record and fix.
 
 ### Fixed
 
