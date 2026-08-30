@@ -173,3 +173,4 @@ def test_stage4_process_disruption() -> None:
     proc_b = spec_b.processes[0]
     # Entrant A wrote to 500 on Tick 1 pass 0 -> Proc B disrupted until tick 1 + 3 = 4
     assert proc_b.telemetry.total_disrupted_ticks > 0
+
