@@ -320,38 +320,70 @@ def make_movable_dual_scout_hunter(
 
 
 def _monolithic_triple_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
-    """Monolithic control trying to simulate TripleProcess (4 Def, 2 Scout, 2 Atk)."""
-    # Track which action we are on within the tick (0 to 7)
-    tick_action = state.get("tick_action", 0)
-    state["tick_action"] = (tick_action + 1) % 8
+    """Monolithic control simulating TripleProcess via time-slicing and mailboxes."""
+    # Initialize on first call
+    if "init" not in state:
+        state["init"] = True
+        state["ta"] = 0  # tick action counter
+        state["prev"] = None  # previous role key
+        state["ct"] = obs.tick  # current tick
+        for r in ("def", "scout", "atk"):
+            state[f"s_{r}"] = {}  # role-local state
+            state[f"mb_{r}"] = {}  # mailbox
 
-    # Ensure sub-states exist
-    if "def_state" not in state:
-        state["def_state"] = {}
-    if "scout_state" not in state:
-        state["scout_state"] = {}
-    if "atk_state" not in state:
-        state["atk_state"] = {}
+    # Route feedback from previous action to previous role's mailbox
+    prev = state["prev"]
+    if prev is not None:
+        state[f"mb_{prev}"] = {
+            "action_kind": obs.last_action_kind,
+            "operand": obs.last_action_operand,
+            "value": obs.last_action_value,
+            "read_val": obs.read_result,
+            "read_owner": obs.read_owner,
+        }
+
+    # Detect tick boundary, reset action counter
+    if obs.tick != state["ct"]:
+        state["ta"] = 0
+        state["ct"] = obs.tick
+
+    ta = state["ta"]
+    state["ta"] = ta + 1
 
     # Map the action to the corresponding role (4 Def, 2 Scout, 2 Atk)
-    # The chunked scheduler K=2 executes:
-    # 0, 1 -> Def
-    # 2, 3 -> Def
-    # 4, 5 -> Scout
-    # 6, 7 -> Atk
-    if tick_action < 4:
-        return _defender_logic(obs, state["def_state"])
-    elif tick_action < 6:
-        return _scout_logic(obs, state["scout_state"])
+    if ta < 4:
+        role = "def"
+        logic_func = _defender_logic
+    elif ta < 6:
+        role = "scout"
+        logic_func = _scout_logic
     else:
-        return _coordinated_attacker_logic(obs, state["atk_state"])
+        role = "atk"
+        logic_func = _coordinated_attacker_logic
 
+    # Build role observation from its own mailbox
+    mb = state[f"mb_{role}"]
+    role_obs = ProcessObservation(
+        tick=obs.tick, agent_id=obs.agent_id, process_id=obs.process_id,
+        role=obs.role, position=obs.position, reach=obs.reach,
+        core_base=obs.core_base, core_size=obs.core_size,
+        arena_size=obs.arena_size,
+        last_action_kind=mb.get("action_kind"),
+        last_action_operand=mb.get("operand"),
+        last_action_value=mb.get("value"),
+        read_result=mb.get("read_val"),
+        read_owner=mb.get("read_owner"),
+        shared_memory=obs.shared_memory,
+    )
+
+    state["prev"] = role
+    return logic_func(role_obs, state[f"s_{role}"])
 
 def make_monolithic_triple_sim(
     agent_id: str,
     reach: int | None = None,
 ) -> ProcessEntrantSpec:
-    """1 Process attempting to replicate 3-Process Def/Scout/Atk via time-slicing."""
+    """1 Process accurately replicating 3-Process Def/Scout/Atk via time-slicing and mailboxes."""
     p = ProcessInstance(
         process_id="proc_monolithic",
         role=ProcessRole.GENERALIST,
