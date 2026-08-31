@@ -2,8 +2,8 @@
 
 ## Windows installer
 
-Download `Bytefray-Setup-2.0.0.exe` from the
-[v2.0.0 release](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
+Download `Bytefray-Setup-4.0.0-alpha1.exe` from the
+[v4.0.0-alpha1 release](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha1)
 (see [README.md](README.md#-downloads) for the current release; the exact
 filenames below track that latest tag as later versions ship). It installs
 four onedir applications beneath `C:\Program Files\Bytefray\bin`: `bytefray`,
@@ -12,7 +12,7 @@ v0.1 `match-runner` command was removed in v0.3; use
 `bytefray-replay-viewer` (or
 `bytefray replay --renderer pygame`) instead. The release archive containing
 the corresponding portable
-application trees is `bytefray-2.0.0-windows.zip`. Extract the entire ZIP
+application trees is `bytefray-4.0.0-alpha1-windows.zip`. Extract the entire ZIP
 for portable use; do not copy only the top-level executables because their
 adjacent DLLs, Qt plugins, resources, and pMARS files are required.
 
@@ -42,7 +42,7 @@ The installed executables remain available by their full paths, for example:
 
 ## Portable Windows applications
 
-Download `bytefray-2.0.0-windows.zip` from the release (see
+Download `bytefray-4.0.0-alpha1-windows.zip` from the release (see
 [README.md](README.md#-downloads) for the current release) and extract the
 entire archive; do not copy only the top-level executables, since their
 adjacent DLLs, Qt plugins, resources, and pMARS files are required.
@@ -77,7 +77,7 @@ Python users can install the release wheel into an isolated environment:
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install .\bytefray-2.0.0-py3-none-any.whl
+python -m pip install .\bytefray-4.0.0a1-py3-none-any.whl
 bytefray --help
 ```
 

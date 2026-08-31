@@ -1,8 +1,10 @@
 # Bytefray Replay and Event Contract
 
-## v0.3 canonical writer
+## Canonical writer
 
-New native matches use `battle2.replay` schema version 3. One authoritative
+Native Ruleset-v1/v2 matches use `battle2.replay` schema version 3. Ruleset
+`bytefray-rules-4-alpha1` matches use schema version 4 so process state is
+present without changing the historical v3 wire shape. One authoritative
 finalization path (`match_service._finalize_native_artifacts`) converts VM and
 Python runtime events into typed header, tick, and terminal result records --
 the same `battle_engine.replay.ReplayHeader` / `TickSnapshot` / `MatchResult`
@@ -23,10 +25,10 @@ digest is computed over the exact bytes `write_replay` produced, so
 `verify_result_replay`) can always confirm a replay file matches its result
 byte-for-byte; see "Digest verification" below.
 
-Readers continue accepting schema version 2 and the historical unversioned
-v0.1/native formats. See [RESULT_SCHEMA.md](RESULT_SCHEMA.md).
+Readers continue accepting schema versions 2 and 3 and the historical
+unversioned v0.1/native formats. See [RESULT_SCHEMA.md](RESULT_SCHEMA.md).
 
-### Compatibility note: v3 was extended in place, not versioned to v4
+### Historical compatibility note: early v3 was extended in place
 
 `battle2.replay` v3 was introduced, and then extended with the fields
 described below, in the same `v0.3-foundation` development branch, hours
@@ -45,9 +47,28 @@ directly to schema version 3 rather than introduced as a new version 4.
 All new fields have safe, explicit defaults (`None`, `()`, or absence), so
 a reader encountering an older, pre-extension v3 file (or a genuine
 v0.1/v0.2 file) still parses it correctly -- it simply sees the new fields
-as absent/default rather than populated. A future incompatible change to
-the wire shape (not just an additive field) should bump `SCHEMA_VERSION`
-rather than repeat this reasoning.
+as absent/default rather than populated. A future incompatible change to the
+historical v3 wire shape (not just an additive field) should use a new schema
+version rather than repeat this reasoning. Schema 4 below follows that rule.
+
+### Schema 4 process state
+
+Schema 4 is selected only for Ruleset-v4 production matches. Every tick and
+terminal result record contains a `processes` array. Each entry contains:
+
+- `process_id`: the entrant-local stable ID declared before tick 0;
+- `entrant_id`: the owning match entrant ID;
+- `anchor`: normalized absolute arena address;
+- `disrupted`: whether the process is ineligible at that recorded tick; and
+- `reach`: the process's declared circular action/detection reach.
+
+Tick 0 records every declared process co-located at its entrant/core start
+before any action executes. Later records make anchor movement and temporary
+disruption reconstructable without running agent code. Schema-2/3
+serialization omits the `processes` key entirely—even when the in-memory model
+uses its empty default—so historical wire bytes and hashes remain unchanged.
+Readers give schema-4 `processes` the same empty default for defensive parsing,
+but a current production v4 match always emits the real non-empty state.
 
 ### Ruleset identity
 
@@ -57,8 +78,8 @@ BYTEFRAY_RULESET_ID`, see [RULES.md](RULES.md)) this match executed under.
 One discriminator per match, on the header only -- the identical precedent
 `runtime_kind` already establishes ("it is not repeated per tick or per
 agent"; see "Runtime-kind semantics" below). It is **required for current
-native writers** -- `match_service._finalize_native_artifacts` sets it to
-`"bytefray-rules-1"` on every header it produces, VM or Python -- but it is
+native writers** -- `match_service._finalize_native_artifacts` records the
+exact resolved Ruleset identity on every header it produces -- but it is
 **not required for all historical artifacts**: any header written before
 this field existed simply has it absent (`None`), and remains fully
 readable.
@@ -76,7 +97,8 @@ whose `schema_version` is **exactly** `3` (not `>= 3`) and is missing it
 (schema version 3 never existed before the v0.3.0 development branch that
 also established the currently-frozen gameplay semantics -- see
 [RULES.md](RULES.md)), or `"unknown"` for anything else, including a
-schema-version-2 header and any future schema version greater than 3.
+schema-version-2 header and a schema-4-or-later header missing its required
+recorded identity.
 Schema version 2 deliberately does **not** recover: it was genuinely the
 pre-rename `v0.2.0` release's own canonical wire format (confirmed by
 inspecting that tag's own `replay.py`), so a schema-version-2 header
@@ -180,7 +202,7 @@ work exactly as before.
 
 ### Python Observation capture: explicitly out of scope
 
-The Python Agent API's `Observation` (`tick`, `agent_id`, `pc`, `register_a`,
+The Agent API v1 `Observation` (`tick`, `agent_id`, `pc`, `register_a`,
 `register_p`, `zero_flag`, `last_read`, `alive`) is a read-only view of
 engine-owned, per-entrant controller state -- not a separate diagnostic log.
 This extension persists that state, once per tick, as part of each entrant's
@@ -198,6 +220,11 @@ match state" means. A future feature that needs to show "exactly what agent X
 was shown before its 3rd callback in tick 7" would be reconstructing agent
 *diagnostic* history, not match state, and is intentionally left out of the
 canonical replay guarantee.
+
+The same boundary applies to Agent API v2: schema 4 records engine-owned
+process anchors/reach/disruption at tick granularity, not every
+`ObservationV2` delivered during that tick. Exact callback history belongs in
+the optional trace surface, not in canonical match-state reconstruction.
 
 That future feature is `bytefray.agent_trace` (see
 `docs/specs/agent_lab.md`, unreleased Agent Lab work): a separate,
@@ -278,21 +305,21 @@ header's `config.arena_size` is authoritative when encountered in-band.
 The private `__owners__` value passed by `Kernel` to the old live renderer is not
 serialized and is not part of any replay schema.
 
-## Canonical v0.2/v0.3 records
+## Canonical v0.2/v0.3/v4 records
 
 Every serialized record carries:
 
 ```json
 {
   "schema": "battle2.replay",
-  "schema_version": 3,
+  "schema_version": 4,
   "record_type": "header"
 }
 ```
 
-Unknown schema names, versions, and record types fail with `ReplayFormatError`.
-Readers add file and line context when processing JSONL. Fields marked
-"v3 only" below are present (non-null/non-empty) only on records produced by
+Unknown schema names, unsupported versions, and record types fail with
+`ReplayFormatError`. Readers add file and line context when processing JSONL.
+Fields marked "v3+" below are present (non-null/non-empty) only on records produced by
 the canonical native-match finalization path; a v0.1/v0.2 record, or a
 pre-extension v3 record, has them at their default (`null`/`{}`/`()`).
 
@@ -300,7 +327,7 @@ pre-extension v3 record, has them at their default (`null`/`{}`/`()`).
 
 `record_type: "header"` contains `config` and an optional mapping of agent IDs to
 names. `MatchConfiguration` contains `arena_size`, `instr_per_tick`, `seed`,
-`win_mode`, and numeric scoring `weights`. v3 only: `replay_id`, `match_id`,
+`win_mode`, and numeric scoring `weights`. v3+: `replay_id`, `match_id`,
 `result_id`, `runtime_kind` (`"vm"` or `"python"`, see "Runtime-kind semantics"
 above), `reproducibility` (mirrors `result.json`'s `reproducibility`), and
 `entrants` (identity/metadata per entrant, mirroring `result.json`'s
@@ -324,6 +351,9 @@ writer; absent on any header written before that field existed.
   reconstruction" above); and
 - `events`: typed kill/death or agent movement/ownership events.
 
+Schema 4 additionally carries `processes`, the complete process snapshot
+described in "Schema 4 process state" above. Schema 2/3 omit this key.
+
 Agent movement/ownership events exist to retain supported historical records.
 They contain only engine-domain IDs, addresses/positions, and cell collections;
 they do not contain colors, surfaces, fonts, widget state, or other presentation
@@ -333,11 +363,12 @@ fields.
 
 `record_type: "result"` contains `winner` (nullable when there is no single
 winner), `win_mode`, `ticks`, final `score`, and final agent states (now
-genuinely populated -- see "Terminal result record" above). v3 only:
+genuinely populated -- see "Terminal result record" above). v3+:
 `replay_id`, `match_id`, `result_id`, `termination_reason`, and `entrants`
 (the same rich per-entrant identity/statistics/diagnostic shape as
 `result.json`'s `entrants`). This is the canonical in-memory and replay-stream
 result model; it does not replace the v0.1/v0.2 compatibility `summary.json`.
+Schema 4 also carries the terminal `processes` snapshot; schema 2/3 omit it.
 
 ## API
 

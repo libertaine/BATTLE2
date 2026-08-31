@@ -10,7 +10,7 @@ separate pMARS backend. Mixed Python/VM matches are not yet supported.
 |---|---|
 | Built-in | Assembled into mutable native VM bytecode. |
 | Blob | Loaded directly as native VM bytecode. |
-| Python | Loaded through Agent API v1 and run against another Python agent. |
+| Python | Loaded through Agent API v1 (Ruleset v1/v2) or Agent API v2 (Ruleset v4 alpha1) and run against another compatible Python agent. |
 | Redcode | Passed to the separate pMARS backend. |
 
 User agents live under the configured writable data root in
@@ -69,9 +69,10 @@ api_version: 1
 dry_run_action: WRITE operand=232 value=165
 ```
 
-This proves the agent's Agent API v1 contract is satisfied for one
+This proves the agent's declared API contract is satisfied for one
 deterministic dry-run tick — discoverable, loadable, reset successfully,
-and returning one action the current runtime accepts. It does **not**
+and returning one action the selected runtime accepts. For API v2 it also
+calls and validates `declare_processes()` before the dry-run action. It does **not**
 prove the agent will win, survive, or avoid failing on a later tick, and
 it proves nothing about strategy quality, later-tick correctness, or
 security sandboxing — see [Agent Lab](AGENT_LAB.md) for what the `agents
@@ -92,9 +93,10 @@ error: Failed importing Python agent source ...: SyntaxError: ...
 Validation is currently supported for Python (`kind: python`) agents
 only; a built-in, blob, Redcode, or unknown agent ID reports a clear
 unsupported/unknown result rather than a misleading pass. See
-[AGENT_API_V1.md](AGENT_API_V1.md) for the full Agent API v1 contract
-this checks. By default, `bytefray agents validate` runs its `reset()`/
-`act()` calls through a supervised worker process with a 5-second
+[AGENT_API_V2.md](AGENT_API_V2.md) and [AGENT_API_V1.md](AGENT_API_V1.md)
+for the full contracts this checks. By default, `bytefray agents validate`
+runs its `reset()`/`declare_processes()`/`act()` calls through a supervised
+worker process with a 5-second
 per-call timeout (`--timeout`, see [Agent Lab](AGENT_LAB.md)) so a
 genuinely non-returning callback is reported and recovered rather than
 hanging the command forever. This is development-time hang
@@ -120,6 +122,13 @@ bytefray replay --replay <reported-replay-path>
 
 See [AGENT_API_V1.md](AGENT_API_V1.md) for the full loading, lifecycle, and
 action contract the generated files satisfy.
+
+The scaffold command currently creates Agent API v1 examples. To author a v4
+agent, start from one of the packaged `v4_*` agents, set `api_version: 2`, and
+implement `reset(context)`, `declare_processes()`, and `act(observation)` as
+specified in [AGENT_API_V2.md](AGENT_API_V2.md). Run it with an explicit
+`--ruleset bytefray-rules-4-alpha1`; API-v1 and API-v2 entrants cannot be
+mixed in one match.
 
 ## Learning from the bundled agents
 
@@ -151,6 +160,11 @@ engage with at all:
 
 Neither is an optimal strategy, and both usually hold less territory than
 the pure expanders -- seeing that trade-off priced is the point.
+
+Five additional `v4_*` starters demonstrate Agent API v2 spatial behavior:
+single-process claiming, concentrated attack, local defense, scouting, and a
+two-process defender/scout split. They use absolute arena addresses for
+`READ`/`WRITE` and signed relative deltas for `MOVE`.
 
 Together they demonstrate patterns worth reusing directly: tracking a
 pending `READ`'s address so a later call can act on `Observation.last_read`

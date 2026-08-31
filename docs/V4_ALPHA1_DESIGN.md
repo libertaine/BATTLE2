@@ -27,12 +27,16 @@ The programmable action vocabulary is minimal:
 
 ## 4. Spatial Semantics
 * **Reach**: `READ` and `WRITE` targets are strictly bounded by `self_reach`.
+* **Addressing**: `READ` and `WRITE` operands are absolute arena addresses;
+  `MOVE` is the only relative operand and is a signed delta from the acting
+  process anchor.
 * **Deployment**: Processes begin co-located at the entrant's core starting position. Spatial deployment is earned solely through `MOVE` actions.
 * **Movement**: `MOVE` consumes a normal action, alters only that process's anchor, uses deterministic maximum displacement bounds, and normalizes/wraps around the circular arena.
 
 ## 5. Disruption Semantics
 * **Trigger**: A legal enemy `WRITE` to the exact normalized anchor address of a live enemy process.
-* **Duration**: $D=1$ (disrupted until the end of the next tick).
+* **Duration**: $D=1$ (a hit during tick $N$ suppresses the target for the
+  remainder of tick $N$; it is eligible again at tick $N+1$).
 * **Co-location (Blast)**: All live enemy processes occupying that address are disrupted by the `WRITE`. Friendly co-located processes are unaffected.
 * **Recovery**: Automatic tick-based expiry; requires no recovery action.
 * **Validity**: Dead entrants/processes cannot be disrupted.
@@ -73,4 +77,3 @@ The following concepts are not part of `v4.0.0-alpha1`:
 * Dedicated `SCAN`, `ATTACK`, or `DISRUPT` commands.
 * Engine-maintained enemy tracking.
 * Broad balance tuning and ranking-system redesign.
-

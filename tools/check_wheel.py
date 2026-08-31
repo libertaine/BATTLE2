@@ -29,6 +29,17 @@ EXPECTED_FILES = {
     "battle_engine/data/starter_agents/wanderer/agent.py",
     "battle_engine/data/starter_agents/adaptive/agent.yaml",
     "battle_engine/data/starter_agents/adaptive/agent.py",
+    # Agent API v2 / Ruleset v4 alpha1 starter population.
+    "battle_engine/data/starter_agents/v4_claimer/agent.yaml",
+    "battle_engine/data/starter_agents/v4_claimer/agent.py",
+    "battle_engine/data/starter_agents/v4_concentrated_attacker/agent.yaml",
+    "battle_engine/data/starter_agents/v4_concentrated_attacker/agent.py",
+    "battle_engine/data/starter_agents/v4_defender_scout/agent.yaml",
+    "battle_engine/data/starter_agents/v4_defender_scout/agent.py",
+    "battle_engine/data/starter_agents/v4_local_defender/agent.yaml",
+    "battle_engine/data/starter_agents/v4_local_defender/agent.py",
+    "battle_engine/data/starter_agents/v4_scout/agent.yaml",
+    "battle_engine/data/starter_agents/v4_scout/agent.py",
     "battle_engine/data/agent_template/agent.yaml",
     "battle_engine/data/agent_template/agent.py",
 }

@@ -1,8 +1,9 @@
 # Bytefray Architecture
 
-This document describes Bytefray's architecture on the v1.4 development
-line (NativeMatchService, Agent API v1 Python-vs-Python matches,
-canonical `battle2.replay` schema v3, the headless tournament service, the
+This document describes Bytefray's architecture through v4.0.0-alpha1
+(NativeMatchService, Agent API v1 Ruleset-v1/v2 matches, Agent API v2
+Ruleset-v4 process matches, canonical `battle2.replay` schemas v3/v4, the
+headless tournament service, the
 `bytefray agents create/validate/test` authoring commands plus the
 Designer's Agent Development tab added in v0.4, the Agent Lab
 deterministic tracing/`agents inspect`/`agents diverge`/supervised
@@ -58,21 +59,22 @@ of `MatchEntrant`s, a tick limit, and a replay path) and returns a typed
 1. rejects mixed VM/Python compositions, missing bytecode, missing Python
    specs, or duplicate entrant IDs (`UnsupportedMatchCompositionError`)
    before anything runs;
-2. routes an all-VM request through `Kernel.run()` (the VM scheduler) or an
-   all-Python request through `PythonEntrantController.run()`
-   (`battle_engine.python_runtime`, built on Agent API v1 —
-   `battle_engine.agent_api`), each writing an intermediate replay through
-   the same `JSONLSink`/temp-file-then-rename discipline;
+2. routes an all-VM request through `Kernel.run()` (the VM scheduler), an
+   Agent API v1 Python request through `PythonEntrantController.run()`, or a
+   Ruleset-v4/API-v2 request through
+   `ProcessMatchController.from_python_entrants(...).run()`
+   (`battle_engine.process_runtime`). All use the same
+   `JSONLSink`/temp-file-then-rename discipline;
 3. calls `_finalize_native_artifacts` to compute the canonical `match_id`
    and `result_id` (via `battle_engine.result_model.stable_id`), rewrite
    every intermediate replay record into the typed `battle_engine.replay`
-   dataclasses at schema version 3, and atomically publish the canonical
+   dataclasses at schema version 3 for historical Ruleset-v1/v2 matches or
+   schema version 4 for v4 process matches, and atomically publish the canonical
    replay (`replay.jsonl`) alongside `result.json`
    (`battle2.result` schema v1, written by `write_json_atomic`) with a
    SHA-256 replay digest recorded in `result.json`'s `replay` reference.
-   Both the replay header and the result envelope also carry `ruleset_id:
-   "bytefray-rules-1"` (`battle_engine.rules.BYTEFRAY_RULESET_ID`, v0.10
-   Phase 4) — an additive field on both schemas; see
+   Both the replay header and the result envelope also carry the exact resolved
+   `ruleset_id`; see
    [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for the historical
    recovery policy for artifacts written before it existed.
 
@@ -85,22 +87,30 @@ engine events, terminal `MatchResult`), plus JSON (de)serialization,
 JSONL streaming (`iter_replay`), and `write_replay`. The full wire
 contract is in [`docs/REPLAY_SCHEMA.md`](docs/REPLAY_SCHEMA.md).
 
-`battle_engine.agent_api` validates and loads Python agents against
-Agent API v1: versioned manifests, explicit entry points/factories,
+`battle_engine.agent_api` validates and loads Python agents against Agent API
+v1 or v2: versioned manifests, explicit entry points/factories,
 fresh-instance construction per match, collision-resistant module loading
 (so two agents with the same source filename import independently), and
-validation of callable `reset()`/`act()` lifecycle methods. See
+API-specific lifecycle validation. API v2 additionally requires and validates
+`declare_processes()` before tick 0. See
+[`docs/AGENT_API_V2.md`](docs/AGENT_API_V2.md) and
 [`docs/AGENT_API_V1.md`](docs/AGENT_API_V1.md). Python-vs-Python matches
 are deterministic: restricted immutable observations, a versioned
 single-action vocabulary, independent per-agent RNG streams derived from
 the match seed, and the existing VM instruction quota reused as the
 action budget. Mixed VM/Python matches remain explicitly unsupported.
 
+`battle_engine.process_runtime` owns the production v4 process model: fixed
+declared rosters, co-located anchors, `Q=8`, `K=2` rotating scheduling, local
+reach, movement, disruption/redistribution, visibility, and ObservationV2
+delivery. Research tests and user-invocable services use this same controller;
+there is no separate research-only gameplay implementation.
+
 `battle_engine.agents` discovers directories below `agents/`. A directory
 is valid when it has `agent.yaml` (JSON syntax also accepted; YAML when
 PyYAML is installed) or `agent.py`. `battle_engine.starters` validates the
 canonical Runner, Writer, Seeker, and Spiral manifests bundled under
-`battle_engine/data/starter_agents` and non-destructively copies only
+`battle_engine/data/starter_agents` (including all five `v4_*` starters) and non-destructively copies only
 missing files into the writable `get_data_root()/agents` catalog.
 
 `battle_engine.builtins` assembles the native `runner`, `writer`,
@@ -246,7 +256,8 @@ engine, not part of `battle_engine.core`.
 - `agents/<name>/agent.yaml` (or `agent.py`, or both) and an optional
   `model.blob` form the agent catalog.
 - Every native match writes exactly three sibling artifacts:
-  canonical `replay.jsonl` (schema v3), `result.json` (`battle2.result`
+  canonical `replay.jsonl` (schema v3 for Ruleset v1/v2; schema v4 for v4),
+  `result.json` (`battle2.result`
   v1, with a SHA-256 digest of the replay), and a compatibility
   `summary.json`. A `redcode94` match writes `summary.json` and
   `result.json` with `replay: null` — no canonical replay stream.
@@ -320,14 +331,15 @@ agent manifests/blobs/Python sources + built-ins
               v                          v
        battle_engine.match_service.NativeMatchService
               |
-    +---------+----------+
-    v                     v
- Kernel (VM)      PythonEntrantController
-    |                     |
+    +---------+----------------------+------------------+
+    v                                v                  v
+ Kernel (VM)      PythonEntrantController     ProcessMatchController
+                           (API v1)                  (API v2)
+    |                                |                  |
  match -> scoring/statistics -> results
               |
               v
-   canonical battle2.replay v3 (replay.jsonl)
+   canonical battle2.replay v3/v4 (replay.jsonl)
    + battle2.result v1 (result.json)
    + compatibility summary.json
               |

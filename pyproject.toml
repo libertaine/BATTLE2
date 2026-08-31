@@ -93,6 +93,17 @@ battle_engine = [
   "data/**/*",
 ]
 
+# Runtime imports can create bytecode beneath package-data agent directories.
+# Exclude it at the packaging boundary so wheel/sdist contents never depend on
+# whether a reference agent happened to run before the build.
+[tool.setuptools.exclude-package-data]
+"*" = [
+  "*.py[cod]",
+  "**/*.py[cod]",
+  "__pycache__/*",
+  "**/__pycache__/*",
+]
+
 # If you prefer installing external, non-package files to a known location, you can
 # instead use data-files (commented out here; enable if you want to place files
 # outside the package, e.g., share/bytefray). Many projects stick to package-data.
