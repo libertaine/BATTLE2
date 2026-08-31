@@ -158,6 +158,74 @@ def test_ruleset_kwarg_explicit_v2_produces_v2_artifact_identity(tmp_path):
     assert header.ruleset_id == "bytefray-rules-2"
 
 
+def _write_python_agent_v2(root: Path, name: str) -> Path:
+    directory = root / "agents" / name
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {
+                "kind": "python",
+                "api_version": 2,
+                "entrypoint": "agent.py:create_agent",
+                "version": "1.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        "from battle_engine.agent_api import ActionKindV2, AgentAction\n"
+        "class Agent:\n"
+        "    def reset(self, context): pass\n"
+        "    def declare_processes(self): return []\n"
+        "    def act(self, observation): return AgentAction(ActionKindV2.MOVE, operand=0)\n"
+        "def create_agent(): return Agent()\n",
+        encoding="utf-8",
+    )
+    return directory
+
+
+def test_ruleset_agent_unsupported_is_a_configuration_tool_error(tmp_path):
+    """H2 regression: an API-v2 agent tested under a Ruleset that only
+    supports API-v1 entrants (``bytefray-rules-2``) must be classified as a
+    configuration diagnostic carrying the specific ``ruleset_agent_unsupported``
+    code -- never the generic ``agent_test_internal_error``."""
+
+    _write_python_agent_v2(tmp_path, "v2_agent")
+    _write_python_agent_v2(tmp_path, "v2_opponent")
+
+    with pytest.raises(AgentTestError) as caught:
+        run_development_test(
+            "v2_agent",
+            opponent="v2_opponent",
+            data_root=tmp_path,
+            resource_root=ROOT,
+            ruleset_id="bytefray-rules-2",
+        )
+
+    assert caught.value.diagnostic.stage == "configuration"
+    assert caught.value.diagnostic.code == "ruleset_agent_unsupported"
+
+
+def test_cli_ruleset_agent_unsupported_reports_configuration_diagnostic(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _write_python_agent_v2(tmp_path, "v2_agent")
+    _write_python_agent_v2(tmp_path, "v2_opponent")
+
+    exit_code = main(
+        ["v2_agent", "--opponent", "v2_opponent", "--ruleset", "bytefray-rules-2"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "status: error" in captured.err
+    assert "stage: configuration" in captured.err
+    assert "code: ruleset_agent_unsupported" in captured.err
+    assert "agent_test_internal_error" not in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_non_python_tested_agent_rejected_even_with_explicit_v2(tmp_path):
     """agents test's Python-only requirement pre-empts the Ruleset boundary.
 

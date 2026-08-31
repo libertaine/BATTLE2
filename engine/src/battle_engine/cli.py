@@ -17,6 +17,7 @@ from battle_engine.match_service import (
     NativeMatchService,
     OverlappingCoreError,
     PythonMatchExecutionError,
+    RulesetAgentUnsupportedError,
     RulesetRuntimeUnsupportedError,
     UnsupportedMatchCompositionError,
 )
@@ -805,6 +806,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     except (
         UnsupportedMatchCompositionError,
         RulesetRuntimeUnsupportedError,
+        RulesetAgentUnsupportedError,
         OverlappingCoreError,
         PythonEntrantInitializationError,
         PythonMatchExecutionError,

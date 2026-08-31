@@ -102,6 +102,57 @@ def _write_python_agent(root: Path, name: str) -> None:
     )
 
 
+def _write_python_agent_v2(root: Path, name: str) -> None:
+    directory = root / "agents" / name
+    directory.mkdir(parents=True)
+    (directory / "agent.yaml").write_text(
+        json.dumps(
+            {
+                "kind": "python",
+                "api_version": 2,
+                "entrypoint": "agent.py:create_agent",
+                "version": "1.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (directory / "agent.py").write_text(
+        "from battle_engine.agent_api import ActionKindV2, AgentAction\n"
+        "class Agent:\n"
+        "    def reset(self, context): pass\n"
+        "    def declare_processes(self): return []\n"
+        "    def act(self, observation): return AgentAction(ActionKindV2.MOVE, operand=0)\n"
+        "def create_agent(): return Agent()\n",
+        encoding="utf-8",
+    )
+
+
+def test_run_reports_ruleset_agent_unsupported_cleanly_with_no_traceback(tmp_path, monkeypatch):
+    """H2 regression: an API-v2 Python agent under a Ruleset that only
+    supports API v1 entrants (``bytefray-rules-2``) must surface as a
+    concise, exit-2 configuration error -- not an unhandled
+    ``RulesetAgentUnsupportedError`` traceback."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _write_python_agent_v2(tmp_path, "v2_agent")
+    _write_python_agent_v2(tmp_path, "v2_opponent")
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "3", "--arena", "128", "--seed", "7",
+        "--a-type", "v2_agent", "--b-type", "v2_opponent", "--b-start", "64",
+        "--ruleset", "bytefray-rules-2",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2
+    assert result.stderr.startswith("ERROR:")
+    assert "bytefray-rules-2" in result.stderr
+    assert "does not support entrant metadata" in result.stderr
+    assert "Traceback (most recent call last)" not in result.stderr
+    assert not replay.exists()
+    assert not (replay.parent / "result.json").exists()
+
+
 def test_ruleset_flag_omitted_defaults_to_v1_for_vm_entrants(tmp_path):
     """RC1 default-Ruleset-defect fix, VM-compatibility guarantee (sec 9):
     an all-VM match with --ruleset omitted must keep resolving to Ruleset

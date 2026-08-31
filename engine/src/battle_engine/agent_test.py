@@ -46,6 +46,7 @@ from battle_engine.match_service import (
     NativeMatchResult,
     NativeMatchService,
     PythonMatchExecutionError,
+    RulesetAgentUnsupportedError,
     RulesetRuntimeUnsupportedError,
     UnsupportedMatchCompositionError,
 )
@@ -516,6 +517,12 @@ def _test_agent(
             code=exc.diagnostic.code,
             message=exc.diagnostic.message,
         ) from exc
+    except RulesetAgentUnsupportedError as exc:
+        raise _tool_error(
+            stage=exc.diagnostic.stage,
+            code=exc.diagnostic.code,
+            message=exc.diagnostic.message,
+        ) from exc
     except PythonMatchExecutionError as exc:
         raise _tool_error(
             stage=exc.diagnostic.stage,
@@ -762,6 +769,10 @@ def _test_agents(
             stage=exc.diagnostic.stage, code=exc.diagnostic.code, message=exc.diagnostic.message
         ) from exc
     except RulesetRuntimeUnsupportedError as exc:
+        raise _tool_error(
+            stage=exc.diagnostic.stage, code=exc.diagnostic.code, message=exc.diagnostic.message
+        ) from exc
+    except RulesetAgentUnsupportedError as exc:
         raise _tool_error(
             stage=exc.diagnostic.stage, code=exc.diagnostic.code, message=exc.diagnostic.message
         ) from exc

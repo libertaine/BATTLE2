@@ -204,6 +204,39 @@ def test_permanent_v2_rejects_vm_entrants_per_match_with_no_artifacts(tmp_path):
     assert not match.artifact_dir.exists()
 
 
+def test_ruleset_agent_unsupported_is_reported_cleanly_per_match(tmp_path):
+    """H2 tournament control: Phase 0 found tournament already reports
+    RulesetAgentUnsupportedError cleanly through TournamentService's
+    existing per-match diagnostic classification (the same ``except
+    Exception`` catch proven above for RulesetRuntimeUnsupportedError) --
+    no crash, and the match carries the specific ``ruleset_agent_unsupported``
+    code, unlike the `run`/`agents test` presentation defects this phase
+    fixes."""
+    entrants = tuple(
+        MatchEntrant.python(
+            chr(65 + index),
+            f"Agent {index}",
+            index * 32,
+            SimpleNamespace(kind="python", api_version=2),
+        )
+        for index in range(2)
+    )
+    result = TournamentService().run(
+        _request(
+            tmp_path,
+            entrants=entrants,
+            rounds=1,
+            ruleset_id="bytefray-rules-2",
+        )
+    )
+    assert len(result.matches) == 1
+    match = result.matches[0]
+    assert match.status in ("failed", "rejected")
+    assert match.error_code == "ruleset_agent_unsupported"
+    assert "does not support entrant metadata" in match.error_message
+    assert not match.artifact_dir.exists()
+
+
 def test_cli_help_lists_product_rulesets_including_v4_alpha1(capsys):
     with pytest.raises(SystemExit):
         tournament_cli_main(["--help"])
