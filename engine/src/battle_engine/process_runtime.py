@@ -5,6 +5,7 @@ Provides a research-only multi-process execution harness supporting:
 - Model B: Static Spatial Loci (fixed position, reach R)
 - Model C: Movable Spatial Anchors (dynamic position, move cost, reach R)
 - Stage 4: Process Disruption (temporary incapacitation on anchor overwrite)
+- Stage 5: Research-only enemy-anchor visibility prototypes
 
 Strictly adheres to:
 - Entrant-level fairness under chunked scheduler (K=2, rotating start)
@@ -49,6 +50,14 @@ class DisruptedQuotaPolicy(str, enum.Enum):
     FAIR_REDISTRIBUTION = "fair_redistribution"
 
 
+class AnchorVisibilityModel(str, enum.Enum):
+    """Research-only enemy-anchor information supplied to processes."""
+
+    HIDDEN = "hidden"
+    PUBLIC = "public"
+    LOCAL_DETECTION = "local_detection"
+
+
 @dataclass
 class ProcessObservation:
     tick: int
@@ -65,6 +74,7 @@ class ProcessObservation:
     last_action_value: int | None = None
     read_result: int | None = None
     read_owner: str | None = None
+    visible_enemy_anchors: tuple[int, ...] = ()
     shared_memory: dict[str, Any] = field(default_factory=dict)
 
 
@@ -157,6 +167,8 @@ class ProcessMatchController:
         ruleset_policy: RulesetPolicy | None = None,
         disruption_duration: int = 0,  # 0 = disabled (indestructible)
         disrupted_quota_policy: DisruptedQuotaPolicy = DisruptedQuotaPolicy.FAIR_REDISTRIBUTION,
+        anchor_visibility_model: AnchorVisibilityModel = AnchorVisibilityModel.HIDDEN,
+        detection_radius: int | None = None,
         max_move_delta: int = 64,
     ):
         self.config = config
@@ -166,6 +178,10 @@ class ProcessMatchController:
         self.ruleset_policy = ruleset_policy or RULESET_V4_ALPHA1
         self.disruption_duration = disruption_duration
         self.disrupted_quota_policy = DisruptedQuotaPolicy(disrupted_quota_policy)
+        self.anchor_visibility_model = AnchorVisibilityModel(anchor_visibility_model)
+        if detection_radius is not None and detection_radius < 0:
+            raise ValueError("detection_radius must be non-negative")
+        self.detection_radius = detection_radius
         self.max_move_delta = max_move_delta
 
         for spec in entrant_specs:
@@ -231,6 +247,57 @@ class ProcessMatchController:
     def _circular_dist(self, a: int, b: int) -> int:
         d = abs(a - b)
         return min(d, self.config.arena_size - d)
+
+    def _visible_enemy_anchors(
+        self,
+        observer_spec: ProcessEntrantSpec,
+        tick: int,
+    ) -> tuple[int, ...]:
+        """Return current enemy occupancy visible to an entire entrant.
+
+        Visibility is evaluated immediately before each callback. Local
+        detection uses every currently eligible friendly process as a sensor,
+        making the resulting spatial fact entrant-wide without exposing which
+        sensor observed it. Co-located enemies collapse to one occupied
+        address; identities and structural metadata remain private.
+        """
+
+        if self.anchor_visibility_model == AnchorVisibilityModel.HIDDEN:
+            return ()
+
+        enemy_positions = {
+            process.position
+            for spec in self.entrant_specs
+            if spec.agent_id != observer_spec.agent_id
+            and self._states_by_agent_id[spec.agent_id].alive
+            for process in spec.processes
+            if process.position is not None
+        }
+        if self.anchor_visibility_model == AnchorVisibilityModel.PUBLIC:
+            return tuple(sorted(enemy_positions))
+
+        observers = [
+            process
+            for process in observer_spec.processes
+            if process.position is not None and not process.is_disrupted(tick)
+        ]
+        visible: set[int] = set()
+        for enemy_position in enemy_positions:
+            for observer in observers:
+                observer_position = observer.position
+                radius = (
+                    self.detection_radius
+                    if self.detection_radius is not None
+                    else observer.reach
+                )
+                if (
+                    observer_position is not None
+                    and radius is not None
+                    and self._circular_dist(observer_position, enemy_position) <= radius
+                ):
+                    visible.add(enemy_position)
+                    break
+        return tuple(sorted(visible))
 
     def _effective_process_quotas(
         self,
@@ -341,6 +408,7 @@ class ProcessMatchController:
                     last_action_value=last_res.get("value"),
                     read_result=last_res.get("read_val"),
                     read_owner=last_res.get("read_owner"),
+                    visible_enemy_anchors=self._visible_enemy_anchors(spec, _tick),
                     shared_memory=self.shared_contexts[st.agent_id],
                 )
 
