@@ -209,7 +209,7 @@ class LoadedPythonAgent:
     """A fresh validated instance paired with engine-controlled metadata."""
 
     metadata: AgentMetadata
-    instance: AgentV1
+    instance: AgentV1 | AgentV2
     source_path: Path
     entry_point: str
 
@@ -387,11 +387,19 @@ def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
             f"Python agent factory {entry_point!r} failed: {type(exc).__name__}: {exc}",
             path=source_path,
         ) from exc
+    protocol: type[AgentV1 | AgentV2]
+    required_methods: tuple[str, ...]
+    if api_version == 2:
+        protocol = AgentV2
+        required_methods = ("reset", "declare_processes", "act")
+    else:
+        protocol = AgentV1
+        required_methods = ("reset", "act")
     missing = [
-        name for name in ("reset", "act") if not callable(getattr(instance, name, None))
+        name for name in required_methods if not callable(getattr(instance, name, None))
     ]
-    if missing or not isinstance(instance, AgentV1):
-        detail = ", ".join(missing) or "AgentV1 lifecycle methods"
+    if missing or not isinstance(instance, protocol):
+        detail = ", ".join(missing) or f"AgentV{api_version} lifecycle methods"
         raise AgentContractError(
             f"Python agent factory {entry_point!r} returned {type(instance).__name__}; "
             f"missing callable {detail}.",

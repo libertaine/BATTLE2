@@ -596,6 +596,7 @@ def adapt_v01_record(data: Mapping[str, Any]) -> ReplayRecord:
             score=dict(_require_mapping(data.get("score", {}), "snapshot.score")),
             memory_diffs=tuple(_diff_from_dict(item) for item in data.get("memory_diffs", ())),
             events=tuple(_event_from_dict(item) for item in data.get("events", ())),
+            processes=tuple(_process_from_dict(item) for item in data.get("processes", ())),
             schema_version=2,
         )
 

@@ -20,6 +20,7 @@ from battle_engine.agent_trace import TraceHeader, TraceWriter
 from battle_engine.config import Config
 from battle_engine.core import Kernel
 from battle_engine.entrant_identity import EntrantIdentity
+from battle_engine.process_runtime import ProcessMatchController
 from battle_engine.python_runtime import (
     DEFAULT_LOCALITY_REACH,
     PythonEntrantController,
@@ -612,6 +613,84 @@ def _build_python_result(
     )
 
 
+def _build_process_result(
+    controller: ProcessMatchController,
+    summary: Mapping[str, Any],
+    config: Config,
+    replay_path: Path,
+) -> NativeMatchResult:
+    """Convert the canonical v4 controller state into the native result model."""
+
+    arena_size = config.arena_size
+    specs = {spec.agent_id: spec for spec in controller.entrant_specs}
+    results: list[NativeAgentResult] = []
+    for state in controller.states:
+        statistics = controller.statistics[state.agent_id]
+        territory_sum = int(statistics.get("territory_sum", 0) or 0)
+        territory_last = int(statistics.get("territory_last", 0) or 0)
+        territory_max = int(statistics.get("territory_max", 0) or 0)
+        territory_avg = territory_sum / max(1, int(summary["ticks_run"]))
+        spec = specs[state.agent_id]
+        results.append(
+            NativeAgentResult(
+                agent_id=state.agent_id,
+                name=spec.name,
+                alive=state.alive,
+                score=controller.score.get(state.agent_id, 0),
+                alive_ticks=int(statistics.get("alive_ticks", 0) or 0),
+                kills=int(statistics.get("kills", 0) or 0),
+                deaths=0 if state.alive else 1,
+                cpu_total=int(statistics.get("total_cpu", 0) or 0),
+                mem_writes=int(statistics.get("total_mem_writes", 0) or 0),
+                territory_last=territory_last,
+                territory_max=territory_max,
+                territory_avg=territory_avg,
+                territory_pct_last=(
+                    territory_last * 100.0 / arena_size if arena_size else 0.0
+                ),
+                territory_pct_max=(
+                    territory_max * 100.0 / arena_size if arena_size else 0.0
+                ),
+                territory_pct_avg=(
+                    territory_avg * 100.0 / arena_size if arena_size else 0.0
+                ),
+                diagnostic=state.diagnostic,
+                termination_reason=state.entrant_termination,
+                metadata=MappingProxyType(
+                    {
+                        "kind": "python",
+                        "slot": state.slot,
+                        "derived_seed": spec.derived_seed,
+                        "source_sha256": spec.source_digest,
+                        "api_version": spec.api_version,
+                        "agent_version": spec.agent_version,
+                        "entry_point": spec.entry_point,
+                        "local_source_fingerprint": spec.local_source_fingerprint,
+                        "local_source_fingerprint_final": (
+                            spec.local_source_fingerprint_final
+                        ),
+                        "processes": [
+                            {
+                                "process_id": process.process_id,
+                                "reach": process.reach,
+                                "share": float(process.quota_share),
+                            }
+                            for process in spec.processes
+                        ],
+                    }
+                ),
+            )
+        )
+    return NativeMatchResult(
+        winner=str(summary["winner"]),
+        ticks_run=int(summary["ticks_run"]),
+        score=MappingProxyType(dict(controller.score)),
+        agents=tuple(results),
+        replay_path=replay_path,
+        termination_reason=TerminationReason(str(summary["reason"])),
+    )
+
+
 def _remove_python_artifacts(replay_path: Path, summary_path: Path) -> None:
     """Remove outputs that could otherwise be mistaken for this match's success."""
 
@@ -663,6 +742,76 @@ def _run_python_match(
         # regardless of success or failure.
         if trace_writer is not None:
             trace_writer.close()
+
+
+def _run_v4_process_match(
+    request: MatchRequest,
+    replay_path: Path,
+    summary_path: Path,
+    ruleset_policy: RulesetPolicy,
+) -> NativeMatchResult:
+    """Execute Ruleset v4 through the canonical spatial-process controller."""
+
+    _remove_python_artifacts(replay_path, summary_path)
+    trace_writer = _open_trace_writer(request)
+    controller: ProcessMatchController | None = None
+    temporary_path: Path | None = None
+    sink: JSONLSink | None = None
+    try:
+        controller = ProcessMatchController.from_python_entrants(
+            request.config,
+            request.entrants,
+            request.max_ticks,
+            ruleset_policy=ruleset_policy,
+            agent_call_timeout=request.agent_call_timeout,
+        )
+        replay_path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{replay_path.name}.", suffix=".tmp", dir=replay_path.parent
+        )
+        os.close(descriptor)
+        temporary_path = Path(temporary_name)
+        sink = JSONLSink(str(temporary_path))
+        summary = controller.run(sink, verbose=request.verbose)
+        sink = None
+        recorded_path = temporary_path
+        temporary_path = None
+        return _build_process_result(controller, summary, request.config, recorded_path)
+    except PythonEntrantInitializationError:
+        _remove_python_artifacts(replay_path, summary_path)
+        raise
+    except OSError as exc:
+        raise PythonMatchExecutionError(
+            RuntimeDiagnostic(
+                code="artifact_write_failed",
+                stage="artifact",
+                message=f"V4 replay could not be written: {type(exc).__name__}: {exc}",
+                exception_type=type(exc).__name__,
+            )
+        ) from exc
+    except PythonMatchExecutionError:
+        raise
+    except Exception as exc:
+        raise PythonMatchExecutionError(
+            RuntimeDiagnostic(
+                code="engine_failed",
+                stage="execution",
+                message=f"V4 match engine failed: {type(exc).__name__}: {exc}",
+                exception_type=type(exc).__name__,
+            )
+        ) from exc
+    finally:
+        if sink is not None:
+            try:
+                sink.close()
+            except OSError:
+                pass
+        if controller is not None:
+            controller.close()
+        if trace_writer is not None:
+            trace_writer.close()
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def _run_python_match_traced(
@@ -977,6 +1126,7 @@ def _finalize_native_artifacts(
         result_id=result_id,
         termination_reason=result.termination_reason.value,
         entrants=tuple(entrants),
+        processes=(ticks[-1].processes if ticks else ()),
         schema_version=replay_schema_version,
     )
 
@@ -1160,7 +1310,15 @@ class NativeMatchService:
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
         if "python" in kinds:
-            recorded = _run_python_match(request, replay_path, summary_path, ruleset_policy)
+            recorded = (
+                _run_v4_process_match(
+                    request, replay_path, summary_path, ruleset_policy
+                )
+                if ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V4_ALPHA1_ID
+                else _run_python_match(
+                    request, replay_path, summary_path, ruleset_policy
+                )
+            )
             try:
                 return _finalize_native_artifacts(
                     request, recorded, final_replay_path=replay_path

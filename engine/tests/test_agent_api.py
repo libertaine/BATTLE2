@@ -188,6 +188,34 @@ def test_invalid_factory_result_is_rejected(tmp_path):
     assert "reset, act" in str(caught.value)
 
 
+def test_api_v2_requires_declare_processes(tmp_path):
+    _write_agent(tmp_path, manifest={"api_version": 2})
+
+    with pytest.raises(AgentContractError) as caught:
+        load_python_agent(resolve_agent(tmp_path, "example"))
+
+    assert caught.value.code == "agent_contract_invalid"
+    assert "missing callable declare_processes" in str(caught.value)
+
+
+def test_api_v2_complete_lifecycle_loads(tmp_path):
+    _write_agent(
+        tmp_path,
+        manifest={"api_version": 2},
+        source=VALID_SOURCE.replace(
+            "    def act(self, observation):",
+            "    def declare_processes(self):\n"
+            "        return []\n\n"
+            "    def act(self, observation):",
+        ),
+    )
+
+    loaded = load_python_agent(resolve_agent(tmp_path, "example"))
+
+    assert loaded.metadata.api_version == 2
+    assert callable(loaded.instance.declare_processes)  # type: ignore[union-attr]
+
+
 @pytest.mark.parametrize("attribute", ["reset", "act"])
 def test_noncallable_lifecycle_attribute_is_rejected(tmp_path, attribute):
     other = "act" if attribute == "reset" else "reset"

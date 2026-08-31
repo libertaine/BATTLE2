@@ -9,12 +9,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from battle_engine.agent_api import (
     AGENT_API_VERSION,
     ActionKind,
     AgentAction,
+    AgentV1,
     AgentValidationError,
     LoadedPythonAgent,
     MatchContext,
@@ -1212,6 +1213,20 @@ class PythonEntrantController:
                     exc, agent_id=entrant.agent_id, slot=slot
                 )
                 raise PythonEntrantInitializationError(diagnostic) from exc
+            if loaded.metadata.api_version != 1:
+                raise PythonEntrantInitializationError(
+                    RuntimeDiagnostic(
+                        code="agent_api_version_unsupported",
+                        stage="load",
+                        message=(
+                            f"Ruleset {ruleset_policy.ruleset_id!r} requires Agent API "
+                            f"v1; entrant {entrant.agent_id!r} declares "
+                            f"v{loaded.metadata.api_version}."
+                        ),
+                        agent_id=entrant.agent_id,
+                        slot=slot,
+                    )
+                )
             seed = derive_agent_seed(
                 config.seed, slot, entrant.agent_id, loaded.metadata.api_version
             )
@@ -1257,7 +1272,7 @@ class PythonEntrantController:
             )
             reset_start = time.perf_counter()
             try:
-                loaded.instance.reset(context)
+                cast(AgentV1, loaded.instance).reset(context)
             except Exception as exc:
                 # Exception, not BaseException: KeyboardInterrupt/SystemExit
                 # must propagate and stop the run rather than being reported
@@ -1343,7 +1358,7 @@ class PythonEntrantController:
         observation = _observation(tick, state)
         act_start = time.perf_counter()
         try:
-            action = state.loaded.instance.act(observation)
+            action = cast(AgentV1, state.loaded.instance).act(observation)
             state.cpu_used += 1
             state.total_actions += 1
             self._trace_decision(

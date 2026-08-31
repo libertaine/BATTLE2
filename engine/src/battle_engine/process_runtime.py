@@ -1,30 +1,50 @@
-"""Bytefray v4 Research Prototype: Multi-Process Entrant Simulation Runtime.
+"""Canonical Bytefray v4 spatial-process runtime.
 
-Provides a research-only multi-process execution harness supporting:
-- Model A: Independent Action Cursors (global reach)
-- Model B: Static Spatial Loci (fixed position, reach R)
-- Model C: Movable Spatial Anchors (dynamic position, move cost, reach R)
-- Stage 4: Process Disruption (temporary incapacitation on anchor overwrite)
-- Stage 5: Research-only enemy-anchor visibility prototypes
-
-Strictly adheres to:
-- Entrant-level fairness under chunked scheduler (K=2, rotating start)
-- Explicit disrupted-quota policy (lost quota or fair redistribution)
-- Pure deterministic execution (no OS threads/processes)
+The R0-R6 research harness and the product execution path intentionally share
+this implementation.  ``NativeMatchService`` constructs production entrants
+through :meth:`ProcessMatchController.from_python_entrants`; focused mechanic
+tests may still construct explicit :class:`ProcessEntrantSpec` objects.
 """
 
 from __future__ import annotations
 
 import enum
-from collections.abc import Callable
+import hashlib
+import math
+import random
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from fractions import Fraction
+from pathlib import Path
+from typing import Any, cast
 
-from battle_engine.agent_api import ActionKind, ActionKindV2, AgentAction, ObservationV2
+from battle_engine.agent_api import (
+    ActionKind,
+    ActionKindV2,
+    AgentAction,
+    AgentV2,
+    AgentValidationError,
+    MatchContextV2,
+    ObservationV2,
+    ProcessDeclaration,
+    load_python_agent,
+    local_source_fingerprint,
+)
+from battle_engine.agent_worker import AgentWorkerHandle, WorkerCallStatus
 from battle_engine.config import Config
+from battle_engine.python_runtime import (
+    PythonEntrantInitializationError,
+    RuntimeDiagnostic,
+    apply_core_capture,
+    derive_agent_seed,
+    diagnose_action_exception,
+    diagnose_load_failure,
+    diagnose_reset_failure,
+)
 from battle_engine.ruleset_policy import RULESET_V4_ALPHA1, RulesetPolicy
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
+from battle_engine.telemetry import ReplayPublisher, ReplaySink
 from battle_engine.vm import VM
 
 
@@ -63,8 +83,10 @@ class ProcessInstance:
         role: ProcessRole,
         initial_position: int | None,
         reach: int | None,
-        quota_share: int,
+        quota_share: int | Fraction,
         logic: Callable[[ObservationV2, dict[str, Any]], AgentAction],
+        *,
+        executor: Callable[[ObservationV2, int], AgentAction] | None = None,
     ):
         self.process_id = process_id
         self.role = role
@@ -72,6 +94,7 @@ class ProcessInstance:
         self.reach = reach
         self.quota_share = quota_share  # Max actions per tick for this process
         self.logic = logic
+        self.executor = executor
         self.local_state: dict[str, Any] = {}
         self.telemetry = ProcessTelemetry(process_id=process_id, role=role.value)
         self.disrupted_until_tick = 0
@@ -87,7 +110,9 @@ class ProcessInstance:
         if self.position is not None:
             self.telemetry.positions_visited.add(self.position)
 
-    def act(self, obs: ObservationV2) -> AgentAction:
+    def act(self, obs: ObservationV2, action_slot: int = 0) -> AgentAction:
+        if self.executor is not None:
+            return self.executor(obs, action_slot)
         return self.logic(obs, self.local_state)
 
 
@@ -98,6 +123,17 @@ class ProcessEntrantSpec:
     name: str
     processes: list[ProcessInstance]
     allocation_policy: str = "fixed"  # "fixed" (uses quota_share) or "dynamic"
+    start: int | None = None
+    normalized_shares: bool = False
+    api_version: int = 2
+    agent_version: str = "0"
+    source_path: Path | None = None
+    entry_point: str = ""
+    derived_seed: int = 0
+    source_digest: str = ""
+    local_source_fingerprint: str | None = None
+    local_source_fingerprint_final: str | None = None
+    agent_dir: Path | None = None
 
 
 @dataclass
@@ -111,11 +147,419 @@ class EntrantState:
     cpu_used: int = 0
     total_actions: int = 0
     mem_writes: int = 0
+    pc: int = 0
+    region: tuple[int, int] = (0, 0)
+    register_a: int = 0
+    register_p: int = 0
+    zero_flag: bool = False
+    last_read: int | None = None
+    diagnostic: RuntimeDiagnostic | None = None
+    entrant_termination: str | None = None
+
+    @property
+    def core_start(self) -> int:
+        return self.core_base
+
+
+class ProcessAgentCallError(RuntimeError):
+    """A supervised API-v2 callback failed with a stable diagnostic."""
+
+    def __init__(self, diagnostic: RuntimeDiagnostic):
+        super().__init__(diagnostic.message)
+        self.diagnostic = diagnostic
 
 
 
 class ProcessMatchController:
     """Executes a match between multi-process and/or single-process entrants."""
+
+    @staticmethod
+    def _initialization_error(
+        *,
+        code: str,
+        message: str,
+        agent_id: str | None = None,
+        slot: int | None = None,
+        stage: str = "declaration",
+        exception_type: str | None = None,
+    ) -> PythonEntrantInitializationError:
+        return PythonEntrantInitializationError(
+            RuntimeDiagnostic(
+                code=code,
+                stage=stage,
+                message=message,
+                agent_id=agent_id,
+                slot=slot,
+                exception_type=exception_type,
+            )
+        )
+
+    @classmethod
+    def _validate_declarations(
+        cls,
+        declarations: object,
+        *,
+        agent_id: str,
+        slot: int,
+        arena_size: int,
+    ) -> list[ProcessDeclaration]:
+        if not isinstance(declarations, list) or not declarations:
+            raise cls._initialization_error(
+                code="agent_process_declaration_invalid",
+                message=(
+                    f"Python agent {agent_id} must declare a non-empty list of "
+                    "ProcessDeclaration values."
+                ),
+                agent_id=agent_id,
+                slot=slot,
+            )
+        if not all(isinstance(item, ProcessDeclaration) for item in declarations):
+            raise cls._initialization_error(
+                code="agent_process_declaration_invalid",
+                message=(
+                    f"Python agent {agent_id} declare_processes() must return only "
+                    "ProcessDeclaration values."
+                ),
+                agent_id=agent_id,
+                slot=slot,
+            )
+
+        typed = list(declarations)
+        ids = [item.id for item in typed]
+        if any(not isinstance(process_id, str) or not process_id for process_id in ids):
+            raise cls._initialization_error(
+                code="agent_process_declaration_invalid",
+                message=f"Python agent {agent_id} declared an empty process ID.",
+                agent_id=agent_id,
+                slot=slot,
+            )
+        duplicate_ids = sorted(
+            process_id for process_id in set(ids) if ids.count(process_id) > 1
+        )
+        if duplicate_ids:
+            raise cls._initialization_error(
+                code="agent_process_declaration_invalid",
+                message=(
+                    f"Python agent {agent_id} declared duplicate process IDs: "
+                    f"{duplicate_ids}."
+                ),
+                agent_id=agent_id,
+                slot=slot,
+            )
+
+        for declaration in typed:
+            if (
+                isinstance(declaration.reach, bool)
+                or not isinstance(declaration.reach, int)
+                or declaration.reach <= 0
+                or declaration.reach >= arena_size
+            ):
+                raise cls._initialization_error(
+                    code="agent_process_declaration_invalid",
+                    message=(
+                        f"Python agent {agent_id} process {declaration.id!r} must "
+                        f"declare integer reach in [1, {arena_size - 1}]."
+                    ),
+                    agent_id=agent_id,
+                    slot=slot,
+                )
+            if (
+                isinstance(declaration.share, bool)
+                or not isinstance(declaration.share, (int, float))
+                or not math.isfinite(float(declaration.share))
+                or declaration.share < 0
+            ):
+                raise cls._initialization_error(
+                    code="agent_process_declaration_invalid",
+                    message=(
+                        f"Python agent {agent_id} process {declaration.id!r} has "
+                        "an invalid quota share."
+                    ),
+                    agent_id=agent_id,
+                    slot=slot,
+                )
+        total_share = math.fsum(float(item.share) for item in typed)
+        if not math.isclose(total_share, 1.0, rel_tol=0.0, abs_tol=1e-12):
+            raise cls._initialization_error(
+                code="agent_process_declaration_invalid",
+                message=(
+                    f"Python agent {agent_id} process shares total {total_share:g}; "
+                    "expected 1."
+                ),
+                agent_id=agent_id,
+                slot=slot,
+            )
+        if not any(item.share > 0 for item in typed):
+            raise cls._initialization_error(
+                code="agent_process_declaration_invalid",
+                message=f"Python agent {agent_id} must declare a positive process share.",
+                agent_id=agent_id,
+                slot=slot,
+            )
+        return typed
+
+    @classmethod
+    def from_python_entrants(
+        cls,
+        config: Config,
+        entrants: tuple[Any, ...],
+        max_ticks: int,
+        *,
+        ruleset_policy: RulesetPolicy = RULESET_V4_ALPHA1,
+        agent_call_timeout: float | None = None,
+    ) -> ProcessMatchController:
+        """Load API-v2 entrants and consume their declarations before tick zero."""
+
+        if config.instr_per_tick != 8:
+            raise cls._initialization_error(
+                code="match_configuration_invalid",
+                stage="configuration",
+                message=(
+                    "Bytefray Ruleset v4 alpha1 fixes the entrant action quota at Q=8; "
+                    f"received {config.instr_per_tick}."
+                ),
+            )
+        if config.arena_size <= 1 or max_ticks <= 0:
+            raise cls._initialization_error(
+                code="match_configuration_invalid",
+                stage="configuration",
+                message="V4 matches require arena_size > 1 and a positive tick limit.",
+            )
+
+        worker_handles: list[AgentWorkerHandle] = []
+        specs: list[ProcessEntrantSpec] = []
+        try:
+            for slot, entrant in enumerate(entrants):
+                executor: Callable[[ObservationV2, int], AgentAction]
+                declared_api = getattr(entrant.python_spec, "api_version", None)
+                if declared_api != 2:
+                    raise cls._initialization_error(
+                        code="agent_api_version_unsupported",
+                        stage="load",
+                        message=(
+                            f"Ruleset {ruleset_policy.ruleset_id!r} requires Agent API v2; "
+                            f"entrant {entrant.agent_id!r} declares {declared_api!r}."
+                        ),
+                        agent_id=entrant.agent_id,
+                        slot=slot,
+                    )
+
+                seed = derive_agent_seed(config.seed, slot, entrant.agent_id, 2)
+                agent_dir = getattr(entrant.python_spec, "dir", None)
+                entry_point = getattr(entrant.python_spec, "entry_point", "") or ""
+                initial_fingerprint = local_source_fingerprint(agent_dir)
+
+                if agent_call_timeout is None:
+                    try:
+                        loaded = load_python_agent(entrant.python_spec)
+                    except AgentValidationError as exc:
+                        raise PythonEntrantInitializationError(
+                            diagnose_load_failure(exc, agent_id=entrant.agent_id, slot=slot)
+                        ) from exc
+                    context = MatchContextV2(
+                        agent_id=entrant.agent_id,
+                        seed=seed,
+                        arena_size=config.arena_size,
+                        tick_limit=max_ticks,
+                        rng=random.Random(seed),
+                    )
+                    instance = cast(AgentV2, loaded.instance)
+                    try:
+                        instance.reset(context)
+                    except Exception as exc:
+                        raise PythonEntrantInitializationError(
+                            diagnose_reset_failure(exc, agent_id=entrant.agent_id, slot=slot)
+                        ) from exc
+                    try:
+                        declarations: object = instance.declare_processes()
+                    except Exception as exc:
+                        raise cls._initialization_error(
+                            code="agent_process_declaration_failed",
+                            message=(
+                                f"Python agent {entrant.agent_id} process declaration failed: "
+                                f"{type(exc).__name__}: {exc}"
+                            ),
+                            agent_id=entrant.agent_id,
+                            slot=slot,
+                            exception_type=type(exc).__name__,
+                        ) from exc
+
+                    def direct_execute(
+                        observation: ObservationV2,
+                        action_slot: int,
+                        *,
+                        current_instance: AgentV2 = instance,
+                    ) -> AgentAction:
+                        del action_slot
+                        return current_instance.act(observation)
+
+                    executor = direct_execute
+
+                    source_path = loaded.source_path
+                    agent_version = loaded.metadata.version
+                else:
+                    from battle_engine.supervised_runtime import diagnostic_for_worker_result
+
+                    handle = AgentWorkerHandle(agent_id=entrant.agent_id, slot=slot)
+                    handle.start()
+                    worker_handles.append(handle)
+                    load_result = handle.load(
+                        entrant.python_spec, timeout=agent_call_timeout
+                    )
+                    if load_result.status is not WorkerCallStatus.OK:
+                        raise PythonEntrantInitializationError(
+                            diagnostic_for_worker_result(
+                                load_result,
+                                agent_id=entrant.agent_id,
+                                slot=slot,
+                                stage="load",
+                                timeout=agent_call_timeout,
+                                exit_code=handle.exit_code,
+                            )
+                        )
+                    assert load_result.payload is not None
+                    metadata = load_result.payload["metadata"]
+                    source_path = Path(load_result.payload["source_path"])
+                    agent_version = str(metadata["version"])
+                    reset_result = handle.reset(
+                        match_seed=config.seed,
+                        api_version=2,
+                        arena_size=config.arena_size,
+                        tick_limit=max_ticks,
+                        action_budget=config.instr_per_tick,
+                        timeout=agent_call_timeout,
+                    )
+                    if reset_result.status is not WorkerCallStatus.OK:
+                        raise PythonEntrantInitializationError(
+                            diagnostic_for_worker_result(
+                                reset_result,
+                                agent_id=entrant.agent_id,
+                                slot=slot,
+                                stage="reset",
+                                timeout=agent_call_timeout,
+                                exit_code=handle.exit_code,
+                            )
+                        )
+                    declaration_result = handle.declare_processes(
+                        timeout=agent_call_timeout
+                    )
+                    if declaration_result.status is not WorkerCallStatus.OK:
+                        raise PythonEntrantInitializationError(
+                            diagnostic_for_worker_result(
+                                declaration_result,
+                                agent_id=entrant.agent_id,
+                                slot=slot,
+                                stage="declaration",
+                                timeout=agent_call_timeout,
+                                exit_code=handle.exit_code,
+                            )
+                        )
+                    assert declaration_result.payload is not None
+                    declaration_payload = declaration_result.payload.get("declarations")
+                    declarations = (
+                        [ProcessDeclaration(**item) for item in declaration_payload]
+                        if isinstance(declaration_payload, list)
+                        else declaration_payload
+                    )
+
+                    def worker_execute(
+                        observation: ObservationV2,
+                        action_slot: int,
+                        *,
+                        worker: AgentWorkerHandle = handle,
+                        current_agent_id: str = entrant.agent_id,
+                        current_slot: int = slot,
+                    ) -> AgentAction:
+                        call = worker.act(
+                            observation,
+                            action_slot=action_slot,
+                            timeout=agent_call_timeout,
+                        )
+                        if call.status is not WorkerCallStatus.OK:
+                            raise ProcessAgentCallError(
+                                diagnostic_for_worker_result(
+                                    call,
+                                    agent_id=current_agent_id,
+                                    slot=current_slot,
+                                    stage="action",
+                                    timeout=agent_call_timeout,
+                                    exit_code=worker.exit_code,
+                                    tick=observation.current_tick,
+                                    action_slot=action_slot,
+                                )
+                            )
+                        assert call.payload is not None
+                        action_payload = call.payload.get("action")
+                        if not isinstance(action_payload, Mapping):
+                            raise ValueError("act() must return one AgentAction")
+                        return AgentAction(
+                            ActionKindV2(action_payload["kind"]),
+                            action_payload.get("operand"),
+                            action_payload.get("value"),
+                        )
+
+                    executor = worker_execute
+
+                validated = cls._validate_declarations(
+                    declarations,
+                    agent_id=entrant.agent_id,
+                    slot=slot,
+                    arena_size=config.arena_size,
+                )
+                processes = [
+                    ProcessInstance(
+                        declaration.id,
+                        ProcessRole.GENERALIST,
+                        None,
+                        declaration.reach,
+                        Fraction(str(declaration.share)),
+                        lambda _observation, _state: AgentAction(
+                            ActionKindV2.MOVE, 0
+                        ),
+                        executor=executor,
+                    )
+                    for declaration in validated
+                ]
+                try:
+                    source_digest = hashlib.sha256(source_path.read_bytes()).hexdigest()
+                except OSError as exc:
+                    raise cls._initialization_error(
+                        code="agent_source_invalid",
+                        stage="load",
+                        message=f"Could not read loaded Python agent source {source_path}: {exc}",
+                        agent_id=entrant.agent_id,
+                        slot=slot,
+                        exception_type=type(exc).__name__,
+                    ) from exc
+                specs.append(
+                    ProcessEntrantSpec(
+                        entrant.agent_id,
+                        entrant.name,
+                        processes,
+                        start=entrant.start,
+                        normalized_shares=True,
+                        api_version=2,
+                        agent_version=agent_version,
+                        source_path=source_path,
+                        entry_point=entry_point,
+                        derived_seed=seed,
+                        source_digest=source_digest,
+                        local_source_fingerprint=initial_fingerprint,
+                        agent_dir=agent_dir,
+                    )
+                )
+            controller = cls(
+                config,
+                specs,
+                max_ticks,
+                ruleset_policy=ruleset_policy,
+            )
+            controller._worker_handles = worker_handles
+            return controller
+        except BaseException:
+            for handle in worker_handles:
+                handle.close()
+            raise
 
     def __init__(
         self,
@@ -132,17 +576,30 @@ class ProcessMatchController:
         self.ruleset_policy = ruleset_policy or RULESET_V4_ALPHA1
         self.disruption_duration = 1
         self.max_move_delta = max_move_delta
+        self._worker_handles: list[AgentWorkerHandle] = []
+
+        if config.instr_per_tick <= 0 or config.arena_size <= 1 or max_ticks <= 0:
+            raise ValueError("process matches require positive arena, quota, and tick limit")
 
         for spec in entrant_specs:
             if not spec.processes:
                 raise ValueError(f"entrant {spec.agent_id!r} must define at least one process")
             if any(p.quota_share < 0 for p in spec.processes):
                 raise ValueError(f"entrant {spec.agent_id!r} has a negative process quota share")
+            process_ids = [process.process_id for process in spec.processes]
+            if len(set(process_ids)) != len(process_ids):
+                raise ValueError(
+                    f"entrant {spec.agent_id!r} process IDs must be unique; "
+                    f"received {process_ids}"
+                )
             declared_quota = sum(p.quota_share for p in spec.processes)
-            if declared_quota != config.instr_per_tick:
+            expected_total: int | Fraction = (
+                Fraction(1) if spec.normalized_shares else config.instr_per_tick
+            )
+            if declared_quota != expected_total:
                 raise ValueError(
                     f"entrant {spec.agent_id!r} process quota shares total {declared_quota}; "
-                    f"expected {config.instr_per_tick}"
+                    f"expected {expected_total}"
                 )
 
         self.vm = VM(config.arena_size)
@@ -162,7 +619,11 @@ class ProcessMatchController:
         spacing = config.arena_size // max(1, n_entrants)
 
         for slot, spec in enumerate(entrant_specs):
-            start = slot * spacing
+            start = (
+                slot * spacing
+                if spec.start is None
+                else spec.start % config.arena_size
+            )
             core_cells = tuple((start + i) % config.arena_size for i in range(8))
             st = EntrantState(
                 agent_id=spec.agent_id,
@@ -170,6 +631,8 @@ class ProcessMatchController:
                 core_base=start,
                 core_size=8,
                 core_cells=core_cells,
+                pc=start,
+                region=(start, start),
             )
             self.states.append(st)
             self.score[spec.agent_id] = 0
@@ -279,17 +742,72 @@ class ProcessMatchController:
             allocations[p] += 1
         return preserve_aliased_id_limits(allocations)
 
-    def run(self) -> dict[str, Any]:
+    @staticmethod
+    def _validate_v2_action(action: object) -> AgentAction:
+        if not isinstance(action, AgentAction):
+            raise ValueError("act() must return one AgentAction")
+        if not isinstance(action.kind, ActionKindV2):
+            raise ValueError("Agent API v2 supports READ, WRITE, and MOVE only")
+        if isinstance(action.operand, bool) or not isinstance(action.operand, int):
+            raise ValueError(f"{action.kind.value} requires one integer operand")
+        if action.kind is ActionKindV2.WRITE:
+            if isinstance(action.value, bool) or not isinstance(action.value, int):
+                raise ValueError("write requires one integer value")
+        elif action.value is not None:
+            raise ValueError(f"{action.kind.value} does not accept a value")
+        return action
+
+    def _process_snapshots(self, tick: int) -> list[dict[str, Any]]:
+        return [
+            {
+                "process_id": process.process_id,
+                "entrant_id": spec.agent_id,
+                "anchor": process.position if process.position is not None else 0,
+                "disrupted": process.is_disrupted(tick),
+                "reach": process.reach if process.reach is not None else 0,
+            }
+            for spec in self.entrant_specs
+            for process in spec.processes
+        ]
+
+    def close(self) -> None:
+        for handle in self._worker_handles:
+            handle.close()
+        self._worker_handles.clear()
+
+    def run(
+        self, sink: ReplaySink | None = None, *, verbose: bool = False
+    ) -> dict[str, Any]:
         """Execute the match to completion."""
+        replay = ReplayPublisher(sink) if sink is not None else None
         ticks_run = 0
         last_obs_results: dict[str, dict[str, Any]] = {
             spec.agent_id: {p.process_id: {} for p in spec.processes}
             for spec in self.entrant_specs
         }
 
+        if replay is not None:
+            replay.publish_header(self.config)
+            replay.publish_tick(
+                0,
+                self.states,  # type: ignore[arg-type]
+                self.score,
+                self.vm,
+                [],
+                self._process_snapshots(0),
+            )
+
         for tick in range(1, self.max_ticks + 1):
             ticks_run = tick
             self.vm.clear_tick_diffs()
+            events: list[dict[str, Any]] = []
+            pre_tick_core_owners = {
+                state.agent_id: tuple(
+                    self.vm.writer[address] for address in state.core_cells
+                )
+                for state in self.states
+                if state.alive
+            }
 
             for st in self.states:
                 st.cpu_used = 0
@@ -313,6 +831,7 @@ class ProcessMatchController:
                 slot: int,
                 _tick: int = tick,
                 _proc_actions: dict[str, dict[str, int]] = proc_actions_this_tick,
+                _events: list[dict[str, Any]] = events,
             ) -> None:
                 if not st.alive:
                     return
@@ -346,7 +865,86 @@ class ProcessMatchController:
                     previous_read_owner=last_res.get("read_owner"),
                 )
 
-                action = active_proc.act(obs)
+                try:
+                    action = active_proc.act(obs, slot)
+                    if spec.normalized_shares:
+                        action = self._validate_v2_action(action)
+                except ProcessAgentCallError as exc:
+                    _proc_actions[st.agent_id][active_proc.process_id] += 1
+                    st.cpu_used += 1
+                    st.total_actions += 1
+                    active_proc.telemetry.total_actions += 1
+                    st.alive = False
+                    st.entrant_termination = "forfeit"
+                    st.diagnostic = exc.diagnostic
+                    _events.append(
+                        {
+                            "type": "forfeit",
+                            "victim": st.agent_id,
+                            "reason": exc.diagnostic.code,
+                            "stage": exc.diagnostic.stage,
+                            "tick": _tick,
+                            "action_slot": slot,
+                        }
+                    )
+                    return
+                except ValueError as exc:
+                    _proc_actions[st.agent_id][active_proc.process_id] += 1
+                    st.cpu_used += 1
+                    st.total_actions += 1
+                    active_proc.telemetry.total_actions += 1
+                    diagnostic = RuntimeDiagnostic(
+                        code="agent_action_invalid",
+                        stage="action",
+                        message=(
+                            f"Python agent {st.agent_id} returned an invalid action: {exc}"
+                        ),
+                        agent_id=st.agent_id,
+                        slot=st.slot,
+                        exception_type=type(exc).__name__,
+                        tick=_tick,
+                        action_slot=slot,
+                    )
+                    st.alive = False
+                    st.entrant_termination = "forfeit"
+                    st.diagnostic = diagnostic
+                    _events.append(
+                        {
+                            "type": "forfeit",
+                            "victim": st.agent_id,
+                            "reason": diagnostic.code,
+                            "stage": diagnostic.stage,
+                            "tick": _tick,
+                            "action_slot": slot,
+                        }
+                    )
+                    return
+                except Exception as exc:
+                    _proc_actions[st.agent_id][active_proc.process_id] += 1
+                    st.cpu_used += 1
+                    st.total_actions += 1
+                    active_proc.telemetry.total_actions += 1
+                    diagnostic = diagnose_action_exception(
+                        exc,
+                        agent_id=st.agent_id,
+                        slot=st.slot,
+                        tick=_tick,
+                        action_slot=slot,
+                    )
+                    st.alive = False
+                    st.entrant_termination = "forfeit"
+                    st.diagnostic = diagnostic
+                    _events.append(
+                        {
+                            "type": "forfeit",
+                            "victim": st.agent_id,
+                            "reason": diagnostic.code,
+                            "stage": diagnostic.stage,
+                            "tick": _tick,
+                            "action_slot": slot,
+                        }
+                    )
+                    return
                 _proc_actions[st.agent_id][active_proc.process_id] += 1
                 st.cpu_used += 1
                 st.total_actions += 1
@@ -382,7 +980,7 @@ class ProcessMatchController:
                         and self._circular_dist(target_addr, active_proc.position) > active_proc.reach
                     ):
                         # Out of reach: read fails
-                        res_info["read_val"] = 0
+                        res_info["read_val"] = None
                         res_info["read_owner"] = None
                         res_info["applied"] = False
                         last_obs_results[st.agent_id][active_proc.process_id] = res_info
@@ -439,14 +1037,16 @@ class ProcessMatchController:
                 self.states, self.config.instr_per_tick, execute_entrant_slot, tick=tick
             )
 
-            # Core capture check (8-cell vulnerable core)
-            for st in self.states:
-                if not st.alive:
-                    continue
-                # If all 8 core cells are no longer owned by st.agent_id, entrant dies
-                owned_cells = sum(1 for c in st.core_cells if self.vm.writer[c] == st.agent_id)
-                if owned_cells == 0:
-                    st.alive = False
+            apply_core_capture(
+                self.states,  # type: ignore[arg-type]
+                self.vm,
+                pre_tick_core_owners,
+                self.scoring,
+                self.score,
+                self.statistics_collector,
+                self.statistics,
+                events,
+            )
 
             self.statistics_collector.record_tick(
                 self.statistics,
@@ -460,9 +1060,31 @@ class ProcessMatchController:
                 self.vm.ownership_counts,
             )
 
-            alive_count = sum(1 for st in self.states if st.alive)
-            if alive_count <= 1:
+            if replay is not None:
+                replay.publish_tick(
+                    tick,
+                    self.states,  # type: ignore[arg-type]
+                    self.score,
+                    self.vm,
+                    events,
+                    self._process_snapshots(tick),
+                )
+            if verbose and (tick % 50 == 0 or tick < 10):
+                alive = [state.agent_id for state in self.states if state.alive]
+                print(f"[T{tick:05d}] alive={alive} score={self.score}")
+
+            if self.ruleset_policy.resolve_termination(
+                alive_count=sum(1 for st in self.states if st.alive),
+                tick=tick,
+                max_ticks=self.max_ticks,
+            ).terminated:
                 break
+
+        if replay is not None:
+            replay.close()
+
+        for spec in self.entrant_specs:
+            spec.local_source_fingerprint_final = local_source_fingerprint(spec.agent_dir)
 
         # Calculate results
         living = [st for st in self.states if st.alive]

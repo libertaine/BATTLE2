@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import pytest
-
 """Bytefray v4 Research R3 Spatial Challenge (Corrected)."""
 
 
 import math
 from typing import Any
 
-from battle_engine.agent_api import ActionKindV2, AgentAction, ObservationV2
+from battle_engine.agent_api import ActionKind, ActionKindV2, AgentAction, ObservationV2
 from battle_engine.config import Config, Weights
 from battle_engine.process_runtime import (
     ProcessEntrantSpec,
@@ -46,7 +44,7 @@ def build_multi_anchor_entrant(
     def p2_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
         pos = obs.self_anchor
         if pos is None:
-            return AgentAction(ActionKindV2.NOP)
+            return AgentAction(ActionKind.NOP)
         dist = _circular_dist(pos, 920)
         if dist <= reach:
             return AgentAction(ActionKindV2.WRITE, operand=920, value=0x22)
@@ -69,7 +67,7 @@ def build_mono_continuing(
     def mono_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
         pos = obs.self_anchor
         if pos is None:
-            return AgentAction(ActionKindV2.NOP)
+            return AgentAction(ActionKind.NOP)
         
         target = state.get("target", 120)
         tick = obs.current_tick
@@ -123,7 +121,7 @@ def build_mono_batched(
     def mono_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
         pos = obs.self_anchor
         if pos is None:
-            return AgentAction(ActionKindV2.NOP)
+            return AgentAction(ActionKind.NOP)
             
         if obs.current_tick < 9:
             # Just hold 120
@@ -143,11 +141,10 @@ def build_mono_batched(
 
 def build_passive() -> ProcessEntrantSpec:
     def passive_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
-        return AgentAction(ActionKindV2.NOP)
+        return AgentAction(ActionKind.NOP)
     return ProcessEntrantSpec("Passive", "passive", [ProcessInstance("p", ProcessRole.GENERALIST, 0, 50, 8, passive_logic)])
 
 
-@pytest.mark.skip
 def test_r3_spatial_challenge() -> None:
     config = Config(arena_size=1024, instr_per_tick=8, seed=1, weights=Weights())
     

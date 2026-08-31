@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 """Unit and characterization tests for Bytefray v4 Process Semantics (R1).
 
 Validates:
@@ -17,7 +15,7 @@ Validates:
 
 from typing import Any
 
-from battle_engine.agent_api import ActionKindV2, AgentAction, ObservationV2
+from battle_engine.agent_api import ActionKind, ActionKindV2, AgentAction, ObservationV2
 from battle_engine.config import Config, Weights
 from battle_engine.process_runtime import (
     ProcessEntrantSpec,
@@ -27,11 +25,10 @@ from battle_engine.process_runtime import (
 )
 
 
-@pytest.mark.skip
 def test_process_entrant_action_quota_invariant() -> None:
     """Entrant with 4 processes receives exactly the same total actions per tick as 1-process entrant."""
     def counting_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
-        return AgentAction(ActionKindV2.NOP)
+        return AgentAction(ActionKind.NOP)
 
     procs = [
         ProcessInstance(f"p_{i}", ProcessRole.GENERALIST, 0, None, 2, counting_logic)
@@ -41,7 +38,7 @@ def test_process_entrant_action_quota_invariant() -> None:
     
     # Add passive opponent to prevent single-entrant early termination
     def passive_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
-        return AgentAction(ActionKindV2.NOP)
+        return AgentAction(ActionKind.NOP)
     passive_spec = ProcessEntrantSpec("B", "passive", [
         ProcessInstance("p_pass", ProcessRole.GENERALIST, 0, None, 8, passive_logic)
     ])
@@ -56,13 +53,12 @@ def test_process_entrant_action_quota_invariant() -> None:
         assert p.telemetry.total_actions == 10  # 2 actions/tick * 5 ticks
 
 
-@pytest.mark.skip
 def test_chunked_scheduler_fairness_with_multi_process() -> None:
     """Entrant internal process delegation does not exceed chunk size K=2 per pass."""
     execution_trace: list[tuple[str, str]] = []
 
     def make_tracer(aid: str, pid: str):
-        return lambda obs, state: (execution_trace.append((aid, pid)) or AgentAction(ActionKindV2.NOP))
+        return lambda obs, state: (execution_trace.append((aid, pid)) or AgentAction(ActionKind.NOP))
 
     spec_a = ProcessEntrantSpec("A", "entrant_a", [
         ProcessInstance("pA1", ProcessRole.DEFENDER, 0, None, 4, make_tracer("A", "pA1")),
@@ -118,7 +114,6 @@ def test_model_b_static_locus_reach_enforcement() -> None:
     assert controller.vm.writer[120] == "A"
 
 
-@pytest.mark.skip
 def test_model_c_movable_anchor_and_move_cost() -> None:
     """Model C consumes an action budget for MOVE and updates position."""
     spec_a = ProcessEntrantSpec("A", "move_test", [
@@ -133,7 +128,7 @@ def test_model_c_movable_anchor_and_move_cost() -> None:
     
     # Add passive opponent to prevent single-entrant early termination
     def passive_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
-        return AgentAction(ActionKindV2.NOP)
+        return AgentAction(ActionKind.NOP)
     passive_spec = ProcessEntrantSpec("B", "passive", [
         ProcessInstance("p_pass", ProcessRole.GENERALIST, 0, None, 8, passive_logic)
     ])
@@ -150,7 +145,6 @@ def test_model_c_movable_anchor_and_move_cost() -> None:
     assert controller.states[0].total_actions == 16
 
 
-@pytest.mark.skip
 def test_stage4_process_disruption() -> None:
     """Writing to enemy process anchor disables that process for D ticks."""
     spec_a = ProcessEntrantSpec("A", "attacker", [
@@ -171,7 +165,7 @@ def test_stage4_process_disruption() -> None:
             initial_position=500,
             reach=None,
             quota_share=8,
-            logic=lambda obs, state: AgentAction(ActionKindV2.NOP))
+            logic=lambda obs, state: AgentAction(ActionKind.NOP))
     ])
 
     config = Config(arena_size=1024, instr_per_tick=8, seed=1, weights=Weights())

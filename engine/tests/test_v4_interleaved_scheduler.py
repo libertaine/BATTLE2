@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 """v4 research: characterization and qualification tests for chunked scheduling.
 
 Tests:
@@ -333,7 +331,7 @@ def _write_agent(agent_dir: Path, agent_id: str, source: bytes) -> None:
     agent_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
         "kind": "python",
-        "api_version": 1,
+        "api_version": 2,
         "entrypoint": "agent.py:create_agent",
         "name": agent_id,
         "display": agent_id.title(),
@@ -355,14 +353,15 @@ def _python_entrant(
     return MatchEntrant.python(slot, agent_id, start, resolve_agent(root, agent_id))
 
 
-@pytest.mark.skip
 def test_interleaved_end_to_end_match_interleaving_and_determinism(tmp_path: Path) -> None:
     """Run v4-alpha1 and verify K=2 rotating order and determinism."""
     # Entrant A writes 100, 101, 102
-    src_a = b"""from battle_engine.agent_api import ActionKindV2, AgentAction
+    src_a = b"""from battle_engine.agent_api import ActionKindV2, AgentAction, ProcessDeclaration
 class Agent:
     def reset(self, ctx):
         self.idx = 0
+    def declare_processes(self):
+        return [ProcessDeclaration("writer", 4095, 1.0)]
     def act(self, obs):
         addr = 100 + self.idx
         self.idx += 1
@@ -371,10 +370,12 @@ def create_agent():
     return Agent()
 """
     # Entrant B writes 200, 201, 202
-    src_b = b"""from battle_engine.agent_api import ActionKindV2, AgentAction
+    src_b = b"""from battle_engine.agent_api import ActionKindV2, AgentAction, ProcessDeclaration
 class Agent:
     def reset(self, ctx):
         self.idx = 0
+    def declare_processes(self):
+        return [ProcessDeclaration("writer", 4095, 1.0)]
     def act(self, obs):
         addr = 200 + self.idx
         self.idx += 1
@@ -387,7 +388,7 @@ def create_agent():
         _python_entrant(tmp_path / "run1", "agent_b", src_b, slot="B", start=2000))
     config = Config(
         arena_size=4096,
-        instr_per_tick=4,
+        instr_per_tick=8,
         seed=42,
         win_mode="score_fallback",
         weights=Weights(alive=1.0, kill=5.0, territory=1.0, territory_bucket=64))
@@ -418,7 +419,7 @@ def create_agent():
     assert res1.winner == res2.winner
     assert res1.score == res2.score
     assert res1.replay_sha256 == res2.replay_sha256
-    assert res1.current_ticks_run == res2.current_ticks_run == 2
+    assert res1.ticks_run == res2.ticks_run == 2
 
     # Verify replay contents
     snapshots = [s for s in iter_replay(tmp_path / "run1" / "replay.jsonl") if isinstance(s, TickSnapshot)]
@@ -426,22 +427,23 @@ def create_agent():
     assert len(snapshots) == 3
     # Tick 1 starts with A and alternates two-action chunks.
     tick1_diffs = snapshots[1].memory_diffs
-    assert [diff.owner for diff in tick1_diffs] == ["A", "B", "A", "B"]
-    assert [diff.length for diff in tick1_diffs] == [2, 2, 2, 2]
+    assert [diff.owner for diff in tick1_diffs] == ["A", "B"] * 4
+    assert [diff.length for diff in tick1_diffs] == [2] * 8
 
     # Tick 2 rotates the starting entrant to B.
     tick2_diffs = snapshots[2].memory_diffs
-    assert [diff.owner for diff in tick2_diffs] == ["B", "A", "B", "A"]
-    assert [diff.length for diff in tick2_diffs] == [2, 2, 2, 2]
+    assert [diff.owner for diff in tick2_diffs] == ["B", "A"] * 4
+    assert [diff.length for diff in tick2_diffs] == [2] * 8
 
 
-@pytest.mark.skip
 def test_v4_end_to_end_match_rotating_start_determinism(tmp_path: Path) -> None:
     """A match with chunk_size=2 and rotate_start=True is bit-for-bit deterministic and rotates first mover."""
-    src_a = b"""from battle_engine.agent_api import ActionKindV2, AgentAction
+    src_a = b"""from battle_engine.agent_api import ActionKindV2, AgentAction, ProcessDeclaration
 class Agent:
     def reset(self, ctx):
         self.idx = 0
+    def declare_processes(self):
+        return [ProcessDeclaration("writer", 4095, 1.0)]
     def act(self, obs):
         addr = 100 + self.idx
         self.idx += 1
@@ -449,10 +451,12 @@ class Agent:
 def create_agent():
     return Agent()
 """
-    src_b = b"""from battle_engine.agent_api import ActionKindV2, AgentAction
+    src_b = b"""from battle_engine.agent_api import ActionKindV2, AgentAction, ProcessDeclaration
 class Agent:
     def reset(self, ctx):
         self.idx = 0
+    def declare_processes(self):
+        return [ProcessDeclaration("writer", 4095, 1.0)]
     def act(self, obs):
         addr = 200 + self.idx
         self.idx += 1
@@ -466,7 +470,7 @@ def create_agent():
 
     config = Config(
         arena_size=4096,
-        instr_per_tick=4,
+        instr_per_tick=8,
         seed=42,
         win_mode="score_fallback",
         weights=Weights(alive=1.0, kill=5.0, territory=1.0, territory_bucket=64))
@@ -503,7 +507,7 @@ def create_agent():
     assert res1.winner == res2.winner
     assert res1.score == res2.score
     assert res1.replay_sha256 == res2.replay_sha256
-    assert res1.current_ticks_run == res2.current_ticks_run == 2
+    assert res1.ticks_run == res2.ticks_run == 2
 
     # Verify replay contents
     snapshots = [s for s in iter_replay(tmp_path / "run1" / "replay.jsonl") if isinstance(s, TickSnapshot)]
@@ -512,15 +516,15 @@ def create_agent():
     # Pass 0 (slots 0..1): A writes 2 cells (coalesced), then B writes 2 cells (coalesced)
     # Pass 1 (slots 2..3): A writes 2 cells (coalesced), then B writes 2 cells (coalesced)
     tick1_diffs = snapshots[1].memory_diffs
-    assert [d.owner for d in tick1_diffs] == ["A", "B", "A", "B"]
-    assert [d.length for d in tick1_diffs] == [2, 2, 2, 2]
+    assert [d.owner for d in tick1_diffs] == ["A", "B"] * 4
+    assert [d.length for d in tick1_diffs] == [2] * 8
 
     # Tick 2 (rotate_start: tick 2 offset 1 -> B starts):
     # Pass 0 (slots 0..1): B writes 2 cells (coalesced), then A writes 2 cells (coalesced)
     # Pass 1 (slots 2..3): B writes 2 cells (coalesced), then A writes 2 cells (coalesced)
     tick2_diffs = snapshots[2].memory_diffs
-    assert [d.owner for d in tick2_diffs] == ["B", "A", "B", "A"]
-    assert [d.length for d in tick2_diffs] == [2, 2, 2, 2]
+    assert [d.owner for d in tick2_diffs] == ["B", "A"] * 4
+    assert [d.length for d in tick2_diffs] == [2] * 8
 
 
 
