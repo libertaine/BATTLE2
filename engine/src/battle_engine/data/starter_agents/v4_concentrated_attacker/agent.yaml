@@ -1,0 +1,9 @@
+{
+  "name": "v4_concentrated_attacker",
+  "display": "V4 Concentrated Attacker",
+  "description": "V4 attacker.",
+  "kind": "python",
+  "api_version": 2,
+  "entrypoint": "agent.py:create_agent",
+  "version": "1.0.0"
+}

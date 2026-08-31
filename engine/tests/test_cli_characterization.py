@@ -234,12 +234,14 @@ def test_ruleset_flag_unknown_value_fails_closed(tmp_path):
     assert "invalid choice" in result.stderr
 
 
-def test_cli_help_lists_ruleset_product_choices_not_alpha_ids():
+def test_cli_help_lists_product_rulesets_including_v4_alpha1():
     result = _run("-m", "battle_engine.cli", "--help")
     assert result.returncode == 0
     assert "bytefray-rules-1" in result.stdout
     assert "bytefray-rules-2" in result.stdout
-    assert "alpha" not in result.stdout
+    assert "bytefray-rules-4-alpha1" in result.stdout
+    assert "bytefray-rules-2-alpha1" not in result.stdout
+    assert "bytefray-rules-3-alpha1" not in result.stdout
 
 
 def test_resolve_agent_applies_per_agent_env_json_to_builtin_construction(

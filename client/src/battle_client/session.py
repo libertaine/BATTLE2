@@ -32,7 +32,7 @@ interpolated state.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 
@@ -41,6 +41,7 @@ from battle_engine.replay import (
     EngineEvent,
     MatchResult,
     MemoryDiff,
+    ProcessState,
     ReplayHeader,
     RuntimeKind,
     TickSnapshot,
@@ -78,6 +79,7 @@ class ReplayState:
     agents: Mapping[str, AgentState]
     score: Mapping[str, int | float]
     runtime_kind: RuntimeKind | None
+    processes: Mapping[tuple[str, str], ProcessState] = field(default_factory=dict)
 
 
 class ReplaySession:
@@ -107,6 +109,7 @@ class ReplaySession:
         self._arena = bytearray()
         self._owners: list[str | None] = []
         self._agents: dict[str, AgentState] = {}
+        self._processes: dict[tuple[str, str], ProcessState] = {}
         self._score: dict[str, int | float] = {}
 
     # ---------- loading ----------
@@ -177,6 +180,7 @@ class ReplaySession:
             arena=bytes(self._arena),
             owners=tuple(self._owners),
             agents=MappingProxyType(dict(self._agents)),
+            processes=MappingProxyType(dict(self._processes)),
             score=MappingProxyType(dict(self._score)),
             runtime_kind=self.runtime_kind,
         )
@@ -332,6 +336,7 @@ class ReplaySession:
         self._arena = bytearray(arena_size)
         self._owners = [None] * arena_size
         self._agents = {}
+        self._processes = {}
         self._score = {}
         self._cursor = -1
 
@@ -354,5 +359,9 @@ class ReplaySession:
                     self._owners[address] = diff.owner
         for agent in snapshot.agents:
             self._agents[agent.agent_id] = agent
+        self._processes = {
+            (process.entrant_id, process.process_id): process
+            for process in snapshot.processes
+        }
         self._score = dict(snapshot.score)
         self._cursor = index

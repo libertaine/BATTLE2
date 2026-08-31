@@ -39,6 +39,11 @@ STARTER_AGENT_NAMES = (
     "adaptive",
     "raider",
     "sentinel",
+    "v4_claimer",
+    "v4_concentrated_attacker",
+    "v4_defender_scout",
+    "v4_local_defender",
+    "v4_scout",
 )
 
 
@@ -71,6 +76,19 @@ def _validate_starter(source_dir: Path, name: str) -> list[Path]:
     if not files:
         raise ValueError(f"Starter agent '{name}' contains no resource files: {agent_dir}")
     return files
+
+
+def starter_agent_resource_dir(
+    name: str, *, resource_root: Path | None = None
+) -> Path:
+    """Return one validated bundled starter directory without installing it."""
+
+    resources = (resource_root or get_resource_root()).expanduser().resolve()
+    source_dir = _starter_resource_dir(resources)
+    if name not in STARTER_AGENT_NAMES:
+        raise KeyError(f"Unknown bundled starter agent: {name}")
+    _validate_starter(source_dir, name)
+    return (source_dir / name).resolve()
 
 
 def ensure_starter_agents(

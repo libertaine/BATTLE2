@@ -1303,6 +1303,16 @@ class PygameRenderer:
                 continue
             self._draw_agent_marker(agent_id, xy)
 
+        for process in state.processes.values():
+            xy = self._to_xy(process.anchor)
+            if xy is not None:
+                self._draw_process_anchor(
+                    process.entrant_id,
+                    process.process_id,
+                    xy,
+                    disrupted=process.disrupted,
+                )
+
         self._draw_selection_highlight()
         statuses = self._draw_top_band(controller)
         self._draw_capture_callout(controller, statuses)
@@ -1328,6 +1338,35 @@ class PygameRenderer:
         self.pg.draw.circle(self.screen, (0, 0, 0), (sx, sy), r, 1)
         label = self.font.render(agent_id, True, (255, 255, 255))
         self.screen.blit(label, label.get_rect(center=(sx, sy - r - 8)))
+
+    def _draw_process_anchor(
+        self,
+        entrant_id: str,
+        process_id: str,
+        pos: tuple[int, int],
+        *,
+        disrupted: bool,
+    ) -> None:
+        """Draw a small labeled ring for one recorded v4 process anchor."""
+
+        color = AGENT_COLORS.get(entrant_id, DEFAULT_AGENT_COLOR)
+        if disrupted:
+            color = self._blend(color, (110, 110, 110), 0.65)
+        sx, sy = self._screen_xy(*pos)
+        _ax, _ay, aw, ah = self._arena_rect()
+        cell_scale = min(aw / self.grid_cols, ah / self.grid_rows)
+        radius = max(2, int(0.45 * cell_scale))
+        self.pg.draw.circle(self.screen, color, (sx, sy), radius, 2)
+        if disrupted:
+            self.pg.draw.line(
+                self.screen,
+                color,
+                (sx - radius, sy - radius),
+                (sx + radius, sy + radius),
+                1,
+            )
+        label = self.font.render(process_id, True, color)
+        self.screen.blit(label, label.get_rect(midtop=(sx, sy + radius + 1)))
 
     def _draw_selection_highlight(self) -> None:
         """Outline the selected cell (if any and if on-screen) in

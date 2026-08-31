@@ -26,7 +26,11 @@ from battle_engine.pmars import PMarsError, run_pmars
 from battle_engine.python_runtime import PythonEntrantInitializationError
 from battle_engine.result_model import ResultEnvelope, stable_id, write_json_atomic
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID, resolve_omitted_ruleset_id
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    resolve_omitted_ruleset_id,
+)
 from battle_engine.starters import ensure_starter_agents
 
 DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
@@ -197,14 +201,19 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--ruleset",
-        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        choices=[
+            BYTEFRAY_RULESET_ID,
+            BYTEFRAY_RULESET_V2_ID,
+            BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        ],
         default=None,
         help=(
             "gameplay Ruleset identity. If omitted, Python-only matches use "
             f"{BYTEFRAY_RULESET_V2_ID} and VM/blob matches use "
             f"{BYTEFRAY_RULESET_ID}; a mixed Python/VM match without an "
             f"explicit choice uses {BYTEFRAY_RULESET_ID}. "
-            f"{BYTEFRAY_RULESET_V2_ID} supports Python entrants only. Affects "
+            f"{BYTEFRAY_RULESET_V2_ID} and {BYTEFRAY_RULESET_V4_ALPHA1_ID} "
+            "support Python entrants only; v4 requires Agent API v2. Affects "
             "gameplay semantics and is recorded in the match's result/replay "
             "artifacts."
         ),
@@ -498,7 +507,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             blob = spec.blob.name if spec.blob else "none"
             print(f" - {name:20} {disp:20} {agent_runtime_label(spec):8} blob={blob}")
         print(
-            "\n[Python] agents run under Ruleset v1 or v2 (v2 is current gameplay)."
+            "\n[Python] agents run under Ruleset v1 or v2 with Agent API v1; "
+            "Ruleset v4 alpha1 uses Agent API v2."
             "\n[VM] agents run under Ruleset v1 only."
         )
         return 0

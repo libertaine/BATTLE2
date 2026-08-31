@@ -14,6 +14,7 @@ from battle_engine.replay import (
     MatchConfiguration,
     MatchResult,
     MemoryDiff,
+    ProcessState,
     ReplayFormatError,
     ReplayHeader,
     TickSnapshot,
@@ -170,6 +171,40 @@ def test_initial_state_after_load_is_tick_zero_with_first_diff_applied(tmp_path)
     assert state.agents["A"].pc == 0
     assert state.score == {"A": 0, "B": 0}
     assert not session.at_end
+
+
+def test_schema4_process_anchors_are_seekable_and_reconstructed(tmp_path):
+    replay_path = tmp_path / "processes.jsonl"
+    header = ReplayHeader(
+        MatchConfiguration(arena_size=32),
+        {"A": "process-agent"},
+        runtime_kind="python",
+        ruleset_id="bytefray-rules-4-alpha1",
+        schema_version=4,
+    )
+    tick0 = TickSnapshot(
+        0,
+        agents=(_agent("A"),),
+        processes=(ProcessState("scout", "A", 4, False, 8),),
+        schema_version=4,
+    )
+    tick1 = TickSnapshot(
+        1,
+        agents=(_agent("A"),),
+        processes=(ProcessState("scout", "A", 12, True, 8),),
+        schema_version=4,
+    )
+    _write(replay_path, [header, tick0, tick1])
+
+    session = ReplaySession()
+    session.load(replay_path)
+    assert session.current_state.processes[("A", "scout")].anchor == 4
+
+    state = session.step_forward()
+    assert state.processes[("A", "scout")] == ProcessState(
+        "scout", "A", 12, True, 8
+    )
+    assert session.restart().processes[("A", "scout")].anchor == 4
 
 
 def test_step_forward_applies_only_the_next_ticks_diff(tmp_path):

@@ -4013,7 +4013,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ruleset",
-        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        choices=[
+            BYTEFRAY_RULESET_ID,
+            BYTEFRAY_RULESET_V2_ID,
+            BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        ],
         default=None,
         help=(
             f"gameplay Ruleset identity. If omitted (and no --preset supplies one), "
@@ -4021,7 +4025,9 @@ def _parser() -> argparse.ArgumentParser:
             f"Python. {BYTEFRAY_RULESET_V2_ID} runs the balanced Ruleset-v2 1v1 "
             "methodology: standard placement set, standard seed set default, and "
             f"capture/core evidence. {BYTEFRAY_RULESET_ID} keeps the historical v1 "
-            "evaluation methodology. See docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
+            "evaluation methodology. Ruleset v4 alpha1 runs Agent API v2 process "
+            "entrants through the same production match service. See "
+            "docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
         ),
     )
     parser.add_argument(

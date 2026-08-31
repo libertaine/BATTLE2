@@ -675,14 +675,16 @@ def test_cli_ruleset_flag_unknown_value_fails_closed(capsys):
     assert "invalid choice" in capsys.readouterr().err
 
 
-def test_cli_help_lists_ruleset_choices_but_not_alpha_ids(capsys):
+def test_cli_help_lists_product_rulesets_including_v4_alpha1(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
     out = capsys.readouterr().out
     assert "--ruleset" in out
     assert "bytefray-rules-1" in out
     assert "bytefray-rules-2" in out
-    assert "alpha" not in out
+    assert "bytefray-rules-4-alpha1" in out
+    assert "bytefray-rules-2-alpha1" not in out
+    assert "bytefray-rules-3-alpha1" not in out
 
 
 def test_cli_help_exits_zero_and_mentions_flags():

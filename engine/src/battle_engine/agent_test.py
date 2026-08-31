@@ -57,7 +57,12 @@ from battle_engine.python_runtime import (
 )
 from battle_engine.results import WINNER_TIE_SENTINEL
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID, resolve_omitted_ruleset_id
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    resolve_omitted_ruleset_id,
+)
+from battle_engine.starters import starter_agent_resource_dir
 
 REFERENCE_OPPONENT_NAME = "reference"
 DEFAULT_TICKS = 200
@@ -112,7 +117,11 @@ def _timeout_value(value: str) -> float:
     return parsed
 
 
-def _reference_opponent_spec(resource_root: Path | None = None) -> AgentSpec:
+def _reference_opponent_spec(
+    resource_root: Path | None = None,
+    *,
+    ruleset_id: str | None = None,
+) -> AgentSpec:
     """Build an ``AgentSpec`` for the internal reference opponent.
 
     Loaded directly from the bundled ``agent_template`` package resource --
@@ -121,7 +130,31 @@ def _reference_opponent_spec(resource_root: Path | None = None) -> AgentSpec:
     discoverable via ``resolve_agent``/``discover_agents``.
     """
 
-    template_dir = template_resource_dir(resource_root or get_resource_root())
+    resources = resource_root or get_resource_root()
+    if ruleset_id == BYTEFRAY_RULESET_V4_ALPHA1_ID:
+        starter_dir = starter_agent_resource_dir(
+            "v4_claimer", resource_root=resources
+        )
+        return AgentSpec(
+            name=REFERENCE_OPPONENT_NAME,
+            display="Bytefray v4 reference agent",
+            dir=starter_dir,
+            blob=None,
+            defaults={},
+            kind="python",
+            api_version=2,
+            version="1.0.0",
+            source_path=(starter_dir / "agent.py").resolve(),
+            entry_point="agent.py:create_agent",
+            manifest={
+                "kind": "python",
+                "api_version": 2,
+                "entrypoint": "agent.py:create_agent",
+                "version": "1.0.0",
+            },
+        )
+
+    template_dir = template_resource_dir(resources)
     return AgentSpec(
         name=REFERENCE_OPPONENT_NAME,
         display="Bytefray reference agent",
@@ -345,7 +378,11 @@ def _test_agent(
 
     if opponent is None:
         try:
-            opponent_spec = _reference_opponent_spec(resources)
+            opponent_spec = (
+                _reference_opponent_spec(resources, ruleset_id=ruleset_id)
+                if ruleset_id == BYTEFRAY_RULESET_V4_ALPHA1_ID
+                else _reference_opponent_spec(resources)
+            )
         except FileNotFoundError as exc:
             raise _tool_error(
                 stage="internal",
@@ -915,12 +952,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ruleset",
-        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        choices=[
+            BYTEFRAY_RULESET_ID,
+            BYTEFRAY_RULESET_V2_ID,
+            BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        ],
         default=None,
         help=(
             f"gameplay Ruleset identity. If omitted, defaults to "
             f"{BYTEFRAY_RULESET_V2_ID} -- agents test entrants are always "
-            f"Python. {BYTEFRAY_RULESET_V2_ID} supports Python entrants only. "
+            f"Python. {BYTEFRAY_RULESET_V2_ID} supports Agent API v1; "
+            f"{BYTEFRAY_RULESET_V4_ALPHA1_ID} supports Agent API v2. "
             "Affects gameplay semantics and is recorded in the match's "
             "result/replay artifacts."
         ),

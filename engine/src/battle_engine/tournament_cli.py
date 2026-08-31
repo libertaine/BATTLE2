@@ -13,7 +13,11 @@ from battle_engine.config import Config, Weights
 from battle_engine.match_service import MatchEntrant
 from battle_engine.paths import get_data_root
 from battle_engine.rules import BYTEFRAY_RULESET_ID
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID, resolve_omitted_ruleset_id
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    resolve_omitted_ruleset_id,
+)
 from battle_engine.starters import ensure_starter_agents
 from battle_engine.tournament_service import (
     TournamentConfigurationError,
@@ -51,14 +55,19 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--territory-bucket", type=_positive, default=64)
     parser.add_argument(
         "--ruleset",
-        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        choices=[
+            BYTEFRAY_RULESET_ID,
+            BYTEFRAY_RULESET_V2_ID,
+            BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        ],
         default=None,
         help=(
             "gameplay Ruleset identity. If omitted, Python-only rosters use "
             f"{BYTEFRAY_RULESET_V2_ID} and VM/blob-only rosters use "
             f"{BYTEFRAY_RULESET_ID}; a mixed Python/VM roster without an "
             f"explicit choice uses {BYTEFRAY_RULESET_ID}. "
-            f"{BYTEFRAY_RULESET_V2_ID} supports Python entrants only. Affects "
+            f"{BYTEFRAY_RULESET_V2_ID} and {BYTEFRAY_RULESET_V4_ALPHA1_ID} "
+            "support Python entrants only; v4 requires Agent API v2. Affects "
             "gameplay semantics and is recorded in each match's result/replay "
             "artifacts."
         ),
