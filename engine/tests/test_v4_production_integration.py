@@ -25,7 +25,6 @@ from battle_engine.replay import (
     write_replay,
 )
 from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V4_ALPHA1_ID
-from battle_engine.starters import ensure_starter_agents
 
 
 def _write_agent(root: Path, name: str, source: str) -> None:
@@ -424,12 +423,12 @@ def test_v4_production_visibility_is_current_and_read_feedback_can_be_stale(
     assert processes[("B", "mover")].anchor == 8
 
 
-def test_v4_cli_agent_test_and_evaluation_use_the_production_runtime(
+def test_v4_direct_cli_bootstraps_starters_and_product_paths_use_production_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     resource_root = Path(__file__).resolve().parents[2]
-    ensure_starter_agents(resource_root=resource_root, data_root=tmp_path)
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    assert not (tmp_path / "agents").exists()
 
     cli_replay = tmp_path / "cli" / "replay.jsonl"
     assert (
@@ -459,6 +458,14 @@ def test_v4_cli_agent_test_and_evaluation_use_the_production_runtime(
         == 0
     )
     assert all(record.schema_version == 4 for record in iter_replay(cli_replay))
+    for starter in (
+        "v4_claimer",
+        "v4_concentrated_attacker",
+        "v4_defender_scout",
+        "v4_local_defender",
+        "v4_scout",
+    ):
+        assert (tmp_path / "agents" / starter / "agent.yaml").is_file()
 
     test_outcome = run_agent_test(
         "v4_scout",

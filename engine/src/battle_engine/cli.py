@@ -666,6 +666,17 @@ def main(argv: Iterable[str] | None = None) -> int:
     env_spec, spec_dir = _load_agents_spec_from_env()
     root = _data_root()
 
+    # A direct match is a valid first command in a fresh installation.  Seed
+    # the bundled catalog here as well as in ``bytefray agents`` and the
+    # Designer so packaged Python starters resolve without requiring a
+    # discovery command to have run first.  The copy is deliberately
+    # non-destructive: existing user files always win.
+    try:
+        ensure_starter_agents(data_root=root)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        print(f"ERROR: Could not initialize starter agents: {exc}", file=sys.stderr)
+        return 2
+
     # Resolve effective start addresses once, before any agent is built --
     # builtin construction bakes ``start`` into the agent's own bytecode
     # (``build_agent``), so the resolved value must be in place before
