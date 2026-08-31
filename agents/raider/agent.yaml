@@ -1,0 +1,9 @@
+{
+  "name": "raider",
+  "display": "Raider (Starter)",
+  "description": "Offense: searches the arena with READ for evidence of an enemy vulnerable core, confirms the location before committing, then spends a WRITE burst attacking it.",
+  "kind": "python",
+  "api_version": 1,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}
