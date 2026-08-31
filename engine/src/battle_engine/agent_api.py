@@ -14,6 +14,24 @@ from typing import Any, Protocol, runtime_checkable
 
 AGENT_API_VERSION = 2
 
+# The authoritative set of Python Agent API generations this installation's
+# loader/runtime can actually execute. Every other compatibility gate over a
+# Python agent's declared ``api_version`` (currently just
+# ``agent_package._check_compatibility``) must consume this exact set rather
+# than maintaining its own hand-written list or comparing against
+# ``AGENT_API_VERSION`` (the *newest* generation, not the full supported
+# range) -- see the Phase 1 B1 remediation this set exists to anchor.
+SUPPORTED_AGENT_API_VERSIONS = frozenset({1, 2})
+
+
+def describe_supported_agent_api_versions() -> str:
+    """Render :data:`SUPPORTED_AGENT_API_VERSIONS` for a user-facing message."""
+
+    ordered = sorted(SUPPORTED_AGENT_API_VERSIONS)
+    if len(ordered) == 1:
+        return str(ordered[0])
+    return ", ".join(str(version) for version in ordered[:-1]) + f" and {ordered[-1]}"
+
 
 class AgentValidationError(ValueError):
     """Base class for diagnostics safe to present through CLI and GUI surfaces."""
@@ -354,10 +372,10 @@ def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
             path=getattr(agent_spec, "dir", None),
         )
     api_version = getattr(agent_spec, "api_version", None)
-    if api_version not in (1, 2):
+    if api_version not in SUPPORTED_AGENT_API_VERSIONS:
         raise UnsupportedAgentAPIVersionError(
             f"Python agent {agent_spec.name!r} declares API version {api_version!r}; "
-            f"Bytefray supports versions 1 and 2.",
+            f"Bytefray supports versions {describe_supported_agent_api_versions()}.",
             path=agent_spec.dir,
         )
     entry_point = getattr(agent_spec, "entry_point", None)
@@ -418,6 +436,7 @@ def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
 __all__ = [
     "AGENT_API_VERSION",
     "LOCAL_SOURCE_FINGERPRINT_VERSION",
+    "SUPPORTED_AGENT_API_VERSIONS",
     "ActionKind",
     "ActionKindV2",
     "AgentAction",
@@ -437,6 +456,7 @@ __all__ = [
     "ObservationV2",
     "ProcessDeclaration",
     "UnsupportedAgentAPIVersionError",
+    "describe_supported_agent_api_versions",
     "load_python_agent",
     "local_source_fingerprint",
     "parse_entry_point",

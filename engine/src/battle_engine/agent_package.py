@@ -31,7 +31,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from battle_engine.agent_api import AGENT_API_VERSION, AgentManifestError
+from battle_engine.agent_api import (
+    SUPPORTED_AGENT_API_VERSIONS,
+    AgentManifestError,
+    describe_supported_agent_api_versions,
+)
 from battle_engine.agent_revisions import (
     RevisionNotFoundError,
     RevisionRestoreError,
@@ -683,11 +687,12 @@ def _check_compatibility(data: dict[str, Any]) -> tuple[bool, tuple[str, ...]]:
         )
 
     api_version = data.get("agent_api_version")
-    if kind == "python" and api_version != AGENT_API_VERSION:
+    if kind == "python" and api_version not in SUPPORTED_AGENT_API_VERSIONS:
         compatible = False
         notes.append(
-            f"package requires Agent API v{api_version!r}; this installation "
-            f"provides Agent API v{AGENT_API_VERSION}."
+            f"package requires unsupported Agent API v{api_version!r}; this "
+            f"installation supports Agent API versions "
+            f"{describe_supported_agent_api_versions()}."
         )
 
     return compatible, tuple(notes)

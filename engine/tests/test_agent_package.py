@@ -16,6 +16,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from battle_engine.agent_api import SUPPORTED_AGENT_API_VERSIONS
 from battle_engine.agent_package import (
     PACKAGE_SCHEMA_VERSION,
     AgentPackageError,
@@ -689,6 +690,72 @@ def test_inspect_reports_incompatible_agent_api_version(
     assert inspection.valid is True
     assert inspection.compatible is False
     assert any("Agent API v999" in note for note in inspection.compatibility_notes)
+
+    with pytest.raises(PackageCompatibilityError):
+        import_package(result.package_path, data_root=other_data_root)
+    assert not (other_data_root / "agents").exists()
+
+
+def test_package_compatibility_shares_loader_authoritative_supported_versions() -> None:
+    """B1 regression guard: the package gate must consume the loader's own
+    supported-version set rather than a second, independently maintained
+    list -- a future Agent API bump that only updates one of them must fail
+    this test instead of silently reproducing the historical-version-
+    rejection defect."""
+
+    import battle_engine.agent_api as agent_api_module
+    import battle_engine.agent_package as agent_package_module
+
+    assert (
+        agent_package_module.SUPPORTED_AGENT_API_VERSIONS
+        is agent_api_module.SUPPORTED_AGENT_API_VERSIONS
+    )
+
+
+@pytest.mark.parametrize("api_version", sorted(SUPPORTED_AGENT_API_VERSIONS))
+def test_export_inspect_import_round_trip_succeeds_for_every_supported_api_version(
+    data_root: Path, other_data_root: Path, tmp_path: Path, api_version: int
+) -> None:
+    """B1: every historical/current supported Python Agent API version must
+    export, inspect as compatible, and actually import -- not just the
+    newest one."""
+
+    _make_python_agent(data_root, "versioned", api_version=api_version)
+    result = export_agent("versioned", data_root=data_root, output=tmp_path)
+
+    inspection = inspect_package(result.package_path)
+    assert inspection.valid is True
+    assert inspection.agent_api_version == api_version
+    assert inspection.compatible is True
+    assert inspection.compatibility_notes == ()
+
+    imported = import_package(result.package_path, data_root=other_data_root)
+    assert imported.agent_id == "versioned"
+    assert (other_data_root / "agents" / "versioned").is_dir()
+
+
+def test_package_rejects_first_version_beyond_the_authoritative_supported_set(
+    data_root: Path, other_data_root: Path, tmp_path: Path
+) -> None:
+    """B1: a genuinely unsupported future API version remains rejected, with
+    a truthful message -- computed from the authoritative supported set
+    rather than a hardcoded example version, so this stays correct across a
+    future Agent API bump."""
+
+    unsupported_version = max(SUPPORTED_AGENT_API_VERSIONS) + 1
+    _make_python_agent(data_root, "future_agent", api_version=unsupported_version)
+    result = export_agent("future_agent", data_root=data_root, output=tmp_path)
+
+    inspection = inspect_package(result.package_path)
+    assert inspection.valid is True
+    assert inspection.compatible is False
+    assert any(
+        f"Agent API v{unsupported_version}" in note
+        for note in inspection.compatibility_notes
+    )
+    # Truthful wording: an unsupported package is never described as if a
+    # supported one "requires" something unavailable.
+    assert any("unsupported" in note for note in inspection.compatibility_notes)
 
     with pytest.raises(PackageCompatibilityError):
         import_package(result.package_path, data_root=other_data_root)
