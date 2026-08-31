@@ -27,7 +27,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 
-from battle_engine.rules import BYTEFRAY_RULESET_ID
+from battle_engine.rules import BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V4_ALPHA1_ID
 from battle_engine.scheduler import StateT, run_chunked_quota
 
 
@@ -284,7 +284,6 @@ RULESET_V3_ALPHA1 = RulesetPolicy(
 
 # v4 research: K=2 chunked round-robin with deterministic rotating start.
 # R0/R0b/R0c selected this policy as the scheduler research closure.
-BYTEFRAY_RULESET_V4_ALPHA1_ID = "bytefray-rules-4-alpha1"
 RULESET_V4_ALPHA1 = RulesetPolicy(
     ruleset_id=BYTEFRAY_RULESET_V4_ALPHA1_ID,
     supported_runtime_kinds=frozenset({"python"}),

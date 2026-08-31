@@ -4,39 +4,35 @@
   <img src="assets/branding/bytefray-logo-horizontal.png" alt="Bytefray logo" width="420">
 </p>
 
-**Bytefray** is a programmable-agent combat and simulation arena inspired in
-part by Core War. Deterministic Python agents and the retained VM/blob runtime
-compete over shared mutable memory; every native match can produce canonical,
-replayable results.
+> **Note: Bytefray is currently in v4.0.0-alpha1.** This is an alpha release introducing the new spatial multi-process model. We welcome gameplay feedback!
 
-Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible
-evaluation and tournament tools, and a complete command-line workflow. Agents
-can be written by hand or with any external tooling. Bytefray itself has no
-AI or LLM dependency.
+**Bytefray** is a deterministic programmable-agent combat simulator in which Python entrants control spatial processes competing over a shared circular memory arena. Inspired in part by Core War, Bytefray introduces modern spatial constraints: agents must manage bounded local reach, maneuver multiple processes to spot enemies, and weigh defensive posture against aggressive coverage.
 
-[![GitHub stable release](https://img.shields.io/github/v/release/libertaine/Bytefray?label=stable%20release)](https://github.com/libertaine/Bytefray/releases/latest)
+Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible evaluation and tournament tools, and a complete command-line workflow. 
+
+[![GitHub stable release](https://img.shields.io/github/v/release/libertaine/Bytefray?label=alpha%20release)](https://github.com/libertaine/Bytefray/releases/latest)
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Current stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
-— see [Downloads](#downloads) below. Earlier [v2.0.0](https://github.com/libertaine/Bytefray/releases/tag/v2.0.0)
-and [v1.6.0](https://github.com/libertaine/Bytefray/releases/tag/v1.6.0)
+**Current pre-release:** [Bytefray v4.0.0-alpha1](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha1)
+— see [Downloads](#downloads) below. Earlier [v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 releases remain available for historical and compatibility use.
 
 ## What is Bytefray?
 
 Bytefray is both a game and a deterministic experimentation platform:
 
-- Python agents use the stable, restricted Agent API v1 observation/action
-  contract.
-- VM and precompiled blob agents preserve the original byte-oriented arena
-  runtime and historical compatibility.
-- Matches are reproducible from their agents, configuration, placements,
-  seed, and Ruleset identity.
-- Canonical result and replay artifacts make a completed match inspectable
-  without rerunning agent code.
-- Pairwise and multi-entrant evaluation, revision provenance, package sharing,
-  and a resumable tournament service support serious iteration.
+- Python entrants define a fixed roster of spatial processes and use the Agent API v2 to command them.
+- Processes maneuver the arena with `MOVE` and affect memory via `READ` and `WRITE` bounded by their local reach.
+- Matches are reproducible from their agents, configuration, placements, seed, and Ruleset identity.
+- Canonical result and replay artifacts make a completed match inspectable without rerunning agent code.
+
+## Getting Started
+
+1. **Install**: See [INSTALL.md](INSTALL.md) for detailed instructions.
+2. **Starter Agents**: Explore the bundled v4 agents in `agents/v4_claimer`, `agents/v4_scout`, etc., to see examples of spatial mechanics.
+3. **Run a Match**: Start the Agent Designer or Replay Viewer using `bytefray gui`, or run headless with `bytefray match`.
+4. **Feedback**: As this is an alpha release, please open an issue to share feedback on the new spatial positioning and disruption mechanics!
 
 ## Bytefray v4 research
 

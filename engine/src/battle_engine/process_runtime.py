@@ -20,18 +20,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from battle_engine.agent_api import ActionKind, AgentAction
+from battle_engine.agent_api import ActionKind, ActionKindV2, AgentAction, ObservationV2
 from battle_engine.config import Config
 from battle_engine.ruleset_policy import RULESET_V4_ALPHA1, RulesetPolicy
 from battle_engine.scoring import ScoreMap, ScoringPolicy
 from battle_engine.statistics import StatisticsCollector, StatisticsMap
 from battle_engine.vm import VM
-
-
-class ProcessModel(str, enum.Enum):
-    MODEL_A_CURSOR = "model_a_cursor"  # Global reach, independent cursors
-    MODEL_B_STATIC_LOCUS = "model_b_static_locus"  # Fixed position, reach R
-    MODEL_C_MOVABLE_ANCHOR = "model_c_movable_anchor"  # Dynamic position, move actions, reach R
 
 
 class ProcessRole(str, enum.Enum):
@@ -41,41 +35,6 @@ class ProcessRole(str, enum.Enum):
     ATTACKER = "attacker"
     EXPANDER = "expander"
     GENERALIST = "generalist"
-
-
-class DisruptedQuotaPolicy(str, enum.Enum):
-    """How an entrant's per-tick quota behaves while processes are disrupted."""
-
-    LOST = "lost"
-    FAIR_REDISTRIBUTION = "fair_redistribution"
-
-
-class AnchorVisibilityModel(str, enum.Enum):
-    """Research-only enemy-anchor information supplied to processes."""
-
-    HIDDEN = "hidden"
-    PUBLIC = "public"
-    LOCAL_DETECTION = "local_detection"
-
-
-@dataclass
-class ProcessObservation:
-    tick: int
-    agent_id: str
-    process_id: str
-    role: str
-    position: int | None
-    reach: int | None
-    core_base: int
-    core_size: int
-    arena_size: int
-    last_action_kind: ActionKind | None = None
-    last_action_operand: int | None = None
-    last_action_value: int | None = None
-    read_result: int | None = None
-    read_owner: str | None = None
-    visible_enemy_anchors: tuple[int, ...] = ()
-    shared_memory: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -105,7 +64,7 @@ class ProcessInstance:
         initial_position: int | None,
         reach: int | None,
         quota_share: int,
-        logic: Callable[[ProcessObservation, dict[str, Any]], AgentAction],
+        logic: Callable[[ObservationV2, dict[str, Any]], AgentAction],
     ):
         self.process_id = process_id
         self.role = role
@@ -128,7 +87,7 @@ class ProcessInstance:
         if self.position is not None:
             self.telemetry.positions_visited.add(self.position)
 
-    def act(self, obs: ProcessObservation) -> AgentAction:
+    def act(self, obs: ObservationV2) -> AgentAction:
         return self.logic(obs, self.local_state)
 
 
@@ -163,25 +122,15 @@ class ProcessMatchController:
         config: Config,
         entrant_specs: list[ProcessEntrantSpec],
         max_ticks: int,
-        model: ProcessModel = ProcessModel.MODEL_A_CURSOR,
         ruleset_policy: RulesetPolicy | None = None,
-        disruption_duration: int = 0,  # 0 = disabled (indestructible)
-        disrupted_quota_policy: DisruptedQuotaPolicy = DisruptedQuotaPolicy.FAIR_REDISTRIBUTION,
-        anchor_visibility_model: AnchorVisibilityModel = AnchorVisibilityModel.HIDDEN,
-        detection_radius: int | None = None,
         max_move_delta: int = 64,
+        **kwargs
     ):
         self.config = config
         self.entrant_specs = entrant_specs
         self.max_ticks = max_ticks
-        self.model = model
         self.ruleset_policy = ruleset_policy or RULESET_V4_ALPHA1
-        self.disruption_duration = disruption_duration
-        self.disrupted_quota_policy = DisruptedQuotaPolicy(disrupted_quota_policy)
-        self.anchor_visibility_model = AnchorVisibilityModel(anchor_visibility_model)
-        if detection_radius is not None and detection_radius < 0:
-            raise ValueError("detection_radius must be non-negative")
-        self.detection_radius = detection_radius
+        self.disruption_duration = 1
         self.max_move_delta = max_move_delta
 
         for spec in entrant_specs:
@@ -262,9 +211,6 @@ class ProcessMatchController:
         address; identities and structural metadata remain private.
         """
 
-        if self.anchor_visibility_model == AnchorVisibilityModel.HIDDEN:
-            return ()
-
         enemy_positions = {
             process.position
             for spec in self.entrant_specs
@@ -273,8 +219,6 @@ class ProcessMatchController:
             for process in spec.processes
             if process.position is not None
         }
-        if self.anchor_visibility_model == AnchorVisibilityModel.PUBLIC:
-            return tuple(sorted(enemy_positions))
 
         observers = [
             process
@@ -285,11 +229,7 @@ class ProcessMatchController:
         for enemy_position in enemy_positions:
             for observer in observers:
                 observer_position = observer.position
-                radius = (
-                    self.detection_radius
-                    if self.detection_radius is not None
-                    else observer.reach
-                )
+                radius = observer.reach
                 if (
                     observer_position is not None
                     and radius is not None
@@ -321,8 +261,6 @@ class ProcessMatchController:
             return {process: limits_by_id[process.process_id] for process in allocations}
 
         eligible = [p for p in spec.processes if not p.is_disrupted(tick)]
-        if self.disrupted_quota_policy == DisruptedQuotaPolicy.LOST:
-            return preserve_aliased_id_limits({p: p.quota_share for p in eligible})
         if not eligible:
             return {}
 
@@ -393,23 +331,19 @@ class ProcessMatchController:
 
                 # Build Observation
                 last_res = last_obs_results[st.agent_id][active_proc.process_id]
-                obs = ProcessObservation(
-                    tick=_tick,
-                    agent_id=st.agent_id,
-                    process_id=active_proc.process_id,
-                    role=active_proc.role.value,
-                    position=active_proc.position,
-                    reach=active_proc.reach,
-                    core_base=st.core_base,
-                    core_size=st.core_size,
-                    arena_size=self.config.arena_size,
-                    last_action_kind=last_res.get("action_kind"),
-                    last_action_operand=last_res.get("operand"),
-                    last_action_value=last_res.get("value"),
-                    read_result=last_res.get("read_val"),
-                    read_owner=last_res.get("read_owner"),
-                    visible_enemy_anchors=self._visible_enemy_anchors(spec, _tick),
-                    shared_memory=self.shared_contexts[st.agent_id],
+                obs = ObservationV2(
+                    current_tick=_tick,
+                    last_callback_tick=last_res.get("tick", 0),
+                    previous_action_tick=last_res.get("tick", 0),
+                    self_process_id=active_proc.process_id,
+                    self_anchor=active_proc.position or 0,
+                    self_reach=active_proc.reach or 0,
+                    own_core_base=st.core_base,
+                    own_core_size=st.core_size,
+                    visible_enemy_anchor_addresses=self._visible_enemy_anchors(spec, _tick),
+                    previous_action_applied=last_res.get("applied", False),
+                    previous_read_value=last_res.get("read_val"),
+                    previous_read_owner=last_res.get("read_owner"),
                 )
 
                 action = active_proc.act(obs)
@@ -423,14 +357,15 @@ class ProcessMatchController:
                     "action_kind": action.kind,
                     "operand": action.operand,
                     "value": action.value,
+                    "applied": True,
+                    "tick": _tick,
                 }
 
                 if action.kind == ActionKind.NOP:
                     active_proc.telemetry.total_passes += 1
 
-                elif action.kind == ActionKind.MOVE:
-                    # Model C: Movement
-                    if self.model == ProcessModel.MODEL_C_MOVABLE_ANCHOR and active_proc.position is not None:
+                elif action.kind in (ActionKind.MOVE, ActionKindV2.MOVE):
+                    if active_proc.position is not None:
                         op = action.operand if action.operand is not None else 0
                         delta = max(-self.max_move_delta, min(op, self.max_move_delta))
                         new_pos = (active_proc.position + delta) % self.config.arena_size
@@ -438,18 +373,18 @@ class ProcessMatchController:
                         active_proc.telemetry.total_moves += 1
                         active_proc.telemetry.positions_visited.add(new_pos)
 
-                elif action.kind == ActionKind.READ:
+                elif action.kind in (ActionKind.READ, ActionKindV2.READ):
                     target_addr = (action.operand if action.operand is not None else 0) % self.config.arena_size
-                    # Check reach under Model B / C
+                    # Check reach
                     if (
-                        self.model in (ProcessModel.MODEL_B_STATIC_LOCUS, ProcessModel.MODEL_C_MOVABLE_ANCHOR)
-                        and active_proc.reach is not None
+                        active_proc.reach is not None
                         and active_proc.position is not None
                         and self._circular_dist(target_addr, active_proc.position) > active_proc.reach
                     ):
                         # Out of reach: read fails
                         res_info["read_val"] = 0
                         res_info["read_owner"] = None
+                        res_info["applied"] = False
                         last_obs_results[st.agent_id][active_proc.process_id] = res_info
                         return
 
@@ -460,16 +395,16 @@ class ProcessMatchController:
                     active_proc.telemetry.total_reads += 1
                     active_proc.telemetry.addresses_read.add(target_addr)
 
-                elif action.kind == ActionKind.WRITE:
+                elif action.kind in (ActionKind.WRITE, ActionKindV2.WRITE):
                     target_addr = (action.operand if action.operand is not None else 0) % self.config.arena_size
-                    # Check reach under Model B / C
+                    # Check reach
                     if (
-                        self.model in (ProcessModel.MODEL_B_STATIC_LOCUS, ProcessModel.MODEL_C_MOVABLE_ANCHOR)
-                        and active_proc.reach is not None
+                        active_proc.reach is not None
                         and active_proc.position is not None
                         and self._circular_dist(target_addr, active_proc.position) > active_proc.reach
                     ):
                         # Out of reach: write discarded
+                        res_info["applied"] = False
                         last_obs_results[st.agent_id][active_proc.process_id] = res_info
                         return
 

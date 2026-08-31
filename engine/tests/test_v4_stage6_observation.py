@@ -1,9 +1,10 @@
-"""Bytefray v4 Stage 6 Observation Contract Prototype."""
 from __future__ import annotations
+
+"""Bytefray v4 Stage 6 Observation Contract Prototype."""
 
 from dataclasses import dataclass
 
-from battle_engine.agent_api import ActionKind
+from battle_engine.agent_api import ActionKindV2
 
 
 @dataclass
@@ -19,7 +20,7 @@ class CandidateObservation:
     
     visible_enemy_anchor_addresses: tuple[int, ...]
     
-    previous_action_kind: ActionKind | None
+    previous_action_kind: ActionKindV2 | None
     previous_action_tick: int | None
     previous_action_applied: bool
     
@@ -67,3 +68,4 @@ def test_stale_feedback_recovery():
 if __name__ == "__main__":
     test_stale_target_leakage()
     test_stale_feedback_recovery()
+

@@ -2,6 +2,26 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [4.0.0-alpha1] - 2026-08-30
+
+### Bytefray 4.0 Alpha 1 — The Spatial Multi-Process Update
+
+This is an alpha release of Bytefray's new spatial multi-process model.
+It concludes the R0-R6 research phase and introduces sweeping changes to gameplay mechanics.
+Old agents and legacy rulesets are fundamentally incompatible with these mechanics.
+
+* **Multi-Process Spatial Entrants**: Agents can now declare fixed rosters of multiple independent processes.
+* **Local Reach and Movement**: `MOVE` is now a primary action. `READ` and `WRITE` are restricted to a local `reach` radius around the acting process's anchor.
+* **Deterministic Chunked Scheduler**: The scheduler now executes chunked turns (`K=2`) with a deterministic rotating start based on original seat order.
+* **Temporary Anchor Disruption**: A legal enemy `WRITE` to a process's exact anchor location causes temporary disruption (`D=1`), skipping its next callback.
+* **Fair Quota Redistribution**: Quota from disrupted processes is redistributed fairly to surviving eligible processes, conserving the $Q=8$ entrant total.
+* **Local Process Detection**: Entrants automatically detect exact locations of live enemy processes within any friendly process's `reach`.
+* **Agent API v2**: The `Observation` contract is redesigned around minimal temporal provenance, removing legacy VM registers and explicit hit-confirmation to preserve fog-of-war.
+* **Process-Aware Replay & Tooling**: `battle2.replay` schema bumped to v4, adding `ProcessState` visualization support.
+* **New v4 Starter Agents**: Legacy starter agents retired and replaced with `v4_claimer`, `v4_concentrated_attacker`, `v4_local_defender`, `v4_scout`, and `v4_defender_scout`.
+
+**Note**: This is an alpha release. We explicitly solicit feedback on whether spatial processes are understandable, positioning feels meaningful, and if the $Q=8$ disruption tradeoff feels fair.
+
 ## [3.0.0] - 2026-08-30
 
 ### Bytefray 3.0 — stable release

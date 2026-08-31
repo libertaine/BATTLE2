@@ -50,6 +50,7 @@ from typing import Literal
 #     arena-alignment disclosure, ...), which are evaluation-scope
 #     concerns, not gameplay.
 BYTEFRAY_RULESET_ID = "bytefray-rules-1"
+BYTEFRAY_RULESET_V4_ALPHA1_ID = "bytefray-rules-4-alpha1"
 
 
 # v0.10 Phase 4: a finite, explicit historical-alias table -- deliberately
@@ -113,6 +114,7 @@ class RulesetProvenance:
 
 __all__ = [
     "BYTEFRAY_RULESET_ID",
+    "BYTEFRAY_RULESET_V4_ALPHA1_ID",
     "RulesetConfidence",
     "RulesetProvenance",
     "normalize_ruleset_id",

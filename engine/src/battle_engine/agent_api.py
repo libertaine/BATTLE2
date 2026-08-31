@@ -12,7 +12,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol, runtime_checkable
 
-AGENT_API_VERSION = 1
+AGENT_API_VERSION = 2
 
 
 class AgentValidationError(ValueError):
@@ -143,7 +143,7 @@ class ActionKind(str, Enum):
 class AgentAction:
     """Exactly one validated battlefield operation returned by ``act``."""
 
-    kind: ActionKind
+    kind: ActionKind | ActionKindV2
     operand: int | None = None
     value: int | None = None
 
@@ -155,6 +155,53 @@ class AgentV1(Protocol):
     def reset(self, context: MatchContext) -> None: ...
 
     def act(self, observation: Observation) -> AgentAction: ...
+
+
+@dataclass(frozen=True)
+class MatchContextV2:
+    """Engine-controlled immutable match context supplied once at reset."""
+
+    agent_id: str
+    seed: int
+    arena_size: int
+    tick_limit: int
+    rng: random.Random
+
+
+@dataclass(frozen=True)
+class ObservationV2:
+    current_tick: int
+    last_callback_tick: int
+    previous_action_tick: int
+    self_process_id: str
+    self_anchor: int
+    self_reach: int
+    own_core_base: int
+    own_core_size: int
+    visible_enemy_anchor_addresses: tuple[int, ...]
+    previous_action_applied: bool
+    previous_read_value: int | None
+    previous_read_owner: str | None
+
+
+class ActionKindV2(str, Enum):
+    READ = "read"
+    WRITE = "write"
+    MOVE = "move"
+
+
+@dataclass(frozen=True)
+class ProcessDeclaration:
+    id: str
+    reach: int
+    share: float
+
+
+@runtime_checkable
+class AgentV2(Protocol):
+    def reset(self, context: MatchContextV2) -> None: ...
+    def declare_processes(self) -> list[ProcessDeclaration]: ...
+    def act(self, observation: ObservationV2) -> AgentAction: ...
 
 
 @dataclass(frozen=True)
@@ -307,10 +354,10 @@ def load_python_agent(agent_spec: Any) -> LoadedPythonAgent:
             path=getattr(agent_spec, "dir", None),
         )
     api_version = getattr(agent_spec, "api_version", None)
-    if api_version != AGENT_API_VERSION:
+    if api_version not in (1, 2):
         raise UnsupportedAgentAPIVersionError(
             f"Python agent {agent_spec.name!r} declares API version {api_version!r}; "
-            f"Bytefray supports version {AGENT_API_VERSION}.",
+            f"Bytefray supports versions 1 and 2.",
             path=agent_spec.dir,
         )
     entry_point = getattr(agent_spec, "entry_point", None)
@@ -364,6 +411,7 @@ __all__ = [
     "AGENT_API_VERSION",
     "LOCAL_SOURCE_FINGERPRINT_VERSION",
     "ActionKind",
+    "ActionKindV2",
     "AgentAction",
     "AgentContractError",
     "AgentFactoryError",
@@ -372,10 +420,14 @@ __all__ = [
     "AgentMetadata",
     "AgentSourceError",
     "AgentV1",
+    "AgentV2",
     "AgentValidationError",
     "LoadedPythonAgent",
     "MatchContext",
+    "MatchContextV2",
     "Observation",
+    "ObservationV2",
+    "ProcessDeclaration",
     "UnsupportedAgentAPIVersionError",
     "load_python_agent",
     "local_source_fingerprint",

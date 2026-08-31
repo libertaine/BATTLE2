@@ -1,0 +1,9 @@
+{
+  "name": "v4_local_defender",
+  "display": "V4 Local Defender",
+  "description": "V4 defender.",
+  "kind": "python",
+  "api_version": 2,
+  "entrypoint": "agent.py:create_agent",
+  "version": "1.0.0"
+}

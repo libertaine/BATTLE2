@@ -9,133 +9,132 @@ from __future__ import annotations
 
 from typing import Any
 
-from battle_engine.agent_api import ActionKind, AgentAction
+from battle_engine.agent_api import ActionKindV2, AgentAction, ObservationV2
 from battle_engine.process_runtime import (
     ProcessEntrantSpec,
     ProcessInstance,
-    ProcessObservation,
     ProcessRole,
 )
 
 
-def _defender_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _defender_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Core Defender: checks own 8-cell core sequentially and repairs any corrupted cells."""
     idx = state.get("idx", 0)
     phase = state.get("phase", "READ")
-    core_addr = (obs.core_base + idx) % obs.arena_size
+    core_addr = (obs.own_core_base + idx) % obs.arena_size  # type: ignore
 
     if phase == "READ":
         state["phase"] = "EVAL"
         state["check_addr"] = core_addr
-        return AgentAction(ActionKind.READ, core_addr)
+        return AgentAction(ActionKindV2.READ, core_addr)
     else:
         state["phase"] = "READ"
-        state["idx"] = (idx + 1) % obs.core_size
+        state["idx"] = (idx + 1) % obs.own_core_size
         # If core cell was corrupted or not owned by us, repair it
-        if obs.read_owner != obs.agent_id or obs.read_result != 0xCE:
-            return AgentAction(ActionKind.WRITE, state["check_addr"], 0xCE)
-        return AgentAction(ActionKind.NOP)
+        if obs.previous_read_owner != obs.agent_id or obs.previous_read_value != 0xCE:  # type: ignore
+            return AgentAction(ActionKindV2.WRITE, state["check_addr"], 0xCE)
+        return AgentAction(ActionKindV2.READ)
 
 
-def _hunter_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _hunter_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Hunter / Attacker: scans for enemy territory/cores and writes offensive payloads."""
     scan_offset = state.get("scan_offset", 100)
     phase = state.get("phase", "READ")
-    target_addr = (obs.core_base + scan_offset) % obs.arena_size
+    target_addr = (obs.own_core_base + scan_offset) % obs.arena_size  # type: ignore
 
     if phase == "READ":
         state["phase"] = "EVAL"
         state["target_addr"] = target_addr
-        return AgentAction(ActionKind.READ, target_addr)
+        return AgentAction(ActionKindV2.READ, target_addr)
     else:
         state["phase"] = "READ"
-        state["scan_offset"] = (scan_offset + 32) % obs.arena_size
-        if obs.read_owner is not None and obs.read_owner != obs.agent_id:
+        state["scan_offset"] = (scan_offset + 32) % obs.arena_size  # type: ignore
+        if obs.previous_read_owner is not None and obs.previous_read_owner != obs.agent_id:  # type: ignore
             # Found enemy! Overwrite
-            return AgentAction(ActionKind.WRITE, state["target_addr"], 0xAA)
-        return AgentAction(ActionKind.NOP)
+            return AgentAction(ActionKindV2.WRITE, state["target_addr"], 0xAA)
+        return AgentAction(ActionKindV2.READ)
 
 
-def _scout_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _scout_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Scout: scans broadly for non-own activity and shares targets with team."""
     scan_offset = state.get("scan_offset", 64)
-    target_addr = (obs.core_base + scan_offset) % obs.arena_size
-    state["scan_offset"] = (scan_offset + 128) % obs.arena_size
+    target_addr = (obs.own_core_base + scan_offset) % obs.arena_size  # type: ignore
+    state["scan_offset"] = (scan_offset + 128) % obs.arena_size  # type: ignore
 
     # Check previous read
-    if obs.read_owner is not None and obs.read_owner != obs.agent_id:
-        obs.shared_memory["enemy_target"] = obs.last_action_operand
+    if obs.previous_read_owner is not None and obs.previous_read_owner != obs.agent_id:  # type: ignore
+        obs.shared_memory["enemy_target"] = obs.last_action_operand  # type: ignore
 
-    return AgentAction(ActionKind.READ, target_addr)
+    return AgentAction(ActionKindV2.READ, target_addr)
 
 
-def _coordinated_attacker_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _coordinated_attacker_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Coordinated Attacker: reads targets posted to shared_memory by Scouts and strikes."""
-    target = obs.shared_memory.get("enemy_target")
+    target = obs.shared_memory.get("enemy_target")  # type: ignore
     strike_idx = state.get("strike_idx", 0)
 
     if target is not None:
-        strike_addr = (target + strike_idx) % obs.arena_size
+        strike_addr = (target + strike_idx) % obs.arena_size  # type: ignore
         state["strike_idx"] = (strike_idx + 1) % 8
-        return AgentAction(ActionKind.WRITE, strike_addr, 0xEE)
+        return AgentAction(ActionKindV2.WRITE, strike_addr, 0xEE)
     else:
         # Fallback local sweep
         sweep_offset = state.get("sweep_offset", 200)
-        state["sweep_offset"] = (sweep_offset + 16) % obs.arena_size
-        return AgentAction(ActionKind.WRITE, (obs.core_base + sweep_offset) % obs.arena_size, 0xBB)
+        state["sweep_offset"] = (sweep_offset + 16) % obs.arena_size  # type: ignore
+        return AgentAction(ActionKindV2.WRITE, (obs.own_core_base + sweep_offset) % obs.arena_size, 0xBB)  # type: ignore
 
 
-def _claimer_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _claimer_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Fast Expander: claims contiguous arena territory."""
     offset = state.get("offset", 8)
-    write_addr = (obs.core_base + offset) % obs.arena_size
-    state["offset"] = (offset + 1) % obs.arena_size
-    return AgentAction(ActionKind.WRITE, write_addr, 0xC1)
+    write_addr = (obs.own_core_base + offset) % obs.arena_size  # type: ignore
+    state["offset"] = (offset + 1) % obs.arena_size  # type: ignore
+    return AgentAction(ActionKindV2.WRITE, write_addr, 0xC1)
 
 
-def _sweeper_left_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _sweeper_left_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Sweeper Left: claims territory in counter-clockwise direction."""
     offset = state.get("offset", 1)
-    write_addr = (obs.core_base - offset) % obs.arena_size
+    write_addr = (obs.own_core_base - offset) % obs.arena_size  # type: ignore
     state["offset"] = offset + 1
-    return AgentAction(ActionKind.WRITE, write_addr, 0x55)
+    return AgentAction(ActionKindV2.WRITE, write_addr, 0x55)
 
 
-def _sweeper_right_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _sweeper_right_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Sweeper Right: claims territory in clockwise direction."""
     offset = state.get("offset", 8)
-    write_addr = (obs.core_base + offset) % obs.arena_size
+    write_addr = (obs.own_core_base + offset) % obs.arena_size  # type: ignore
     state["offset"] = offset + 1
-    return AgentAction(ActionKind.WRITE, write_addr, 0x77)
+    return AgentAction(ActionKindV2.WRITE, write_addr, 0x77)
 
 
-def _movable_scout_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _movable_scout_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Model C Movable Scout: alternates moving outward and scanning local radius."""
     step_count = state.get("step_count", 0)
     state["step_count"] = step_count + 1
 
     if step_count % 3 == 0:
         # Move forward by step
-        return AgentAction(ActionKind.MOVE, 32)
+        return AgentAction(ActionKindV2.MOVE, 32)
     else:
         # Local read
         scan_idx = state.get("scan_idx", 0)
         state["scan_idx"] = (scan_idx + 1) % 16
-        pos = obs.position if obs.position is not None else obs.core_base
-        target = (pos + scan_idx * 4) % obs.arena_size
-        return AgentAction(ActionKind.READ, target)
+        pos = obs.self_anchor if obs.self_anchor is not None else obs.own_core_base
+        target = (pos + scan_idx * 4) % obs.arena_size  # type: ignore
+        return AgentAction(ActionKindV2.READ, target)
 
 
-def _movable_hunter_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _movable_hunter_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Model C Movable Hunter: moves toward detected enemies and strikes locally."""
     step = state.get("step", 0)
     state["step"] = step + 1
-    pos = obs.position if obs.position is not None else obs.core_base
+    pos = obs.self_anchor if obs.self_anchor is not None else obs.own_core_base
 
     if step % 2 == 0:
-        return AgentAction(ActionKind.MOVE, 32)
+        return AgentAction(ActionKindV2.MOVE, 32)
     else:
-        return AgentAction(ActionKind.WRITE, pos, 0xEE)
+        return AgentAction(ActionKindV2.WRITE, pos, 0xEE)
 
 
 # ---------------------------------------------------------------------------
@@ -319,14 +318,14 @@ def make_movable_dual_scout_hunter(
     return ProcessEntrantSpec(agent_id=agent_id, name="movable_dual_scout_hunt", processes=[p0, p1])
 
 
-def _monolithic_triple_logic(obs: ProcessObservation, state: dict[str, Any]) -> AgentAction:
+def _monolithic_triple_logic(obs: ObservationV2, state: dict[str, Any]) -> AgentAction:
     """Monolithic control simulating TripleProcess via time-slicing and mailboxes."""
     # Initialize on first call
     if "init" not in state:
         state["init"] = True
         state["ta"] = 0  # tick action counter
         state["prev"] = None  # previous role key
-        state["ct"] = obs.tick  # current tick
+        state["ct"] = obs.current_tick  # current tick
         for r in ("def", "scout", "atk"):
             state[f"s_{r}"] = {}  # role-local state
             state[f"mb_{r}"] = {}  # mailbox
@@ -335,17 +334,17 @@ def _monolithic_triple_logic(obs: ProcessObservation, state: dict[str, Any]) -> 
     prev = state["prev"]
     if prev is not None:
         state[f"mb_{prev}"] = {
-            "action_kind": obs.last_action_kind,
-            "operand": obs.last_action_operand,
-            "value": obs.last_action_value,
-            "read_val": obs.read_result,
-            "read_owner": obs.read_owner,
+            "action_kind": obs.last_action_kind,  # type: ignore
+            "operand": obs.last_action_operand,  # type: ignore
+            "value": obs.last_action_value,  # type: ignore
+            "read_val": obs.previous_read_value,
+            "read_owner": obs.previous_read_owner,
         }
 
     # Detect tick boundary, reset action counter
-    if obs.tick != state["ct"]:
+    if obs.current_tick != state["ct"]:
         state["ta"] = 0
-        state["ct"] = obs.tick
+        state["ct"] = obs.current_tick
 
     ta = state["ta"]
     state["ta"] = ta + 1
@@ -363,17 +362,17 @@ def _monolithic_triple_logic(obs: ProcessObservation, state: dict[str, Any]) -> 
 
     # Build role observation from its own mailbox
     mb = state[f"mb_{role}"]
-    role_obs = ProcessObservation(
-        tick=obs.tick, agent_id=obs.agent_id, process_id=obs.process_id,
-        role=obs.role, position=obs.position, reach=obs.reach,
-        core_base=obs.core_base, core_size=obs.core_size,
-        arena_size=obs.arena_size,
+    role_obs = ObservationV2(  # type: ignore
+        tick=obs.current_tick, agent_id=obs.agent_id, process_id=obs.self_process_id,  # type: ignore
+        role=obs.role, position=obs.self_anchor, reach=obs.reach,  # type: ignore
+        core_base=obs.own_core_base, core_size=obs.own_core_size,
+        arena_size=obs.arena_size,  # type: ignore
         last_action_kind=mb.get("action_kind"),
         last_action_operand=mb.get("operand"),
         last_action_value=mb.get("value"),
         read_result=mb.get("read_val"),
         read_owner=mb.get("read_owner"),
-        shared_memory=obs.shared_memory,
+        shared_memory=obs.shared_memory,  # type: ignore
     )
 
     state["prev"] = role

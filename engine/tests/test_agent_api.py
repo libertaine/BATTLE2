@@ -92,13 +92,13 @@ def test_loading_an_agent_does_not_write_a_bytecode_cache(tmp_path):
 
 
 def test_unsupported_api_version_has_typed_diagnostic(tmp_path):
-    _write_agent(tmp_path, manifest={"api_version": 2})
+    _write_agent(tmp_path, manifest={"api_version": 3})
 
     with pytest.raises(UnsupportedAgentAPIVersionError) as caught:
         load_python_agent(resolve_agent(tmp_path, "example"))
 
     assert caught.value.code == "agent_api_version_unsupported"
-    assert "supports version 1" in str(caught.value)
+    assert "supports versions 1 and 2" in str(caught.value)
 
 
 @pytest.mark.parametrize(
