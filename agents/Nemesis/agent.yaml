@@ -1,0 +1,9 @@
+{
+  "name": "Nemesis",
+  "display": "Nemesis",
+  "description": "Competitive three-process API v2 counter-agent with disruption, siege, and core defense.",
+  "kind": "python",
+  "api_version": 2,
+  "entrypoint": "agent.py:create_agent",
+  "version": "1.0.0"
+}
