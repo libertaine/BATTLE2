@@ -97,7 +97,12 @@ def test_designer_resolves_duplicate_displays_by_id_and_allows_self_match(monkey
             name="Friendly",
             path=str(tmp_path / "agents" / agent_id),
             blob_path=None,
-            meta={"name": agent_id, "display": "Friendly", "kind": "python"},
+            meta={
+                "name": agent_id,
+                "display": "Friendly",
+                "kind": "python",
+                "api_version": 1,
+            },
             agent_id=agent_id,
         )
         for agent_id in ("alpha_id", "beta_id")
@@ -116,6 +121,63 @@ def test_designer_resolves_duplicate_displays_by_id_and_allows_self_match(monkey
     assert captured["started"] is True
     assert _argument_value(captured["command"], "--a-type") == "beta_id"
     assert _argument_value(captured["command"], "--b-type") == "beta_id"
+    designer.deleteLater()
+
+
+@pytest.mark.gui
+def test_refresh_discovers_once_and_passes_full_catalog_to_every_panel(
+    monkeypatch, tmp_path
+):
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app.agent_designer import AgentDesigner
+    from app.services.agent_catalog import AgentRow
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
+    QApplication.instance() or QApplication([])
+    designer = AgentDesigner()
+    rows = [
+        AgentRow("VM", "/agents/vm", None, {"kind": "builtin"}, "vm"),
+        AgentRow(
+            "Legacy",
+            "/agents/legacy",
+            None,
+            {"kind": "python", "api_version": 1},
+            "legacy",
+        ),
+        AgentRow(
+            "Process",
+            "/agents/process",
+            None,
+            {"kind": "python", "api_version": 2},
+            "process",
+        ),
+    ]
+    calls = 0
+
+    def list_agents():
+        nonlocal calls
+        calls += 1
+        return rows
+
+    received = {}
+    monkeypatch.setattr(designer.catalog, "list_agents", list_agents)
+    monkeypatch.setattr(designer.simple, "setAgents", lambda value: received.setdefault("simple", value))
+    monkeypatch.setattr(
+        designer.advanced, "setAgents", lambda value: received.setdefault("advanced", value)
+    )
+    monkeypatch.setattr(
+        designer.development,
+        "setAgents",
+        lambda value: received.setdefault("development", value),
+    )
+
+    designer.refresh_agents()
+
+    assert calls == 1
+    assert received == {"simple": rows, "advanced": rows, "development": rows}
     designer.deleteLater()
 
 

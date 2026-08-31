@@ -282,6 +282,34 @@ class RulesetRuntimeUnsupportedError(ValueError):
         )
 
 
+class RulesetAgentUnsupportedError(ValueError):
+    """An entrant's runtime/API metadata is incompatible with its Ruleset."""
+
+    code = "ruleset_agent_unsupported"
+
+    def __init__(
+        self,
+        ruleset_id: str,
+        unsupported_agents: Iterable[tuple[str, str, int | None]],
+    ) -> None:
+        agents = tuple(unsupported_agents)
+        details = ", ".join(
+            f"{agent_id} ({kind}, Agent API {api_version!r})"
+            for agent_id, kind, api_version in agents
+        )
+        message = (
+            f"Ruleset {ruleset_id!r} does not support entrant metadata: {details}."
+        )
+        super().__init__(message)
+        self.ruleset_id = ruleset_id
+        self.unsupported_agents = agents
+        self.diagnostic = RuntimeDiagnostic(
+            code=self.code,
+            stage="configuration",
+            message=message,
+        )
+
+
 class OverlappingCoreError(ValueError):
     """Two or more entrants' permanent Ruleset-v2 vulnerable cores overlap.
 
@@ -1297,6 +1325,24 @@ class NativeMatchService:
         if unsupported_kinds:
             raise RulesetRuntimeUnsupportedError(ruleset_policy.ruleset_id, unsupported_kinds)
 
+        unsupported_agents = []
+        for entrant in request.entrants:
+            api_version = (
+                getattr(entrant.python_spec, "api_version", None)
+                if entrant.kind == "python"
+                else None
+            )
+            if not ruleset_policy.supports_agent(
+                kind=entrant.kind, api_version=api_version
+            ):
+                unsupported_agents.append(
+                    (entrant.agent_id, entrant.kind, api_version)
+                )
+        if unsupported_agents:
+            raise RulesetAgentUnsupportedError(
+                ruleset_policy.ruleset_id, unsupported_agents
+            )
+
         # RC2 fail-closed guard (v2.0.0-rc1's release-blocking defect): an
         # invalid permanent-Ruleset-v2 request whose entrants' vulnerable
         # cores overlap must never silently seed core ownership in entrant
@@ -1342,6 +1388,7 @@ __all__ = [
     "NativeMatchService",
     "OverlappingCoreError",
     "PythonMatchExecutionError",
+    "RulesetAgentUnsupportedError",
     "RulesetRuntimeUnsupportedError",
     "RuntimeDiagnostic",
     "UnsupportedMatchCompositionError",

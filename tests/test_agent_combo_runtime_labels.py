@@ -28,7 +28,10 @@ def _make_app():
 def _row(name: str, kind: str):
     from app.services.agent_catalog import AgentRow
 
-    return AgentRow(name, f"/agents/{name}", None, {"name": name, "kind": kind})
+    meta = {"name": name, "kind": kind}
+    if kind == "python":
+        meta["api_version"] = 1
+    return AgentRow(name, f"/agents/{name}", None, meta)
 
 
 def _rows():
@@ -72,14 +75,14 @@ def test_combo_and_match_launch_use_discovery_ids_for_duplicate_display_names():
             "Friendly",
             "/agents/alpha_id",
             None,
-            {"display": "Friendly", "kind": "python"},
+            {"display": "Friendly", "kind": "python", "api_version": 1},
             agent_id="alpha_id",
         ),
         AgentRow(
             "Friendly",
             "/agents/beta_id",
             None,
-            {"display": "Friendly", "kind": "python"},
+            {"display": "Friendly", "kind": "python", "api_version": 1},
             agent_id="beta_id",
         ),
     ]
@@ -228,7 +231,7 @@ def test_empty_catalog_shows_placeholder_and_no_crash_on_sync():
 
 
 @pytest.mark.gui
-def test_simple_panel_disables_incompatible_b_and_emits_real_identifiers():
+def test_simple_panel_filters_from_ruleset_and_emits_real_identifiers():
     _make_app()
     from app.views.simple import SimplePanel
 
@@ -236,13 +239,15 @@ def test_simple_panel_disables_incompatible_b_and_emits_real_identifiers():
     panel.setAgents(_rows())
     panel.agentA.setCurrentIndex(0)  # claimer [Python]
 
-    model = panel.agentB.model()
-    assert model.item(1).isEnabled() is False  # runner [VM]
-    assert model.item(2).isEnabled() is True  # hunter [Python]
+    assert panel.ruleset.findData("bytefray-rules-1") == -1
+    assert [panel.agentB.itemData(i) for i in range(panel.agentB.count())] == [
+        "claimer",
+        "hunter",
+    ]
 
     captured = []
     panel.runRequested.connect(captured.append)
-    panel.agentB.setCurrentIndex(2)  # hunter [Python]
+    panel.agentB.setCurrentIndex(panel.agentB.findData("hunter"))
     panel._emit_run()
 
     assert len(captured) == 1
@@ -250,9 +255,77 @@ def test_simple_panel_disables_incompatible_b_and_emits_real_identifiers():
     assert captured[0].b_type == "hunter"
     assert captured[0].ruleset_id == "bytefray-rules-2"
 
-    panel.ruleset.setCurrentIndex(panel.ruleset.findData("bytefray-rules-1"))
+
+@pytest.mark.gui
+def test_simple_ruleset_change_filters_api_generation_and_repairs_deterministically():
+    _make_app()
+    from app.services.agent_catalog import AgentRow
+    from app.views.simple import SimplePanel
+
+    rows = [
+        _row("legacy_a", "python"),
+        _row("vm_agent", "vm"),
+        AgentRow(
+            "Process A",
+            "/agents/process_a",
+            None,
+            {"kind": "python", "api_version": 2},
+            agent_id="process_a",
+        ),
+        AgentRow(
+            "Process B",
+            "/agents/process_b",
+            None,
+            {"kind": "python", "api_version": 2},
+            agent_id="process_b",
+        ),
+        _row("legacy_b", "python"),
+    ]
+    panel = SimplePanel(catalog=None)
+    panel.setAgents(rows)
+
+    assert panel.ruleset.currentData() == "bytefray-rules-2"
+    assert [panel.agentA.itemData(i) for i in range(panel.agentA.count())] == [
+        "legacy_a",
+        "legacy_b",
+    ]
+    assert panel.agentA.currentData() == "legacy_a"
+    assert panel.agentB.currentData() == "legacy_b"
+
+    panel.agentA.setCurrentIndex(panel.agentA.findData("legacy_b"))
+    panel.setAgents(rows)
+    assert panel.agentA.currentData() == "legacy_b"
+
+    panel.ruleset.setCurrentIndex(panel.ruleset.findData("bytefray-rules-4-alpha1"))
+    assert [panel.agentA.itemData(i) for i in range(panel.agentA.count())] == [
+        "process_a",
+        "process_b",
+    ]
+    assert panel.agentA.currentData() == "process_a"
+    assert panel.agentB.currentData() == "process_b"
+
+
+@pytest.mark.gui
+def test_simple_one_agent_allows_self_match_and_empty_state_prevents_launch():
+    _make_app()
+    from app.views.simple import SimplePanel
+
+    panel = SimplePanel(catalog=None)
+    panel.setAgents([_row("only_v1", "python")])
+    assert panel.agentA.currentData() == panel.agentB.currentData() == "only_v1"
+    assert panel.btnRun.isEnabled()
+
+    captured = []
+    panel.runRequested.connect(captured.append)
+    panel.ruleset.setCurrentIndex(panel.ruleset.findData("bytefray-rules-4-alpha1"))
+    assert panel.agentA.itemText(0) == "(none found)"
+    assert panel.agentB.itemText(0) == "(none found)"
+    assert not panel.btnRun.isEnabled()
+    assert "No compatible agents" in panel.rulesetExplanation.text()
+
     panel._emit_run()
-    assert captured[1].ruleset_id == "bytefray-rules-1"
+    assert captured == []
+    assert "No compatible agents" in panel.log.toPlainText()
 
 
 @pytest.mark.gui
@@ -297,7 +370,7 @@ def test_advanced_panel_matches_simple_panel_behavior(tmp_path):
 
 
 @pytest.mark.gui
-def test_regression_claimer_runner_hunter_scenario_matches_both_tabs(tmp_path):
+def test_regression_simple_filters_while_advanced_keeps_historical_catalog(tmp_path):
     _make_app()
     from app.views.advanced import AdvancedPanel
     from app.views.simple import SimplePanel
@@ -306,16 +379,17 @@ def test_regression_claimer_runner_hunter_scenario_matches_both_tabs(tmp_path):
     simple = SimplePanel(catalog=None)
     advanced = AdvancedPanel(catalog=None, data_root=tmp_path)
 
-    for panel in (simple, advanced):
-        panel.setAgents(rows)
-        panel.agentA.setCurrentIndex(0)  # claimer
+    simple.setAgents(rows)
+    assert [simple.agentA.itemData(i) for i in range(simple.agentA.count())] == [
+        "claimer",
+        "hunter",
+    ]
 
-        model = panel.agentB.model()
-        assert model.item(1).isEnabled() is False  # runner [VM] -- visible, disabled
-        assert model.item(2).isEnabled() is True  # hunter [Python] -- visible, enabled
-
-        panel.agentA.setCurrentIndex(1)  # switch A to runner [VM]
-        model = panel.agentB.model()
-        assert model.item(0).isEnabled() is False  # claimer [Python] now disabled
-        assert model.item(2).isEnabled() is False  # hunter [Python] now disabled
-        assert model.item(1).isEnabled() is True  # runner [VM] now enabled
+    advanced.setAgents(rows)
+    assert [advanced.agentA.itemData(i) for i in range(advanced.agentA.count())] == [
+        "claimer",
+        "runner",
+        "hunter",
+    ]
+    advanced.agentA.setCurrentIndex(1)
+    assert advanced.ruleset.currentData() == "bytefray-rules-1"

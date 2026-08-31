@@ -61,7 +61,10 @@ from app.services.designer_workflows import (
     validate_homogeneous,
 )
 from app.services.engine import open_pygame_client_direct
-from app.services.ruleset_options import validate_designer_ruleset
+from app.services.ruleset_options import (
+    validate_designer_agent_rows,
+    validate_designer_ruleset,
+)
 from app.views.advanced import AdvancedPanel
 from app.views.agent_package import (
     PackageDetailsDialog,
@@ -347,6 +350,7 @@ class AgentDesigner(QMainWindow):
         try:
             validate_homogeneous((rowA, rowB))
             validate_designer_ruleset(cfg.ruleset_id, {agent_kind(rowA), agent_kind(rowB)})
+            validate_designer_agent_rows(cfg.ruleset_id, (rowA, rowB))
         except (DesignerValidationError, ValueError) as exc:
             self.advanced.appendLog(f"[RunMatch] {exc}\n")
             QMessageBox.warning(self, "Unsupported Match", str(exc))
@@ -475,6 +479,7 @@ class AgentDesigner(QMainWindow):
         try:
             validate_homogeneous((rowA, rowB))
             validate_designer_ruleset(cfg.ruleset_id, {agent_kind(rowA), agent_kind(rowB)})
+            validate_designer_agent_rows(cfg.ruleset_id, (rowA, rowB))
         except (DesignerValidationError, ValueError) as exc:
             self.simple.appendLog(f"[RunMatch] {exc}\n")
             QMessageBox.warning(self, "Unsupported Match", str(exc))

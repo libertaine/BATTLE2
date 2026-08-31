@@ -189,6 +189,17 @@ v1 seed derivation, evaluation identity recipes, and schema-2/3 wire shape.
 This is the historical-identity boundary: adding v4 does not re-bless any
 artifact accidentally produced with installation-wide API/schema constants.
 
+`battle_engine.ruleset_policy.agent_supported_by_ruleset` is the canonical
+metadata-level compatibility decision for discovered agents. It considers the
+manifest runtime kind and Agent API version together; `NativeMatchService`
+applies the same policy before runtime dispatch, so a stale or programmatically
+constructed v2/API-v2 or v4/API-v1 request fails before agent code executes.
+Agent Designer's Simple Quick Match projects this boundary into the catalog:
+it offers only Ruleset v2 and v4 alpha1 and shows only agents compatible with
+the selected Ruleset. Historical Ruleset v1 and VM/blob selection remain
+available through Advanced workflows, while Agent Development continues to
+receive the complete discovered catalog.
+
 ## Ruleset-v2 1v1 evaluation methodology (v2.0.0-beta2 Phase 1)
 
 `agents evaluate` gained an explicit Ruleset selector (now including

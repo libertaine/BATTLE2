@@ -539,8 +539,10 @@ def test_invalidate_agent_state_also_refreshes_the_stale_preview(tmp_path):
 
 
 @pytest.mark.gui
-def test_existing_simple_and_advanced_selectors_still_populate(monkeypatch, tmp_path):
-    """Regression: starters (kind != python) must still appear in Simple/Advanced."""
+def test_match_selectors_and_development_receive_their_intended_catalogs(
+    monkeypatch, tmp_path
+):
+    """Simple filters by Ruleset while Advanced/Development keep their scope."""
     _make_app()
     data_root = tmp_path / "data"
     monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
@@ -557,12 +559,22 @@ def test_existing_simple_and_advanced_selectors_still_populate(monkeypatch, tmp_
         non_python_ids = {row.agent_id for row in catalog_rows if row.meta.get("kind") != "python"}
         assert non_python_ids, "expected at least one non-Python (VM) starter agent"
 
-        # Development is filtered to Python agents only; Simple/Advanced show
-        # the full catalog, including the VM starters Development excludes.
+        # Development keeps its established all-Python catalog. Advanced keeps
+        # the full historical catalog, including VM starters. Simple defaults
+        # to Ruleset v2 and therefore shows only Agent API v1 Python agents.
         dev_ids = {agent_id for _, agent_id in designer.development.python_agent_names()}
+        simple_ids = {
+            designer.simple.agentA.itemData(index)
+            for index in range(designer.simple.agentA.count())
+        }
+        v2_ids = {
+            row.agent_id
+            for row in catalog_rows
+            if row.meta.get("kind") == "python" and row.meta.get("api_version") == 1
+        }
         assert dev_ids == python_ids
         assert dev_ids.isdisjoint(non_python_ids)
-        assert designer.simple.agentA.count() == len(catalog_rows)
+        assert simple_ids == v2_ids
         assert designer.advanced.agentA.count() == len(catalog_rows)
     finally:
         designer.deleteLater()

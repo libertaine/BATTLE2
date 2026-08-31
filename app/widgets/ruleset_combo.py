@@ -8,15 +8,19 @@ from app.services.ruleset_options import (
     DESIGNER_RULESET_OPTIONS,
     RULESET_DESCRIPTION,
     VM_RULESET_EXPLANATION,
+    DesignerRulesetOption,
     best_designer_ruleset,
     ruleset_supports_runtime_kinds,
 )
 from app.widgets.agent_combo import selected_agent_kind
 
 
-def populate_ruleset_combo(combo: QComboBox) -> None:
+def populate_ruleset_combo(
+    combo: QComboBox,
+    options: tuple[DesignerRulesetOption, ...] = DESIGNER_RULESET_OPTIONS,
+) -> None:
     combo.clear()
-    for option in DESIGNER_RULESET_OPTIONS:
+    for option in options:
         combo.addItem(option.label, option.ruleset_id)
     combo.setToolTip(RULESET_DESCRIPTION)
     combo.setAccessibleDescription(RULESET_DESCRIPTION)

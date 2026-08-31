@@ -22,7 +22,12 @@ def _row(agent_id: str, display: str, *, kind: str = "python"):
         name=display,
         path=f"/agents/{agent_id}",
         blob_path=None,
-        meta={"name": agent_id, "display": display, "kind": kind},
+        meta={
+            "name": agent_id,
+            "display": display,
+            "kind": kind,
+            **({"api_version": 1} if kind == "python" else {}),
+        },
         agent_id=agent_id,
     )
 
@@ -37,9 +42,7 @@ def test_simple_panel_starts_with_real_empty_state_and_current_matchup():
 
     assert panel.output.is_showing_empty_state() is True
     assert panel.output.readyLabel.text() == "Ready to run a match"
-    # Preserve the existing combo default (self-match is valid); the summary
-    # reports the actual selection instead of assuming two different rows.
-    assert panel.output.matchupLabel.text() == "Alpha [Python] vs Alpha [Python]"
+    assert panel.output.matchupLabel.text() == "Alpha [Python] vs Beta [Python]"
     assert panel.output.guidanceLabel.text() == (
         "Choose two compatible agents, then Run Match."
     )
@@ -163,6 +166,7 @@ def test_designer_keeps_tab_shell_and_structured_quick_match_layout(monkeypatch,
     assert designer.simple.btnRun.font().bold() is True
     assert designer.simple.btnRun.focusPolicy() != Qt.FocusPolicy.NoFocus
     for text, control in (
+        ("Ruleset", designer.simple.ruleset),
         ("Agent A", designer.simple.agentA),
         ("Agent B", designer.simple.agentB),
         ("Grid", designer.simple.gridSize),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from battle_engine.rules import BYTEFRAY_RULESET_ID
@@ -9,6 +10,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     UnknownRulesetError,
+    agent_supported_by_ruleset,
     resolve_ruleset_policy,
 )
 
@@ -19,18 +21,19 @@ class DesignerRulesetOption:
     label: str
 
 
-DESIGNER_RULESET_OPTIONS = (
-    DesignerRulesetOption(
-        BYTEFRAY_RULESET_V2_ID, "Ruleset v2 — Current / Recommended"
-    ),
-    DesignerRulesetOption(
-        BYTEFRAY_RULESET_V4_ALPHA1_ID,
-        "Ruleset v4 alpha1 — Process-agent preview (Agent API v2)",
-    ),
-    DesignerRulesetOption(
-        BYTEFRAY_RULESET_ID, "Ruleset v1 — Compatibility (Python and VM/blob)"
-    ),
+RULESET_V2_OPTION = DesignerRulesetOption(
+    BYTEFRAY_RULESET_V2_ID, "Ruleset v2 — Current / Recommended"
 )
+RULESET_V4_ALPHA1_OPTION = DesignerRulesetOption(
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    "Ruleset v4 alpha1 — Process-agent preview (Agent API v2)",
+)
+RULESET_V1_OPTION = DesignerRulesetOption(
+    BYTEFRAY_RULESET_ID, "Ruleset v1 — Compatibility (Python and VM/blob)"
+)
+
+SIMPLE_RULESET_OPTIONS = (RULESET_V2_OPTION, RULESET_V4_ALPHA1_OPTION)
+DESIGNER_RULESET_OPTIONS = (*SIMPLE_RULESET_OPTIONS, RULESET_V1_OPTION)
 
 # Accurate on both axes, which the previous "Legacy / VM compatibility"
 # wording was not: Ruleset v1 is not Python-incompatible (a Python agent
@@ -80,4 +83,32 @@ def validate_designer_ruleset(ruleset_id: str, kinds: set[str]) -> None:
         raise ValueError(
             f"Ruleset {ruleset_id} does not support {kinds_text} entrants. "
             "Use Ruleset v1 for VM/blob matches."
+        )
+
+
+def agent_row_supported_by_ruleset(row: object, ruleset_id: str) -> bool:
+    """Project a catalog row through the engine's canonical predicate."""
+
+    metadata = getattr(row, "meta", None)
+    return isinstance(metadata, dict) and agent_supported_by_ruleset(
+        metadata, ruleset_id
+    )
+
+
+def validate_designer_agent_rows(
+    ruleset_id: str, rows: Iterable[object]
+) -> None:
+    """Reject stale/programmatic Designer launches with incompatible agents."""
+
+    selected = tuple(rows)
+    incompatible = [
+        str(getattr(row, "agent_id", "") or getattr(row, "name", "<unknown>"))
+        for row in selected
+        if not agent_row_supported_by_ruleset(row, ruleset_id)
+    ]
+    if incompatible:
+        names = ", ".join(incompatible)
+        raise ValueError(
+            f"Ruleset {ruleset_id} does not support the selected agent metadata: "
+            f"{names}."
         )

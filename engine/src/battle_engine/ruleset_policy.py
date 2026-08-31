@@ -77,13 +77,16 @@ class RulesetPolicy:
     ("vm", "python") may execute under it, exactly as before this field
     existed. A non-``None`` frozenset is this Ruleset's exhaustive supported
     set; see :meth:`unsupported_runtime_kinds`. Only the permanent
-    ``bytefray-rules-2`` sets this (Python-only) -- Ruleset v1 and every
-    historical alpha identity remain unrestricted, preserving their exact
-    existing VM/Python behavior (including alpha's inert-on-VM dispatch).
+    permanent/current process Rulesets set this to Python-only. Ruleset v1
+    and the historical v2 alpha identities remain runtime-kind unrestricted,
+    preserving their exact existing behavior (including alpha's inert-on-VM
+    dispatch). ``supported_python_api_versions`` adds the orthogonal Agent API
+    requirement used by v1/v2 (API v1) and v4 alpha1 (API v2).
     """
 
     ruleset_id: str
     supported_runtime_kinds: frozenset[str] | None = None
+    supported_python_api_versions: frozenset[int] | None = None
     scheduler_mode: str = "sequential"
     scheduler_chunk_size: int | None = None
     scheduler_rotate_start: bool = False
@@ -104,6 +107,25 @@ class RulesetPolicy:
         if self.supported_runtime_kinds is None:
             return frozenset()
         return frozenset(kinds) - self.supported_runtime_kinds
+
+    def supports_agent(self, *, kind: str, api_version: int | None = None) -> bool:
+        """Return whether one discovered agent can execute under this Ruleset.
+
+        Discovery uses ``builtin``/``blob`` for VM-backed agents while match
+        execution uses ``vm``.  Those spellings are normalized here so every
+        caller reaches the same runtime/API decision.  Python metadata without
+        an explicit integer API version fails closed, matching the loader.
+        Unknown runtime kinds fail closed as well.
+        """
+
+        runtime_kind = _canonical_runtime_kind(kind)
+        if runtime_kind is None or self.unsupported_runtime_kinds({runtime_kind}):
+            return False
+        if runtime_kind != "python" or self.supported_python_api_versions is None:
+            return True
+        if isinstance(api_version, bool) or not isinstance(api_version, int):
+            return False
+        return api_version in self.supported_python_api_versions
 
     def run_scheduler(
         self,
@@ -169,7 +191,10 @@ class RulesetPolicy:
 
 # The frozen Ruleset. ``ruleset_id`` is exactly ``BYTEFRAY_RULESET_ID`` --
 # this module never mints its own identity for it.
-RULESET_V1 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_ID)
+RULESET_V1 = RulesetPolicy(
+    ruleset_id=BYTEFRAY_RULESET_ID,
+    supported_python_api_versions=frozenset({1}),
+)
 
 
 # v2.0.0-alpha.1's experimental identity (see
@@ -249,7 +274,9 @@ RULESET_V2_ALPHA11 = RulesetPolicy(ruleset_id=BYTEFRAY_RULESET_V2_ALPHA11_ID)
 # policy's ``run_scheduler``/``resolve_termination`` expose are untouched.
 BYTEFRAY_RULESET_V2_ID = "bytefray-rules-2"
 RULESET_V2 = RulesetPolicy(
-    ruleset_id=BYTEFRAY_RULESET_V2_ID, supported_runtime_kinds=frozenset({"python"})
+    ruleset_id=BYTEFRAY_RULESET_V2_ID,
+    supported_runtime_kinds=frozenset({"python"}),
+    supported_python_api_versions=frozenset({1}),
 )
 
 
@@ -279,6 +306,7 @@ BYTEFRAY_RULESET_V3_ALPHA1_ID = "bytefray-rules-3-alpha1"
 RULESET_V3_ALPHA1 = RulesetPolicy(
     ruleset_id=BYTEFRAY_RULESET_V3_ALPHA1_ID,
     supported_runtime_kinds=frozenset({"python"}),
+    supported_python_api_versions=frozenset({1}),
 )
 
 
@@ -287,6 +315,7 @@ RULESET_V3_ALPHA1 = RulesetPolicy(
 RULESET_V4_ALPHA1 = RulesetPolicy(
     ruleset_id=BYTEFRAY_RULESET_V4_ALPHA1_ID,
     supported_runtime_kinds=frozenset({"python"}),
+    supported_python_api_versions=frozenset({2}),
     scheduler_mode="chunked",
     scheduler_chunk_size=2,
     scheduler_rotate_start=True,
@@ -330,6 +359,41 @@ _RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
     RULESET_V3_ALPHA1.ruleset_id: RULESET_V3_ALPHA1,
     RULESET_V4_ALPHA1.ruleset_id: RULESET_V4_ALPHA1,
 }
+
+
+def _canonical_runtime_kind(kind: str) -> str | None:
+    if kind == "python":
+        return "python"
+    if kind in {"vm", "builtin", "blob"}:
+        return "vm"
+    return None
+
+
+def agent_supported_by_ruleset(agent: object, ruleset_id: str) -> bool:
+    """Return whether discovered agent metadata is valid for ``ruleset_id``.
+
+    ``agent`` may be an :class:`~battle_engine.agents.AgentSpec`, a manifest
+    mapping, or another metadata projection exposing ``kind`` and
+    ``api_version`` attributes.  Ruleset identity and those authoritative
+    fields are the complete decision input; agent IDs and display names are
+    deliberately ignored.
+    """
+
+    if isinstance(agent, Mapping):
+        kind = agent.get("kind")
+        api_version = agent.get("api_version")
+    else:
+        kind = getattr(agent, "kind", None)
+        api_version = getattr(agent, "api_version", None)
+    if not isinstance(kind, str):
+        return False
+    if api_version is not None and (isinstance(api_version, bool) or not isinstance(api_version, int)):
+        return False
+    try:
+        policy = resolve_ruleset_policy(ruleset_id)
+    except UnknownRulesetError:
+        return False
+    return policy.supports_agent(kind=kind, api_version=api_version)
 
 
 
@@ -430,6 +494,7 @@ __all__ = [
     "TerminationDecision",
     "TerminationReason",
     "UnknownRulesetError",
+    "agent_supported_by_ruleset",
     "resolve_omitted_ruleset_id",
     "resolve_ruleset_policy",
 ]
