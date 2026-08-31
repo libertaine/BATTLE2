@@ -94,7 +94,7 @@ Replay/event portion completed: `battle_engine.replay` now defines schema
 errors, and the v0.1 compatibility adapter. Replay clients consume canonical
 models internally while the v0.1 engine writer remains unchanged. Match request
 and agent adapter contracts remain future Phase 1 work. See
-[`REPLAY_SCHEMA.md`](REPLAY_SCHEMA.md).
+[`REPLAY_SCHEMA.md`](../../REPLAY_SCHEMA.md).
 
 ### Phase 2 — Extract deterministic runtime
 

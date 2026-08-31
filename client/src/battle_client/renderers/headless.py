@@ -49,7 +49,18 @@ class HeadlessRenderer(AbstractRenderer):
             self._println(record.ticks, f"RESULT winner={record.winner or 'tie'} score={dict(record.score)}")
             return
 
-        self._println(record.tick, f"TICK score={dict(record.score)} agents={len(record.agents)}")
+        self._println(
+            record.tick,
+            f"TICK score={dict(record.score)} agents={len(record.agents)} "
+            f"processes={len(record.processes)}",
+        )
+        for process in record.processes:
+            self._println(
+                record.tick,
+                f"PROCESS entrant={process.entrant_id} id={process.process_id} "
+                f"anchor={process.anchor} reach={process.reach} "
+                f"disrupted={str(process.disrupted).lower()}",
+            )
         for event in record.events:
             if isinstance(event, KillDeathEvent):
                 self._println(record.tick, f"{event.event_type.upper()} victim={event.victim} killer={event.killer}")

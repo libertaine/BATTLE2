@@ -242,8 +242,9 @@ class _RecordingRulesetPolicy:
     def __init__(self, order: list[str]) -> None:
         self._order = order
 
-    def run_scheduler(self, states, quota, execute_slot):  # type: ignore[no-untyped-def]
-        RULESET_V1.run_scheduler(states, quota, execute_slot)
+    def run_scheduler(self, states, quota, execute_slot, *args, **kwargs):  # type: ignore[no-untyped-def]
+        RULESET_V1.run_scheduler(states, quota, execute_slot, *args, **kwargs)
+
 
     def resolve_termination(self, *, alive_count, tick, max_ticks):  # type: ignore[no-untyped-def]
         self._order.append("termination_check")

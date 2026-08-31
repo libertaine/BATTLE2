@@ -24,9 +24,9 @@ product cycle.
 
 Bytefray 2.0 shipped `bytefray-rules-2` (the Vulnerable Core mechanic) after
 an eleven-experiment alpha program
-([V2_0_ALPHA_RESEARCH_SUMMARY.md](V2_0_ALPHA_RESEARCH_SUMMARY.md)) and a
+([V2_0_ALPHA_RESEARCH_SUMMARY.md](../v2/V2_0_ALPHA_RESEARCH_SUMMARY.md)) and a
 beta/RC qualification cycle. The v2 strategic-ecology characterization
-([V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md))
+([V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](../v2/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md))
 found a real but bounded limitation: dedicated search offense is the only
 effective counter to blind territorial expansion, and that counter-strategy
 relationship holds only in a narrow region of the game's parameter space.
@@ -38,7 +38,7 @@ defensive-scoring mechanism — before any new Ruleset work was undertaken.
 ## 2. Ruleset-v2 baseline
 
 `bytefray-rules-2` (Vulnerable Core) is unchanged by this program from its
-`v2.0.0` shipped state. See [RULES_V2.md](RULES_V2.md) for the full gameplay
+`v2.0.0` shipped state. See [RULES_V2.md](../../RULES_V2.md) for the full gameplay
 contract. The program's own Phase 0 re-verified the shipped ecology exactly
 before varying anything — see §3 below.
 
@@ -155,7 +155,7 @@ was changed by this finding.
 
 None of the following is a v3.0 product commitment. Each requires its own
 hypothesis-driven qualification before implementation — see
-[FUTURE_PLANS.md](FUTURE_PLANS.md)'s "Future Ruleset research candidates"
+[FUTURE_PLANS.md](../../FUTURE_PLANS.md)'s "Future Ruleset research candidates"
 section for the full, deliberately non-committal catalogue, and the
 "Ruleset-reopen gate" in [V3_PRODUCT_SCOPE.md](V3_PRODUCT_SCOPE.md) for the
 process a reopened question would need to follow.

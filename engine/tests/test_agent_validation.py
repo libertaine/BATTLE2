@@ -86,6 +86,25 @@ def create_agent():
     return Agent()
 """
 
+VALID_V2_SOURCE = """
+from battle_engine.agent_api import ActionKindV2, AgentAction, ObservationV2, ProcessDeclaration
+
+class Agent:
+    def reset(self, context):
+        self.context = context
+
+    def declare_processes(self):
+        return [ProcessDeclaration("scout", 8, 1.0)]
+
+    def act(self, observation):
+        if not isinstance(observation, ObservationV2):
+            raise TypeError("expected ObservationV2")
+        return AgentAction(ActionKindV2.MOVE, 1)
+
+def create_agent():
+    return Agent()
+"""
+
 
 def _write_agent(
     root: Path,
@@ -123,6 +142,24 @@ def _run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None):
         capture_output=True,
         check=False,
     )
+
+
+@pytest.mark.parametrize("timeout", [None, 5.0])
+def test_agent_api_v2_validation_consumes_declarations_and_observation_v2(
+    tmp_path: Path, timeout: float | None
+) -> None:
+    _write_agent(
+        tmp_path,
+        "v2_agent",
+        manifest={"api_version": 2},
+        source=VALID_V2_SOURCE,
+    )
+
+    result = validate_agent("v2_agent", data_root=tmp_path, timeout=timeout)
+
+    assert result.api_version == 2
+    assert result.dry_run_action.kind.value == "move"
+    assert result.dry_run_action.operand == 1
 
 
 # --------------------------------------------------------------------------
@@ -238,7 +275,7 @@ def test_malformed_manifest_fails_at_discovery(tmp_path):
 
 
 def test_unsupported_api_version(tmp_path):
-    _write_agent(tmp_path, "example", manifest={"api_version": 2})
+    _write_agent(tmp_path, "example", manifest={"api_version": 3})
 
     with pytest.raises(AgentValidationFailedError) as caught:
         validate_agent("example", data_root=tmp_path)
@@ -579,7 +616,7 @@ def test_cli_honors_bytefray_root_env_var(tmp_path, monkeypatch, capsys):
 @pytest.mark.parametrize(
     ("manifest", "source"),
     [
-        ({"api_version": 2}, VALID_SOURCE),
+        ({"api_version": 3}, VALID_SOURCE),
         (None, "def create_agent(:\n    pass\n"),
         (None, BROKEN_RESET_SOURCE),
         (None, INVALID_ACTION_SOURCE),

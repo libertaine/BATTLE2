@@ -408,8 +408,9 @@ class SupervisedPythonEntrantController:
                     )
 
                 self.ruleset_policy.run_scheduler(
-                    self.states, self.config.instr_per_tick, execute_slot
+                    self.states, self.config.instr_per_tick, execute_slot, tick=tick
                 )
+
 
                 if is_vulnerable_core:
                     apply_core_capture(

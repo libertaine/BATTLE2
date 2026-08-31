@@ -58,7 +58,7 @@ def _make_python_agent(
     name: str = "sample",
     *,
     version: str = "1.0",
-    api_version: int = 1,
+    api_version: int = 2,
     display: str | None = "Sample Agent",
 ) -> Path:
     agent_dir = root / "agents" / name
@@ -510,7 +510,7 @@ def test_inspect_valid_package_reports_full_provenance(data_root: Path, tmp_path
     assert inspection.agent_id == "hunter"
     assert inspection.kind == "python"
     assert inspection.agent_version == "2.5"
-    assert inspection.agent_api_version == 1
+    assert inspection.agent_api_version == 2
     assert inspection.agent_revision_id == result.agent_revision_id
     assert inspection.revision_complete is True
     assert inspection.file_count == 2

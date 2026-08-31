@@ -44,3 +44,38 @@ def test_help_text_is_pure_ascii(capsys):
         pass
     output = capsys.readouterr().out
     assert output.isascii(), f"non-ASCII in --help output: {output!r}"
+
+
+def test_headless_client_prints_schema4_process_state(tmp_path, capsys):
+    replay = tmp_path / "process-replay.jsonl"
+    replay.write_text(
+        "\n".join(
+            [
+                json.dumps({"tick": 0, "ver": 6, "config": {"arena_size": 32}}),
+                json.dumps(
+                    {
+                        "tick": 1,
+                        "agents": [],
+                        "score": {},
+                        "events": [],
+                        "processes": [
+                            {
+                                "entrant_id": "A",
+                                "process_id": "scout",
+                                "anchor": 12,
+                                "reach": 8,
+                                "disrupted": True,
+                            }
+                        ],
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["--replay", str(replay), "--renderer", "headless"]) == 0
+    output = capsys.readouterr().out
+    assert "processes=1" in output
+    assert "PROCESS entrant=A id=scout anchor=12 reach=8 disrupted=true" in output

@@ -9,12 +9,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from battle_engine.agent_api import (
     AGENT_API_VERSION,
     ActionKind,
     AgentAction,
+    AgentV1,
     AgentValidationError,
     LoadedPythonAgent,
     MatchContext,
@@ -38,6 +39,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ALPHA11_ID,
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
     RULESET_V1,
     RulesetPolicy,
     TerminationReason,
@@ -134,6 +136,9 @@ VULNERABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
         # locality result that differed because the core mechanic also
         # differed would answer no question Phase 2 asks.
         BYTEFRAY_RULESET_V3_ALPHA1_ID,
+        # v4 research: the interleaved scheduler experiment changes *scheduling*,
+        # nothing else. Inherits vulnerable and observable core from Ruleset v2.
+        BYTEFRAY_RULESET_V4_ALPHA1_ID,
     }
 )
 OBSERVABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
@@ -141,8 +146,10 @@ OBSERVABLE_CORE_RULESET_IDS: frozenset[str] = frozenset(
         BYTEFRAY_RULESET_V2_ALPHA11_ID,
         BYTEFRAY_RULESET_V2_ID,
         BYTEFRAY_RULESET_V3_ALPHA1_ID,
+        BYTEFRAY_RULESET_V4_ALPHA1_ID,
     }
 )
+
 
 # ---------------------------------------------------------------------------
 # v3 research Phase 2: experimental bounded locality
@@ -1206,6 +1213,20 @@ class PythonEntrantController:
                     exc, agent_id=entrant.agent_id, slot=slot
                 )
                 raise PythonEntrantInitializationError(diagnostic) from exc
+            if loaded.metadata.api_version != 1:
+                raise PythonEntrantInitializationError(
+                    RuntimeDiagnostic(
+                        code="agent_api_version_unsupported",
+                        stage="load",
+                        message=(
+                            f"Ruleset {ruleset_policy.ruleset_id!r} requires Agent API "
+                            f"v1; entrant {entrant.agent_id!r} declares "
+                            f"v{loaded.metadata.api_version}."
+                        ),
+                        agent_id=entrant.agent_id,
+                        slot=slot,
+                    )
+                )
             seed = derive_agent_seed(
                 config.seed, slot, entrant.agent_id, loaded.metadata.api_version
             )
@@ -1251,7 +1272,7 @@ class PythonEntrantController:
             )
             reset_start = time.perf_counter()
             try:
-                loaded.instance.reset(context)
+                cast(AgentV1, loaded.instance).reset(context)
             except Exception as exc:
                 # Exception, not BaseException: KeyboardInterrupt/SystemExit
                 # must propagate and stop the run rather than being reported
@@ -1337,7 +1358,7 @@ class PythonEntrantController:
         observation = _observation(tick, state)
         act_start = time.perf_counter()
         try:
-            action = state.loaded.instance.act(observation)
+            action = cast(AgentV1, state.loaded.instance).act(observation)
             state.cpu_used += 1
             state.total_actions += 1
             self._trace_decision(
@@ -1418,8 +1439,9 @@ class PythonEntrantController:
                     self._execute_action_slot(state, action_slot, _tick, _events)
 
                 self.ruleset_policy.run_scheduler(
-                    self.states, self.config.instr_per_tick, execute_slot
+                    self.states, self.config.instr_per_tick, execute_slot, tick=tick
                 )
+
 
                 if is_vulnerable_core:
                     apply_core_capture(

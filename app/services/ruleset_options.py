@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
     UnknownRulesetError,
     resolve_ruleset_policy,
 )
@@ -21,6 +22,10 @@ class DesignerRulesetOption:
 DESIGNER_RULESET_OPTIONS = (
     DesignerRulesetOption(
         BYTEFRAY_RULESET_V2_ID, "Ruleset v2 — Current / Recommended"
+    ),
+    DesignerRulesetOption(
+        BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        "Ruleset v4 alpha1 — Process-agent preview (Agent API v2)",
     ),
     DesignerRulesetOption(
         BYTEFRAY_RULESET_ID, "Ruleset v1 — Compatibility (Python and VM/blob)"
@@ -38,14 +43,16 @@ DESIGNER_RULESET_OPTIONS = (
 # v1") and must never be implied to be a Ruleset-v1 format.
 RULESET_DESCRIPTION = (
     "Ruleset v2 is Bytefray's current gameplay ruleset and runs Python agents only. "
-    "Ruleset v1 also runs Python agents and is the only Bytefray ruleset that runs "
-    "VM/blob agents."
+    "Ruleset v4 alpha1 is the process-agent preview and requires Agent API v2. "
+    "Ruleset v1 also runs Agent API v1 Python agents and is the only Bytefray "
+    "ruleset that runs VM/blob agents."
 )
 
 # Shown next to a Ruleset selector whenever the current entrant selection
 # includes a VM/blob agent.
 VM_RULESET_EXPLANATION = (
-    "VM/blob agents run under Ruleset v1 only. Ruleset v2 gameplay is Python-agent only."
+    "VM/blob agents run under Ruleset v1 only. Rulesets v2 and v4 alpha1 are "
+    "Python-agent only."
 )
 
 

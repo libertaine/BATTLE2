@@ -1,0 +1,9 @@
+{
+  "name": "v4_claimer",
+  "display": "V4 Claimer",
+  "description": "V4 basic claimer.",
+  "kind": "python",
+  "api_version": 2,
+  "entrypoint": "agent.py:create_agent",
+  "version": "1.0.0"
+}

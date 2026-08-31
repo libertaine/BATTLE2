@@ -190,6 +190,8 @@ class EvaluationCellWorkerHandle:
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
         kill_weight: float | None = None,
+        scheduler_chunk_size: int | None = None,
+        scheduler_rotate_start: bool = False,
     ) -> WorkerCallResult:
         """One blocking round trip: run exactly one evaluation cell.
 
@@ -226,9 +228,12 @@ class EvaluationCellWorkerHandle:
                 # payload (which never sends this key) still means
                 # "executor default".
                 "kill_weight": kill_weight,
+                "scheduler_chunk_size": scheduler_chunk_size,
+                "scheduler_rotate_start": scheduler_rotate_start,
             },
             timeout=None,
         )
+
 
     def kill(self) -> None:
         """Unconditional kill, no grace period -- mirrors AgentWorkerHandle.kill."""
@@ -304,6 +309,8 @@ def _handle_run_cell(request: dict[str, Any], out: Any) -> None:
     instr_per_tick = request.get("instr_per_tick")
     locality_reach = request.get("locality_reach")
     kill_weight = request.get("kill_weight")
+    scheduler_chunk_size = request.get("scheduler_chunk_size")
+    scheduler_rotate_start = bool(request.get("scheduler_rotate_start", False))
 
     try:
         result = EvaluationService()._execute_cell(
@@ -315,7 +322,10 @@ def _handle_run_cell(request: dict[str, Any], out: Any) -> None:
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
             kill_weight=kill_weight,
+            scheduler_chunk_size=scheduler_chunk_size,
+            scheduler_rotate_start=scheduler_rotate_start,
         )
+
     except Exception as exc:  # belt-and-suspenders: _execute_cell/test_agent
         # already catch nearly everything internally (agent_test.test_agent's
         # own docstring); this should rarely fire.

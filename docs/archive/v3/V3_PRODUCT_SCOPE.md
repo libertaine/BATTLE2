@@ -28,7 +28,7 @@ Agent API:          v1
 
 A Bytefray 3.x software release does not require `bytefray-rules-3`.
 Ruleset identity is tied to match semantics, not to marketing/version
-numbering — see [COMPATIBILITY.md](COMPATIBILITY.md)'s independent-axes
+numbering — see [COMPATIBILITY.md](../../COMPATIBILITY.md)'s independent-axes
 table, which already states this policy generally; this document only
 confirms it applies to v3.0.
 
@@ -168,7 +168,7 @@ for a future pass.
   stay structurally independent, per this project's existing evidence-based
   caution against unsupported global ratings, unjustified Elo/Glicko, and
   clustering without demonstrated value (see
-  [FUTURE_PLANS.md](FUTURE_PLANS.md)'s "Richer evaluation / statistical
+  [FUTURE_PLANS.md](../../FUTURE_PLANS.md)'s "Richer evaluation / statistical
   analysis" section).
 * **Validation**: presentation reads already-canonical artifacts with no
   re-execution; no `evaluation_id`/schema change.
@@ -381,7 +381,7 @@ method behind it.
 ## 10. Deferred future Ruleset research
 
 See [V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) §7 and
-[FUTURE_PLANS.md](FUTURE_PLANS.md)'s "Future simulation / combat research"
+[FUTURE_PLANS.md](../../FUTURE_PLANS.md)'s "Future simulation / combat research"
 section for the full, deliberately non-committal catalogue — including the
 new "Agent lifecycle: mutation, evolution, and replication economics" and
 "Execution-trace / intent semantics" candidates this Phase 0 cycle added.

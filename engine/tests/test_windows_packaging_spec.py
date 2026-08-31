@@ -37,8 +37,10 @@ portable ZIP layout both assume for all four applications --
 
 from __future__ import annotations
 
+import re
 import sys
 import types
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +54,27 @@ AGENT_DESIGNER_SPEC = ROOT / "tools" / "agent_designer.spec"
 REPLAY_VIEWER_SPEC = ROOT / "tools" / "replay_viewer.spec"
 ALL_SPECS = (BYTEFRAY_SPEC, BYTEFRAY_CLI_SPEC, AGENT_DESIGNER_SPEC, REPLAY_VIEWER_SPEC)
 BUILD_WIN_SCRIPT = ROOT / "tools" / "build_win.ps1"
+INSTALLER_SCRIPT = ROOT / "tools" / "installer.iss"
+
+
+def test_installer_versions_match_package_and_release_tag() -> None:
+    """Prevent a new package from silently producing an old-version installer."""
+
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    installer = INSTALLER_SCRIPT.read_text(encoding="utf-8")
+    project_version = re.search(r'^version = "([^"]+)"$', pyproject, re.MULTILINE)
+    app_version = re.search(
+        r'^#define AppVersion "([^"]+)"$', installer, re.MULTILINE
+    )
+    release_tag = re.search(
+        r'^#define ReleaseTag "([^"]+)"$', installer, re.MULTILINE
+    )
+
+    assert project_version is not None
+    assert app_version is not None
+    assert release_tag is not None
+    assert app_version.group(1) == distribution_version("bytefray")
+    assert release_tag.group(1) == project_version.group(1)
 
 
 class _BuildStub:

@@ -92,13 +92,13 @@ def test_loading_an_agent_does_not_write_a_bytecode_cache(tmp_path):
 
 
 def test_unsupported_api_version_has_typed_diagnostic(tmp_path):
-    _write_agent(tmp_path, manifest={"api_version": 2})
+    _write_agent(tmp_path, manifest={"api_version": 3})
 
     with pytest.raises(UnsupportedAgentAPIVersionError) as caught:
         load_python_agent(resolve_agent(tmp_path, "example"))
 
     assert caught.value.code == "agent_api_version_unsupported"
-    assert "supports version 1" in str(caught.value)
+    assert "supports versions 1 and 2" in str(caught.value)
 
 
 @pytest.mark.parametrize(
@@ -186,6 +186,34 @@ def test_invalid_factory_result_is_rejected(tmp_path):
 
     assert caught.value.code == "agent_contract_invalid"
     assert "reset, act" in str(caught.value)
+
+
+def test_api_v2_requires_declare_processes(tmp_path):
+    _write_agent(tmp_path, manifest={"api_version": 2})
+
+    with pytest.raises(AgentContractError) as caught:
+        load_python_agent(resolve_agent(tmp_path, "example"))
+
+    assert caught.value.code == "agent_contract_invalid"
+    assert "missing callable declare_processes" in str(caught.value)
+
+
+def test_api_v2_complete_lifecycle_loads(tmp_path):
+    _write_agent(
+        tmp_path,
+        manifest={"api_version": 2},
+        source=VALID_SOURCE.replace(
+            "    def act(self, observation):",
+            "    def declare_processes(self):\n"
+            "        return []\n\n"
+            "    def act(self, observation):",
+        ),
+    )
+
+    loaded = load_python_agent(resolve_agent(tmp_path, "example"))
+
+    assert loaded.metadata.api_version == 2
+    assert callable(loaded.instance.declare_processes)  # type: ignore[union-attr]
 
 
 @pytest.mark.parametrize("attribute", ["reset", "act"])

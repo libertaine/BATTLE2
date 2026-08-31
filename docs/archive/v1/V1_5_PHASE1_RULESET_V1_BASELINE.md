@@ -9,8 +9,8 @@ current implementation so later phases can move code without rediscovering
 behavior.
 
 This document complements, and deliberately does not duplicate,
-[RULES.md](RULES.md) (what Ruleset v1 means) and
-[COMPATIBILITY.md](COMPATIBILITY.md) (which compatibility axis a change
+[RULES.md](../../RULES.md) (what Ruleset v1 means) and
+[COMPATIBILITY.md](../../COMPATIBILITY.md) (which compatibility axis a change
 belongs to). Its job is narrower: for each Ruleset-v1 semantic, *where* it
 is currently implemented, whether it is duplicated between runtimes,
 whether it is protected by a test, and what the v1.5 architecture must not

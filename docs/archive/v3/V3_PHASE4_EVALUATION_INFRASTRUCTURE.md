@@ -309,7 +309,7 @@ should real evidence later justify them:
 ## 12. GUI evidence
 
 Captured under
-[docs/screenshots/v3-phase4-evaluation-infrastructure/](screenshots/v3-phase4-evaluation-infrastructure/)
+[docs/screenshots/v3-phase4-evaluation-infrastructure/](../../screenshots/v3-phase4-evaluation-infrastructure/)
 against real evaluation artifacts (not mocked), via a script that launches
 the actual `EvaluationHistoryDialog`, `EvaluationDialog`, and
 `EvaluationComparisonDialog` classes with the native Qt/Windows platform

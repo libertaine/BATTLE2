@@ -358,7 +358,7 @@ resume behavior is governed entirely by its own already-written
 `evaluation.json`, never by whatever the preset file currently contains.
 See `bytefray agents evaluation-presets list|show|validate` to discover,
 inspect, and check presets, and
-[docs/V1_6_PHASE3_EVALUATION_PRESETS.md](V1_6_PHASE3_EVALUATION_PRESETS.md)
+[docs/V1_6_PHASE3_EVALUATION_PRESETS.md](archive/v1/V1_6_PHASE3_EVALUATION_PRESETS.md)
 for the full design record.
 
 ### Entrant orientation
@@ -487,7 +487,7 @@ purpose. Analysis is always **derived** from the evaluation's own cells,
 never persisted in `evaluation.json` — it works on any existing valid
 evaluation artifact, including ones produced before v1.6 Phase 4 shipped,
 with no need to re-run anything. See
-[V1_6_PHASE4_EVALUATION_ANALYSIS.md](V1_6_PHASE4_EVALUATION_ANALYSIS.md)
+[V1_6_PHASE4_EVALUATION_ANALYSIS.md](archive/v1/V1_6_PHASE4_EVALUATION_ANALYSIS.md)
 for the full statistical design, formulas, and limitations.
 
 ### Behavior profile (v1.6 Phase 5)
@@ -540,7 +540,7 @@ list` never reads this data regardless of the flag, so listing stays
 cheap at any scale). Like `analysis:`, behavior is always **derived**,
 never persisted in `evaluation.json` — it works on any existing valid
 evaluation artifact, including ones produced before Phase 5 shipped. See
-[V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](V1_6_PHASE5_BEHAVIOR_ANALYSIS.md) for
+[V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](archive/v1/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md) for
 the full dimension list, normalization, validation corpus and findings
 (including a genuinely ambiguous one, reported honestly), and what was
 deliberately deferred (replay-derived territory trajectory, write-

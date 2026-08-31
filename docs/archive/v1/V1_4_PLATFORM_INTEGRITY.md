@@ -82,5 +82,5 @@ converged through `VM._wr8`, so that boundary now maintains an authoritative
 `owner -> cell count` map while preserving the full writer array and replay
 diffs. Direct invariant tests recompute counts after unowned/owned transitions,
 same-owner writes, owner replacement, wrapped addresses, overlapping loads,
-and Python writes. See [the scaling report](performance/V1_4_SCALING.md) for
+and Python writes. See [the scaling report](V1_4_SCALING.md) for
 measurements and the replay-index deferral decision.

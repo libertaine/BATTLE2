@@ -167,18 +167,18 @@ def test_evaluation_cells_always_execute_under_ruleset_v1(two_agents: Path):
         assert match_result_data["ruleset_id"] == "bytefray-rules-1"
 
 
-def test_evaluate_cli_exposes_ruleset_selection_flag_as_of_beta2_phase1(capsys):
-    """v2.0.0-beta2 Phase 1 lifts the Beta1 boundary above: `agents evaluate`
-    now exposes `--ruleset` with exactly the two product-facing Ruleset
-    identities -- never a historical alpha identity (docs/V2_0_BETA2_
-    PHASE1_EVALUATION_METHODOLOGY.md Sec Ruleset selection)."""
+def test_evaluate_cli_exposes_all_product_ruleset_choices(capsys):
+    """Evaluation exposes the historical Rulesets plus production v4 alpha1."""
 
     from battle_engine.agent_evaluation import main as evaluate_main
 
     with pytest.raises(SystemExit):
         evaluate_main(["--help"])
     out = capsys.readouterr().out
-    assert "--ruleset {bytefray-rules-1,bytefray-rules-2}" in out
+    assert (
+        "--ruleset {bytefray-rules-1,bytefray-rules-2,"
+        "bytefray-rules-4-alpha1}" in out
+    )
 
 
 # ---------------------------------------------------------------------------

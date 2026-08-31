@@ -2,6 +2,26 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [4.0.0-alpha1] - 2026-08-31
+
+### Bytefray 4.0 Alpha 1 — The Spatial Multi-Process Update
+
+This is an alpha release of Bytefray's new spatial multi-process model.
+It concludes the R0-R6 research phase and introduces sweeping changes to gameplay mechanics.
+Old agents and legacy rulesets are fundamentally incompatible with these mechanics.
+
+* **Multi-Process Spatial Entrants**: Agents can now declare fixed rosters of multiple independent processes.
+* **Local Reach and Movement**: `MOVE` is now a primary action. `READ` and `WRITE` are restricted to a local `reach` radius around the acting process's anchor.
+* **Deterministic Chunked Scheduler**: The scheduler now executes chunked turns (`K=2`) with a deterministic rotating start based on original seat order.
+* **Temporary Anchor Disruption**: A legal enemy `WRITE` to a process's exact anchor location causes temporary disruption (`D=1`), suppressing its remaining callbacks in that tick and recovering at the next tick.
+* **Fair Quota Redistribution**: Quota from disrupted processes is redistributed fairly to surviving eligible processes, conserving the $Q=8$ entrant total.
+* **Local Process Detection**: Entrants automatically detect exact locations of live enemy processes within any friendly process's `reach`.
+* **Agent API v2**: The `Observation` contract is redesigned around minimal temporal provenance, removing legacy VM registers and explicit hit-confirmation to preserve fog-of-war.
+* **Process-Aware Replay & Tooling**: `battle2.replay` schema bumped to v4, adding `ProcessState` visualization support.
+* **New v4 Starter Agents**: Added `v4_claimer`, `v4_concentrated_attacker`, `v4_local_defender`, `v4_scout`, and `v4_defender_scout`; historical starters remain packaged for Ruleset-v1/v2 compatibility.
+
+**Note**: This is an alpha release. We explicitly solicit feedback on whether spatial processes are understandable, positioning feels meaningful, and if the $Q=8$ disruption tradeoff feels fair.
+
 ## [3.0.0] - 2026-08-30
 
 ### Bytefray 3.0 — stable release
@@ -14,10 +34,10 @@ remains v3.0's unchanged active gameplay identity, Agent API v1 is unchanged,
 remains retained external interoperability outside the Bytefray Ruleset
 system. This entry summarizes the whole v3.0 release (alpha1 + alpha2 +
 RC1 + RC2 combined). See
-[V3_RC1_QUALIFICATION.md](docs/V3_RC1_QUALIFICATION.md) and
-[V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/V3_RC1_DEFAULT_RULESET_DEFECT.md)
+[V3_RC1_QUALIFICATION.md](docs/archive/v3/V3_RC1_QUALIFICATION.md) and
+[V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/archive/v3/V3_RC1_DEFAULT_RULESET_DEFECT.md)
 for the full qualification and defect-fix records, and
-[V3_RULESET_RESEARCH_SUMMARY.md](docs/V3_RULESET_RESEARCH_SUMMARY.md) for
+[V3_RULESET_RESEARCH_SUMMARY.md](docs/archive/v3/V3_RULESET_RESEARCH_SUMMARY.md) for
 the closed research program behind the "no Ruleset-3" decision.
 
 - **Agent creation** — a second "Annotated Example" scaffold alongside the
@@ -67,7 +87,7 @@ in RC1 after it was tagged and published: `bytefray-rules-2` remains v3.0's
 unchanged active gameplay identity, Agent API v1 is unchanged, and
 `bytefray-rules-1`/VM-blob compatibility is unchanged. No new product
 feature was added; see
-[V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/V3_RC1_DEFAULT_RULESET_DEFECT.md)
+[V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/archive/v3/V3_RC1_DEFAULT_RULESET_DEFECT.md)
 for the full defect record and fix.
 
 ### Fixed
@@ -88,7 +108,7 @@ for the full defect record and fix.
   change -- `bytefray-rules-1` and `bytefray-rules-2` semantics are both
   unchanged, and a historical evaluation/tournament artifact that recorded
   an omitted-Ruleset run under v1 still means v1. See
-  [V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/V3_RC1_DEFAULT_RULESET_DEFECT.md).
+  [V3_RC1_DEFAULT_RULESET_DEFECT.md](docs/archive/v3/V3_RC1_DEFAULT_RULESET_DEFECT.md).
 
 ## [3.0.0-rc1] - 2026-08-27
 
@@ -101,8 +121,8 @@ retained external interoperability outside the Bytefray Ruleset system.
 Bytefray v3.0 is now treated as **feature-complete**: this entry summarizes
 the whole v3.0 release (alpha1 + alpha2 combined), not just what changed
 since alpha2. See
-[V3_RC1_QUALIFICATION.md](docs/V3_RC1_QUALIFICATION.md) for the full RC1
-qualification record and [V3_RULESET_RESEARCH_SUMMARY.md](docs/V3_RULESET_RESEARCH_SUMMARY.md)
+[V3_RC1_QUALIFICATION.md](docs/archive/v3/V3_RC1_QUALIFICATION.md) for the full RC1
+qualification record and [V3_RULESET_RESEARCH_SUMMARY.md](docs/archive/v3/V3_RULESET_RESEARCH_SUMMARY.md)
 for the closed research program behind the "no Ruleset-3" decision.
 
 - **Agent creation** — a second "Annotated Example" scaffold alongside the
@@ -145,7 +165,7 @@ for the closed research program behind the "no Ruleset-3" decision.
 A small second **alpha prerelease**. `bytefray-rules-2` gameplay is
 unchanged, Agent API v1 is unchanged, and every existing compatible agent
 remains valid. See
-[V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md](docs/V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md)
+[V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md](docs/archive/v3/V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md)
 for this alpha's qualification record.
 
 - **New starter strategies** — two bundled Python starters demonstrate
@@ -208,11 +228,11 @@ This is an **alpha prerelease**, not a stable release. Bytefray v3.0 is a
 product cycle, not a gameplay cycle: it ships `bytefray-rules-2` unchanged
 (the closed v3 Ruleset research program found no evidence justifying a
 gameplay-semantic change — see
-[V3_RULESET_RESEARCH_SUMMARY.md](docs/V3_RULESET_RESEARCH_SUMMARY.md)) and
+[V3_RULESET_RESEARCH_SUMMARY.md](docs/archive/v3/V3_RULESET_RESEARCH_SUMMARY.md)) and
 focuses on presentation, agent creation, strategy analysis, evaluation
 infrastructure, and distribution quality. See
-[V3_PRODUCT_SCOPE.md](docs/V3_PRODUCT_SCOPE.md) for the full product thesis
-and [V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md](docs/V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md)
+[V3_PRODUCT_SCOPE.md](docs/archive/v3/V3_PRODUCT_SCOPE.md) for the full product thesis
+and [V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md](docs/archive/v3/V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md)
 for this alpha's integration/distribution qualification record.
 
 - **Presentation** — the Replay Viewer's header band carries shared
@@ -263,7 +283,7 @@ for this alpha's integration/distribution qualification record.
 
 This alpha is a distribution/integration checkpoint on top of Phases 1-4,
 not a new development phase — see
-[V3_PRODUCT_SCOPE.md](docs/V3_PRODUCT_SCOPE.md) §5 for the full v3.0
+[V3_PRODUCT_SCOPE.md](docs/archive/v3/V3_PRODUCT_SCOPE.md) §5 for the full v3.0
 non-goals list (no new Ruleset, no Agent API v2, no scheduler rewrite, no
 new scoring/rating system, among others). Feedback is explicitly sought on
 product experience — agent-creation clarity, evaluation-result
@@ -431,7 +451,7 @@ release audit — it is not a new development cycle or gameplay redesign.
   Phase 4's strategic corpus does not require rerunning.
 - Release decision: **qualified for v2.0.0-beta2 release**.
   See
-  [docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md](docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md).
+  [docs/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md](docs/archive/v2/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md).
 
 ### Verification and compatibility hardening
 
@@ -482,7 +502,7 @@ cross-evaluation comparison fail closed across any methodology change.
 Additive, request-methodology-resolved schema/identity version 5 is used
 only for `bytefray-rules-2` evaluations; every v1 evaluation keeps schema/
 identity version 4 exactly as before. See
-[docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md)
+[docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](docs/archive/v2/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md)
 for the full design record.
 
 ### Multi-entrant evaluation
@@ -505,7 +525,7 @@ self-consistency check falsely reported `planned_identity_inconsistent`/
 1v1 evaluation artifact (a stale independent rehash that never matched
 Phase 1's own identity payload) -- a verification bug only; no persisted
 `evaluation_id`/`schedule_id`/`match_id` was ever wrong or rewritten. See
-[docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md)
+[docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](docs/archive/v2/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md)
 for the full design record.
 
 ### Symmetric group strategic analysis
@@ -542,7 +562,7 @@ when that capture ended the match -- at 3+ entrants a capture very often
 does not end the match, so the tick is now withheld rather than wrong
 whenever it cannot be trusted; the capture's occurrence and attribution
 are unaffected. See
-[docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md](docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md)
+[docs/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md](docs/archive/v2/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md)
 for the full design record, including a direct re-examination of Phase 2's
 own "Core Tracker" win-rate finding against a larger sample.
 
@@ -615,9 +635,9 @@ experiment `v2.0.0-alpha.1`-`alpha.11` research program:
   constant changed.
 
 See [docs/RULES_V2.md](docs/RULES_V2.md) and
-[docs/V2_0_BETA1_PLAN.md](docs/V2_0_BETA1_PLAN.md) for the full semantic
+[docs/V2_0_BETA1_PLAN.md](docs/archive/v2/V2_0_BETA1_PLAN.md) for the full semantic
 contract, and
-[docs/V2_0_ALPHA_RESEARCH_SUMMARY.md](docs/V2_0_ALPHA_RESEARCH_SUMMARY.md)
+[docs/V2_0_ALPHA_RESEARCH_SUMMARY.md](docs/archive/v2/V2_0_ALPHA_RESEARCH_SUMMARY.md)
 for the closed research program this beta promotes.
 
 ### Compatibility
@@ -665,7 +685,7 @@ Beta1 does **not** yet include full Ruleset-v2 evaluation methodology
 (order/placement/seed balancing), a Designer Ruleset-v2 workflow, VM
 Ruleset-v2 gameplay parity, or a fully productized 3-way evaluation/CLI
 workflow. These are planned for later betas -- see
-[docs/V2_0_BETA1_PLAN.md](docs/V2_0_BETA1_PLAN.md#8-boundaries-to-later-betarc-releases).
+[docs/V2_0_BETA1_PLAN.md](docs/archive/v2/V2_0_BETA1_PLAN.md#8-boundaries-to-later-betarc-releases).
 
 Two disclosed, non-blocking items carry forward from qualification and are
 not addressed in this beta: a pre-existing, cosmetic packaging gap in the
@@ -673,7 +693,7 @@ unified CLI dispatcher's runtime taskbar-icon lookup (predates Beta1); and
 omitting `--a-start`/`--b-start` under `--ruleset bytefray-rules-2` can
 produce a confusing but mechanically correct immediate unattributed core
 capture, since core placement is start-address-sensitive. See
-[docs/V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md](docs/V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md)
+[docs/V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md](docs/archive/v2/V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md)
 for the full qualification record.
 
 ## [1.6.0] - 2026-08-18
@@ -684,7 +704,7 @@ for the full qualification record.
   across independent evaluation cells, via a pool of long-lived worker
   subprocesses. Worker count never affects `evaluation_id` or any per-cell
   result, only wall-clock throughput; default remains `1` (serial). See
-  [docs/V1_6_PHASE2_PARALLEL_EVALUATION.md](docs/V1_6_PHASE2_PARALLEL_EVALUATION.md).
+  [docs/V1_6_PHASE2_PARALLEL_EVALUATION.md](docs/archive/v1/V1_6_PHASE2_PARALLEL_EVALUATION.md).
 - `bytefray agents evaluate --preset <name>` and `bytefray agents
   evaluation-presets list|show|validate`: reusable, hand-editable
   `bytefray.evaluation_preset` YAML files supplying default candidate/
@@ -695,7 +715,7 @@ for the full qualification record.
   frozen `evaluation.json`, never from a preset's current (possibly since
   edited or deleted) content. The Designer's Evaluate dialog gained a
   matching preset selector that pre-fills the same fields. See
-  [docs/V1_6_PHASE3_EVALUATION_PRESETS.md](docs/V1_6_PHASE3_EVALUATION_PRESETS.md).
+  [docs/V1_6_PHASE3_EVALUATION_PRESETS.md](docs/archive/v1/V1_6_PHASE3_EVALUATION_PRESETS.md).
 - Derived aggregate/statistical analysis for `bytefray agents evaluate`,
   `evaluations show`, `evaluations compare`, and the Designer's evaluation
   results dialog: Wilson score intervals on observed win rates, and an
@@ -707,7 +727,7 @@ for the full qualification record.
   evaluation cells -- no `evaluation.json` schema change, no new runtime
   dependency, and works on any existing valid v1/v2 evaluation artifact
   without re-running it. See
-  [docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md](docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md).
+  [docs/V1_6_PHASE4_EVALUATION_ANALYSIS.md](docs/archive/v1/V1_6_PHASE4_EVALUATION_ANALYSIS.md).
 - Derived behavior-profile analytics for `bytefray agents evaluate`,
   `evaluations show` (add `--no-behavior` to skip it), and the Designer's
   evaluation results dialog: survival, write activity, territory
@@ -718,7 +738,7 @@ for the full qualification record.
   outcome evidence (never reads `outcome`/score fields) and deliberately
   narrow: no clustering, no archetype naming, no composite score, no
   combined behavioral-distance scalar. See
-  [docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
+  [docs/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](docs/archive/v1/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
 
 ### Compatibility
 
@@ -730,7 +750,7 @@ every per-cell result are unaffected, verified at 60/540/2,000-cell scale
 across serial and parallel execution, interrupt/resume, and source-drift
 abort. No new runtime dependency. Independently qualified on Windows
 (source and frozen build), Linux (WSL2 Ubuntu), and Python 3.10-3.13; see
-[docs/V1_6_PHASE6_INTEGRATED_QUALIFICATION.md](docs/V1_6_PHASE6_INTEGRATED_QUALIFICATION.md)
+[docs/V1_6_PHASE6_INTEGRATED_QUALIFICATION.md](docs/archive/v1/V1_6_PHASE6_INTEGRATED_QUALIFICATION.md)
 for the full qualification record, including two disclosed non-blocking
 findings deferred to future maintenance (neither is a wrong calculation or
 a release blocker).

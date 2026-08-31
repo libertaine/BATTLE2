@@ -26,15 +26,21 @@ import sys
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from battle_engine.agent_api import (
     ActionKind,
+    ActionKindV2,
     AgentAction,
     AgentManifestError,
+    AgentV1,
+    AgentV2,
     AgentValidationError,
     MatchContext,
+    MatchContextV2,
     Observation,
+    ObservationV2,
+    ProcessDeclaration,
     load_python_agent,
 )
 from battle_engine.agent_trace import (
@@ -48,8 +54,10 @@ from battle_engine.agent_worker import AgentWorkerHandle, WorkerCallStatus
 from battle_engine.agents import resolve_agent
 from battle_engine.config import Config
 from battle_engine.paths import get_data_root
+from battle_engine.process_runtime import ProcessMatchController
 from battle_engine.python_runtime import (
     InvalidPythonActionError,
+    PythonEntrantInitializationError,
     RuntimeDiagnostic,
     _safe_message,
     _to_trace_diagnostic,
@@ -94,7 +102,7 @@ class AgentValidationFailedError(RuntimeError):
         self.diagnostic = diagnostic
 
 
-def build_validation_context(api_version: int) -> MatchContext:
+def build_validation_context(api_version: int) -> MatchContext | MatchContextV2:
     """Build the one deterministic ``MatchContext`` used for a dry-run reset.
 
     Uses the exact production seed-derivation function
@@ -105,6 +113,14 @@ def build_validation_context(api_version: int) -> MatchContext:
     """
 
     seed = derive_agent_seed(VALIDATION_SEED, VALIDATION_SLOT, VALIDATION_AGENT_ID, api_version)
+    if api_version == 2:
+        return MatchContextV2(
+            agent_id=VALIDATION_AGENT_ID,
+            seed=seed,
+            arena_size=VALIDATION_ARENA_SIZE,
+            tick_limit=1,
+            rng=random.Random(seed),
+        )
     return MatchContext(
         agent_id=VALIDATION_AGENT_ID,
         seed=seed,
@@ -115,7 +131,10 @@ def build_validation_context(api_version: int) -> MatchContext:
     )
 
 
-def build_validation_observation() -> Observation:
+def build_validation_observation(
+    api_version: int = 1,
+    declaration: ProcessDeclaration | None = None,
+) -> Observation | ObservationV2:
     """Build the one deterministic ``Observation`` used for the dry-run ``act()``.
 
     Field-for-field identical to a fresh entrant's genuine first
@@ -125,6 +144,23 @@ def build_validation_observation() -> Observation:
     field is ``PythonEntrantState``'s un-mutated dataclass default.
     """
 
+    if api_version == 2:
+        if declaration is None:
+            raise ValueError("Agent API v2 validation requires a process declaration")
+        return ObservationV2(
+            current_tick=1,
+            last_callback_tick=0,
+            previous_action_tick=0,
+            self_process_id=declaration.id,
+            self_anchor=0,
+            self_reach=declaration.reach,
+            own_core_base=0,
+            own_core_size=8,
+            visible_enemy_anchor_addresses=(),
+            previous_action_applied=False,
+            previous_read_value=None,
+            previous_read_owner=None,
+        )
     return Observation(
         tick=1,
         agent_id=VALIDATION_AGENT_ID,
@@ -155,7 +191,7 @@ def _display_message(diagnostic: RuntimeDiagnostic, agent_id: str) -> str:
     is untouched.
     """
 
-    if diagnostic.stage in ("reset", "action"):
+    if diagnostic.stage in ("reset", "declaration", "action"):
         return diagnostic.message.replace(
             f"Python agent {VALIDATION_AGENT_ID} ", f"Python agent {agent_id} ", 1
         )
@@ -287,9 +323,20 @@ def _validate_agent_unsupervised(
 
     # Stage 4: deterministic reset.
     context = build_validation_context(api_version)
+    instance_v1: AgentV1 | None = None
+    instance_v2: AgentV2 | None = None
+    declarations: list[ProcessDeclaration] = []
+    if api_version == 2:
+        instance_v2 = cast(AgentV2, loaded.instance)
+    else:
+        instance_v1 = cast(AgentV1, loaded.instance)
     reset_start = time.perf_counter()
     try:
-        loaded.instance.reset(context)
+        if instance_v2 is not None:
+            instance_v2.reset(cast(MatchContextV2, context))
+        else:
+            assert instance_v1 is not None
+            instance_v1.reset(cast(MatchContext, context))
     except Exception as exc:
         # Exception, not BaseException: KeyboardInterrupt/SystemExit must
         # propagate rather than being reported as an ordinary validation
@@ -299,31 +346,74 @@ def _validate_agent_unsupervised(
         raise AgentValidationFailedError(diagnostic) from exc
     _trace_validation_reset(trace_writer, reset_start, None)
 
+    if instance_v2 is not None:
+        try:
+            declared = instance_v2.declare_processes()
+        except Exception as exc:
+            raise AgentValidationFailedError(
+                RuntimeDiagnostic(
+                    code="agent_process_declaration_failed",
+                    stage="declaration",
+                    message=(
+                        f"Python agent {VALIDATION_AGENT_ID} process declaration "
+                        f"failed: {type(exc).__name__}: {exc}"
+                    ),
+                    agent_id=VALIDATION_AGENT_ID,
+                    slot=VALIDATION_SLOT,
+                    exception_type=type(exc).__name__,
+                )
+            ) from exc
+        try:
+            declarations = ProcessMatchController._validate_declarations(
+                declared,
+                agent_id=VALIDATION_AGENT_ID,
+                slot=VALIDATION_SLOT,
+                arena_size=VALIDATION_ARENA_SIZE,
+            )
+        except PythonEntrantInitializationError as exc:
+            raise AgentValidationFailedError(exc.diagnostic) from exc
+
     # Stage 5: one deterministic act(), validated by the real action
     # validator -- not a reimplementation.
-    observation = build_validation_observation()
+    observation = build_validation_observation(
+        api_version,
+        declarations[0] if declarations else None,
+    )
     act_start = time.perf_counter()
     try:
-        action = loaded.instance.act(observation)
+        if instance_v2 is not None:
+            action = instance_v2.act(cast(ObservationV2, observation))
+        else:
+            assert instance_v1 is not None
+            action = instance_v1.act(cast(Observation, observation))
     except Exception as exc:
         diagnostic = diagnose_action_exception(
             exc,
             agent_id=VALIDATION_AGENT_ID,
             slot=VALIDATION_SLOT,
-            tick=observation.tick,
+            tick=_observation_tick(observation),
             action_slot=0,
         )
         _trace_decision(trace_writer, observation, act_start, None, diagnostic)
         raise AgentValidationFailedError(diagnostic) from exc
 
     try:
-        validated_action = validate_action(action)
-    except InvalidPythonActionError as exc:
+        validated_action = (
+            ProcessMatchController._validate_v2_action(action)
+            if api_version == 2
+            else validate_action(action)
+        )
+    except (InvalidPythonActionError, ValueError) as exc:
+        invalid = (
+            exc
+            if isinstance(exc, InvalidPythonActionError)
+            else InvalidPythonActionError(str(exc))
+        )
         diagnostic = diagnose_invalid_action(
-            exc,
+            invalid,
             agent_id=VALIDATION_AGENT_ID,
             slot=VALIDATION_SLOT,
-            tick=observation.tick,
+            tick=_observation_tick(observation),
             action_slot=0,
         )
         _trace_decision(trace_writer, observation, act_start, None, diagnostic)
@@ -343,7 +433,7 @@ def _validate_agent_unsupervised(
 
 def _trace_decision(
     trace_writer: TraceWriter | None,
-    observation: Observation,
+    observation: Observation | ObservationV2,
     start: float,
     action: TraceAction | None,
     diagnostic: RuntimeDiagnostic | None,
@@ -352,25 +442,48 @@ def _trace_decision(
         return
     from battle_engine.agent_trace import DecisionRecord
 
+    if isinstance(observation, ObservationV2):
+        tick = observation.current_tick
+        trace_observation = TraceObservation(
+            tick=tick,
+            agent_id=VALIDATION_AGENT_ID,
+            pc=observation.self_anchor,
+            register_a=0,
+            register_p=0,
+            zero_flag=False,
+            last_read=observation.previous_read_value,
+            alive=True,
+        )
+    else:
+        tick = observation.tick
+        trace_observation = TraceObservation(
+            tick=tick,
+            agent_id=observation.agent_id,
+            pc=observation.pc,
+            register_a=observation.register_a,
+            register_p=observation.register_p,
+            zero_flag=observation.zero_flag,
+            last_read=observation.last_read,
+            alive=observation.alive,
+        )
     trace_writer.write_decision(
         DecisionRecord(
-            tick=observation.tick,
+            tick=tick,
             agent_id=VALIDATION_AGENT_ID,
             action_slot=0,
             wall_time_ms=(time.perf_counter() - start) * 1000,
-            observation=TraceObservation(
-                tick=observation.tick,
-                agent_id=observation.agent_id,
-                pc=observation.pc,
-                register_a=observation.register_a,
-                register_p=observation.register_p,
-                zero_flag=observation.zero_flag,
-                last_read=observation.last_read,
-                alive=observation.alive,
-            ),
+            observation=trace_observation,
             action=action,
             diagnostic=_to_trace_diagnostic(diagnostic),
         )
+    )
+
+
+def _observation_tick(observation: Observation | ObservationV2) -> int:
+    return (
+        observation.current_tick
+        if isinstance(observation, ObservationV2)
+        else observation.tick
     )
 
 
@@ -423,7 +536,55 @@ def _validate_agent_supervised(
             raise AgentValidationFailedError(diagnostic)
         _trace_validation_reset(trace_writer, reset_start, None)
 
-        observation = build_validation_observation()
+        declarations: list[ProcessDeclaration] = []
+        if api_version == 2:
+            declaration_result = handle.declare_processes(timeout=timeout)
+            if declaration_result.status is not WorkerCallStatus.OK:
+                diagnostic = diagnostic_for_worker_result(
+                    declaration_result,
+                    agent_id=VALIDATION_AGENT_ID,
+                    slot=VALIDATION_SLOT,
+                    stage="declaration",
+                    timeout=timeout,
+                    exit_code=handle.exit_code,
+                )
+                raise AgentValidationFailedError(diagnostic)
+            assert declaration_result.payload is not None
+            declaration_payload = declaration_result.payload.get("declarations")
+            try:
+                declared = (
+                    [ProcessDeclaration(**item) for item in declaration_payload]
+                    if isinstance(declaration_payload, list)
+                    else declaration_payload
+                )
+                declarations = ProcessMatchController._validate_declarations(
+                    declared,
+                    agent_id=VALIDATION_AGENT_ID,
+                    slot=VALIDATION_SLOT,
+                    arena_size=VALIDATION_ARENA_SIZE,
+                )
+            except (TypeError, PythonEntrantInitializationError) as exc:
+                diagnostic = (
+                    exc.diagnostic
+                    if isinstance(exc, PythonEntrantInitializationError)
+                    else RuntimeDiagnostic(
+                        code="agent_process_declaration_invalid",
+                        stage="declaration",
+                        message=(
+                            f"Python agent {VALIDATION_AGENT_ID} returned malformed "
+                            "process declarations."
+                        ),
+                        agent_id=VALIDATION_AGENT_ID,
+                        slot=VALIDATION_SLOT,
+                        exception_type=type(exc).__name__,
+                    )
+                )
+                raise AgentValidationFailedError(diagnostic) from exc
+
+        observation = build_validation_observation(
+            api_version,
+            declarations[0] if declarations else None,
+        )
         act_start = time.perf_counter()
         act_result = handle.act(observation, action_slot=0, timeout=timeout)
         if act_result.status is not WorkerCallStatus.OK:
@@ -434,7 +595,7 @@ def _validate_agent_supervised(
                 stage="action",
                 timeout=timeout,
                 exit_code=handle.exit_code,
-                tick=observation.tick,
+                tick=_observation_tick(observation),
                 action_slot=0,
             )
             _trace_decision(trace_writer, observation, act_start, None, diagnostic)
@@ -443,18 +604,49 @@ def _validate_agent_supervised(
         assert act_result.payload is not None
         action_payload = act_result.payload.get("action")
         if action_payload is None:
-            exc = InvalidPythonActionError("act() must return one AgentAction")
+            invalid_action = InvalidPythonActionError(
+                "act() must return one AgentAction"
+            )
             diagnostic = diagnose_invalid_action(
-                exc, agent_id=VALIDATION_AGENT_ID, slot=VALIDATION_SLOT, tick=observation.tick, action_slot=0
+                invalid_action,
+                agent_id=VALIDATION_AGENT_ID,
+                slot=VALIDATION_SLOT,
+                tick=_observation_tick(observation),
+                action_slot=0,
             )
             _trace_decision(trace_writer, observation, act_start, None, diagnostic)
             raise AgentValidationFailedError(diagnostic)
 
-        validated_action = AgentAction(
-            kind=ActionKind(action_payload["kind"]),
-            operand=action_payload.get("operand"),
-            value=action_payload.get("value"),
-        )
+        try:
+            validated_action = AgentAction(
+                kind=(
+                    ActionKindV2(action_payload["kind"])
+                    if api_version == 2
+                    else ActionKind(action_payload["kind"])
+                ),
+                operand=action_payload.get("operand"),
+                value=action_payload.get("value"),
+            )
+            validated_action = (
+                ProcessMatchController._validate_v2_action(validated_action)
+                if api_version == 2
+                else validate_action(validated_action)
+            )
+        except (KeyError, ValueError, InvalidPythonActionError) as exc:
+            invalid = (
+                exc
+                if isinstance(exc, InvalidPythonActionError)
+                else InvalidPythonActionError(str(exc))
+            )
+            diagnostic = diagnose_invalid_action(
+                invalid,
+                agent_id=VALIDATION_AGENT_ID,
+                slot=VALIDATION_SLOT,
+                tick=_observation_tick(observation),
+                action_slot=0,
+            )
+            _trace_decision(trace_writer, observation, act_start, None, diagnostic)
+            raise AgentValidationFailedError(diagnostic) from exc
         _trace_decision(
             trace_writer,
             observation,

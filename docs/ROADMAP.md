@@ -433,8 +433,8 @@ and measures the stable 1.x platform without changing `bytefray-rules-1`:
 
 No Ruleset, Agent API, RNG, scheduler semantics, evaluation methodology,
 artifact interpretation, package/revision identity, or gameplay change belongs
-in v1.4. See [the audit](V1_4_PLATFORM_INTEGRITY.md) and
-[scaling report](performance/V1_4_SCALING.md).
+in v1.4. See [the audit](archive/v1/V1_4_PLATFORM_INTEGRITY.md) and
+[scaling report](archive/v1/V1_4_SCALING.md).
 
 The headless-suite total changed from 1241 to 1240 because 13 retired
 predecessor-compatibility tests were removed while 12 new integrity and
@@ -469,7 +469,7 @@ entrant, replication, or resource semantics.
 order, entrant-identity/execution-state field classification, deterministic-
 identity dependency graph, golden-corpus coverage audit, and the durable v1.5
 invariants later phases must preserve — see
-[the Phase 1 baseline](V1_5_PHASE1_RULESET_V1_BASELINE.md). No architecture
+[the Phase 1 baseline](archive/v1/V1_5_PHASE1_RULESET_V1_BASELINE.md). No architecture
 changed in Phase 1; it added characterization coverage (Python-side scheduler
 call-order tests, VM tick-lifecycle stage-order tests, and a supervised-vs-
 unsupervised Python equivalence test) and is the acceptance boundary Phase 2's
@@ -480,7 +480,7 @@ v1.4 equivalence corpus.
 three duplicated Ruleset-v1 entrant scheduling loops (VM, unsupervised Python,
 supervised Python) now share one implementation,
 `battle_engine.scheduler.run_sequential_quota` — see
-[the Phase 2 record](V1_5_PHASE2_SCHEDULER_ABSTRACTION.md). Tick lifecycle,
+[the Phase 2 record](archive/v1/V1_5_PHASE2_SCHEDULER_ABSTRACTION.md). Tick lifecycle,
 scoring, statistics, replay, VM-only kill attribution, termination resolution,
 and every deterministic identity are unchanged; the v1.4/v1.5 Ruleset-v1
 equivalence corpus shows zero golden differences. No Ruleset dispatch/registry
@@ -493,7 +493,7 @@ three.
 a new `battle_engine.ruleset_policy` module pairs the frozen Ruleset-v1
 identity with the Phase 2 shared scheduler behind one fail-closed resolver,
 `resolve_ruleset_policy` — see
-[the Phase 3 record](V1_5_PHASE3_RULESET_POLICY_DISPATCH.md). VM, unsupervised
+[the Phase 3 record](archive/v1/V1_5_PHASE3_RULESET_POLICY_DISPATCH.md). VM, unsupervised
 Python, and supervised Python entrant scheduling now obtain
 `run_sequential_quota` through that resolved policy instead of importing the
 scheduler directly; runtime-kind (VM/Python) selection remains entirely
@@ -510,7 +510,7 @@ termination decision/reason computations (VM, unsupervised Python,
 supervised Python) now delegate to one implementation,
 `RulesetPolicy.resolve_termination`, reached through the same Phase 3
 dispatch seam already used for scheduling — see
-[the Phase 4 record](V1_5_PHASE4_TERMINATION_POLICY.md). Each runtime still
+[the Phase 4 record](archive/v1/V1_5_PHASE4_TERMINATION_POLICY.md). Each runtime still
 decides *when* to check termination, at exactly the same tick-lifecycle
 position as before; the policy only decides *what the answer is*, from
 alive count, current tick, and the configured tick limit. Termination
@@ -527,7 +527,7 @@ EntrantIdentity` type gives `match_service.MatchEntrant`, VM `agent_state.
 Agent`, and `python_runtime.PythonEntrantState` one authoritative identity
 object each, instead of independently storing `agent_id`/`name` as flat
 fields duplicable within a class -- see
-[the Phase 5 record](V1_5_PHASE5_ENTRANT_IDENTITY_EXECUTION_STATE.md). All
+[the Phase 5 record](archive/v1/V1_5_PHASE5_ENTRANT_IDENTITY_EXECUTION_STATE.md). All
 three classes keep their original names, public constructor signatures, and
 read call sites unchanged via read-only `agent_id`/`name` compatibility
 properties; `supervised_runtime.py`, `match.py`, `core.py`, `vm.py`,
@@ -541,7 +541,7 @@ shows zero golden differences.
 
 **Phase 6 (integrated architecture-equivalence qualification) is
 complete** on `v1.5-development`: a qualification, not a refactor pass --
-see [the Phase 6 record](V1_5_PHASE6_ARCHITECTURE_EQUIVALENCE.md). The
+see [the Phase 6 record](archive/v1/V1_5_PHASE6_ARCHITECTURE_EQUIVALENCE.md). The
 combined result of Phases 2-5 was directly verified equivalent to v1.4.1
 Ruleset-v1 behavior, including running the golden corpus against the
 actual v1.4.1 source tree (not merely against an unedited test file) and
@@ -567,16 +567,16 @@ Agent API v1, or any persisted schema. Phase 6's integrated qualification
 
 **Phase 0-1 (scale baseline) and Phase 2 (deterministic parallel
 evaluation) are complete** on `v1.6-development` -- see
-[V1_6_PHASE1_EVALUATION_SCALE_BASELINE.md](V1_6_PHASE1_EVALUATION_SCALE_BASELINE.md)
+[V1_6_PHASE1_EVALUATION_SCALE_BASELINE.md](archive/v1/V1_6_PHASE1_EVALUATION_SCALE_BASELINE.md)
 and
-[V1_6_PHASE2_PARALLEL_EVALUATION.md](V1_6_PHASE2_PARALLEL_EVALUATION.md).
+[V1_6_PHASE2_PARALLEL_EVALUATION.md](archive/v1/V1_6_PHASE2_PARALLEL_EVALUATION.md).
 `bytefray agents evaluate --workers N` dispatches independent evaluation
 cells across a bounded pool of long-lived subprocess workers; worker count
 never affects `evaluation_id` or any per-cell result, only wall-clock
 throughput.
 
 **Phase 3 (reusable, reproducible evaluation presets) is complete** -- see
-[V1_6_PHASE3_EVALUATION_PRESETS.md](V1_6_PHASE3_EVALUATION_PRESETS.md).
+[V1_6_PHASE3_EVALUATION_PRESETS.md](archive/v1/V1_6_PHASE3_EVALUATION_PRESETS.md).
 `bytefray agents evaluate --preset <name>` and
 `bytefray agents evaluation-presets list|show|validate` let a hand-authored
 `bytefray.evaluation_preset` YAML file supply default opponent/seed/ticks/
@@ -585,7 +585,7 @@ overriding it; a preset is purely an input-construction convenience and
 never enters `evaluation_id`'s hash or changes what an evaluation means.
 
 **Phase 4 (aggregate & statistical analysis) is complete** -- see
-[V1_6_PHASE4_EVALUATION_ANALYSIS.md](V1_6_PHASE4_EVALUATION_ANALYSIS.md).
+[V1_6_PHASE4_EVALUATION_ANALYSIS.md](archive/v1/V1_6_PHASE4_EVALUATION_ANALYSIS.md).
 Wilson-interval win-rate estimates and an exact paired candidate-vs-baseline
 significance test (over discordant paired conditions, with explicit
 by-opponent/by-orientation breakdowns) are now available from `agents
@@ -593,7 +593,7 @@ evaluate`, `evaluations show`/`compare`, and the Designer -- fully derived
 from already-canonical evaluation data, no schema change, no ranking system.
 
 **Phase 5 (behavior profile analytics) is complete** -- see
-[V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
+[V1_6_PHASE5_BEHAVIOR_ANALYSIS.md](archive/v1/V1_6_PHASE5_BEHAVIOR_ANALYSIS.md).
 `agents evaluate`, `evaluations show`, and the Designer now show a
 `behavior:` profile (survival, write activity, territory occupancy/
 retention/spread, kill interaction) alongside Phase 4's outcome evidence,
@@ -603,7 +603,7 @@ composite score, no behavioral distance (deferred; see the phase record
 for why).
 
 **Phase 6 (integrated qualification) is complete** -- see
-[V1_6_PHASE6_INTEGRATED_QUALIFICATION.md](V1_6_PHASE6_INTEGRATED_QUALIFICATION.md).
+[V1_6_PHASE6_INTEGRATED_QUALIFICATION.md](archive/v1/V1_6_PHASE6_INTEGRATED_QUALIFICATION.md).
 No release-blocking defect was found; two non-blocking findings (a
 pre-existing `evaluations compare` fallback-grouping precision gap, and an
 `evaluations show` wording inconsistency for an all-inconclusive-pairs
@@ -624,19 +624,19 @@ remain explicit throughout.
 **Status: closed.** `v2.0.0-alpha.1` through `v2.0.0-alpha.11` are complete
 on `v2.0-development` (`main` unchanged throughout). The alpha program
 answered the principal gameplay question a first architecture/research pass
-([V2_0_ALPHA_ARCHITECTURE.md](V2_0_ALPHA_ARCHITECTURE.md)) opened: whether a
+([V2_0_ALPHA_ARCHITECTURE.md](archive/v2/V2_0_ALPHA_ARCHITECTURE.md)) opened: whether a
 Python-side "vulnerable core" mortality mechanic can check unrestricted
 territorial expansion — close to dominant under current scoring since
 v0.6.1 (see the `[0.6.1]` CHANGELOG entry) — without collapsing ordinary
 play or creating a new universal strategy. Candidate semantics validated;
 alpha research is now closed. See
-[V2_0_ALPHA_RESEARCH_SUMMARY.md](V2_0_ALPHA_RESEARCH_SUMMARY.md) for the
+[V2_0_ALPHA_RESEARCH_SUMMARY.md](archive/v2/V2_0_ALPHA_RESEARCH_SUMMARY.md) for the
 durable synthesis of all eleven experiments, and each `V2_0_ALPHA<N>_*.md`
 document for its own uncorrected evidence record. No `alpha.12` was created;
 no further broad gameplay research reopens under this alpha sequence.
 
 Major decisions this program produced, carried into beta as the starting
-semantic contract (see [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)):
+semantic contract (see [V2_0_BETA1_PLAN.md](archive/v2/V2_0_BETA1_PLAN.md)):
 
 - **Vulnerable Core** (`CORE_SIZE = 8`, owns-zero capture, once-per-tick
   post-action check): validated as the candidate mechanic for Ruleset v2.
@@ -670,7 +670,7 @@ semantic contract (see [V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md)):
 **Status: shipped.** `v2.0.0-beta1` is tagged and published as a GitHub
 prerelease. Converts the evidence-backed `bytefray-rules-2-alpha11` candidate into a
 supported, compatibility-honest product ruleset. See
-[V2_0_BETA1_PLAN.md](V2_0_BETA1_PLAN.md) for the full scope. Purpose:
+[V2_0_BETA1_PLAN.md](archive/v2/V2_0_BETA1_PLAN.md) for the full scope. Purpose:
 
 - freeze the candidate gameplay semantics validated by alpha.11;
 - establish the permanent `bytefray-rules-2` compatibility identity,
@@ -688,7 +688,7 @@ v2 semantics), 4 (Replay Viewer HUD separation), and 5 (integrated
 qualification across Windows/Linux, source/wheel/frozen builds, and
 v1/v2/VM-rejection execution) are all complete on
 `v2.0-beta1-development` — see
-[V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md](V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md)
+[V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md](archive/v2/V2_0_BETA1_PHASE5_INTEGRATED_QUALIFICATION.md)
 for the full qualification record and GO decision. Release preparation
 qualified the wheel, source distribution, portable Windows build, and
 Windows installer (full install/upgrade/uninstall lifecycle) against the
@@ -706,10 +706,10 @@ prerelease. Purpose: Ruleset-v2 evaluation methodology
 per alpha.11's own requirements), scheduler/order balancing tooling,
 multi-entrant evaluation/productization decisions, and core/capture metrics
 as first-class evaluation outputs. See
-[V2_0_BETA2_PLAN.md](V2_0_BETA2_PLAN.md) for the phase breakdown.
+[V2_0_BETA2_PLAN.md](archive/v2/V2_0_BETA2_PLAN.md) for the phase breakdown.
 
 **Phase 1 (Ruleset-v2 1v1 evaluation methodology) is complete** — see
-[V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md).
+[V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md](archive/v2/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md).
 `agents evaluate` gains an explicit `--ruleset {bytefray-rules-1,
 bytefray-rules-2}` selector; the historical v1 methodology is preserved
 byte-for-byte when omitted. Permanent v2 methodology adds a standard,
@@ -721,7 +721,7 @@ placement, seed, ticks) now enters canonical evaluation/schedule identity;
 resume and comparison fail closed across any methodology change.
 
 **Phase 2 (multi-entrant evaluation model) is complete** — see
-[V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md).
+[V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md](archive/v2/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md).
 A generic entrant/seat/permutation/layout model replaces 1v1-only
 vocabulary where a true seat model is needed, without touching Phase 1's
 pairwise identity path. Real 3-entrant evaluation ships through the
@@ -737,7 +737,7 @@ Multi-entrant behavior/capture aggregate analysis remains explicitly
 deferred to Phase 3.
 
 **Phase 3 (multi-entrant analysis & strategic metrics) is complete** — see
-[V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md](V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md).
+[V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md](archive/v2/V2_0_BETA2_PHASE3_MULTI_ENTRANT_ANALYSIS.md).
 A new, entrant-symmetric analysis module (`evaluation_group_analysis.py`)
 replaces the Phase 2 "deferred" placeholder in both the live CLI and
 `evaluations show`: per-entrant outcome classification (winner/surviving-
@@ -756,7 +756,7 @@ against three 3-entrant, 5-seed rosters directly re-examined Phase 2's own
 rather than a fixed rate.
 
 **Phase 4 (strategic characterization) is complete** — see
-[V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md).
+[V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](archive/v2/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md).
 An 11-roster, 990-cell pre-registered corpus pointed Phase 3's analysis
 instrument at real strategic questions. Headline finding: Claimer's
 Phase-3 100%-win-rate result was matchup-specific, not universal — its
@@ -775,7 +775,7 @@ methodology. No engine/scheduler/scoring/agent code was changed.
 revision recommended before Beta2 qualification.
 
 **Phase 4.1 (pre-qualification review remediation) is complete** — see
-[V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md](V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md).
+[V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md](archive/v2/V2_0_BETA2_PHASE4_1_PRE_QUALIFICATION_REMEDIATION.md).
 It closes five high-severity review findings, restores historical v1
 schedule resume identity, documents the deliberate non-zero-start Python
 match-identity transition, makes group verification/comparison/self-play
@@ -784,7 +784,7 @@ unchanged.
 
 **Phase 5 (integrated qualification) is complete** on
 `v2.0-beta2-development` — see
-[V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md](V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md).
+[V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md](archive/v2/V2_0_BETA2_PHASE5_INTEGRATED_QUALIFICATION.md).
 Historical v1/v4, Ruleset-v2 pairwise/v5, and Ruleset-v2 group/v6
 identity and resume passed; source-tree CLI/history and isolated-wheel
 group workflows passed; N=3/N=4, self-play, verification, comparison, and
@@ -803,7 +803,7 @@ for the published assets and notes.
 
 **Status: shipped.** `v2.0.0-beta3` is tagged and published as a GitHub
 prerelease. The
-[Beta3 product-presentation plan](V2_0_BETA3_PLAN.md) audits the shipped
+[Beta3 product-presentation plan](archive/v2/V2_0_BETA3_PLAN.md) audits the shipped
 Replay Viewer, Agent Designer, multi-entrant workflows, test seams, and GUI
 resource packaging. Phase 2 now ships responsive detailed/compact entrant HUD
 layouts, centered integer arena scaling that preserves ordinary requested
@@ -949,9 +949,9 @@ recorded as a research-methodology constraint, not a gameplay change.
 `bytefray-rules-1` and `bytefray-rules-2` are unchanged by every phase of
 this program; `AGENT_API_VERSION` was never bumped.
 
-See [V3_RULESET_RESEARCH_SUMMARY.md](V3_RULESET_RESEARCH_SUMMARY.md) for
+See [V3_RULESET_RESEARCH_SUMMARY.md](archive/v3/V3_RULESET_RESEARCH_SUMMARY.md) for
 the navigable phase-by-phase index and
-[V3_RESEARCH_CLOSEOUT.md](V3_RESEARCH_CLOSEOUT.md) for the full final
+[V3_RESEARCH_CLOSEOUT.md](archive/v3/V3_RESEARCH_CLOSEOUT.md) for the full final
 report.
 
 ## v3.0 — Product Development
@@ -962,14 +962,14 @@ v3.0 is a **product** release
 cycle, not a gameplay-semantic one: it proceeds on `bytefray-rules-2`
 unchanged and focuses on presentation, agent creation, strategy analysis,
 evaluation infrastructure, and distribution quality. See
-[V3_PRODUCT_SCOPE.md](V3_PRODUCT_SCOPE.md) for the full product thesis,
+[V3_PRODUCT_SCOPE.md](archive/v3/V3_PRODUCT_SCOPE.md) for the full product thesis,
 compatibility freeze, phase plan, and non-goals, and
-[V3_PHASE0_PRODUCT_SCOPE.md](V3_PHASE0_PRODUCT_SCOPE.md) for this cycle's
+[V3_PHASE0_PRODUCT_SCOPE.md](archive/v3/V3_PHASE0_PRODUCT_SCOPE.md) for this cycle's
 Phase 0 scope-freeze report.
 
 **Phase 1 (presentation baseline & Replay Viewer branding parity) is
 complete** — see
-[V3_PHASE1_PRESENTATION_BASELINE.md](V3_PHASE1_PRESENTATION_BASELINE.md).
+[V3_PHASE1_PRESENTATION_BASELINE.md](archive/v3/V3_PHASE1_PRESENTATION_BASELINE.md).
 A baseline screenshot set across the Replay Viewer's HUD modes (detailed,
 compact/5-entrant, narrow-window, terminal state) and Agent Designer's
 ready/live states was captured against the real running applications, and
@@ -979,7 +979,7 @@ asset is ever unavailable. No HUD semantic, Ruleset, Agent API, or scoring
 change.
 
 **Phase 2 (agent creation & iteration workflow) is complete** — see
-[V3_PHASE2_AGENT_CREATION_WORKFLOW.md](V3_PHASE2_AGENT_CREATION_WORKFLOW.md).
+[V3_PHASE2_AGENT_CREATION_WORKFLOW.md](archive/v3/V3_PHASE2_AGENT_CREATION_WORKFLOW.md).
 Scope was narrowed by explicit direction to six concrete priorities: a
 second, self-contained "Annotated Example" scaffold template alongside the
 original blank one (`bytefray agents create --template annotated`, and the
@@ -997,7 +997,7 @@ explicitly held out of scope for Phase 3. No Ruleset, Agent API, scoring,
 or provenance change.
 
 **Phase 3 (strategy analysis) is complete** — see
-[V3_PHASE3_STRATEGY_ANALYSIS.md](V3_PHASE3_STRATEGY_ANALYSIS.md). Directed
+[V3_PHASE3_STRATEGY_ANALYSIS.md](archive/v3/V3_PHASE3_STRATEGY_ANALYSIS.md). Directed
 at four questions a user should be able to answer after an evaluation
 without cross-referencing separate CLI/GUI text — who won and how
 convincingly, what each agent actually did, why a matchup may have favored
@@ -1011,7 +1011,7 @@ or composite rating, clustering, and AI-generated strategic text. No
 Ruleset, Agent API, scoring, scheduler, or artifact-schema change.
 
 **Phase 4 (evaluation infrastructure) is complete** — see
-[V3_PHASE4_EVALUATION_INFRASTRUCTURE.md](V3_PHASE4_EVALUATION_INFRASTRUCTURE.md).
+[V3_PHASE4_EVALUATION_INFRASTRUCTURE.md](archive/v3/V3_PHASE4_EVALUATION_INFRASTRUCTURE.md).
 Closed a real GUI/CLI parity gap rather than adding new evaluation
 machinery: `EvaluationHistoryDialog` gained the CLI's existing
 non-default-condition disclosure (arena size, action budget, kill weight,
@@ -1026,7 +1026,7 @@ in this layer, and Phase 4 did not add one. No Ruleset, Agent API, or
 schema change.
 
 **Phase 5 (integration & distribution) qualification is complete** — see
-[V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md](V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md).
+[V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md](archive/v3/V3_PHASE5_INTEGRATION_DISTRIBUTION_ALPHA1.md).
 Proves the composed Phase 0-4 product installs, launches, and runs the full
 create → validate → test → evaluate → replay workflow from packaged
 Windows and Python-wheel distributions, not just a source checkout — fixing
@@ -1037,7 +1037,7 @@ Windows builds silently lacked it). No gameplay, Ruleset, Agent API, or
 scoring change; `bytefray-rules-2` ships unchanged as v3.0's active Ruleset.
 
 **`v3.0.0-alpha2` (strategy examples & Ruleset clarity) is published** — see
-[V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md](V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md).
+[V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md](archive/v3/V3_ALPHA2_STRATEGY_EXAMPLES_RULESET_CLARITY.md).
 Scope came from a read-only post-alpha1 product-content audit, not from a
 new phase. Two bundled starters (`raider`, `sentinel`) now demonstrate
 Ruleset v2's Vulnerable Core mechanic, which no existing starter engaged
@@ -1054,7 +1054,7 @@ verifies with zero drift before and after.
 
 **Phase 6 (release candidate qualification) is complete; `v3.0.0-rc1` is
 published** — see
-[V3_RC1_QUALIFICATION.md](V3_RC1_QUALIFICATION.md). v3.0 is treated as
+[V3_RC1_QUALIFICATION.md](archive/v3/V3_RC1_QUALIFICATION.md). v3.0 is treated as
 feature-complete as of this phase: qualification re-ran the full test
 suites, Ruff, both canonical mypy targets, and the frozen-benchmark
 verification (9/9, zero drift, before and after), re-verified Ruleset v1/v2/
@@ -1072,7 +1072,7 @@ release blocker, consistent with alpha1/alpha2 precedent. RC1 stays on
 to `main` until final `v3.0.0`.
 
 **`v3.0.0-rc2` is published** — see
-[V3_RC1_DEFAULT_RULESET_DEFECT.md](V3_RC1_DEFAULT_RULESET_DEFECT.md). Found
+[V3_RC1_DEFAULT_RULESET_DEFECT.md](archive/v3/V3_RC1_DEFAULT_RULESET_DEFECT.md). Found
 after RC1 was tagged: an omitted CLI `--ruleset` resolved to Ruleset v1 for
 Python-only matches, while Agent Designer already defaulted to Ruleset v2 —
 a new user got materially different gameplay (no vulnerable-core capture
@@ -1118,8 +1118,8 @@ metadata and documentation — RC2's own full qualification (default suite
 2375 passed, GUI suite 226 passed, frozen benchmark 9/9 zero drift, Ruff
 and both mypy gates clean) therefore applies unchanged to this release.
 
-See [V3_RC1_QUALIFICATION.md](V3_RC1_QUALIFICATION.md) for the RC1
-qualification record and [V3_RC1_DEFAULT_RULESET_DEFECT.md](V3_RC1_DEFAULT_RULESET_DEFECT.md)
+See [V3_RC1_QUALIFICATION.md](archive/v3/V3_RC1_QUALIFICATION.md) for the RC1
+qualification record and [V3_RC1_DEFAULT_RULESET_DEFECT.md](archive/v3/V3_RC1_DEFAULT_RULESET_DEFECT.md)
 for the RC2 defect fix and its own qualification pass — together they
 cover the full v3.0.0 release. `v3.0.0-alpha1`, `v3.0.0-alpha2`,
 `v3.0.0-rc1`, and `v3.0.0-rc2` remain published, immutable prereleases;

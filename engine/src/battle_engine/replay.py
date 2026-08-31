@@ -11,8 +11,8 @@ from typing import Any, Literal, TypeAlias
 from battle_engine.rules import BYTEFRAY_RULESET_ID, RulesetProvenance
 
 SCHEMA_NAME = "battle2.replay"
-SCHEMA_VERSION = 3
-SUPPORTED_SCHEMA_VERSIONS = (2, 3)
+SCHEMA_VERSION = 4
+SUPPORTED_SCHEMA_VERSIONS = (2, 3, 4)
 
 
 class ReplayFormatError(ValueError):
@@ -29,6 +29,15 @@ class MatchConfiguration:
     seed: int | None = None
     win_mode: str = "score_fallback"
     weights: Mapping[str, int | float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProcessState:
+    process_id: str
+    entrant_id: str
+    anchor: int
+    disrupted: bool
+    reach: int
 
 
 @dataclass(frozen=True)
@@ -144,6 +153,7 @@ class TickSnapshot:
     score: Mapping[str, int | float] = field(default_factory=dict)
     memory_diffs: tuple[MemoryDiff, ...] = ()
     events: tuple[EngineEvent, ...] = ()
+    processes: tuple[ProcessState, ...] = ()
     schema: str = SCHEMA_NAME
     schema_version: int = SCHEMA_VERSION
     record_type: Literal["tick"] = "tick"
@@ -162,6 +172,7 @@ class MatchResult:
     result_id: str | None = None
     termination_reason: str | None = None
     entrants: tuple[Mapping[str, Any], ...] = ()
+    processes: tuple[ProcessState, ...] = ()
     schema: str = SCHEMA_NAME
     schema_version: int = SCHEMA_VERSION
     record_type: Literal["result"] = "result"
@@ -202,6 +213,23 @@ def _config_from_dict(value: Any) -> MatchConfiguration:
         seed=(None if data.get("seed") is None else _as_int(data["seed"], "config.seed")),
         win_mode=str(data.get("win_mode", "score_fallback")),
         weights={str(k): v for k, v in weights.items() if isinstance(v, (int, float))},
+    )
+
+
+def _process_from_dict(value: Any) -> ProcessState:
+    data = _require_mapping(value, "process")
+    process_id = data.get("process_id")
+    if not isinstance(process_id, str) or not process_id:
+        raise ReplayFormatError("process.process_id is required")
+    entrant_id = data.get("entrant_id")
+    if not isinstance(entrant_id, str) or not entrant_id:
+        raise ReplayFormatError("process.entrant_id is required")
+    return ProcessState(
+        process_id=process_id,
+        entrant_id=entrant_id,
+        anchor=_as_int(data.get("anchor", 0), "process.anchor"),
+        disrupted=bool(data.get("disrupted", False)),
+        reach=_as_int(data.get("reach", 0), "process.reach"),
     )
 
 
@@ -362,6 +390,13 @@ def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
             ],
             events=[_event_to_dict(event) for event in record.events],
         )
+        # Process state is a schema-v4 addition.  Omitting the key entirely
+        # from v2/v3 output preserves those historical wire encodings and
+        # their byte-level replay digests.
+        if record.schema_version >= 4:
+            base["processes"] = [
+                _process_to_dict(process) for process in record.processes
+            ]
     elif isinstance(record, MatchResult):
         base.update(
             winner=record.winner,
@@ -375,9 +410,23 @@ def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
             termination_reason=record.termination_reason,
             entrants=[dict(entrant) for entrant in record.entrants],
         )
+        if record.schema_version >= 4:
+            base["processes"] = [
+                _process_to_dict(process) for process in record.processes
+            ]
     else:  # pragma: no cover - protects callers bypassing static typing
         raise TypeError(f"unsupported replay record: {type(record).__name__}")
     return base
+
+
+def _process_to_dict(process: ProcessState) -> dict[str, Any]:
+    return {
+        "process_id": process.process_id,
+        "entrant_id": process.entrant_id,
+        "anchor": process.anchor,
+        "disrupted": process.disrupted,
+        "reach": process.reach,
+    }
 
 
 def _agent_to_dict(agent: AgentState) -> dict[str, Any]:
@@ -502,6 +551,7 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
             score=dict(_require_mapping(data.get("score", {}), "tick.score")),
             memory_diffs=tuple(_diff_from_dict(item) for item in data.get("memory_diffs", ())),
             events=tuple(_event_from_dict(item) for item in data.get("events", ())),
+            processes=tuple(_process_from_dict(item) for item in data.get("processes", ())),
             schema_version=version,
         )
     if record_type == "result":
@@ -528,6 +578,7 @@ def deserialize_record(value: str | bytes | Mapping[str, Any]) -> ReplayRecord:
                 _require_mapping(item, "result.entrants item")
                 for item in result_entrants_value
             ),
+            processes=tuple(_process_from_dict(item) for item in data.get("processes", ())),
             schema_version=version,
         )
     raise ReplayFormatError(f"unsupported record_type: {record_type!r}")
@@ -545,6 +596,7 @@ def adapt_v01_record(data: Mapping[str, Any]) -> ReplayRecord:
             score=dict(_require_mapping(data.get("score", {}), "snapshot.score")),
             memory_diffs=tuple(_diff_from_dict(item) for item in data.get("memory_diffs", ())),
             events=tuple(_event_from_dict(item) for item in data.get("events", ())),
+            processes=tuple(_process_from_dict(item) for item in data.get("processes", ())),
             schema_version=2,
         )
 

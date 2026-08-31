@@ -94,6 +94,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID, normalize_ruleset_id
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
     resolve_omitted_ruleset_id,
 )
 
@@ -481,8 +482,9 @@ def resolve_evaluation_ruleset_id(ruleset_id: str | None) -> str:
 #: Which resolved rules-compatibility ids select the v2 evaluation
 #: methodology. Finite and explicit, never a prefix check.
 _V2_METHODOLOGY_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID}
+    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA1_ID}
 )
+
 
 
 def is_ruleset_v2_methodology(rules_compatibility_id: str) -> bool:
@@ -1185,6 +1187,9 @@ class EvaluationRequest:
     # fingerprint`, and `Config.weights` already carries it into
     # `canonical_match_id`'s `reproducibility` block.
     kill_weight: float | None = None
+    scheduler_chunk_size: int | None = None
+    scheduler_rotate_start: bool = False
+
 
     @property
     def resolved_locality_reach(self) -> int | None:
@@ -2332,6 +2337,8 @@ def _evaluation_dispatcher_loop(
     instr_per_tick: int | None = None,
     locality_reach: int | None = None,
     kill_weight: float | None = None,
+    scheduler_chunk_size: int | None = None,
+    scheduler_rotate_start: bool = False,
 ) -> None:
     """One dispatcher thread's body: owns exactly one worker subprocess handle
     for its entire lifetime, processing cells strictly one at a time against
@@ -2365,7 +2372,10 @@ def _evaluation_dispatcher_loop(
             instr_per_tick=instr_per_tick,
             locality_reach=locality_reach,
             kill_weight=kill_weight,
+            scheduler_chunk_size=scheduler_chunk_size,
+            scheduler_rotate_start=scheduler_rotate_start,
         )
+
         if call_result.status == WorkerCallStatus.OK:
             payload = call_result.payload or {}
             resolved_cell = _cell_from_wire(payload["cell"])
@@ -2821,7 +2831,10 @@ class EvaluationService:
                         instr_per_tick=request.instr_per_tick,
                         locality_reach=request.resolved_locality_reach,
                         kill_weight=request.kill_weight,
+                        scheduler_chunk_size=request.scheduler_chunk_size,
+                        scheduler_rotate_start=request.scheduler_rotate_start,
                     )
+
                     if ingest(result):
                         break
             else:
@@ -2942,7 +2955,10 @@ class EvaluationService:
                     request.instr_per_tick,
                     request.resolved_locality_reach,
                     request.kill_weight,
+                    request.scheduler_chunk_size,
+                    request.scheduler_rotate_start,
                 ),
+
                 daemon=True,
             )
             for handle in handles
@@ -3081,12 +3097,15 @@ class EvaluationService:
             BYTEFRAY_RULESET_ID,
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V3_ALPHA1_ID,
+            BYTEFRAY_RULESET_V4_ALPHA1_ID,
         ):
             raise EvaluationConfigurationError(
                 f"Unsupported evaluation --ruleset {request.ruleset_id!r}; expected "
-                f"{BYTEFRAY_RULESET_ID!r}, {BYTEFRAY_RULESET_V2_ID!r}, or "
-                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}."
+                f"{BYTEFRAY_RULESET_ID!r}, {BYTEFRAY_RULESET_V2_ID!r}, "
+                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}, or "
+                f"{BYTEFRAY_RULESET_V4_ALPHA1_ID!r}."
             )
+
         # v3 Phase 2: fail closed on a reach that would be silently
         # discarded. A request that names a reach it will not get would
         # write artifacts describing conditions it did not run under.
@@ -3126,9 +3145,19 @@ class EvaluationService:
         return {agent_id: _resolve_python_agent(root, agent_id) for agent_id in all_ids}
 
     def _effective_conditions(self, request: EvaluationRequest) -> EffectiveConditions:
+        # Agent API version is part of the persisted and identity-bearing
+        # evaluation conditions.  Rulesets v1-v3 are historical Agent API v1
+        # methodologies; a later installation-wide API bump must not silently
+        # redefine their recipes.  Only the new v4 methodology uses the
+        # installation's current Agent API version.
+        agent_api_version = (
+            get_project_info().agent_api_version
+            if request.resolved_rules_compatibility_id == BYTEFRAY_RULESET_V4_ALPHA1_ID
+            else 1
+        )
         return effective_conditions_for(
             request.ticks,
-            get_project_info().agent_api_version,
+            agent_api_version,
             arena_size=request.arena_size,
             instr_per_tick=request.instr_per_tick,
             kill_weight=request.kill_weight,
@@ -3371,6 +3400,8 @@ class EvaluationService:
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
         kill_weight: float | None = None,
+        scheduler_chunk_size: int | None = None,
+        scheduler_rotate_start: bool = False,
     ) -> CellExecutionResult:
         """Execute one cell. Pure apart from filesystem I/O under ``cell.artifact_
         dir`` and reading agent source under ``data_root``/the default data
@@ -3415,6 +3446,8 @@ class EvaluationService:
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
                 kill_weight=kill_weight,
+                scheduler_chunk_size=scheduler_chunk_size,
+                scheduler_rotate_start=scheduler_rotate_start,
             )
 
         # v0.9 Phase 6 (Phase 5 spec Sec H.1/T.4): `candidate_first` reuses
@@ -3469,7 +3502,10 @@ class EvaluationService:
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
                 kill_weight=kill_weight,
+                scheduler_chunk_size=scheduler_chunk_size,
+                scheduler_rotate_start=scheduler_rotate_start,
             )
+
         except AgentTestError as exc:
             return CellExecutionResult(
                 cell=replace(
@@ -3552,6 +3588,8 @@ class EvaluationService:
         instr_per_tick: int | None = None,
         locality_reach: int | None = None,
         kill_weight: float | None = None,
+        scheduler_chunk_size: int | None = None,
+        scheduler_rotate_start: bool = False,
     ) -> CellExecutionResult:
         """The multi-entrant generalization of the pairwise branch of
         :meth:`_execute_cell` (v2.0.0-beta2 Phase 2).
@@ -3584,7 +3622,10 @@ class EvaluationService:
                 instr_per_tick=instr_per_tick,
                 locality_reach=locality_reach,
                 kill_weight=kill_weight,
+                scheduler_chunk_size=scheduler_chunk_size,
+                scheduler_rotate_start=scheduler_rotate_start,
             )
+
         except AgentTestError as exc:
             return CellExecutionResult(
                 cell=replace(
@@ -3972,7 +4013,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ruleset",
-        choices=[BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID],
+        choices=[
+            BYTEFRAY_RULESET_ID,
+            BYTEFRAY_RULESET_V2_ID,
+            BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        ],
         default=None,
         help=(
             f"gameplay Ruleset identity. If omitted (and no --preset supplies one), "
@@ -3980,7 +4025,9 @@ def _parser() -> argparse.ArgumentParser:
             f"Python. {BYTEFRAY_RULESET_V2_ID} runs the balanced Ruleset-v2 1v1 "
             "methodology: standard placement set, standard seed set default, and "
             f"capture/core evidence. {BYTEFRAY_RULESET_ID} keeps the historical v1 "
-            "evaluation methodology. See docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
+            "evaluation methodology. Ruleset v4 alpha1 runs Agent API v2 process "
+            "entrants through the same production match service. See "
+            "docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
         ),
     )
     parser.add_argument(

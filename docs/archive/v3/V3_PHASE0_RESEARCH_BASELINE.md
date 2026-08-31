@@ -75,7 +75,7 @@ are the Python starters added in v0.6.1. Adding the four v2 reference
 agents from `reference_agents.py` gives nine.
 
 The population is pinned in committed package data,
-[`engine/src/battle_engine/data/benchmarks/v2_baseline.json`](../engine/src/battle_engine/data/benchmarks/v2_baseline.json),
+[`engine/src/battle_engine/data/benchmarks/v2_baseline.json`](../../../engine/src/battle_engine/data/benchmarks/v2_baseline.json),
 and loaded/verified through the new `battle_engine.benchmarks` module.
 
 ### Mechanism, and why this one
@@ -232,7 +232,7 @@ needed, and none was made.
 
 | axis | changed? | reasoning |
 |---|---|---|
-| Ruleset identity (`bytefray-rules-2`) | **No** | [docs/RULES.md](RULES.md)'s "Configuration values are not Ruleset identity" is explicit, and `canonical_match_id`'s own docstring restates it: `reproducibility` is "specifically about per-match *configuration*, not gameplay identity". Selecting an existing `Config` value the engine has always supported is not a semantic redefinition. Ruleset-v2 semantics are untouched. |
+| Ruleset identity (`bytefray-rules-2`) | **No** | [docs/RULES.md](../../RULES.md)'s "Configuration values are not Ruleset identity" is explicit, and `canonical_match_id`'s own docstring restates it: `reproducibility` is "specifically about per-match *configuration*, not gameplay identity". Selecting an existing `Config` value the engine has always supported is not a semantic redefinition. Ruleset-v2 semantics are untouched. |
 | Agent API version | **No** | No `Observation`, `AgentContext`, or `AgentAction` field changed. Agents receive no new information. (`Observation` does not expose arena size, which is itself a Phase 1 finding — see §12.) |
 | Result schema (`battle2.result`) | **No** | `arena_size`, `action_budget`, and `tick_limit` were *already* fields of the persisted `reproducibility` block. Their wire shape is unchanged; only their range of values widened. |
 | Replay schema (`battle2.replay`) | **No** | Same: the replay header already carried both a full `config` object and a `reproducibility` block containing them. |
@@ -301,9 +301,9 @@ finding about.
 ## 7. Control corpus
 
 Definition committed as package data at
-[`engine/src/battle_engine/data/benchmarks/v2_baseline_corpus.json`](../engine/src/battle_engine/data/benchmarks/v2_baseline_corpus.json);
+[`engine/src/battle_engine/data/benchmarks/v2_baseline_corpus.json`](../../../engine/src/battle_engine/data/benchmarks/v2_baseline_corpus.json);
 driver at
-[`tools/v3_phase0_baseline_corpus.py`](../tools/v3_phase0_baseline_corpus.py).
+[`tools/v3_phase0_baseline_corpus.py`](../../../tools/v3_phase0_baseline_corpus.py).
 The driver lives in `tools/` rather than gitignored `runs/` (Beta2's
 convention) because a control corpus that Phase 1 and Phase 2 are measured
 against has to stay rerunnable from the repository alone;
@@ -412,7 +412,7 @@ budgets** (66.7%).
 ## 9. Beta2 Phase 4 §17 ecology rubric
 
 The five criteria are reproduced **verbatim** from
-[docs/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md)
+[docs/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md](../v2/V2_0_BETA2_PHASE4_STRATEGIC_CHARACTERIZATION.md)
 §17, unaltered, and the Phase-0 control is scored against each.
 
 ### Criterion 1 — "**Multiple viable archetypes**"
@@ -689,7 +689,7 @@ core, so no Phase-0 baseline number is affected.
 | Working tree | clean |
 
 No pre-existing static-analysis debt was encountered or altered.
-[docs/RUFF_DEBT.md](RUFF_DEBT.md)'s three project-wide ignores
+[docs/RUFF_DEBT.md](../../RUFF_DEBT.md)'s three project-wide ignores
 (`BLE001`, `S110`, `TRY004`) were not modified.
 
 ### Test coverage added

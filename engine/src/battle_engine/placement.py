@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
 )
 
 # Which Ruleset identities default an omitted start to a spread seat layout
@@ -43,8 +44,9 @@ from battle_engine.ruleset_policy import (
 # Ruleset v1 and every historical alpha identity keep their exact
 # historical default.
 _SPREAD_START_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID}
+    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA1_ID}
 )
+
 
 __all__ = ["resolve_direct_match_starts", "spread_seat_starts"]
 

@@ -108,8 +108,9 @@ def build_snapshot(
     score: ScoreMap,
     vm: VM,
     events: list[dict[str, Any]],
+    processes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    snapshot = {
         "tick": tick,
         "agents": [_agent_snapshot(agent) for agent in agents],
         "score": dict(score),
@@ -119,6 +120,9 @@ def build_snapshot(
             for address, length, owner, values in vm.tick_diffs
         ],
     }
+    if processes is not None:
+        snapshot["processes"] = processes
+    return snapshot
 
 
 class ReplayPublisher:
@@ -135,8 +139,9 @@ class ReplayPublisher:
         score: ScoreMap,
         vm: VM,
         events: list[dict[str, Any]],
+        processes: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        snapshot = build_snapshot(tick, agents, score, vm, events)
+        snapshot = build_snapshot(tick, agents, score, vm, events, processes)
         self.sink.emit(snapshot)
         return snapshot
 

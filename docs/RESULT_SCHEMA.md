@@ -14,8 +14,9 @@ and portable filename. pMARS results set `replay` to `null`.
 gameplay Ruleset identity (`battle_engine.rules.BYTEFRAY_RULESET_ID`, see
 [RULES.md](RULES.md)) this match executed under. It is **required for
 current native writers** — every VM or Python match produced by
-`NativeMatchService`/`match_service._finalize_native_artifacts` sets it to
-`"bytefray-rules-1"` — but it is **not required for all historical
+`NativeMatchService`/`match_service._finalize_native_artifacts` sets it to the
+exact resolved identity (`bytefray-rules-1`, `bytefray-rules-2`, or
+`bytefray-rules-4-alpha1`) — but it is **not required for all historical
 artifacts**.
 
 **Present-as-`null` versus genuinely absent — these are two different
@@ -23,7 +24,7 @@ facts and this schema distinguishes them precisely:**
 
 - `ResultEnvelope.as_dict()` (the one writer both native and pMARS paths
   use) always emits the `ruleset_id` key for *any* result written by the
-  current codebase — `"bytefray-rules-1"` for a native match,
+  current codebase — the exact identity for a native match,
   literally **`"ruleset_id": null`** (key present, JSON `null`) for a
   `redcode94`/pMARS result, since Bytefray Ruleset v1 is not applicable to
   Redcode/pMARS execution (see [RULES.md](RULES.md)'s "Redcode/pMARS — not
@@ -116,9 +117,9 @@ risk directly rather than deferring it. `result_id`/`replay_id` are not
 separately updated to hash `ruleset_id` again — both already derive from
 (embed) `match_id`, so they inherit this dependency transitively.
 
-**This is a deliberate, one-time native-ID transition, not a silent
+**This was a deliberate, one-time native-ID transition, not a silent
 break.** Because exactly one Ruleset (`BYTEFRAY_RULESET_ID =
-"bytefray-rules-1"`) has ever existed, this literal string is now hashed
+"bytefray-rules-1"`) existed at v0.10 Phase 4, this literal string was hashed
 into every current match's identity where it previously was not —
 meaning a v0.10 Phase 4+ build computes a **different** `match_id`/
 `result_id`/`replay_id` than a pre-Phase-4 build would for byte-identical
