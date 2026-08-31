@@ -512,10 +512,10 @@ def test_one_dead_two_alive_third_party_attribution(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Schema: this phase adds no replay schema bump
+# Schema: v4 process state requires an explicit replay schema bump
 # ---------------------------------------------------------------------------
-def test_no_replay_schema_bump_was_introduced():
-    assert SCHEMA_VERSION == 3
+def test_v4_replay_schema_bump_is_exposed_to_the_client():
+    assert SCHEMA_VERSION == 4
 
 
 # ---------------------------------------------------------------------------

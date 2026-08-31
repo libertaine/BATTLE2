@@ -238,7 +238,7 @@ def test_malformed_manifest_fails_at_discovery(tmp_path):
 
 
 def test_unsupported_api_version(tmp_path):
-    _write_agent(tmp_path, "example", manifest={"api_version": 2})
+    _write_agent(tmp_path, "example", manifest={"api_version": 3})
 
     with pytest.raises(AgentValidationFailedError) as caught:
         validate_agent("example", data_root=tmp_path)
@@ -579,7 +579,7 @@ def test_cli_honors_bytefray_root_env_var(tmp_path, monkeypatch, capsys):
 @pytest.mark.parametrize(
     ("manifest", "source"),
     [
-        ({"api_version": 2}, VALID_SOURCE),
+        ({"api_version": 3}, VALID_SOURCE),
         (None, "def create_agent(:\n    pass\n"),
         (None, BROKEN_RESET_SOURCE),
         (None, INVALID_ACTION_SOURCE),

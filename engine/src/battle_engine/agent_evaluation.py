@@ -3145,9 +3145,19 @@ class EvaluationService:
         return {agent_id: _resolve_python_agent(root, agent_id) for agent_id in all_ids}
 
     def _effective_conditions(self, request: EvaluationRequest) -> EffectiveConditions:
+        # Agent API version is part of the persisted and identity-bearing
+        # evaluation conditions.  Rulesets v1-v3 are historical Agent API v1
+        # methodologies; a later installation-wide API bump must not silently
+        # redefine their recipes.  Only the new v4 methodology uses the
+        # installation's current Agent API version.
+        agent_api_version = (
+            get_project_info().agent_api_version
+            if request.resolved_rules_compatibility_id == BYTEFRAY_RULESET_V4_ALPHA1_ID
+            else 1
+        )
         return effective_conditions_for(
             request.ticks,
-            get_project_info().agent_api_version,
+            agent_api_version,
             arena_size=request.arena_size,
             instr_per_tick=request.instr_per_tick,
             kill_weight=request.kill_weight,

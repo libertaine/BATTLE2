@@ -24,7 +24,7 @@ def _write(path: Path, content: bytes) -> None:
 
 def _make_python_agent(root: Path, name: str = "hunter") -> Path:
     agent_dir = root / "agents" / name
-    _write(agent_dir / "agent.yaml", b'{"kind": "python", "api_version": 1, "version": "1.0"}')
+    _write(agent_dir / "agent.yaml", b'{"kind": "python", "api_version": 2, "version": "1.0"}')
     _write(agent_dir / "agent.py", b"def create_agent():\n    return None\n")
     return agent_dir
 

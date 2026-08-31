@@ -128,7 +128,7 @@ def test_about_info_uses_canonical_schema_constants():
     info = get_project_info()
     assert info.result_schema_version == RESULT_SCHEMA_VERSION
     assert info.replay_schema_version == REPLAY_SCHEMA_VERSION
-    assert info.agent_api_version == 1
+    assert info.agent_api_version == 2
     assert info.project_url.startswith("https://")
 
 

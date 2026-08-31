@@ -389,8 +389,14 @@ def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
                 for diff in record.memory_diffs
             ],
             events=[_event_to_dict(event) for event in record.events],
-            processes=[_process_to_dict(process) for process in record.processes],
         )
+        # Process state is a schema-v4 addition.  Omitting the key entirely
+        # from v2/v3 output preserves those historical wire encodings and
+        # their byte-level replay digests.
+        if record.schema_version >= 4:
+            base["processes"] = [
+                _process_to_dict(process) for process in record.processes
+            ]
     elif isinstance(record, MatchResult):
         base.update(
             winner=record.winner,
@@ -403,8 +409,11 @@ def record_to_dict(record: ReplayRecord) -> dict[str, Any]:
             result_id=record.result_id,
             termination_reason=record.termination_reason,
             entrants=[dict(entrant) for entrant in record.entrants],
-            processes=[_process_to_dict(process) for process in record.processes],
         )
+        if record.schema_version >= 4:
+            base["processes"] = [
+                _process_to_dict(process) for process in record.processes
+            ]
     else:  # pragma: no cover - protects callers bypassing static typing
         raise TypeError(f"unsupported replay record: {type(record).__name__}")
     return base

@@ -924,6 +924,7 @@ def _finalize_native_artifacts(
     runtime_kind = cast(RuntimeKind, request.entrants[0].kind)
     resolved_ruleset_id = _resolve_ruleset_id(request)
 
+    replay_schema_version = 4 if resolved_ruleset_id == BYTEFRAY_RULESET_V4_ALPHA1_ID else 3
     header: ReplayHeader | None = None
     ticks: list[Any] = []
     for record in iter_replay(source_replay_path):
@@ -937,10 +938,10 @@ def _finalize_native_artifacts(
                 reproducibility=reproducibility,
                 entrants=tuple(entrants),
                 ruleset_id=resolved_ruleset_id,
-                schema_version=3,
+                schema_version=replay_schema_version,
             )
         else:
-            ticks.append(replace(record, schema_version=3))
+            ticks.append(replace(record, schema_version=replay_schema_version))
     if header is None:
         raise PythonMatchExecutionError(
             RuntimeDiagnostic(
@@ -976,7 +977,7 @@ def _finalize_native_artifacts(
         result_id=result_id,
         termination_reason=result.termination_reason.value,
         entrants=tuple(entrants),
-        schema_version=3,
+        schema_version=replay_schema_version,
     )
 
     publish_path.parent.mkdir(parents=True, exist_ok=True)

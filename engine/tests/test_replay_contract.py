@@ -10,6 +10,7 @@ from battle_engine.replay import (
     MatchConfiguration,
     MatchResult,
     MemoryDiff,
+    ProcessState,
     ReplayFormatError,
     ReplayHeader,
     RuntimeEvent,
@@ -80,6 +81,7 @@ def test_fully_populated_v3_records_round_trip_without_field_loss():
         runtime_kind="python",
         reproducibility={"seed": 42, "entrant_order": ["A"]},
         entrants=({"agent_id": "A", "metadata": {"kind": "python"}},),
+        schema_version=3,
     )
     agent = AgentState(
         "A", 7, False, 3, 2, (0, 15), 11, 12, True, 9, "forfeit"
@@ -90,6 +92,7 @@ def test_fully_populated_v3_records_round_trip_without_field_loss():
         score={"A": 2.5},
         memory_diffs=(MemoryDiff(127, 2, "A", (0xAA, 0xBB)),),
         events=(RuntimeEvent("forfeit", "A", "agent_action_failed", "action", 3, 1),),
+        schema_version=3,
     )
     result = MatchResult(
         None,
@@ -102,10 +105,30 @@ def test_fully_populated_v3_records_round_trip_without_field_loss():
         "result_1",
         "all_agents_dead",
         ({"agent_id": "A", "diagnostic": {"code": "agent_action_failed"}},),
+        schema_version=3,
     )
 
     for record in (header, tick, result):
-        assert deserialize_record(serialize_record(record)) == record
+        serialized = serialize_record(record)
+        assert '"processes"' not in serialized
+        assert deserialize_record(serialized) == record
+
+
+def test_schema_v4_process_state_round_trips_without_affecting_v3_wire_shape():
+    process = ProcessState("scout", "A", 37, True, 8)
+    tick = TickSnapshot(2, processes=(process,), schema_version=4)
+    result = MatchResult(
+        "A",
+        "score_fallback",
+        2,
+        processes=(process,),
+        schema_version=4,
+    )
+
+    for record in (tick, result):
+        serialized = serialize_record(record)
+        assert '"processes"' in serialized
+        assert deserialize_record(serialized) == record
 
 
 @pytest.mark.parametrize(
