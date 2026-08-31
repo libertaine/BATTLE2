@@ -1,0 +1,7 @@
+name: hydra
+display: Hydra
+description: Competitive four-process API v2 agent with disruption, siege, core defense, and mobile expansion.
+kind: python
+api_version: 2
+entrypoint: agent.py:create_agent
+version: "1.0.0"

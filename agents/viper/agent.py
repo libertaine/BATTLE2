@@ -1,347 +1,220 @@
-"""Viper -- an asymmetric phase-switching infiltrator for Ruleset v2.
+"""Viper -- an asymmetric phase-switching infiltrator, Agent API v2.
 
-Strategy:
-Viper runs three phases plus one standing interrupt, switching among them by
-what it has actually observed rather than by a fixed schedule:
+Two declared processes split the fixed per-tick Q=8 budget:
 
-    Phase 0 -- Opening & Expansion. A claiming sweep like Claimer's, but
-        stepped by a stride that is always coprime with the arena size
-        (default EXPANSION_STRIDE = 13, nudged upward -- staying odd -- if
-        the arena size ever happens to share a factor with it) so the sweep
-        touches every cell exactly once before it ever repeats, instead of
-        cycling through a small subset the way a non-coprime stride would
-        under a composite arena size.
-    Phase 1 -- Probing & Triangulation. One action in every SCAN_EVERY,
-        interleaved with expansion, is a READ at a slowly advancing scan
-        cursor instead of a claiming WRITE. A single foreign-looking byte
-        (neither blank nor Viper's own signature, and outside Viper's own
-        core) is weak evidence on its own, so a hit opens a short
-        triangulation burst -- READs at PROBE_OFFSETS around the hit -- and
-        only a cluster of CONFIRM_MIN_HITS or more foreign cells is treated
-        as a located hostile core.
-    Phase 2 -- Assault / Kill-Lock. Once triangulated, Viper commits: every
-        offensive action for the rest of the match is a WRITE somewhere in
-        the confirmed target window, cycling through it and never returning
-        to scanning. Ruleset v2's Agent API gives no elimination signal --
-        no agent ever learns that an opponent has died (see
-        docs/AGENT_API_V1.md / docs/RULES_V2.md) -- so "until elimination"
-        is realized as "forever" rather than as a countdown: there is no
-        stopping condition Viper could check even if it wanted one, so it
-        never voluntarily leaves the lock once acquired.
-    Interrupt -- Reactive Core Defense. Independent of the expand and
-        assault phases, one action in every DEFENSE_EVERY is a READ of the
-        next cell of Viper's own core in rotation, taking priority over
-        whatever that phase would otherwise have done. Only if that cell
-        comes back neither blank, nor the public CORE_BEACON_BYTE, nor
-        Viper's own signature -- i.e. actually overwritten by someone else
-        -- does Viper spend its very next action repairing exactly that
-        cell before resuming whatever phase it was in. The one exception is
-        Phase 1's short, bounded triangulation burst (at most
-        ``len(PROBE_OFFSETS)`` consecutive calls): a candidate under active
-        triangulation is investigated to completion before the defense
-        cadence is consulted again, so a compromised cell is patched within
-        DEFENSE_EVERY actions of the check that finds it, plus at most one
-        triangulation burst's delay if that burst happens to be in flight
-        when the check would otherwise have fired.
+    ``raider``   (reach 10, share 0.75) -- expansion, detection, and the
+                 permanent kill-lock assault once a target is acquired.
+    ``sentinel`` (reach 8,  share 0.25) -- stays home and reactively
+                 defends Viper's own vulnerable core.
 
-Why Ruleset v2 (``bytefray-rules-2``) and Agent API v1, rather than Ruleset
-v4 alpha1 and Agent API v2: this design's home-core defense and
-enemy-core assault both depend on the Vulnerable Core mechanic
-(docs/RULES_V2.md), which is a ``bytefray-rules-2`` gameplay rule realized
-entirely as ordinary arena bytes under Agent API v1 -- there is no
-``core_status`` observation field under any Ruleset (see "Important Agent
-API behavior" below). Agent API v2's ``ObservationV2``
-(docs/AGENT_API_V2.md) exposes an entrant's own core location/size for
-movement purposes but has no opposing-core or elimination concept at all,
-and its Ruleset (``bytefray-rules-4-alpha1``) cannot run in the same match
-as an Agent API v1 opponent such as ``claimer`` (API v1 and API v2 entrants
-cannot be mixed) -- so ``bytefray-rules-2`` is the only one of the two that
-actually supports both this strategy and the requested
-``--opponent claimer`` development test.
+``raider`` runs two phases:
 
-Important Agent API behavior this agent demonstrates:
-``observation.pc``, read on the very first ``act()`` call before this agent
-has ever issued a ``JUMP``, is exactly this entrant's own spawn address --
-which is also where its own core sits (see ``agents/sentinel``,
-``agents/raider``). Every ``READ`` this agent issues records the exact
-address (and, while triangulating, offset) it is waiting on, so the very
-next ``act()`` call consumes ``observation.last_read`` exactly once, never
-mistaking one stale value for several. ``Observation`` carries no ownership
-map and no ``arena_size`` -- Viper reads ``arena_size`` once from
-``MatchContext`` at ``reset()`` and uses a signature byte to recognize its
-own already-claimed cells.
+    Phase "expand" -- claims ground by writing every cell within its
+        current reach (``fill_index`` cycling ``0..self_reach-1``), then
+        ``MOVE``s onward by ``EXPANSION_STRIDE`` (nudged to stay coprime
+        with ``arena_size``, exactly like the original design's Phase 0)
+        once a stop is fully claimed. Every call also gets
+        ``visible_enemy_anchor_addresses`` for free -- Agent API v2
+        detection is automatic and current-only (docs/AGENT_API_V2.md
+        Sec "Observation"), so there is no active v1-style READ scan to
+        run: the instant any enemy process comes within ``raider``'s
+        reach, this is Phase 1's "probe" already satisfied.
+    Phase "assault" -- entered the moment expand ever sees a non-empty
+        ``visible_enemy_anchor_addresses``, and never left again. Every
+        process starts co-located with its own entrant's fixed core
+        (docs/V4_ALPHA1_DESIGN.md Sec 4), so a first sighting is a strong
+        proxy for the opponent's core location even after that process
+        later moves away -- ``raider`` commits to an ``ASSAULT_WINDOW``-cell
+        band centred on that first sighted address and cycles ``WRITE``
+        across it forever, moving only enough to keep the current target
+        cell in reach. "Until elimination" is realized as "forever, on the
+        one location acquired": v4 alpha1's Agent API gives no elimination
+        signal (docs/AGENT_API_V2.md's WRITE Information Boundary -- a
+        WRITE reports only whether it legally applied, never whether it
+        disrupted or killed anything), so there is no stopping condition to
+        check even if Viper wanted one, and no way to re-verify or
+        re-triangulate the target once its own process has wandered off --
+        this is a real, undefended bet, exactly the honest trade-off
+        docs/AGENT_AUTHORING.md's Raider/Sentinel already each document.
 
-Important state this agent tracks:
-- ``signature``: this agent's own claim byte (0x76), written to every cell
-  it claims and to its own core when repairing it.
-- ``core_start``: this agent's own core anchor, captured once from
-  ``observation.pc``.
-- ``phase``: ``"expand"``, ``"probe"``, or ``"assault"`` -- Phases 0/1/2
-  above; the defense interrupt is not itself a phase, it pre-empts whichever
-  phase is current for exactly one action at a time.
-- ``expand_cursor``/``expand_stride``: the coprime-stride claiming sweep.
-- ``scan_cursor``/``scan_stride``: an independent sweep used only for
-  probing READs, seeded from ``context.rng`` so which part of the arena
-  gets searched depends on the match seed.
-- ``candidate_hit_addr``/``probe_offsets_remaining``/
-  ``probe_confirmed_offsets``: the candidate currently under triangulation.
-- ``assault_window_start``/``assault_cursor``: where the permanent
-  kill-lock burst is currently writing.
-- ``defend_index``: which of the ``CORE_SIZE`` own core cells the next
-  reactive defense check will read.
-- ``_pending_read``: ``(tag, address)`` for the one outstanding ``READ``
-  not yet consumed, or ``None``; ``tag`` is ``"scan"``, ``"probe"``, or
-  ``"defense"`` so the same one-read-in-flight slot serves all three
-  READ-issuing behaviors above without conflating their results.
+``sentinel`` never moves (it starts exactly on Viper's own core, per the
+same co-location rule) and spends its whole budget on the Interrupt:
+reactive core defense. Each call it either consumes the previous cell's
+verdict or issues a fresh one:
 
-What you might reasonably change:
-- ``EXPANSION_STRIDE``: the Phase 0 sweep step (auto-adjusted to stay
-  coprime with ``arena_size``).
-- ``SCAN_EVERY``/``PROBE_OFFSETS``/``CONFIRM_MIN_HITS``: how eagerly Phase 1
-  commits to a candidate, exactly like Raider's own dials.
-- ``DEFENSE_EVERY``: how often the standing interrupt checks home-core
-  integrity; smaller catches an attack sooner at a higher cost in
-  expansion/assault throughput, exactly like Sentinel's ``REFRESH_EVERY``.
+    one action READs the next of the ``CORE_SIZE_HINT`` core cells in
+    rotation; the very next ``sentinel`` call checks
+    ``observation.previous_read_owner`` for that exact address and, only if
+    it names some entrant other than Viper itself, spends that call
+    repairing it with a ``WRITE`` before resuming the rotation. An
+    unattacked core costs one READ per rotation step and nothing else; a
+    contested cell is repaired the very next time ``sentinel`` is scheduled
+    after the check that found it, not on a fixed timer.
 
-Not a claim of optimal strategy: committing permanently to one confirmed
-target (Phase 2) means Viper cannot recover from ever misjudging a
-triangulated location, and the reactive defense interrupt costs real budget
-on every check whether or not anything is actually wrong -- the same
-honest trade-offs Sentinel and Raider each document independently, now
-combined in one agent.
+Why Agent API v2 / Ruleset v4 alpha1 (``bytefray-rules-4-alpha1``), and what
+that costs relative to an Agent API v1 design: v4 alpha1's Python-runtime
+process loop reuses the exact same core-capture kill rule Ruleset v2
+defined (``battle_engine.process_runtime`` calls
+``python_runtime.apply_core_capture`` every tick, unconditionally), so
+"vulnerable core" and "kill-lock until elimination" are still real, live
+mechanics here -- but the *Agent API* built around v4 alpha1 is a genuinely
+different observation/action model, not a compatible superset of v1:
+``READ``/``WRITE`` stay absolute-address but are bounded by a movable
+process's ``self_reach`` instead of being valid anywhere in the arena, so
+"probing" is achieved by moving into range rather than by reading distant
+cells; ownership is reported directly as ``previous_read_owner`` instead of
+inferred from a raw byte and a remembered signature; and enemy detection is
+an automatic engine service (``visible_enemy_anchor_addresses``) rather than
+something Viper has to go looking for. v1 and v2 entrants cannot appear in
+the same match (docs/AGENT_AUTHORING.md), so this version cannot be
+development-tested against the Agent API v1 ``claimer`` starter -- use a v2
+opponent instead, e.g.::
+
+    bytefray agents validate viper
+    bytefray agents test viper --opponent v4_claimer --ruleset bytefray-rules-4-alpha1
+
+(``--ruleset`` must be explicit: an omitted ``--ruleset`` resolves to the
+permanent ``bytefray-rules-2`` for an all-Python roster, which is the v1
+Ruleset this version no longer targets.)
+
+Not a claim of optimal strategy: permanently committing to the first
+sighted address means Viper cannot recover from ever mis-timing that first
+sighting (an enemy glimpsed mid-sweep, far from its actual core, locks in a
+band that may never be revisited), and ``sentinel``'s reactive checks cost
+real ``raider`` budget indirectly, since total entrant throughput is capped
+at Q=8 regardless of process count -- the same honest trade-offs an Agent
+API v1 version of this design would document, now re-derived for a
+different contract.
 """
 
 from __future__ import annotations
 
 import math
 
-from battle_engine.agent_api import ActionKind, AgentAction, MatchContext, Observation
+from battle_engine.agent_api import (
+    ActionKindV2,
+    AgentAction,
+    MatchContextV2,
+    ObservationV2,
+    ProcessDeclaration,
+)
 
-CORE_SIZE = 8  # public Ruleset knowledge: a vulnerable core is 8 contiguous cells
-CORE_BEACON_BYTE = 0xCE  # public Ruleset knowledge: an owned, undefended core cell reads this
+CORE_SIZE_HINT = 8  # own_core_size is fixed at 8 under bytefray-rules-4-alpha1 today
 
-EXPANSION_STRIDE = 13  # Phase 0: default coprime stride
-SCAN_EVERY = 5  # Phase 1: 1 action in every 5 probes instead of expanding
-PROBE_OFFSETS: tuple[int, ...] = (-8, -4, 4, 8)  # triangulation offsets around a hit
-CONFIRM_MIN_HITS = 2  # candidate hit + this many total foreign observations to assault
-ASSAULT_WINDOW = 16  # width of the Phase 2 kill-lock window (> CORE_SIZE)
-DEFENSE_EVERY = 6  # Interrupt: 1 action in every 6 checks home-core integrity
+EXPANSION_STRIDE = 13  # Phase 0: default coprime MOVE stride
+ASSAULT_WINDOW = 16  # width of the Phase 2 kill-lock band (> CORE_SIZE_HINT)
+
+RAIDER_REACH = 10
+RAIDER_SHARE = 0.75
+SENTINEL_REACH = 8  # >= CORE_SIZE_HINT so every own-core cell is always in reach
+SENTINEL_SHARE = 0.25
 
 
-def _coprime_stride(base: int, modulus: int) -> int:
-    """Smallest value >= ``base`` (odd-stepped) that is coprime with ``modulus``.
+def _coprime_stride(base: int, modulus: int, *, max_value: int = 64) -> int:
+    """Smallest odd value >= ``base`` (capped at ``max_value``) coprime with ``modulus``.
 
-    ``modulus`` (``arena_size``) is fixed per match and always >= 2 in
-    practice, so this always terminates: odd steps alone reach a coprime
-    value in at most ``modulus`` iterations.
+    Capped rather than unbounded because the result is used as a ``MOVE``
+    operand, which the engine clamps to ``[-64, 64]`` regardless
+    (docs/AGENT_API_V2.md) -- searching past that clamp could silently pick
+    a stride the engine would truncate to something else entirely.
     """
 
     if modulus <= 1:
-        return base
+        return min(base, max_value)
     stride = base if base % 2 else base + 1
-    while math.gcd(stride, modulus) != 1:
+    while stride <= max_value and math.gcd(stride, modulus) != 1:
         stride += 2
-    return stride
+    return min(stride, max_value)
 
 
 class ViperAgent:
-    def reset(self, context: MatchContext) -> None:
+    def reset(self, context: MatchContextV2) -> None:
         self.rng = context.rng
         self.arena_size = context.arena_size
+        self.agent_id = context.agent_id
         self.signature = 0x76
 
-        self.core_start: int | None = None
-        self.expand_cursor = 0
         self.expand_stride = _coprime_stride(EXPANSION_STRIDE, context.arena_size)
-
-        # An equidistribution-friendly irrational scaled to the arena, then
-        # nudged coprime -- the scan sequence spreads evenly instead of
-        # clustering or repeating early.
-        scan_seed = int(context.arena_size * 0.4142135623730951) or 1
-        self.scan_stride = _coprime_stride(scan_seed, context.arena_size)
-        # Drawn from this match's RNG so the searched region depends on the
-        # seed, not only on arena_size.
-        self.scan_cursor = context.rng.randrange(context.arena_size)
+        self.fill_index = 0
 
         self.phase = "expand"
-        self.actions_taken = 0
-
-        self.candidate_hit_addr: int | None = None
-        self.probe_offsets_remaining: list[int] = []
-        self.probe_confirmed_offsets: list[int] = []
-        self._pending_probe_offset: int | None = None
-
         self.assault_window_start: int | None = None
         self.assault_cursor = 0
 
         self.defend_index = 0
+        self._pending_defense_addr: int | None = None
 
-        self._pending_read: tuple[str, int] | None = None
+    def declare_processes(self) -> list[ProcessDeclaration]:
+        return [
+            ProcessDeclaration(id="raider", reach=RAIDER_REACH, share=RAIDER_SHARE),
+            ProcessDeclaration(id="sentinel", reach=SENTINEL_REACH, share=SENTINEL_SHARE),
+        ]
 
-    def act(self, observation: Observation) -> AgentAction:
-        if self.core_start is None:
-            # First call, before this agent has ever moved its own pc:
-            # observation.pc is exactly this entrant's spawn address, which
-            # is also where its own core sits.
-            self.core_start = observation.pc % self.arena_size
-            self.expand_cursor = (self.core_start + CORE_SIZE) % self.arena_size
+    def act(self, observation: ObservationV2) -> AgentAction:
+        if observation.self_process_id == "sentinel":
+            return self._act_sentinel(observation)
+        return self._act_raider(observation)
 
-        tag: str | None = None
-        read_addr: int | None = None
-        read_value: int | None = None
-        if self._pending_read is not None:
-            tag, read_addr = self._pending_read
-            read_value = observation.last_read
-            self._pending_read = None  # consumed exactly once
+    # -- raider: expansion, detection, assault ----------------------------------
 
-        if tag == "defense":
-            assert read_addr is not None  # tag is only set alongside its address
-            if self._is_core_compromised(read_value):
-                return self._repair(read_addr)
-        elif tag == "scan":
-            assert read_addr is not None  # tag is only set alongside its address
-            if self._is_enemy_evidence(read_addr, read_value):
-                return self._begin_probe(read_addr)
-        elif tag == "probe":
-            action = self._continue_probe(read_addr, read_value)
-            if action is not None:
-                return action
-            # else: candidate abandoned, phase reset to "expand" -- fall
-            # through to this call's ordinary cadence below.
+    def _act_raider(self, observation: ObservationV2) -> AgentAction:
+        if self.phase == "expand":
+            if observation.visible_enemy_anchor_addresses:
+                return self._begin_assault(
+                    observation, observation.visible_enemy_anchor_addresses[0]
+                )
+            return self._expand_step(observation)
+        return self._assault_step(observation)
 
-        self.actions_taken += 1
-        if self.actions_taken % DEFENSE_EVERY == 0:
-            return self._issue_defense_check()
+    def _expand_step(self, observation: ObservationV2) -> AgentAction:
+        if self.fill_index < observation.self_reach:
+            address = (observation.self_anchor + self.fill_index) % self.arena_size
+            self.fill_index += 1
+            return AgentAction(ActionKindV2.WRITE, address, self.signature)
+        self.fill_index = 0
+        return AgentAction(ActionKindV2.MOVE, self.expand_stride)
 
-        if self.phase == "assault":
-            return self._assault_step()
-
-        if self.actions_taken % SCAN_EVERY == 0:
-            return self._issue_scan()
-        return self._expand_step()
-
-    # -- Phase 0: expansion ----------------------------------------------------
-
-    def _expand_step(self) -> AgentAction:
-        address = self.expand_cursor
-        self.expand_cursor = (self.expand_cursor + self.expand_stride) % self.arena_size
-        return AgentAction(ActionKind.WRITE, address, self.signature)
-
-    # -- Phase 1: probing & triangulation ---------------------------------------
-
-    def _issue_scan(self) -> AgentAction:
-        address = self.scan_cursor
-        self.scan_cursor = (self.scan_cursor + self.scan_stride) % self.arena_size
-        self._pending_read = ("scan", address)
-        return AgentAction(ActionKind.READ, address)
-
-    def _begin_probe(self, hit_addr: int) -> AgentAction:
-        self.phase = "probe"
-        self.candidate_hit_addr = hit_addr
-        self.probe_confirmed_offsets = [0]  # the original hit counts as evidence
-        self.probe_offsets_remaining = list(PROBE_OFFSETS)
-        return self._issue_probe_next()
-
-    def _issue_probe_next(self) -> AgentAction:
-        assert self.candidate_hit_addr is not None
-        offset = self.probe_offsets_remaining.pop(0)
-        address = (self.candidate_hit_addr + offset) % self.arena_size
-        self._pending_read = ("probe", address)
-        self._pending_probe_offset = offset
-        return AgentAction(ActionKind.READ, address)
-
-    def _continue_probe(
-        self, read_addr: int | None, read_value: int | None
-    ) -> AgentAction | None:
-        if read_addr is not None:
-            if (
-                self._is_enemy_evidence(read_addr, read_value)
-                and self._pending_probe_offset is not None
-            ):
-                self.probe_confirmed_offsets.append(self._pending_probe_offset)
-            self._pending_probe_offset = None
-
-        if self.probe_offsets_remaining:
-            return self._issue_probe_next()
-
-        if len(self.probe_confirmed_offsets) >= CONFIRM_MIN_HITS:
-            return self._begin_assault()
-
-        self.phase = "expand"
-        self.candidate_hit_addr = None
-        self.probe_confirmed_offsets = []
-        return None
-
-    # -- Phase 2: assault / kill-lock -------------------------------------------
-
-    def _begin_assault(self) -> AgentAction:
-        assert self.candidate_hit_addr is not None
-        mid_offset = (
-            min(self.probe_confirmed_offsets) + max(self.probe_confirmed_offsets)
-        ) // 2
-        anchor = (self.candidate_hit_addr + mid_offset) % self.arena_size
-        self.candidate_hit_addr = None
-        self.probe_confirmed_offsets = []
-        self.probe_offsets_remaining = []
+    def _begin_assault(self, observation: ObservationV2, hit_addr: int) -> AgentAction:
         self.phase = "assault"
-        self.assault_window_start = (anchor - ASSAULT_WINDOW // 2) % self.arena_size
+        self.assault_window_start = (hit_addr - ASSAULT_WINDOW // 2) % self.arena_size
         self.assault_cursor = 0
-        return self._assault_step()
+        return self._assault_step(observation)
 
-    def _assault_step(self) -> AgentAction:
+    def _assault_step(self, observation: ObservationV2) -> AgentAction:
         assert self.assault_window_start is not None
-        address = (self.assault_window_start + self.assault_cursor) % self.arena_size
-        self.assault_cursor = (self.assault_cursor + 1) % ASSAULT_WINDOW
-        return AgentAction(ActionKind.WRITE, address, self.signature)
+        target = (self.assault_window_start + self.assault_cursor) % self.arena_size
+        diff = self._shortest_delta(target, observation.self_anchor)
+        if abs(diff) <= observation.self_reach:
+            self.assault_cursor = (self.assault_cursor + 1) % ASSAULT_WINDOW
+            return AgentAction(ActionKindV2.WRITE, target, self.signature)
+        move = max(-64, min(64, diff))
+        return AgentAction(ActionKindV2.MOVE, move)
 
-    # -- Interrupt: reactive home-core defense ----------------------------------
+    # -- sentinel: reactive home-core defense ------------------------------------
 
-    def _issue_defense_check(self) -> AgentAction:
-        assert self.core_start is not None
-        address = (self.core_start + self.defend_index) % self.arena_size
-        self.defend_index = (self.defend_index + 1) % CORE_SIZE
-        self._pending_read = ("defense", address)
-        return AgentAction(ActionKind.READ, address)
+    def _act_sentinel(self, observation: ObservationV2) -> AgentAction:
+        if self._pending_defense_addr is not None:
+            address = self._pending_defense_addr
+            self._pending_defense_addr = None
+            owner = observation.previous_read_owner
+            if owner is not None and owner != self.agent_id:
+                return AgentAction(ActionKindV2.WRITE, address, self.signature)
 
-    def _repair(self, address: int) -> AgentAction:
-        return AgentAction(ActionKind.WRITE, address, self.signature)
+        address = (observation.own_core_base + self.defend_index) % self.arena_size
+        self.defend_index = (self.defend_index + 1) % CORE_SIZE_HINT
+        self._pending_defense_addr = address
+        return AgentAction(ActionKindV2.READ, address)
 
-    # -- shared ------------------------------------------------------------------
+    # -- shared --------------------------------------------------------------------
 
-    def _in_own_core(self, address: int) -> bool:
-        if self.core_start is None:
-            return False
-        offset = (address - self.core_start) % self.arena_size
-        return offset < CORE_SIZE
-
-    def _is_enemy_evidence(self, address: int | None, value: int | None) -> bool:
-        """Whether a Phase 1 ``READ`` result is worth treating as hostile evidence.
-
-        Deliberately does *not* exclude ``CORE_BEACON_BYTE``: a living
-        opponent's own undefended core reads exactly that value (see
-        docs/RULES_V2.md), and content-based searches are meant to observe
-        it as suspicious for free.
-        """
-
-        if address is None or value is None:
-            return False
-        if value == 0 or value == self.signature:
-            return False
-        return not self._in_own_core(address)
-
-    def _is_core_compromised(self, value: int | None) -> bool:
-        """Whether an Interrupt ``READ`` of one of Viper's own core cells shows
-        someone else's write.
-
-        Blank (``0``) is deliberately not treated as compromised: Ruleset
-        v2 restores a still-owned core cell's blank byte to
-        ``CORE_BEACON_BYTE`` at end of tick without Viper spending an
-        action, so a blank reading is either transient or already handled.
-        """
-
-        if value is None:
-            return False
-        return value not in (0, self.signature, CORE_BEACON_BYTE)
+    def _shortest_delta(self, target: int, anchor: int) -> int:
+        diff = target - anchor
+        half = self.arena_size // 2
+        if diff > half:
+            diff -= self.arena_size
+        elif diff < -half:
+            diff += self.arena_size
+        return diff
 
 
 def create_agent() -> ViperAgent:

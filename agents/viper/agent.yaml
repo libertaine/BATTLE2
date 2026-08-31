@@ -4,7 +4,7 @@
   "author": "Automated Strategy",
   "description": "Asymmetric Phase-Switching Infiltrator combining prime-stride territorial expansion, reactive core-defense interrupts, and a concentrated kill-lock assault phase.",
   "kind": "python",
-  "api_version": 1,
+  "api_version": 2,
   "entrypoint": "agent.py:create_agent",
   "version": "1.0.0"
 }
