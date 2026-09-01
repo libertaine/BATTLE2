@@ -356,6 +356,7 @@ class _MatchState:
 
     owners: list[str | None]
     anchors: dict[tuple[str, str], int] = field(default_factory=dict)
+    alive: set[str] = field(default_factory=set)
     detected: dict[str, frozenset[int]] = field(default_factory=dict)
     core_cells: dict[str, tuple[int, ...]] = field(default_factory=dict)
     hostile_reads_seen: set[tuple[str, str]] = field(default_factory=set)
@@ -423,6 +424,7 @@ def _seed_state(loaded: LoadedReplay, arena_size: int) -> _MatchState:
     state.anchors = {
         (process.entrant_id, process.process_id): process.anchor for process in zero.processes
     }
+    state.alive = {agent.agent_id for agent in zero.agents if agent.alive}
     return state
 
 
@@ -820,7 +822,10 @@ def _disruption_events(
     victims = sorted(
         key
         for key, anchor in state.anchors.items()
-        if anchor == address and key[0] != decision.agent_id and key not in already_disrupted
+        if anchor == address
+        and key[0] in state.alive
+        and key[0] != decision.agent_id
+        and key not in already_disrupted
     )
     for entrant_id, process_id in victims:
         already_disrupted.add((entrant_id, process_id))
@@ -1059,7 +1064,20 @@ def derive_events(
             elif _applied(decision, "move"):
                 state.anchors[key] = _effective_address(decision)
 
+            # Invalid/exceptional callbacks forfeit immediately in the
+            # runtime. A later entrant in the same tick therefore cannot
+            # disrupt that forfeited entrant's retained replay anchor.
+            if (
+                decision.applied_result is not None
+                and decision.applied_result.status in {"EXCEPTION", "REJECTED_INVALID"}
+            ):
+                state.alive.discard(decision.agent_id)
+
         _check_tick_agreement(state, snapshot, disrupted, writes, arena_size)
+        # Core-capture elimination is resolved after the scheduler finishes.
+        # Retain every anchor for replay agreement, but use only these living
+        # entrants as disruption targets on the following tick.
+        state.alive = {agent.agent_id for agent in snapshot.agents if agent.alive}
 
         tick_events = [event for _, _, event in sorted(anchored, key=lambda item: item[:2])]
         tick_events.extend(_move_events(snapshot.tick, start_anchors, state, with_provenance))

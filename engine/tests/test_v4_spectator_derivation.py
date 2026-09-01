@@ -693,6 +693,57 @@ def test_process_disruption_is_attributed_to_the_write_that_caused_it(
     assert set(per_tick.values()) == {1}
 
 
+def test_eliminated_process_anchor_is_not_a_later_disruption_target(
+    tmp_path: Path,
+) -> None:
+    """A retained replay anchor is not evidence that its entrant is alive.
+
+    Schema 4 keeps every declared process in later tick snapshots after core
+    capture. Runtime disruption eligibility, however, excludes a dead
+    entrant immediately. The derivation must retain that anchor for replay
+    agreement without treating it as a live target on subsequent ticks.
+    """
+
+    for name, source in (
+        ("executioner", EXECUTIONER),
+        ("sleeper", SLEEPER),
+        ("anvil", ANVIL),
+    ):
+        _write_agent(tmp_path, name, source)
+    run = tmp_path / "continuing_after_elimination"
+    run.mkdir(parents=True, exist_ok=True)
+    request = MatchRequest(
+        config=Config(
+            seed=43,
+            arena_size=128,
+            instr_per_tick=8,
+            win_mode="capture",
+            weights=Weights(),
+        ),
+        entrants=(
+            MatchEntrant.python("A", "A", 0, resolve_agent(tmp_path, "executioner")),
+            MatchEntrant.python("B", "B", 32, resolve_agent(tmp_path, "sleeper")),
+            MatchEntrant.python("C", "C", 64, resolve_agent(tmp_path, "anvil")),
+        ),
+        max_ticks=4,
+        replay_path=run / "replay.jsonl",
+        trace_path=run / "trace.jsonl",
+        ruleset_id=RULESET_V4_ALPHA1.ruleset_id,
+    )
+    NativeMatchService().run(request)
+
+    derivation = analyze_pair(run / "replay.jsonl", run / "trace.jsonl")
+    eliminated = _of_kind(derivation.events, SpectatorEventKind.AGENT_ELIMINATED)
+    assert [(event.tick, event.targets) for event in eliminated] == [(2, ("B",))]
+    assert derivation.result_ticks == 4
+    assert not any(
+        event.kind is SpectatorEventKind.PROCESS_DISRUPTED
+        and event.targets == ("B",)
+        and event.tick > 2
+        for event in derivation.events
+    )
+
+
 def test_forfeit_is_reported_with_its_engine_reason_and_the_resulting_victory(
     tmp_path: Path,
 ) -> None:
