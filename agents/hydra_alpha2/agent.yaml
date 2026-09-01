@@ -1,0 +1,7 @@
+name: hydra_alpha2
+display: Hydra Alpha2
+description: Search-capable Hydra derivative for bytefray-rules-4-alpha2; acquires targets from API v2 visibility and READ probes instead of alpha1's opposite-core assumption.
+kind: python
+api_version: 2
+entrypoint: agent.py:create_agent
+version: "1.0.0"

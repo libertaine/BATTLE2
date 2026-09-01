@@ -1,0 +1,7 @@
+name: nemesis_alpha2
+display: Nemesis Alpha2
+description: Search-capable Nemesis derivative for bytefray-rules-4-alpha2; spends siege quota on READ search until an enemy is observed rather than on a predicted core address.
+kind: python
+api_version: 2
+entrypoint: agent.py:create_agent
+version: "1.0.0"
