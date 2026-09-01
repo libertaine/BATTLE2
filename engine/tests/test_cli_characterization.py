@@ -135,12 +135,16 @@ def _scaffold(root: Path, name: str, api_version: int) -> None:
     create_agent(name, data_root=root, resource_root=ROOT, api_version=api_version)
 
 
-def test_run_omitted_ruleset_resolves_v4_alpha1_for_api_v2_agents(tmp_path, monkeypatch):
+def test_run_omitted_ruleset_resolves_current_v4_for_api_v2_agents(tmp_path, monkeypatch):
     """H1: an Agent API v2 roster with --ruleset omitted must reach the
     process-agent Ruleset automatically. Before this, resolution saw only
     "python", chose bytefray-rules-2, and the match died on a compatibility
     error the user had no obvious way to fix but to learn an internal
-    Ruleset identity and pass it by hand."""
+    Ruleset identity and pass it by hand.
+
+    The identity it reaches is the *current* v4 prerelease, which is alpha2
+    from v4.0.0-alpha2 onward -- see the explicit-alpha1 test below for the
+    other half of that contract."""
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     _scaffold(tmp_path, "v2_alpha", api_version=2)
     _scaffold(tmp_path, "v2_beta", api_version=2)
@@ -148,6 +152,31 @@ def test_run_omitted_ruleset_resolves_v4_alpha1_for_api_v2_agents(tmp_path, monk
     result = _run(
         "-m", "battle_engine.cli",
         "--ticks", "5", "--arena", "128", "--seed", "7",
+        "--a-type", "v2_alpha", "--b-type", "v2_beta", "--b-start", "64",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    canonical = json.loads((replay.parent / "result.json").read_text())
+    assert canonical["ruleset_id"] == "bytefray-rules-4-alpha2"
+    header = json.loads(replay.read_text().splitlines()[0])
+    assert header["ruleset_id"] == "bytefray-rules-4-alpha2"
+
+
+def test_run_explicit_v4_alpha1_remains_reproducible(tmp_path, monkeypatch):
+    """Naming alpha1 explicitly still runs and records an alpha1 match.
+
+    Alpha2 taking the omitted-Ruleset default is a change of *preference*,
+    not of availability: every historical alpha1 match must stay
+    reproducible from the CLI by naming its Ruleset."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _scaffold(tmp_path, "v2_alpha", api_version=2)
+    _scaffold(tmp_path, "v2_beta", api_version=2)
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "5", "--arena", "128", "--seed", "7",
+        "--ruleset", "bytefray-rules-4-alpha1",
         "--a-type", "v2_alpha", "--b-type", "v2_beta", "--b-start", "64",
         "--replay", str(replay), "--quiet",
         cwd=tmp_path,

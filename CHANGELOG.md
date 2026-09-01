@@ -2,6 +2,49 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [4.0.0-alpha2] - 2026-09-01
+
+### Ruleset `bytefray-rules-4-alpha2`
+
+A second v4 Ruleset identity, differing from `bytefray-rules-4-alpha1` in
+exactly two gameplay semantics that the Phase 4 controlled gameplay study
+(~36,000 matches) identified as accidental rather than designed. Agent API v2,
+replay schema 4, `Q=8`, core size, reach legality, the `K=2` rotating entrant
+scheduler, disruption, and quota redistribution are all unchanged.
+
+* **Seed-derived core placement.** Entrant cores are placed from the match seed
+  under a 64-cell minimum circular separation instead of a fixed evenly-spread
+  seat layout, so `own_core_base + arena_size / 2` is no longer a generally
+  valid way to locate an opponent without observing anything. Derived from a
+  SHA-256 counter stream rather than `random`, so placement is byte-identical
+  across platforms and supported Python versions. Explicit `--a-start`/
+  `--b-start` are still honoured exactly.
+* **Round-robin intra-entrant process selection.** An entrant's own processes
+  take action slots in rotation rather than always offering freed mid-tick
+  quota to the earliest-declared eligible process. Quota allocation and
+  redistribution are untouched: only *which* eligible process receives the
+  next slot changes.
+
+`bytefray-rules-4-alpha1` is unchanged and stays explicitly selectable
+everywhere a Ruleset can be named. An omitted `--ruleset` with an Agent API v2
+roster now resolves to alpha2; an Agent API v1 roster still resolves to
+`bytefray-rules-2`. Agent Designer's Simple surface offers current gameplay
+only (Ruleset v2 and alpha2); Advanced and Development keep alpha1.
+`agents evaluate` deliberately does not accept alpha2 — its placement
+conditions are a disclosed methodology axis that seeded placement would
+contradict.
+
+New agents `hydra_alpha2` and `nemesis_alpha2` acquire targets through the
+Agent API v2 observation contract (visible anchors, plus `READ` search using
+`previous_read_owner`) instead of the alpha1 placement assumption. The
+historical `hydra` and `Nemesis` are unchanged.
+
+See [docs/V4_ALPHA2_DESIGN.md](docs/V4_ALPHA2_DESIGN.md) for the full contract,
+[docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
+for the evidence, and
+[docs/V4_ALPHA2_PHASE5_QUALIFICATION.md](docs/V4_ALPHA2_PHASE5_QUALIFICATION.md)
+for the release qualification record.
+
 ## [4.0.0-alpha1] - 2026-08-31
 
 ### Bytefray 4.0 Alpha 1 — The Spatial Multi-Process Update

@@ -1,0 +1,7 @@
+name: local_hunter
+display: Local Hunter (research probe)
+description: Single-process reach-12 pursuer; retained from Phase 4 unchanged to measure disruption-lock frequency under v4 alpha2.
+kind: python
+api_version: 2
+entrypoint: agent.py:create_agent
+version: 1.0.0

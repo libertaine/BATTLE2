@@ -17,6 +17,7 @@ from battle_engine.match_service import (
     NativeMatchService,
     canonical_match_id,
 )
+from battle_engine.placement import core_placement_mode, seeded_seat_starts
 from battle_engine.replay import ReplayHeader, iter_replay
 from battle_engine.result_model import (
     ReplayIntegrityError,
@@ -384,6 +385,7 @@ class TournamentService:
                     seed = derive_match_seed(
                         request.seed, round_number, first.agent_id, second.agent_id
                     )
+                    first, second = self._placed_pair(request, first, second, seed)
                     schedule_id = stable_id(
                         "scheduled",
                         {
@@ -408,6 +410,60 @@ class TournamentService:
                     )
                     scheduled.append((match, (first, second)))
         return scheduled
+
+    @staticmethod
+    def _placed_pair(
+        request: TournamentRequest,
+        first: MatchEntrant,
+        second: MatchEntrant,
+        seed: int,
+    ) -> tuple[MatchEntrant, MatchEntrant]:
+        """Place one scheduled pairing's two entrants for its own match seed.
+
+        A tournament roster carries one start address per entrant, assigned
+        once by ``tournament_cli`` as ``index * spacing`` across the *whole*
+        roster. That is the right model for every Ruleset that places seats
+        deterministically -- and exactly the wrong one for a Ruleset that
+        places cores from the match seed, which would otherwise run every
+        alpha2 tournament match at one fixed, roster-wide, entirely
+        predictable layout: the specific distortion alpha2 exists to remove,
+        reintroduced by the harness rather than by the Ruleset.
+
+        So for a seeded-placement Ruleset only, each pairing is re-placed as
+        the two-seat match it actually is, from its own
+        :func:`derive_match_seed` value -- the same seed the match runs
+        under, so the layout is reproducible from the scheduled match's
+        recorded inputs alone. Every other Ruleset returns its two entrants
+        unchanged, so no existing tournament's placement, ``match_id``, or
+        artifacts move by a single byte.
+
+        Applied in :meth:`_schedule`, before either the execute or the
+        resume path builds its ``MatchRequest``, so both compute the same
+        ``canonical_match_id`` and a resumed alpha2 tournament still
+        validates against the artifacts it wrote.
+        """
+
+        if core_placement_mode(request.ruleset_id) != "seeded":
+            return first, second
+        starts = seeded_seat_starts(2, request.config.arena_size, seed)
+        return (
+            MatchEntrant(
+                first.agent_id,
+                first.name,
+                starts[0],
+                first.code,
+                first.kind,
+                first.python_spec,
+            ),
+            MatchEntrant(
+                second.agent_id,
+                second.name,
+                starts[1],
+                second.code,
+                second.kind,
+                second.python_spec,
+            ),
+        )
 
     def _standings(self, entrants, results):
         rows = {entrant.agent_id: Standing(entrant.agent_id) for entrant in entrants}

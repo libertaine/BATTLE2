@@ -4,7 +4,7 @@
   <img src="assets/branding/bytefray-logo-horizontal.png" alt="Bytefray logo" width="420">
 </p>
 
-> **Note: Bytefray is currently in v4.0.0-alpha1.** This is an alpha release introducing the new spatial multi-process model. We welcome gameplay feedback!
+> **Note: Bytefray is currently in v4.0.0-alpha2.** This is an alpha release introducing the new spatial multi-process model. We welcome gameplay feedback!
 
 **Bytefray** is a deterministic programmable-agent combat simulator in which
 agents compete over a shared circular memory arena. The v4 alpha adds a
@@ -19,7 +19,7 @@ Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible 
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Current pre-release:** [Bytefray v4.0.0-alpha1](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha1)
+**Current pre-release:** [Bytefray v4.0.0-alpha2](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha2)
 — see [Downloads](#downloads) below. Earlier [v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 releases remain available for historical and compatibility use.
 
@@ -27,7 +27,7 @@ releases remain available for historical and compatibility use.
 
 Bytefray is both a game and a deterministic experimentation platform:
 
-- Under Ruleset v4 alpha1, Python entrants define a fixed roster of spatial
+- Under the v4 alpha Rulesets, Python entrants define a fixed roster of spatial
   processes and use Agent API v2 to command them.
 - Processes maneuver the arena with `MOVE` and affect memory via `READ` and `WRITE` bounded by their local reach.
 - Matches are reproducible from their agents, configuration, placements, seed, and Ruleset identity.
@@ -51,6 +51,23 @@ rotating scheduling, bounded local reach, movement, `D=1` temporary anchor
 disruption with fair redistribution, current-only local detection, and the
 minimal Agent API v2 observation contract.
 
+`bytefray-rules-4-alpha2` is the **current** v4 prerelease. It keeps Agent API
+v2, replay schema 4, and every mechanic above, and changes exactly two things
+that a controlled gameplay study identified as accidental rather than designed:
+
+- **Core placement is derived from the match seed**, under a minimum
+  separation, instead of a fixed evenly-spread seat layout. An opponent's core
+  can no longer be computed as `own_core_base + arena_size / 2` without
+  observing anything — it has to be found.
+- **An entrant's own processes take action slots in rotation** instead of by
+  declared-list priority, so declaration order stops acting as an
+  undocumented priority ranking separate from each process's declared share.
+
+Alpha1 remains fully supported and explicitly selectable for reproducing
+historical matches. See the [v4 alpha2 gameplay contract](docs/V4_ALPHA2_DESIGN.md)
+for the full delta and [the Phase 4 study](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
+for the evidence behind it.
+
 The reports under [`docs/research/v4/`](docs/research/v4/) remain the evidence
 and decision history behind the alpha. They are not alternate runtime
 semantics: user-invocable CLI, Designer test/evaluation, tournament, installed
@@ -71,16 +88,19 @@ entrant. An entrant is eliminated when it loses ownership of every cell in
 its core, allowing decisive captures instead of relying only on territory
 scores at the tick limit. Ruleset v2 supports Python entrants only.
 
-**Ruleset v4 alpha1** uses Agent API v2 and adds fixed spatial processes whose
-anchors move independently. `READ` and `WRITE` use absolute arena addresses;
-`MOVE` uses a signed delta from the acting process anchor. All three consume
-the same per-entrant `Q=8` action budget.
+**Ruleset v4 alpha1 and alpha2** use Agent API v2 and add fixed spatial
+processes whose anchors move independently. `READ` and `WRITE` use absolute
+arena addresses; `MOVE` uses a signed delta from the acting process anchor.
+All three consume the same per-entrant `Q=8` action budget. Alpha2 is the
+current v4 prerelease and differs from alpha1 only in seed-derived core
+placement and round-robin process selection.
 
 The engine and evaluation model support multiple entrants. Quick Match in the
 Designer remains intentionally two-entrant; **Group Evaluation** is the
 Designer workflow for 3+ entrants.
 
-See the [v4 alpha1 design](docs/V4_ALPHA1_DESIGN.md),
+See the [v4 alpha2 gameplay contract](docs/V4_ALPHA2_DESIGN.md),
+[v4 alpha1 design](docs/V4_ALPHA1_DESIGN.md),
 [Agent API v2 contract](docs/AGENT_API_V2.md),
 [Ruleset v2 reference](docs/RULES_V2.md), and
 [Ruleset v1 reference](docs/RULES.md) for exact semantics.
@@ -174,36 +194,23 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-<<<<<<< HEAD
-**Stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
-— promotes the qualified `v3.0.0-rc2` candidate with no software change.
-`bytefray-rules-2` remains v3.0's active gameplay identity, Agent API v1 is
-unchanged, and RC2's CLI/GUI default-Ruleset fix carries forward.
+**Current pre-release:** [Bytefray v4.0.0-alpha2](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha2)
+— adds Ruleset `bytefray-rules-4-alpha2` (seed-derived core placement and
+round-robin intra-entrant process selection) alongside unchanged Agent API v2
+and replay schema 4. `bytefray-rules-4-alpha1` remains available for
+historical reproduction. Retains historical v1-v3 execution and artifact
+compatibility.
 
 | Package | Download | Notes |
 |---|---|---|
-| Windows installer | [Bytefray-Setup-3.0.0.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/Bytefray-Setup-3.0.0.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-3.0.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-3.0.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-3.0.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/SHA256SUMS.txt) | SHA-256 values for 3.0.0 assets |
-=======
-**Current pre-release:** [Bytefray v4.0.0-alpha1](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha1)
-— the first production alpha of the spatial multi-process game. It adds
-Ruleset `bytefray-rules-4-alpha1`, Agent API v2, and replay schema 4 while
-retaining historical v1-v3 execution and artifact compatibility.
-
-| Package | Download | Notes |
-|---|---|---|
-| Windows installer | [Bytefray-Setup-4.0.0-alpha1.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/Bytefray-Setup-4.0.0-alpha1.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-4.0.0-alpha1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/bytefray-4.0.0-alpha1-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-4.0.0a1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/bytefray-4.0.0a1-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-4.0.0a1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/bytefray-4.0.0a1.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/SHA256SUMS.txt) | SHA-256 values for all alpha1 assets |
+| Windows installer | [Bytefray-Setup-4.0.0-alpha2.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/Bytefray-Setup-4.0.0-alpha2.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
+| Portable Windows applications | [bytefray-4.0.0-alpha2-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0-alpha2-windows.zip) | Complete onedir layouts for all four executables |
+| Python wheel | [bytefray-4.0.0a2-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0a2-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-4.0.0a2.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0a2.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/SHA256SUMS.txt) | SHA-256 values for all alpha2 assets |
 
 **Current stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 remains available for users who do not want alpha gameplay/API changes.
->>>>>>> v4-research
 
 Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)
 for the prereleases that led up to v3.0.0.
@@ -296,13 +303,15 @@ See [Writing Agents](docs/AGENT_AUTHORING.md), the
 
 | Ruleset | Designer role | Runtime compatibility |
 |---|---|---|
-| `bytefray-rules-4-alpha1` | Alpha preview for spatial process matches | Agent API v2 Python entrants only |
+| `bytefray-rules-4-alpha2` | Current alpha preview for spatial process matches | Agent API v2 Python entrants only |
+| `bytefray-rules-4-alpha1` | Historical alpha preview, for reproducing earlier v4 alpha matches | Agent API v2 Python entrants only |
 | `bytefray-rules-2` | Current/recommended for compatible Python direct matches | Python entrants only |
 | `bytefray-rules-1` | Compatibility: historical reproduction, and the only ruleset that runs VM/blob entrants | VM/blob and Python native matches |
 
 Agent API v1 Python agents run under Ruleset v1 or v2. Agent API v2 Python
-agents run under Ruleset v4 alpha1. VM/blob agents run under Ruleset v1 only.
-Redcode/pMARS is separate from all three — see below.
+agents run under either v4 alpha; omitting `--ruleset` selects alpha2, the
+current one. VM/blob agents run under Ruleset v1 only. Redcode/pMARS is
+separate from all four — see below.
 
 Agent Designer passes its selection explicitly everywhere, including the
 Agent Development tab's development tests and pairwise evaluation, both of
@@ -318,6 +327,7 @@ artifact compatibility but are not normal product choices.
 
 Detailed references:
 
+- [Ruleset v4 alpha2 gameplay contract](docs/V4_ALPHA2_DESIGN.md)
 - [Ruleset v4 alpha1 design](docs/V4_ALPHA1_DESIGN.md)
 - [Ruleset v2](docs/RULES_V2.md)
 - [Ruleset v1](docs/RULES.md)
@@ -357,7 +367,7 @@ bytefray run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red
 ```
 
 Redcode/pMARS matches run in an external pMARS process and do not use a
-Bytefray ruleset — not Ruleset v1, v2, or v4 alpha1. They produce a normalized
+Bytefray ruleset — not Ruleset v1, v2, or either v4 alpha. They produce a normalized
 summary rather than a native Bytefray replay. See
 [RULES.md](docs/RULES.md)'s "Redcode/pMARS — not Ruleset v1".
 
@@ -371,6 +381,7 @@ See [pMARS build/runtime guidance](README.md) and
 - [Agent Authoring Guide](docs/AGENT_AUTHORING.md)
 - [Agent API v2 Technical Contract](docs/AGENT_API_V2.md)
 - [Agent API v1 Technical Contract](docs/AGENT_API_V1.md)
+- [Ruleset v4 Alpha2 Gameplay Contract](docs/V4_ALPHA2_DESIGN.md)
 - [Ruleset v4 Alpha1 Design](docs/V4_ALPHA1_DESIGN.md)
 - [Agent Lab: trace, inspect, diverge, timeouts, and evaluation](docs/AGENT_LAB.md)
 - [Ruleset v2 Reference](docs/RULES_V2.md)
@@ -419,7 +430,7 @@ read-only agent-source inspection, refreshed onboarding, and current product
 screenshots.
 
 Bytefray v3.0.0 remains the stable product on top of Ruleset v2. Bytefray
-v4.0.0-alpha1 is the current pre-release and productionizes the closed R0-R6
+v4.0.0-alpha2 is the current pre-release and productionizes the closed R0-R6
 spatial-process endpoint summarized in [Bytefray v4 alpha](#bytefray-v4-alpha).
 The alpha identity is intentionally provisional; historical identities and
 wire formats remain distinct and readable.

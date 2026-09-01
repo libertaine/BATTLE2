@@ -5,6 +5,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
     agent_supported_by_ruleset,
 )
 
@@ -23,17 +24,40 @@ from app.services.ruleset_options import (
 )
 
 
-def test_product_options_include_v4_alpha1_without_changing_default_preference() -> None:
+def test_product_options_include_both_v4_alphas_without_changing_default_preference() -> None:
+    """Advanced/Development offer both v4 alphas; Simple offers only current.
+
+    Simple has followed a "current gameplay only" policy since
+    v3.0.0-alpha2, so it carries one current Ruleset per Agent API
+    generation and v4 alpha1 leaves it once alpha2 exists. Advanced and
+    Development keep alpha1 so a historical alpha1 match stays reproducible
+    from the GUI, and alpha2 is listed before it so the automatic
+    preference lands on current gameplay.
+    """
+
     assert [option.ruleset_id for option in DESIGNER_RULESET_OPTIONS] == [
         BYTEFRAY_RULESET_V2_ID,
+        BYTEFRAY_RULESET_V4_ALPHA2_ID,
         BYTEFRAY_RULESET_V4_ALPHA1_ID,
         BYTEFRAY_RULESET_ID,
     ]
     assert [option.ruleset_id for option in SIMPLE_RULESET_OPTIONS] == [
         BYTEFRAY_RULESET_V2_ID,
-        BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        BYTEFRAY_RULESET_V4_ALPHA2_ID,
     ]
     assert best_designer_ruleset({"python"}) == BYTEFRAY_RULESET_V2_ID
+
+
+def test_the_two_v4_alpha_options_are_distinguishable_to_a_reader() -> None:
+    """Both v4 alphas are Python-only Agent API v2, so their labels are the
+    only thing telling a user which one they are about to run."""
+
+    labels = {option.ruleset_id: option.label for option in DESIGNER_RULESET_OPTIONS}
+    alpha2_label = labels[BYTEFRAY_RULESET_V4_ALPHA2_ID]
+    alpha1_label = labels[BYTEFRAY_RULESET_V4_ALPHA1_ID]
+    assert alpha2_label != alpha1_label
+    assert "alpha2" in alpha2_label and "current" in alpha2_label
+    assert "alpha1" in alpha1_label and "historical" in alpha1_label
 
 
 def test_python_composition_prefers_v2_and_vm_composition_prefers_v1() -> None:
@@ -108,7 +132,7 @@ def test_designer_compatibility_always_agrees_with_engine_policy(
     ("metadata", "compatible_ids"),
     [
         (_API_V1, {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_ID}),
-        (_API_V2, {BYTEFRAY_RULESET_V4_ALPHA1_ID}),
+        (_API_V2, {BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID}),
         (_VM, {BYTEFRAY_RULESET_ID}),
         # A Python agent declaring no API version cannot run under any
         # Ruleset -- the loader rejects it too -- so no surface may offer one.
@@ -149,7 +173,7 @@ def test_unselected_slots_impose_no_constraint_but_selected_ones_fail_closed() -
     ("metadata", "expected"),
     [
         ([_API_V1], BYTEFRAY_RULESET_V2_ID),
-        ([_API_V2], BYTEFRAY_RULESET_V4_ALPHA1_ID),
+        ([_API_V2], BYTEFRAY_RULESET_V4_ALPHA2_ID),
         ([_VM], BYTEFRAY_RULESET_ID),
         # No offered Ruleset supports a mixed Agent API roster: an explicit
         # "nothing is compatible" answer, never an incompatible fallback.

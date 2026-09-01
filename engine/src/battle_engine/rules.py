@@ -52,6 +52,24 @@ from typing import Literal
 BYTEFRAY_RULESET_ID = "bytefray-rules-1"
 BYTEFRAY_RULESET_V4_ALPHA1_ID = "bytefray-rules-4-alpha1"
 
+# v4.0.0-alpha2's experimental identity. A *separate* identity, never a
+# mutation of ``bytefray-rules-4-alpha1``: alpha2 changes two gameplay
+# semantics the alpha1 corpus already depends on (seed-derived entrant core
+# placement in place of alpha1's deterministic evenly-spread seats, and
+# round-robin intra-entrant process selection in place of alpha1's
+# declaration-order priority scan), so the same agents, seed, arena, and
+# seat roster can produce a different match under each. Reusing alpha1's
+# identity would silently reinterpret every persisted alpha1 artifact.
+# alpha1 stays executable with byte-identical historical semantics -- see
+# docs/V4_ALPHA2_DESIGN.md for the full delta and the Phase 4 evidence
+# behind it.
+#
+# Spelled ``-alpha2``, never a bare ``bytefray-rules-4``: the two changes
+# are evidence-supported prerelease candidates, not a matured contract, and
+# this module must never let a prerelease guess masquerade as a durable
+# compatibility promise (docs/RULES.md's bump policy).
+BYTEFRAY_RULESET_V4_ALPHA2_ID = "bytefray-rules-4-alpha2"
+
 
 # v0.10 Phase 4: a finite, explicit historical-alias table -- deliberately
 # not a generic "normalize any evaluation-rules-N-shaped string" function.
@@ -115,6 +133,7 @@ class RulesetProvenance:
 __all__ = [
     "BYTEFRAY_RULESET_ID",
     "BYTEFRAY_RULESET_V4_ALPHA1_ID",
+    "BYTEFRAY_RULESET_V4_ALPHA2_ID",
     "RulesetConfidence",
     "RulesetProvenance",
     "normalize_ruleset_id",

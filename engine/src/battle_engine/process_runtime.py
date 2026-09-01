@@ -576,6 +576,13 @@ class ProcessMatchController:
         self.ruleset_policy = ruleset_policy or RULESET_V4_ALPHA1
         self.disruption_duration = 1
         self.max_move_delta = max_move_delta
+        # v4 alpha2's round-robin process-selection cursor: for each entrant,
+        # the index its next intra-entrant selection scan starts from. Alpha1
+        # (``process_selection == "priority"``) never reads it. See
+        # :meth:`_select_active_process` for the full contract.
+        self._process_cursor: dict[str, int] = {
+            spec.agent_id: 0 for spec in entrant_specs
+        }
         self._worker_handles: list[AgentWorkerHandle] = []
 
         if config.instr_per_tick <= 0 or config.arena_size <= 1 or max_ticks <= 0:
@@ -742,6 +749,95 @@ class ProcessMatchController:
             allocations[p] += 1
         return preserve_aliased_id_limits(allocations)
 
+    def _select_active_process(
+        self,
+        spec: ProcessEntrantSpec,
+        effective_quotas: dict[ProcessInstance, int],
+        actions_this_tick: dict[str, int],
+    ) -> ProcessInstance | None:
+        """Choose which of one entrant's processes takes this action slot.
+
+        Reads ``self.ruleset_policy.process_selection``, so *which* process
+        acts next is a semantic the Ruleset states rather than a runtime
+        detail. Both modes select only from processes that are eligible this
+        tick and still under their :meth:`_effective_process_quotas`
+        allocation, and neither mode can change how large that allocation is:
+        quota allocation, quota redistribution after a disruption, and
+        disruption eligibility itself are computed entirely in
+        ``_effective_process_quotas`` and are identical under both.
+        Returning ``None`` means the entrant has no process able to act and
+        forfeits the remainder of this slot -- unchanged in both modes, and
+        what an all-disrupted entrant does every slot of the tick.
+
+        ``"priority"`` (v4 alpha1, frozen): scan the declared process list
+        from index 0 every time. Any quota freed up mid-tick is therefore
+        always offered to the earliest-declared eligible process, which makes
+        declaration order an undocumented priority ranking distinct from the
+        ``share`` each process actually declares. Phase 4 measured that
+        accidental lever at up to ~14 percentage points of win rate
+        (docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md Section G1).
+
+        ``"round_robin"`` (v4 alpha2): scan from ``self._process_cursor``
+        instead, and advance the cursor to just past whichever process was
+        selected. Precisely:
+
+        * **Initial cursor** -- 0 for every entrant, set once at controller
+          construction, so an entrant's first action of the match still goes
+          to its first declared process and a single-process entrant is
+          bit-for-bit unaffected by this mode.
+        * **Advancement** -- only on a successful selection, to
+          ``(selected_index + 1) % process_count``. A slot that selects
+          nothing (every process disrupted or quota-exhausted) leaves the
+          cursor untouched, so a wasted slot never silently skips a process's
+          turn.
+        * **Disruption** -- a disrupted process is absent from
+          ``effective_quotas`` entirely, so it is passed over without
+          consuming its turn, and the scan continues to the next candidate
+          in rotation. It rejoins the rotation at its own list position once
+          it is eligible again.
+        * **Quota exhaustion** -- identical treatment: a process at its
+          allocation is simply not a candidate. When no process has quota
+          left the scan completes without selecting, exactly as
+          ``"priority"`` does.
+        * **Redistribution** -- handled entirely upstream. When a sibling
+          becomes disrupted its share is reallocated among the eligible
+          processes by ``_effective_process_quotas``; this method only sees
+          the resulting larger allocations, and hands the extra slots out in
+          rotation rather than all to the earliest-declared process.
+        * **Tick boundary** -- the cursor deliberately does **not** reset.
+          It is match-scoped, so rotation continues across ticks and no
+          process gets a systematic first-slot advantage every tick merely
+          by being declared first. This is exactly the behavior Phase 4
+          measured (Section G2); resetting per tick would reintroduce a
+          weaker form of the same declaration-order bias.
+
+        The cursor is keyed by ``agent_id`` and advanced by integer index
+        into ``spec.processes``, never by dict or set iteration order, so
+        rotation is reproducible across platforms and Python versions.
+        """
+
+        processes = spec.processes
+        if not processes:
+            return None
+
+        if self.ruleset_policy.process_selection == "round_robin":
+            cursor = self._process_cursor[spec.agent_id]
+            count = len(processes)
+            for offset in range(count):
+                index = (cursor + offset) % count
+                candidate = processes[index]
+                if actions_this_tick[candidate.process_id] < effective_quotas.get(
+                    candidate, 0
+                ):
+                    self._process_cursor[spec.agent_id] = (index + 1) % count
+                    return candidate
+            return None
+
+        for process in processes:
+            if actions_this_tick[process.process_id] < effective_quotas.get(process, 0):
+                return process
+        return None
+
     @staticmethod
     def _validate_v2_action(action: object) -> AgentAction:
         if not isinstance(action, AgentAction):
@@ -838,12 +934,10 @@ class ProcessMatchController:
                 spec = next(s for s in self.entrant_specs if s.agent_id == st.agent_id)
 
                 # Select the next process within its explicit effective quota.
-                active_proc: ProcessInstance | None = None
                 effective_quotas = self._effective_process_quotas(spec, _tick)
-                for p in spec.processes:
-                    if _proc_actions[st.agent_id][p.process_id] < effective_quotas.get(p, 0):
-                        active_proc = p
-                        break
+                active_proc = self._select_active_process(
+                    spec, effective_quotas, _proc_actions[st.agent_id]
+                )
 
                 if active_proc is None:
                     return

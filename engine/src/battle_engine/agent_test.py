@@ -61,6 +61,8 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    PROCESS_RULESET_IDS,
     NoCompatibleRulesetError,
     resolve_omitted_ruleset_for_agents,
 )
@@ -133,7 +135,10 @@ def _reference_opponent_spec(
     """
 
     resources = resource_root or get_resource_root()
-    if ruleset_id == BYTEFRAY_RULESET_V4_ALPHA1_ID:
+    # Every process Ruleset needs the Agent API v2 reference, not only the
+    # first one that existed: the API generation the opponent must speak is
+    # a property of the process runtime, not of one v4 alpha.
+    if ruleset_id in PROCESS_RULESET_IDS:
         starter_dir = starter_agent_resource_dir(
             "v4_claimer", resource_root=resources
         )
@@ -382,7 +387,7 @@ def _test_agent(
         try:
             opponent_spec = (
                 _reference_opponent_spec(resources, ruleset_id=ruleset_id)
-                if ruleset_id == BYTEFRAY_RULESET_V4_ALPHA1_ID
+                if ruleset_id in PROCESS_RULESET_IDS
                 else _reference_opponent_spec(resources)
             )
         except FileNotFoundError as exc:
@@ -439,6 +444,7 @@ def _test_agent(
         arena_size=match_config.arena_size,
         entrant_count=2,
         supplied_starts=[agent_start, opponent_start],
+        seed=effective_seed,
     )
     request = MatchRequest(
         config=match_config,
@@ -995,13 +1001,15 @@ def _parser() -> argparse.ArgumentParser:
             BYTEFRAY_RULESET_ID,
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
+            BYTEFRAY_RULESET_V4_ALPHA2_ID,
         ],
         default=None,
         help=(
-            f"gameplay Ruleset identity. If omitted, defaults to "
-            f"{BYTEFRAY_RULESET_V2_ID} -- agents test entrants are always "
-            f"Python. {BYTEFRAY_RULESET_V2_ID} supports Agent API v1; "
-            f"{BYTEFRAY_RULESET_V4_ALPHA1_ID} supports Agent API v2. "
+            f"gameplay Ruleset identity. If omitted, an Agent API v1 roster "
+            f"uses {BYTEFRAY_RULESET_V2_ID} and an Agent API v2 roster uses "
+            f"{BYTEFRAY_RULESET_V4_ALPHA2_ID} -- agents test entrants are "
+            f"always Python. {BYTEFRAY_RULESET_V2_ID} supports Agent API v1; "
+            "both v4 alphas support Agent API v2. v4 alpha2 is the current v4 prerelease gameplay and is what an omitted Ruleset selects for an Agent API v2 roster; v4 alpha1 remains selectable by name to reproduce historical alpha1 matches. "
             "Affects gameplay semantics and is recorded in the match's "
             "result/replay artifacts."
         ),

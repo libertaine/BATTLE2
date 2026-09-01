@@ -9,6 +9,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
     UnknownRulesetError,
     agent_supported_by_ruleset,
     resolve_ruleset_policy,
@@ -24,16 +25,48 @@ class DesignerRulesetOption:
 RULESET_V2_OPTION = DesignerRulesetOption(
     BYTEFRAY_RULESET_V2_ID, "Ruleset v2 — Current / Recommended"
 )
+RULESET_V4_ALPHA2_OPTION = DesignerRulesetOption(
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    "Ruleset v4 alpha2 — Process-agent preview, current (Agent API v2)",
+)
 RULESET_V4_ALPHA1_OPTION = DesignerRulesetOption(
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
-    "Ruleset v4 alpha1 — Process-agent preview (Agent API v2)",
+    "Ruleset v4 alpha1 — Process-agent preview, historical (Agent API v2)",
 )
 RULESET_V1_OPTION = DesignerRulesetOption(
     BYTEFRAY_RULESET_ID, "Ruleset v1 — Compatibility (Python and VM/blob)"
 )
 
-SIMPLE_RULESET_OPTIONS = (RULESET_V2_OPTION, RULESET_V4_ALPHA1_OPTION)
-DESIGNER_RULESET_OPTIONS = (*SIMPLE_RULESET_OPTIONS, RULESET_V1_OPTION)
+# Simple offers current gameplay only, the policy it has followed since
+# v3.0.0-alpha2: one current Agent API v1 Ruleset and one current Agent API
+# v2 Ruleset. v4 alpha1 therefore leaves Simple when alpha2 arrives -- it is
+# not removed from the product, just from the surface whose whole promise is
+# "the gameplay you get if you do not think about it".
+SIMPLE_RULESET_OPTIONS = (RULESET_V2_OPTION, RULESET_V4_ALPHA2_OPTION)
+# Evaluation is the one surface that must NOT offer v4 alpha2. `agents
+# evaluate` deliberately does not accept it: evaluation's placement
+# conditions are an explicit, disclosed methodology axis, and running them
+# under alpha2's seed-derived placement would produce artifacts labelled
+# alpha2 that actually ran alpha1's fixed opposite placement. The engine
+# rejects the request, so offering it here would be exactly the M1 defect
+# this module exists to prevent -- a Designer surface presenting a Ruleset
+# the engine will then refuse. Kept as its own explicit tuple rather than a
+# filter over DESIGNER_RULESET_OPTIONS so the exclusion is visible at the
+# point of definition; see docs/V4_ALPHA2_DESIGN.md's placement section.
+EVALUATION_RULESET_OPTIONS = (
+    RULESET_V2_OPTION,
+    RULESET_V4_ALPHA1_OPTION,
+    RULESET_V1_OPTION,
+)
+# Advanced/Development keep v4 alpha1 so a historical alpha1 match stays
+# reproducible from the GUI, not only from the CLI. Order is the product
+# preference ``best_designer_ruleset_for_agents`` walks, so an Agent API v2
+# selection lands on alpha2 while alpha1 remains one deliberate click away.
+DESIGNER_RULESET_OPTIONS = (
+    *SIMPLE_RULESET_OPTIONS,
+    RULESET_V4_ALPHA1_OPTION,
+    RULESET_V1_OPTION,
+)
 
 # Accurate on both axes, which the previous "Legacy / VM compatibility"
 # wording was not: Ruleset v1 is not Python-incompatible (a Python agent
@@ -46,7 +79,10 @@ DESIGNER_RULESET_OPTIONS = (*SIMPLE_RULESET_OPTIONS, RULESET_V1_OPTION)
 # v1") and must never be implied to be a Ruleset-v1 format.
 RULESET_DESCRIPTION = (
     "Ruleset v2 is Bytefray's current gameplay ruleset and runs Python agents only. "
-    "Ruleset v4 alpha1 is the process-agent preview and requires Agent API v2. "
+    "Ruleset v4 alpha2 is the current process-agent preview and requires Agent API "
+    "v2; it places entrant cores from the match seed and rotates action slots "
+    "between an entrant's own processes. Ruleset v4 alpha1 is the historical "
+    "process-agent preview, kept for reproducing earlier alpha1 matches. "
     "Ruleset v1 also runs Agent API v1 Python agents and is the only Bytefray "
     "ruleset that runs VM/blob agents."
 )
@@ -54,8 +90,8 @@ RULESET_DESCRIPTION = (
 # Shown next to a Ruleset selector whenever the current entrant selection
 # includes a VM/blob agent.
 VM_RULESET_EXPLANATION = (
-    "VM/blob agents run under Ruleset v1 only. Rulesets v2 and v4 alpha1 are "
-    "Python-agent only."
+    "VM/blob agents run under Ruleset v1 only. Rulesets v2, v4 alpha2, and v4 "
+    "alpha1 are Python-agent only."
 )
 
 
@@ -63,8 +99,9 @@ def ruleset_supports_runtime_kinds(ruleset_id: str, kinds: set[str]) -> bool:
     """Project the engine policy's authoritative *runtime-kind* compatibility.
 
     Deliberately answers only half the compatibility question: it cannot
-    tell ``bytefray-rules-2`` from ``bytefray-rules-4-alpha1``, which are
-    both Python-only and differ by Agent API version. Every Designer surface
+    tell ``bytefray-rules-2`` from the ``bytefray-rules-4-alpha*``
+    identities, which are all Python-only and differ by Agent API version --
+    nor tell the two v4 alphas apart at all, since they share both axes. Every Designer surface
     that decides which Rulesets to *offer* therefore uses
     :func:`ruleset_supports_agent_metadata` instead. This remains for the
     VM/Python launch guard in ``validate_designer_ruleset``, where the
