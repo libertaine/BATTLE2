@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from tools.spectator_aggregation import (
+from battle_engine.spectator_aggregation import (
     AggregationConfig,
     TemporalAggregateKind,
     aggregate_events,
     serialize_aggregates,
 )
-from tools.spectator_analyzer import SemanticEvent, SemanticEventKind
+from battle_engine.spectator_events import SemanticEvent, SemanticEventKind
 
 
 def _overwrite(

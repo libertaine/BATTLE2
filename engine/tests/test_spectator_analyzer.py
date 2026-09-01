@@ -19,8 +19,7 @@ from battle_engine.replay import (
     TickSnapshot,
     write_replay,
 )
-
-from tools.spectator_analyzer import (
+from battle_engine.spectator_events import (
     SemanticEventKind,
     SpectatorAnalysisError,
     analyze_replay,
@@ -553,7 +552,7 @@ def test_hash_seed_does_not_change_three_entrant_output(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     outputs = []
     for seed in ("1", "7", "91"):
-        environment = os.environ.copy()
+        environment = os.environ.copy(); environment["PYTHONPATH"] = ".;engine/src"
         environment["PYTHONHASHSEED"] = seed
         completed = subprocess.run(
             [sys.executable, "tools/spectator_analyzer.py", str(path)],
