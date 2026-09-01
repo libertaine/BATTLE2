@@ -1,0 +1,668 @@
+"""Phase 5 alpha1/alpha2 ecology qualification runner (NOT a public Bytefray CLI).
+
+Answers the Phase 5K questions the v4.0.0-alpha2 release decision depends on
+by running one paired, controlled study: the same roster, arenas, seeds, and
+seat orientations under ``bytefray-rules-4-alpha1`` and
+``bytefray-rules-4-alpha2``, so every difference reported between the two
+conditions is the Ruleset and nothing else.
+
+**How this differs from the Phase 4 harness it succeeds.** Phase 4 expressed
+its experimental conditions as research-only ``MatchRequest`` override fields
+(``core_size``, ``reach_cap``, ``process_spread_radius``,
+``process_order_overrides``, ``process_selection_mode``) and computed seeded
+placement inside the harness. None of those fields exists in the product, and
+this module deliberately does not reintroduce them: a condition here is a
+Ruleset *identity*, placement comes from
+``battle_engine.placement.resolve_direct_match_starts`` -- the same function
+``bytefray run`` calls -- and process selection comes from the Ruleset policy.
+The harness therefore has no way to construct a match the product cannot, and
+no ecology number it reports can come from a code path a user cannot reach.
+
+Execution is one call to ``NativeMatchService.run(MatchRequest)`` per match,
+the exact canonical product entry point. This module supplies only the
+matrix, the placement resolution every product caller already performs, and
+post-hoc replay analysis for the handful of metrics ``NativeMatchResult`` does
+not summarise but replay schema 4 already records per tick.
+
+Usage::
+
+    python tools/v4_alpha2_ecology_study.py run \\
+        --condition alpha2 --arena-sizes 256 512 1024 --seeds 0-31 \\
+        --ticks 1000 --output <research-root>/raw_results
+
+    python tools/v4_alpha2_ecology_study.py summarize \\
+        --input <research-root>/raw_results --output <research-root>/summaries
+
+``run`` appends one JSON record per match to ``<condition>.jsonl`` and is
+resumable: an already-recorded (condition, pair, arena, seed, orientation)
+tuple is skipped.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import itertools
+import json
+import statistics
+import sys
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+REPO = Path(__file__).resolve().parents[1]
+if str(REPO / "engine" / "src") not in sys.path:
+    sys.path.insert(0, str(REPO / "engine" / "src"))
+
+from battle_engine.agents import resolve_agent
+from battle_engine.config import Config
+from battle_engine.match_service import MatchEntrant, MatchRequest, NativeMatchService
+from battle_engine.placement import resolve_direct_match_starts
+from battle_engine.replay import MatchResult, ReplayHeader, TickSnapshot, iter_replay
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+)
+
+# Research probes live outside the product agents/ catalogue on purpose -- see
+# each probe's own module docstring for what it isolates and why it is not a
+# competitive entrant.
+PROBES_ROOT = REPO / "tools" / "v4_alpha2_ecology_agents"
+PROBE_AGENTS = ("local_hunter",)
+
+#: Frozen historical controls, unchanged from the Phase 4 roster. Their source
+#: is deliberately NOT adapted to alpha2 before their alpha2 results are
+#: recorded: "Hydra and Nemesis get weaker" is a fact about agents written for
+#: alpha1, and it is not by itself evidence that alpha2 is a better Ruleset.
+HISTORICAL_ROSTER = (
+    "hydra",
+    "Nemesis",
+    "viper",
+    "v4_claimer",
+    "v4_concentrated_attacker",
+    "v4_defender_scout",
+    "v4_local_defender",
+    "v4_scout",
+)
+
+#: Agents that know alpha2's rules -- that placement is not closed-form, and
+#: that targets must be acquired through the API v2 observation contract.
+#: New IDs, never overwrites of the historical agents above.
+ADAPTED_ROSTER = ("hydra_alpha2", "nemesis_alpha2")
+
+ROSTER = (*HISTORICAL_ROSTER, *ADAPTED_ROSTER, *PROBE_AGENTS)
+
+CONDITIONS: dict[str, str] = {
+    "alpha1": BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    "alpha2": BYTEFRAY_RULESET_V4_ALPHA2_ID,
+}
+
+
+def resolve_any_agent(name: str):
+    if name in PROBE_AGENTS:
+        return resolve_agent(PROBES_ROOT, name)
+    return resolve_agent(REPO, name)
+
+
+# --------------------------------------------------------------------------
+# Matrix
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MatchSpec:
+    condition: str
+    agent_a: str
+    agent_b: str
+    arena_size: int
+    seed: int
+    orientation: str  # "a_first" | "b_first"
+
+
+def iter_matrix(
+    roster: tuple[str, ...],
+    arena_sizes: tuple[int, ...],
+    seeds: tuple[int, ...],
+    condition: str,
+) -> list[MatchSpec]:
+    return [
+        MatchSpec(condition, agent_a, agent_b, arena_size, seed, orientation)
+        for agent_a, agent_b in itertools.combinations(roster, 2)
+        for arena_size in arena_sizes
+        for seed in seeds
+        for orientation in ("a_first", "b_first")
+    ]
+
+
+def build_request(spec: MatchSpec, ticks: int, replay_path: Path) -> MatchRequest:
+    """One match, built exactly the way ``bytefray run`` builds one.
+
+    Both seats' starts are left omitted and resolved by the production
+    placement function against the condition's Ruleset, so alpha1 gets its
+    historical opposite pair and alpha2 gets its seed-derived layout without
+    this harness computing either itself.
+    """
+
+    ruleset_id = CONDITIONS[spec.condition]
+    first, second = (
+        (spec.agent_a, spec.agent_b)
+        if spec.orientation == "a_first"
+        else (spec.agent_b, spec.agent_a)
+    )
+    starts = resolve_direct_match_starts(
+        ruleset_id=ruleset_id,
+        arena_size=spec.arena_size,
+        entrant_count=2,
+        supplied_starts=[None, None],
+        seed=spec.seed,
+    )
+    return MatchRequest(
+        config=Config(arena_size=spec.arena_size, instr_per_tick=8, seed=spec.seed),
+        entrants=(
+            MatchEntrant.python("A", first, starts[0], resolve_any_agent(first)),
+            MatchEntrant.python("B", second, starts[1], resolve_any_agent(second)),
+        ),
+        max_ticks=ticks,
+        replay_path=replay_path,
+        verbose=False,
+        ruleset_id=ruleset_id,
+    )
+
+
+# --------------------------------------------------------------------------
+# Replay analysis
+# --------------------------------------------------------------------------
+
+
+def _circular_distance(a: int, b: int, arena_size: int) -> int:
+    delta = abs(a - b) % arena_size
+    return min(delta, arena_size - delta)
+
+
+def analyze_replay(replay_path: Path) -> dict[str, Any]:
+    """One pass over a replay for the spatial metrics results do not carry.
+
+    Movement, dispersion, disruption timing, full-roster lockout, a
+    quota-redistribution proxy, and visibility/contact timing -- every one
+    reconstructed from schema-4 fields already persisted
+    (``ProcessState.anchor/reach/disrupted``), with no new instrumentation and
+    no engine change. Carried over from the Phase 4 harness so the two
+    studies' numbers mean the same thing, plus two Phase 5 additions:
+    ``unique_anchors`` and ``moves`` (the movement question alpha2's search
+    behaviour turns on) and ``max_consecutive_lockout_ticks`` (the
+    disruption-lock measurement Phase 5J requires).
+    """
+
+    header: ReplayHeader | None = None
+    anchors_seen: dict[str, set[int]] = defaultdict(set)
+    moves: dict[str, int] = defaultdict(int)
+    previous_anchor: dict[tuple[str, str], int] = {}
+    max_dispersion: dict[str, int] = defaultdict(int)
+    first_disruption_tick: dict[str, int | None] = defaultdict(lambda: None)
+    full_lockout_ticks: dict[str, int] = defaultdict(int)
+    current_lockout_run: dict[str, int] = defaultdict(int)
+    max_lockout_run: dict[str, int] = defaultdict(int)
+    prev_disrupted: dict[str, frozenset[str]] = {}
+    redistribution_events: dict[str, int] = defaultdict(int)
+    first_contact_tick: int | None = None
+    first_mutual_contact_tick: int | None = None
+    contact_ticks = 0
+    lost_contact_events = 0
+    was_in_contact = False
+    # A schema-4 replay ends with a MatchResult record that repeats the final
+    # tick's process snapshots. Counting it as well as that tick's own
+    # TickSnapshot would inflate every per-tick tally by one on the last tick,
+    # which matters most for the consecutive-lockout run length the
+    # disruption-lock assessment turns on.
+    seen_ticks: set[int] = set()
+
+    for record in iter_replay(replay_path):
+        if isinstance(record, ReplayHeader):
+            header = record
+            continue
+        if not isinstance(record, (TickSnapshot, MatchResult)):
+            continue
+        tick = record.tick if isinstance(record, TickSnapshot) else record.ticks
+        if tick in seen_ticks:
+            continue
+        seen_ticks.add(tick)
+        arena_size = header.config.arena_size if header else 1
+
+        by_entrant: dict[str, list] = defaultdict(list)
+        for process in record.processes:
+            by_entrant[process.entrant_id].append(process)
+
+        for entrant_id, processes in by_entrant.items():
+            for process in processes:
+                key = (entrant_id, process.process_id)
+                anchors_seen[entrant_id].add(process.anchor)
+                if key in previous_anchor and previous_anchor[key] != process.anchor:
+                    moves[entrant_id] += 1
+                previous_anchor[key] = process.anchor
+
+            positions = [process.anchor for process in processes]
+            if len(positions) > 1:
+                max_dispersion[entrant_id] = max(
+                    max_dispersion[entrant_id],
+                    max(
+                        _circular_distance(a, b, arena_size)
+                        for i, a in enumerate(positions)
+                        for b in positions[i + 1 :]
+                    ),
+                )
+
+            disrupted = frozenset(p.process_id for p in processes if p.disrupted)
+            if disrupted and first_disruption_tick[entrant_id] is None and tick > 0:
+                first_disruption_tick[entrant_id] = tick
+            if entrant_id in prev_disrupted and prev_disrupted[entrant_id] != disrupted:
+                redistribution_events[entrant_id] += 1
+            prev_disrupted[entrant_id] = disrupted
+
+            if processes and len(disrupted) == len(processes):
+                full_lockout_ticks[entrant_id] += 1
+                current_lockout_run[entrant_id] += 1
+                max_lockout_run[entrant_id] = max(
+                    max_lockout_run[entrant_id], current_lockout_run[entrant_id]
+                )
+            else:
+                current_lockout_run[entrant_id] = 0
+
+        if isinstance(record, TickSnapshot) and header is not None:
+            entrant_ids = list(by_entrant)
+            in_contact = {entrant_id: False for entrant_id in entrant_ids}
+            for observer_id in entrant_ids:
+                for other_id in entrant_ids:
+                    if observer_id == other_id:
+                        continue
+                    for observer in by_entrant[observer_id]:
+                        if observer.disrupted:
+                            continue
+                        for enemy in by_entrant[other_id]:
+                            if (
+                                _circular_distance(observer.anchor, enemy.anchor, arena_size)
+                                <= observer.reach
+                            ):
+                                in_contact[observer_id] = True
+                                break
+                        if in_contact[observer_id]:
+                            break
+            any_contact = any(in_contact.values())
+            mutual = len(entrant_ids) >= 2 and all(in_contact.values())
+            if any_contact:
+                contact_ticks += 1
+                if first_contact_tick is None:
+                    first_contact_tick = tick
+            if mutual and first_mutual_contact_tick is None:
+                first_mutual_contact_tick = tick
+            if was_in_contact and not any_contact:
+                lost_contact_events += 1
+            was_in_contact = any_contact
+
+    return {
+        "unique_anchors": {k: len(v) for k, v in anchors_seen.items()},
+        "moves": dict(moves),
+        "max_dispersion": dict(max_dispersion),
+        "first_disruption_tick": dict(first_disruption_tick),
+        "full_lockout_ticks": dict(full_lockout_ticks),
+        "max_consecutive_lockout_ticks": dict(max_lockout_run),
+        "redistribution_events": dict(redistribution_events),
+        "first_contact_tick": first_contact_tick,
+        "first_mutual_contact_tick": first_mutual_contact_tick,
+        "contact_ticks": contact_ticks,
+        "lost_contact_events": lost_contact_events,
+    }
+
+
+def run_one(spec: MatchSpec, ticks: int, scratch_dir: Path) -> dict[str, Any]:
+    replay_path = scratch_dir / (
+        f"{spec.condition}_{spec.agent_a}_{spec.agent_b}_"
+        f"{spec.arena_size}_{spec.seed}_{spec.orientation}.jsonl"
+    )
+    request = build_request(spec, ticks, replay_path)
+    result = NativeMatchService().run(request)
+    replay_metrics = analyze_replay(replay_path)
+    try:
+        replay_path.unlink(missing_ok=True)
+        replay_path.with_name("result.json").unlink(missing_ok=True)
+        replay_path.with_name("summary.json").unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    agents_by_slot = {agent.metadata["slot"]: agent for agent in result.agents}
+    slot_to_agent = {
+        0: spec.agent_a if spec.orientation == "a_first" else spec.agent_b,
+        1: spec.agent_b if spec.orientation == "a_first" else spec.agent_a,
+    }
+    winner_slot = {"A": 0, "B": 1}.get(result.winner)
+    starts = tuple(entrant.start for entrant in request.entrants)
+
+    return {
+        "condition": spec.condition,
+        "ruleset_id": CONDITIONS[spec.condition],
+        "agent_a": spec.agent_a,
+        "agent_b": spec.agent_b,
+        "arena_size": spec.arena_size,
+        "seed": spec.seed,
+        "orientation": spec.orientation,
+        "starts": starts,
+        "separation": _circular_distance(starts[0], starts[1], spec.arena_size),
+        "winner_slot": winner_slot,
+        "winner_agent": slot_to_agent.get(winner_slot),
+        "ticks_run": result.ticks_run,
+        "termination_reason": getattr(
+            result.termination_reason, "value", str(result.termination_reason)
+        ),
+        "first": _side(agents_by_slot[0]),
+        "second": _side(agents_by_slot[1]),
+        "replay_metrics": replay_metrics,
+    }
+
+
+def _side(agent: Any) -> dict[str, Any]:
+    return {
+        "agent_id": agent.agent_id,
+        "alive": agent.alive,
+        "score": agent.score,
+        "territory_pct_last": agent.territory_pct_last,
+        "processes": agent.metadata.get("processes"),
+    }
+
+
+# --------------------------------------------------------------------------
+# Runner
+# --------------------------------------------------------------------------
+
+
+def run_condition(
+    condition: str,
+    arena_sizes: tuple[int, ...],
+    seeds: tuple[int, ...],
+    ticks: int,
+    output_dir: Path,
+    roster: tuple[str, ...],
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    scratch_dir = output_dir / "_scratch_replays"
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    out_path = output_dir / f"{condition}.jsonl"
+
+    done: set[tuple] = set()
+    if out_path.exists():
+        with out_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                record = json.loads(line)
+                done.add(
+                    (
+                        record["agent_a"],
+                        record["agent_b"],
+                        record["arena_size"],
+                        record["seed"],
+                        record["orientation"],
+                    )
+                )
+
+    specs = iter_matrix(roster, arena_sizes, seeds, condition)
+    pending = [
+        spec
+        for spec in specs
+        if (spec.agent_a, spec.agent_b, spec.arena_size, spec.seed, spec.orientation)
+        not in done
+    ]
+    print(
+        f"{condition}: {len(specs)} matches in matrix, {len(done)} already recorded, "
+        f"{len(pending)} to run",
+        flush=True,
+    )
+
+    with out_path.open("a", encoding="utf-8") as handle:
+        for index, spec in enumerate(pending, start=1):
+            handle.write(json.dumps(run_one(spec, ticks, scratch_dir)) + "\n")
+            if index % 250 == 0:
+                handle.flush()
+                print(f"  {index}/{len(pending)}", flush=True)
+    print(f"{condition}: wrote {out_path}", flush=True)
+
+
+# --------------------------------------------------------------------------
+# Summaries
+# --------------------------------------------------------------------------
+
+
+def _wilson(successes: int, total: int) -> tuple[float, float]:
+    """Wilson 95% interval -- the same interval Phase 4 reported."""
+
+    if total == 0:
+        return (0.0, 0.0)
+    z = 1.959963984540054
+    phat = successes / total
+    denominator = 1 + z * z / total
+    centre = (phat + z * z / (2 * total)) / denominator
+    margin = (
+        z * ((phat * (1 - phat) / total + z * z / (4 * total * total)) ** 0.5)
+    ) / denominator
+    return (max(0.0, centre - margin), min(1.0, centre + margin))
+
+
+def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(records)
+    if total == 0:
+        return {}
+
+    ticks = [record["ticks_run"] for record in records]
+    tick_limited = sum(
+        1 for record in records if record["termination_reason"] == "tick_limit"
+    )
+    draws = sum(1 for record in records if record["winner_agent"] is None)
+
+    played: dict[str, int] = defaultdict(int)
+    won: dict[str, int] = defaultdict(int)
+    first_seat_played: dict[str, int] = defaultdict(int)
+    first_seat_won: dict[str, int] = defaultdict(int)
+    moves: dict[str, list[int]] = defaultdict(list)
+    anchors: dict[str, list[int]] = defaultdict(list)
+    lockout: dict[str, list[int]] = defaultdict(list)
+    max_lockout_run: dict[str, list[int]] = defaultdict(list)
+    contact_first: list[int] = []
+    contacted = 0
+
+    for record in records:
+        by_slot = {0: record["first"], 1: record["second"]}
+        names = {
+            0: record["agent_a"]
+            if record["orientation"] == "a_first"
+            else record["agent_b"],
+            1: record["agent_b"]
+            if record["orientation"] == "a_first"
+            else record["agent_a"],
+        }
+        for slot, name in names.items():
+            played[name] += 1
+            entrant_id = by_slot[slot]["agent_id"]
+            metrics = record["replay_metrics"]
+            moves[name].append(metrics["moves"].get(entrant_id, 0))
+            anchors[name].append(metrics["unique_anchors"].get(entrant_id, 0))
+            lockout[name].append(metrics["full_lockout_ticks"].get(entrant_id, 0))
+            max_lockout_run[name].append(
+                metrics["max_consecutive_lockout_ticks"].get(entrant_id, 0)
+            )
+            if slot == 0:
+                first_seat_played[name] += 1
+        winner = record["winner_agent"]
+        if winner is not None:
+            won[winner] += 1
+            if record["winner_slot"] == 0:
+                first_seat_won[winner] += 1
+        if record["replay_metrics"]["first_contact_tick"] is not None:
+            contacted += 1
+            contact_first.append(record["replay_metrics"]["first_contact_tick"])
+
+    agents = {}
+    for name in sorted(played):
+        n = played[name]
+        wins = won[name]
+        low, high = _wilson(wins, n)
+        first_n = first_seat_played[name]
+        second_n = n - first_n
+        first_rate = first_seat_won[name] / first_n if first_n else 0.0
+        second_rate = (wins - first_seat_won[name]) / second_n if second_n else 0.0
+        agents[name] = {
+            "played": n,
+            "wins": wins,
+            "win_rate": wins / n,
+            "win_rate_ci": [low, high],
+            "seat_delta": first_rate - second_rate,
+            "mean_moves": statistics.mean(moves[name]) if moves[name] else 0.0,
+            "mean_unique_anchors": statistics.mean(anchors[name])
+            if anchors[name]
+            else 0.0,
+            "mean_full_lockout_ticks": statistics.mean(lockout[name])
+            if lockout[name]
+            else 0.0,
+            "max_consecutive_lockout_ticks": max(max_lockout_run[name])
+            if max_lockout_run[name]
+            else 0,
+            "matches_with_long_lockout": sum(
+                1 for value in max_lockout_run[name] if value >= 50
+            ),
+        }
+
+    return {
+        "matches": total,
+        "median_ticks": statistics.median(ticks),
+        "mean_ticks": statistics.mean(ticks),
+        "tick_limit_rate": tick_limited / total,
+        "draw_rate": draws / total,
+        "contact_rate": contacted / total,
+        "median_first_contact_tick": statistics.median(contact_first)
+        if contact_first
+        else None,
+        "agents": agents,
+    }
+
+
+def write_summary(condition: str, summary: dict[str, Any], output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / f"{condition}_summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    with (output_dir / f"{condition}_summary.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "agent",
+                "played",
+                "wins",
+                "win_rate",
+                "ci_low",
+                "ci_high",
+                "seat_delta",
+                "mean_moves",
+                "mean_unique_anchors",
+                "mean_full_lockout_ticks",
+                "max_consecutive_lockout_ticks",
+                "matches_with_long_lockout",
+            ]
+        )
+        for name, row in summary["agents"].items():
+            writer.writerow(
+                [
+                    name,
+                    row["played"],
+                    row["wins"],
+                    f"{row['win_rate']:.4f}",
+                    f"{row['win_rate_ci'][0]:.4f}",
+                    f"{row['win_rate_ci'][1]:.4f}",
+                    f"{row['seat_delta']:+.4f}",
+                    f"{row['mean_moves']:.2f}",
+                    f"{row['mean_unique_anchors']:.2f}",
+                    f"{row['mean_full_lockout_ticks']:.2f}",
+                    row["max_consecutive_lockout_ticks"],
+                    row["matches_with_long_lockout"],
+                ]
+            )
+
+
+def print_summary(condition: str, summary: dict[str, Any]) -> None:
+    print(f"\n=== {condition} ({summary['matches']} matches) ===")
+    print(
+        f"median ticks {summary['median_ticks']:.1f} | "
+        f"tick-limit {summary['tick_limit_rate']:.1%} | "
+        f"draw {summary['draw_rate']:.1%} | "
+        f"contact {summary['contact_rate']:.1%} | "
+        f"median first contact {summary['median_first_contact_tick']}"
+    )
+    print(
+        f"{'agent':28} {'win%':>7} {'95% CI':>16} {'seat':>7} "
+        f"{'moves':>8} {'anchors':>8} {'lockout':>8} {'maxrun':>7}"
+    )
+    for name, row in sorted(
+        summary["agents"].items(), key=lambda item: -item[1]["win_rate"]
+    ):
+        low, high = row["win_rate_ci"]
+        print(
+            f"{name:28} {row['win_rate']:6.1%} "
+            f"[{low:5.1%},{high:6.1%}] {row['seat_delta']:+6.1%} "
+            f"{row['mean_moves']:8.1f} {row['mean_unique_anchors']:8.1f} "
+            f"{row['mean_full_lockout_ticks']:8.1f} "
+            f"{row['max_consecutive_lockout_ticks']:7d}"
+        )
+
+
+# --------------------------------------------------------------------------
+# CLI
+# --------------------------------------------------------------------------
+
+
+def parse_seeds(text: str) -> tuple[int, ...]:
+    if "-" in text:
+        low, high = text.split("-", 1)
+        return tuple(range(int(low), int(high) + 1))
+    return tuple(int(part) for part in text.split(","))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    runner = sub.add_parser("run")
+    runner.add_argument("--condition", choices=sorted(CONDITIONS), required=True)
+    runner.add_argument("--arena-sizes", type=int, nargs="+", default=[256, 512, 1024])
+    runner.add_argument("--seeds", default="0-31")
+    runner.add_argument("--ticks", type=int, default=1000)
+    runner.add_argument("--output", type=Path, required=True)
+    runner.add_argument("--roster", nargs="*", default=None)
+
+    summarizer = sub.add_parser("summarize")
+    summarizer.add_argument("--input", type=Path, required=True)
+    summarizer.add_argument("--output", type=Path, required=True)
+
+    args = parser.parse_args(argv)
+
+    if args.command == "run":
+        run_condition(
+            args.condition,
+            tuple(args.arena_sizes),
+            parse_seeds(args.seeds),
+            args.ticks,
+            args.output,
+            tuple(args.roster) if args.roster else ROSTER,
+        )
+        return 0
+
+    for path in sorted(args.input.glob("*.jsonl")):
+        records = [
+            json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        summary = summarize(records)
+        if not summary:
+            continue
+        write_summary(path.stem, summary, args.output)
+        print_summary(path.stem, summary)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
