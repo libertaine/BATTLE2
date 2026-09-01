@@ -35,11 +35,20 @@ The entire `ObservationV2` is captured losslessly in `TraceObservationV2`. No fi
 Since READ actions do not mutate memory and are excluded from the canonical replay, the trace preserves the critical knowledge acquisition step. WRITE and MOVE capture their requested intent.
 
 ## 7. Requested vs. Applied Action Model
-A process's requested `AgentAction` frequently differs from the applied outcome due to disruption, invalid syntax, spatial constraints, or quota limits.
+A process's requested `AgentAction` frequently differs from the applied outcome due to invalid syntax or spatial constraints.
 Each `DecisionRecordV2` will contain an `applied_result` object capturing:
-- `status`: One of `APPLIED`, `REJECTED_INVALID`, `REJECTED_OUT_OF_REACH`, `REJECTED_QUOTA`, `DISRUPTED`, `EXCEPTION`.
+- `status`: One of `APPLIED`, `REJECTED_INVALID`, `REJECTED_OUT_OF_REACH`, `EXCEPTION`; plus `REJECTED_QUOTA` and `DISRUPTED`, which are **reserved and currently unreachable** (see below).
 - `normalized_address`: The circular-wrapped address actually executed (if applicable).
 - `read_value`, `read_owner`: The outcome of a READ.
+
+### 7.1 Reserved statuses: `DISRUPTED` and `REJECTED_QUOTA`
+Under current v4 semantics these two values can never appear on a real record, and consumers must not wait for them.
+
+`ProcessMatchController._effective_process_quotas` excludes disrupted processes and `_select_active_process` selects only from processes still under their allocation, so both filters run *before* `act()` is called. A disrupted or exhausted process therefore receives no `ObservationV2` at all and produces no `DecisionRecordV2` — the engine expresses both conditions by **withholding the callback**, not by rejecting a decision. This is a deliberate semantic, not a gap: the trace records the engine-to-agent interaction history, and no interaction occurs.
+
+The practical consequence for consumers is that **disruption is not derivable from the trace's status field**. It is derivable from the canonical replay's per-tick `processes[].disrupted` flag, or — with exact attribution — by replaying the shared-location rule against the trace's own applied `WRITE` records and reconstructed process anchors, which is what `battle_engine.spectator_derivation` does. An entrant that made no decisions during a tick is *unsampled* for that tick and must not be treated as having observed nothing.
+
+The two values are retained rather than removed so the enum stays stable for a future emission point that genuinely needs them (for example, a Ruleset that delivers an observation and then refuses the action). Phase 3 verified their absence across 5,779 decision records in twelve real matches rather than manufacturing records to exercise them.
 
 ## 8. Diagnostics and Nondeterministic Fields
 Semantic identity excludes diagnostic/nondeterministic fields:
@@ -54,7 +63,9 @@ A `BindingRecord` must be appended as the final record in the trace. It contains
 - `ruleset_id`
 - `entrant_identities` (ordered list)
 
-Consumers (like Replay Viewer or analyzers) **must reject** the trace if it fails to perfectly match the loaded canonical replay bytes and metadata.
+Consumers (like Replay Viewer or analyzers) **must reject** the trace if it fails to perfectly match the loaded canonical replay bytes and metadata. `battle_engine.spectator_derivation.verify_pair` is the reference consumer-side implementation of this check (added in Phase 3).
+
+Note that `replay_sha256` is taken over the canonical replay's raw bytes, and `write_replay` uses a text-mode stream — so the digest carries the writing platform's line endings. This is a pre-existing property of canonical replay identity, not a binding-specific one, but it means a replay/trace pair must be moved and stored as **binary**. Re-encoding the replay's line endings (a text-mode copy, or a Git checkout under this repository's `* text=auto eol=lf` attribute) invalidates the binding without changing a single logical record, and a verifier is required to report that as a mismatch rather than tolerate it.
 
 ## 10. Compatibility and Versioning
 The trace will use `TRACE_SCHEMA_VERSION = 2`.

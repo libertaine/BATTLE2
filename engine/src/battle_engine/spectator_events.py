@@ -292,6 +292,25 @@ def _load_schema4_replay(path: str | Path) -> _LoadedReplay:
     )
 
 
+#: Public alias for the validated-replay container. Phase 3's replay/trace
+#: pair analyzer (:mod:`battle_engine.spectator_derivation`) needs the same
+#: strictly-validated Schema 4 records this module already parses; exposing
+#: the existing loader is deliberately preferred over giving that module a
+#: second, independently-drifting replay parser.
+LoadedReplay = _LoadedReplay
+
+
+def load_schema4_replay(path: str | Path) -> LoadedReplay:
+    """Parse and structurally validate one canonical Schema 4 replay.
+
+    Identical to what :func:`analyze_replay` consumes -- same validation,
+    same errors -- exposed so a second analyzer can share one replay
+    contract rather than reimplementing it.
+    """
+
+    return _load_schema4_replay(path)
+
+
 def _living_entrants(tick: TickSnapshot) -> set[str]:
     return {agent.agent_id for agent in tick.agents if agent.alive}
 
