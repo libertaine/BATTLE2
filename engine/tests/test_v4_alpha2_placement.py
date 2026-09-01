@@ -77,13 +77,22 @@ def test_placement_is_independent_of_hash_and_iteration_order() -> None:
         "from battle_engine.placement import seeded_seat_starts;"
         "print([seeded_seat_starts(2, 512, s) for s in range(4)])"
     )
+    # Hand the child this process's own import path rather than trusting it to
+    # find an installed battle_engine: a source checkout run from a venv that
+    # has not installed the package (which is how the Linux qualification
+    # environment is set up) reaches it through pytest's rootdir insertion,
+    # which a bare subprocess does not inherit.
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(path for path in sys.path if path),
+    }
     outputs = {
         subprocess.run(
             [sys.executable, "-c", script],
             capture_output=True,
             text=True,
             check=True,
-            env={**os.environ, "PYTHONHASHSEED": str(value)},
+            env={**env, "PYTHONHASHSEED": str(value)},
         ).stdout.strip()
         for value in (0, 1, 12345)
     }
