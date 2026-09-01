@@ -8,10 +8,11 @@ def circular_dist(a, b, arena_size):
 def main(replay_path):
     arena_size = 8192
     
-    agent_cores = {} # agent_id -> (start, end)
+    # Track the current owner of every address (assuming initially None)
+    owner_map = {}
     
     # State tracking
-    # (viewer_entrant_id, viewer_process_id, target_entrant_id, target_process_id) -> bool
+    # (viewer_entrant_id, target_entrant_id) -> bool
     visible_pairs = set() 
     
     active_processes = set()
@@ -24,33 +25,19 @@ def main(replay_path):
             
             if record_type == 'header':
                 arena_size = record.get('config', {}).get('arena_size', 8192)
-            
+                # Initialize owners to None
+                for i in range(arena_size):
+                    owner_map[i] = None
+                    
             elif record_type == 'tick':
                 tick = record['tick']
                 events_this_tick = []
                 
-                # Update core regions on tick 0
-                if tick == 0:
-                    for ag in record.get('agents', []):
-                        agent_cores[ag['id']] = ag['region']
-                        
+                # Check for disruption (Process ID presence)
                 processes = record.get('processes', [])
-                
-                # Check for process creation/death
                 current_processes = {p['process_id']: p for p in processes}
-                for pid in current_processes:
-                    if pid not in active_processes:
-                        events_this_tick.append({'kind': 'PROCESS_CREATED', 'actors': [current_processes[pid]['entrant_id']], 'process_id': pid})
-                        active_processes.add(pid)
                 
-                dead_processes = active_processes - set(current_processes.keys())
-                for pid in dead_processes:
-                    events_this_tick.append({'kind': 'PROCESS_DEATH', 'process_id': pid})
-                    active_processes.remove(pid)
-                    # Cleanup visible pairs
-                    visible_pairs = {pair for pair in visible_pairs if pair[1] != pid and pair[3] != pid}
-                
-                # Check for disruption
+                # Disruption is deterministically tracked
                 for p in processes:
                     pid = p['process_id']
                     if p['disrupted'] and pid not in disrupted_processes:
@@ -63,42 +50,58 @@ def main(replay_path):
                 diffs = record.get('memory_diffs', [])
                 for diff in diffs:
                     addr = diff.get('address', diff.get('addr'))
+                    length = diff.get('length', 1)
                     owner = diff['owner']
+                    
                     if owner is not None:
-                        # Check whose core it is in
-                        for ag_id, (start, end) in agent_cores.items():
-                            if ag_id != owner:
-                                # handle circular region
-                                in_core = False
-                                if start <= end:
-                                    in_core = start <= addr <= end
-                                else:
-                                    in_core = addr >= start or addr <= end
-                                if in_core:
-                                    events_this_tick.append({
-                                        'kind': 'HOSTILE_WRITE',
-                                        'actors': [owner, ag_id],
-                                        'address': addr
-                                    })
+                        for offset in range(length):
+                            curr_addr = (addr + offset) % arena_size
+                            prev_owner = owner_map[curr_addr]
+                            if prev_owner is not None and prev_owner != owner:
+                                events_this_tick.append({
+                                    'kind': 'HOSTILE_WRITE',
+                                    'actors': [owner, prev_owner],
+                                    'address': curr_addr
+                                })
+                            owner_map[curr_addr] = owner
                 
-                # Check visibility
-                # process A can see process B if dist(A.anchor, B.anchor) <= A.reach
-                # wait, A.anchor is in processes.
+                # Check visibility (Entrant-level detection)
                 current_visible = set()
-                for p_a in processes:
-                    for p_b in processes:
-                        if p_a['entrant_id'] != p_b['entrant_id']:
-                            dist = circular_dist(p_a['anchor'], p_b['anchor'], arena_size)
-                            if dist <= p_a['reach']:
-                                current_visible.add((p_a['entrant_id'], p_a['process_id'], p_b['entrant_id'], p_b['process_id']))
+                # Aggregate process anchors by entrant
+                anchors_by_entrant = {}
+                reach_by_entrant = {}
+                for p in processes:
+                    e_id = p['entrant_id']
+                    if e_id not in anchors_by_entrant:
+                        anchors_by_entrant[e_id] = []
+                        reach_by_entrant[e_id] = []
+                    # Disrupted sensors cannot see!
+                    if not p['disrupted']:
+                        anchors_by_entrant[e_id].append(p['anchor'])
+                        reach_by_entrant[e_id].append(p['reach'])
+                        
+                for e_a, anchors_a in anchors_by_entrant.items():
+                    for e_b, anchors_b in anchors_by_entrant.items():
+                        if e_a != e_b:
+                            # A can see B if any of A's sensors is close to any of B's anchors
+                            can_see = False
+                            for idx, a_anchor in enumerate(anchors_a):
+                                a_reach = reach_by_entrant[e_a][idx]
+                                for b_anchor in anchors_b:
+                                    if circular_dist(a_anchor, b_anchor, arena_size) <= a_reach:
+                                        can_see = True
+                                        break
+                                if can_see: break
+                            if can_see:
+                                current_visible.add((e_a, e_b))
                 
                 newly_visible = current_visible - visible_pairs
                 newly_hidden = visible_pairs - current_visible
                 
                 for v in newly_visible:
-                    events_this_tick.append({'kind': 'DETECTION_GAINED', 'viewer': v[0], 'target': v[2], 'viewer_pid': v[1], 'target_pid': v[3]})
+                    events_this_tick.append({'kind': 'DETECTION_GAINED', 'viewer': v[0], 'target': v[1]})
                 for v in newly_hidden:
-                    events_this_tick.append({'kind': 'DETECTION_LOST', 'viewer': v[0], 'target': v[2], 'viewer_pid': v[1], 'target_pid': v[3]})
+                    events_this_tick.append({'kind': 'DETECTION_LOST', 'viewer': v[0], 'target': v[1]})
                     
                 visible_pairs = current_visible
                 
