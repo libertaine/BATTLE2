@@ -12,6 +12,7 @@ import enum
 import hashlib
 import math
 import random
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -374,15 +375,23 @@ class ProcessMatchController:
                         rng=random.Random(seed),
                     )
                     instance = cast(AgentV2, loaded.instance)
-                    if trace_writer is not None:
-                        import time
-                        trace_writer.write_reset(ResetRecord(agent_id=entrant.agent_id, wall_time_ms=time.perf_counter_ns() / 1_000_000.0))
+                    reset_start = time.perf_counter()
                     try:
                         instance.reset(context)
                     except Exception as exc:
+                        if trace_writer is not None:
+                            trace_writer.write_reset(ResetRecord(
+                                agent_id=entrant.agent_id,
+                                wall_time_ms=(time.perf_counter() - reset_start) * 1000,
+                            ))
                         raise PythonEntrantInitializationError(
                             diagnose_reset_failure(exc, agent_id=entrant.agent_id, slot=slot)
                         ) from exc
+                    if trace_writer is not None:
+                        trace_writer.write_reset(ResetRecord(
+                            agent_id=entrant.agent_id,
+                            wall_time_ms=(time.perf_counter() - reset_start) * 1000,
+                        ))
                     try:
                         declarations: object = instance.declare_processes()
                     except Exception as exc:
@@ -434,9 +443,7 @@ class ProcessMatchController:
                     metadata = load_result.payload["metadata"]
                     source_path = Path(load_result.payload["source_path"])
                     agent_version = str(metadata["version"])
-                    if trace_writer is not None:
-                        import time
-                        trace_writer.write_reset(ResetRecord(agent_id=entrant.agent_id, wall_time_ms=time.perf_counter_ns() / 1_000_000.0))
+                    reset_start = time.perf_counter()
                     reset_result = handle.reset(
                         match_seed=config.seed,
                         api_version=2,
@@ -445,6 +452,11 @@ class ProcessMatchController:
                         action_budget=config.instr_per_tick,
                         timeout=agent_call_timeout,
                     )
+                    if trace_writer is not None:
+                        trace_writer.write_reset(ResetRecord(
+                            agent_id=entrant.agent_id,
+                            wall_time_ms=(time.perf_counter() - reset_start) * 1000,
+                        ))
                     if reset_result.status is not WorkerCallStatus.OK:
                         raise PythonEntrantInitializationError(
                             diagnostic_for_worker_result(
@@ -573,6 +585,7 @@ class ProcessMatchController:
                 specs,
                 max_ticks,
                 ruleset_policy=ruleset_policy,
+                trace_writer=trace_writer,
             )
             controller._worker_handles = worker_handles
             return controller
@@ -906,6 +919,7 @@ class ProcessMatchController:
     ) -> None:
         if writer is None:
             return
+        wall_time_ms = (time.perf_counter() - trace_start) * 1000
         trace_obs = TraceObservationV2(
             current_tick=obs.current_tick,
             last_callback_tick=obs.last_callback_tick,
@@ -923,7 +937,7 @@ class ProcessMatchController:
         writer.write_decision_v2(DecisionRecordV2(
             agent_id=agent_id,
             process_id=process_id,
-            wall_time_ms=trace_start,
+            wall_time_ms=wall_time_ms,
             observation=trace_obs,
             action=action,
             applied_result=res,
@@ -1018,11 +1032,8 @@ class ProcessMatchController:
                     previous_read_owner=last_res.get("read_owner"),
                 )
 
-                trace_start = 0.0
-                if self.trace_writer is not None:
-                    import time
-                    trace_start = time.perf_counter_ns() / 1_000_000.0
-                
+                trace_start = time.perf_counter() if self.trace_writer is not None else 0.0
+
                 trace_action: TraceActionV2 | None = None
                 
                 try:
@@ -1167,6 +1178,7 @@ class ProcessMatchController:
                     owner = self.vm.writer[target_addr]
                     res_info["read_val"] = val
                     res_info["read_owner"] = owner
+                    res_info["normalized_address"] = target_addr
                     active_proc.telemetry.total_reads += 1
                     active_proc.telemetry.addresses_read.add(target_addr)
 
@@ -1187,6 +1199,7 @@ class ProcessMatchController:
                     val = (action.value if action.value is not None else 0) & 0xFF
                     self.vm._wr8(target_addr, val, owner=st.agent_id)
                     st.mem_writes += 1
+                    res_info["normalized_address"] = target_addr
                     active_proc.telemetry.total_writes += 1
                     active_proc.telemetry.addresses_written.add(target_addr)
 

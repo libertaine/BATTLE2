@@ -16,7 +16,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
 
-from battle_engine.agent_trace import TraceHeader, TraceWriter
+from battle_engine.agent_trace import (
+    TRACE_SCHEMA_VERSION,
+    TRACE_SCHEMA_VERSION_V2,
+    TraceHeader,
+    TraceWriter,
+)
 from battle_engine.config import Config
 from battle_engine.core import Kernel
 from battle_engine.entrant_identity import EntrantIdentity
@@ -748,7 +753,7 @@ def _remove_python_artifacts(replay_path: Path, summary_path: Path) -> None:
             ) from exc
 
 
-def _open_trace_writer(request: MatchRequest) -> TraceWriter | None:
+def _open_trace_writer(request: MatchRequest, *, schema_version: int) -> TraceWriter | None:
     if request.trace_path is None:
         return None
     writer = TraceWriter(request.trace_path)
@@ -758,6 +763,7 @@ def _open_trace_writer(request: MatchRequest) -> TraceWriter | None:
             agents={entrant.agent_id: entrant.name for entrant in request.entrants},
             supervised=request.agent_call_timeout is not None,
             agent_call_timeout=request.agent_call_timeout,
+            schema_version=schema_version,
         )
     )
     return writer
@@ -1354,13 +1360,19 @@ class NativeMatchService:
         summary_path = replay_path.with_name("summary.json")
         if "python" in kinds:
             _remove_python_artifacts(replay_path, summary_path)
-            trace_writer = _open_trace_writer(request)
+            is_v4_process_match = ruleset_policy.ruleset_id in PROCESS_RULESET_IDS
+            trace_writer = _open_trace_writer(
+                request,
+                schema_version=(
+                    TRACE_SCHEMA_VERSION_V2 if is_v4_process_match else TRACE_SCHEMA_VERSION
+                ),
+            )
             try:
                 recorded = (
                     _run_v4_process_match(
                         request, replay_path, summary_path, trace_writer, ruleset_policy
                     )
-                    if ruleset_policy.ruleset_id in PROCESS_RULESET_IDS
+                    if is_v4_process_match
                     else _run_python_match_traced(
                         request, replay_path, summary_path, trace_writer, ruleset_policy
                     )

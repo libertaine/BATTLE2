@@ -52,6 +52,7 @@ from typing import Any, TextIO
 
 TRACE_SCHEMA = "bytefray.agent_trace"
 TRACE_SCHEMA_VERSION = 1
+TRACE_SCHEMA_VERSION_V2 = 2
 
 
 class TraceFormatError(ValueError):
@@ -350,6 +351,13 @@ def _parse_diagnostic(payload: Any, path: Path, line_no: int) -> TraceDiagnostic
 
 
 def _parse_header(payload: Mapping[str, Any], path: Path, line_no: int) -> TraceHeader:
+    """Parse the structural header fields shared by every trace schema version.
+
+    Callers (:func:`read_trace`, :func:`read_trace_v2`) are responsible for
+    checking ``schema_version`` against the version *they* support -- this
+    function only validates the ``schema`` family string, which is shared
+    across all versions.
+    """
     header = TraceHeader(
         match_seed=_required(payload, "match_seed", path, line_no),
         agents=dict(_required(payload, "agents", path, line_no)),
@@ -361,11 +369,6 @@ def _parse_header(payload: Mapping[str, Any], path: Path, line_no: int) -> Trace
     if header.schema != TRACE_SCHEMA:
         raise TraceFormatError(
             f"{path}: unsupported trace schema {header.schema!r} (expected {TRACE_SCHEMA!r})"
-        )
-    if header.schema_version != TRACE_SCHEMA_VERSION:
-        raise TraceFormatError(
-            f"{path}: unsupported trace schema version {header.schema_version!r} "
-            f"(expected {TRACE_SCHEMA_VERSION!r})"
         )
     return header
 
@@ -452,6 +455,11 @@ def read_trace(path: Path) -> TraceDocument:
         record_type = payload.get("record_type")
         if record_type == "header":
             header = _parse_header(payload, path, line_no)
+            if header.schema_version != TRACE_SCHEMA_VERSION:
+                raise TraceFormatError(
+                    f"{path}:{line_no}: unsupported trace schema version {header.schema_version!r} "
+                    f"(expected {TRACE_SCHEMA_VERSION!r})"
+                )
         elif record_type == "reset":
             records.append(_parse_reset(payload, path, line_no))
         elif record_type == "decision":
@@ -588,8 +596,11 @@ def read_trace_v2(path: Path) -> TraceDocumentV2:
         record_type = payload.get("record_type")
         if record_type == "header":
             header = _parse_header(payload, path, line_no)
-            if header.schema_version != 2:
-                raise TraceFormatError(f"{path}:{line_no}: expected schema_version 2, got {header.schema_version}")
+            if header.schema_version != TRACE_SCHEMA_VERSION_V2:
+                raise TraceFormatError(
+                    f"{path}:{line_no}: expected schema_version {TRACE_SCHEMA_VERSION_V2}, "
+                    f"got {header.schema_version}"
+                )
         elif record_type == "reset":
             records.append(_parse_reset(payload, path, line_no))
         elif record_type == "declaration":
@@ -661,17 +672,26 @@ def first_divergence(a: TraceDocument, b: TraceDocument) -> Divergence | None:
 __all__ = [
     "TRACE_SCHEMA",
     "TRACE_SCHEMA_VERSION",
+    "TRACE_SCHEMA_VERSION_V2",
+    "BindingRecord",
     "DecisionRecord",
+    "DecisionRecordV2",
+    "DeclarationRecord",
     "Divergence",
     "ResetRecord",
     "TraceAction",
+    "TraceActionV2",
     "TraceDiagnostic",
     "TraceDocument",
+    "TraceDocumentV2",
     "TraceFormatError",
     "TraceHeader",
     "TraceObservation",
+    "TraceObservationV2",
     "TraceRecord",
+    "TraceResultV2",
     "TraceWriter",
     "first_divergence",
     "read_trace",
+    "read_trace_v2",
 ]
