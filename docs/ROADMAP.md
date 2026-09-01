@@ -1125,6 +1125,41 @@ cover the full v3.0.0 release. `v3.0.0-alpha1`, `v3.0.0-alpha2`,
 `v3.0.0-rc1`, and `v3.0.0-rc2` remain published, immutable prereleases;
 none was moved, retagged, or rewritten by this promotion.
 
+## v4.0 — Product Development
+
+**v4.0.0-alpha1** (the spatial multi-process update) published August 31,
+2026 — see [V4_0_0_ALPHA1_RELEASE_REPORT.md](releases/V4_0_0_ALPHA1_RELEASE_REPORT.md).
+
+### v4.0.0-alpha2 — Seeded Placement & Process Fairness
+
+**Status: QUALIFIED, pending publication.** Adds a second v4 Ruleset
+identity, `bytefray-rules-4-alpha2`, differing from `bytefray-rules-4-alpha1`
+in exactly two gameplay semantics that the Phase 4 controlled gameplay study
+(~36,000 matches) identified as accidental rather than designed:
+seed-derived minimum-separated core placement (replacing the fixed
+evenly-spread seat layout) and round-robin intra-entrant process selection
+(replacing earliest-declared-process priority). Agent API v2, replay schema
+4, `Q=8`, core size, reach legality, the `K=2` rotating entrant scheduler,
+disruption, and quota redistribution are all unchanged; `bytefray-rules-4-alpha1`
+remains unchanged and explicitly selectable everywhere a Ruleset can be
+named.
+
+Phase 5 qualification: 2623 passed / 14 skipped / 2 deselected (Windows),
+2620 passed / 17 skipped (Linux), 242 passed (GUI), Ruff and both mypy gates
+clean, six deterministic cross-platform vectors byte-identical on placement,
+match/result identity, and replay bytes, and a controlled Alpha1 firewall
+check confirming `replay.jsonl`/`result.json` stay byte-identical against a
+clean `main` checkout. See [V4_ALPHA2_DESIGN.md](V4_ALPHA2_DESIGN.md) for the
+full contract, [V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md](V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
+for the evidence behind the two rule changes, and
+[V4_ALPHA2_PHASE5_QUALIFICATION.md](V4_ALPHA2_PHASE5_QUALIFICATION.md) for
+the complete qualification and release-decision record.
+
+Known limitation, disclosed rather than treated as a last-minute Ruleset
+change: global reach still provides whole-arena detection at no explicit
+cost, so alpha2 removes the closed-form placement exploit without creating a
+reach economy.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:

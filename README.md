@@ -4,7 +4,7 @@
   <img src="assets/branding/bytefray-logo-horizontal.png" alt="Bytefray logo" width="420">
 </p>
 
-> **Note: Bytefray is currently in v4.0.0-alpha1.** This is an alpha release introducing the new spatial multi-process model. We welcome gameplay feedback!
+> **Note: Bytefray is currently in v4.0.0-alpha2.** This is an alpha release introducing the new spatial multi-process model. We welcome gameplay feedback!
 
 **Bytefray** is a deterministic programmable-agent combat simulator in which
 agents compete over a shared circular memory arena. The v4 alpha adds a
@@ -19,7 +19,7 @@ Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible 
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Current pre-release:** [Bytefray v4.0.0-alpha1](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha1)
+**Current pre-release:** [Bytefray v4.0.0-alpha2](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha2)
 — see [Downloads](#downloads) below. Earlier [v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 releases remain available for historical and compatibility use.
 
@@ -194,36 +194,23 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-<<<<<<< HEAD
-**Stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
-— promotes the qualified `v3.0.0-rc2` candidate with no software change.
-`bytefray-rules-2` remains v3.0's active gameplay identity, Agent API v1 is
-unchanged, and RC2's CLI/GUI default-Ruleset fix carries forward.
+**Current pre-release:** [Bytefray v4.0.0-alpha2](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha2)
+— adds Ruleset `bytefray-rules-4-alpha2` (seed-derived core placement and
+round-robin intra-entrant process selection) alongside unchanged Agent API v2
+and replay schema 4. `bytefray-rules-4-alpha1` remains available for
+historical reproduction. Retains historical v1-v3 execution and artifact
+compatibility.
 
 | Package | Download | Notes |
 |---|---|---|
-| Windows installer | [Bytefray-Setup-3.0.0.exe](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/Bytefray-Setup-3.0.0.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-3.0.0-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-3.0.0-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-3.0.0.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/bytefray-3.0.0.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v3.0.0/SHA256SUMS.txt) | SHA-256 values for 3.0.0 assets |
-=======
-**Current pre-release:** [Bytefray v4.0.0-alpha1](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha1)
-— the first production alpha of the spatial multi-process game. It adds
-Ruleset `bytefray-rules-4-alpha1`, Agent API v2, and replay schema 4 while
-retaining historical v1-v3 execution and artifact compatibility.
-
-| Package | Download | Notes |
-|---|---|---|
-| Windows installer | [Bytefray-Setup-4.0.0-alpha1.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/Bytefray-Setup-4.0.0-alpha1.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-4.0.0-alpha1-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/bytefray-4.0.0-alpha1-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-4.0.0a1-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/bytefray-4.0.0a1-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-4.0.0a1.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/bytefray-4.0.0a1.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha1/SHA256SUMS.txt) | SHA-256 values for all alpha1 assets |
+| Windows installer | [Bytefray-Setup-4.0.0-alpha2.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/Bytefray-Setup-4.0.0-alpha2.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
+| Portable Windows applications | [bytefray-4.0.0-alpha2-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0-alpha2-windows.zip) | Complete onedir layouts for all four executables |
+| Python wheel | [bytefray-4.0.0a2-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0a2-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-4.0.0a2.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0a2.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/SHA256SUMS.txt) | SHA-256 values for all alpha2 assets |
 
 **Current stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 remains available for users who do not want alpha gameplay/API changes.
->>>>>>> v4-research
 
 Use the [GitHub Releases page](https://github.com/libertaine/Bytefray/releases)
 for the prereleases that led up to v3.0.0.
@@ -443,7 +430,7 @@ read-only agent-source inspection, refreshed onboarding, and current product
 screenshots.
 
 Bytefray v3.0.0 remains the stable product on top of Ruleset v2. Bytefray
-v4.0.0-alpha1 is the current pre-release and productionizes the closed R0-R6
+v4.0.0-alpha2 is the current pre-release and productionizes the closed R0-R6
 spatial-process endpoint summarized in [Bytefray v4 alpha](#bytefray-v4-alpha).
 The alpha identity is intentionally provisional; historical identities and
 wire formats remain distinct and readable.

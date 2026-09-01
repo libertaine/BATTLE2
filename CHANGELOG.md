@@ -2,7 +2,7 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
-## [Unreleased]
+## [4.0.0-alpha2] - 2026-09-01
 
 ### Ruleset `bytefray-rules-4-alpha2`
 
@@ -39,9 +39,11 @@ Agent API v2 observation contract (visible anchors, plus `READ` search using
 `previous_read_owner`) instead of the alpha1 placement assumption. The
 historical `hydra` and `Nemesis` are unchanged.
 
-See [docs/V4_ALPHA2_DESIGN.md](docs/V4_ALPHA2_DESIGN.md) for the full contract
-and [docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
-for the evidence.
+See [docs/V4_ALPHA2_DESIGN.md](docs/V4_ALPHA2_DESIGN.md) for the full contract,
+[docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
+for the evidence, and
+[docs/V4_ALPHA2_PHASE5_QUALIFICATION.md](docs/V4_ALPHA2_PHASE5_QUALIFICATION.md)
+for the release qualification record.
 
 ## [4.0.0-alpha1] - 2026-08-31
 
