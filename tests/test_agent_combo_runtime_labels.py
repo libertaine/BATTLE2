@@ -296,7 +296,9 @@ def test_simple_ruleset_change_filters_api_generation_and_repairs_deterministica
     panel.setAgents(rows)
     assert panel.agentA.currentData() == "legacy_b"
 
-    panel.ruleset.setCurrentIndex(panel.ruleset.findData("bytefray-rules-4-alpha1"))
+    # Simple offers current gameplay only, so its Agent API v2 choice is
+    # v4 alpha2; alpha1 stays selectable from Advanced/Development.
+    panel.ruleset.setCurrentIndex(panel.ruleset.findData("bytefray-rules-4-alpha2"))
     assert [panel.agentA.itemData(i) for i in range(panel.agentA.count())] == [
         "process_a",
         "process_b",

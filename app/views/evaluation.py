@@ -62,7 +62,10 @@ from app.services.designer_workflows import (
     EvaluationPresentation,
     build_designer_evaluation_plan,
 )
-from app.services.ruleset_options import RULESET_DESCRIPTION
+from app.services.ruleset_options import (
+    EVALUATION_RULESET_OPTIONS,
+    RULESET_DESCRIPTION,
+)
 from app.widgets.evaluation_visuals import (
     COLOR_LOSS,
     COLOR_WIN,
@@ -184,7 +187,9 @@ class EvaluationDialog(QDialog):
 
         self.pairwiseRulesetLabel = QLabel("Ruleset")
         self.pairwiseRulesetCombo = QComboBox()
-        populate_ruleset_combo(self.pairwiseRulesetCombo)
+        populate_ruleset_combo(
+            self.pairwiseRulesetCombo, EVALUATION_RULESET_OPTIONS
+        )
         self.pairwiseRulesetCombo.setToolTip(RULESET_DESCRIPTION)
         self.pairwiseRulesetCombo.setAccessibleName("Pairwise evaluation ruleset")
         form.addRow(self.pairwiseRulesetLabel, self.pairwiseRulesetCombo)

@@ -43,6 +43,21 @@ RULESET_V1_OPTION = DesignerRulesetOption(
 # not removed from the product, just from the surface whose whole promise is
 # "the gameplay you get if you do not think about it".
 SIMPLE_RULESET_OPTIONS = (RULESET_V2_OPTION, RULESET_V4_ALPHA2_OPTION)
+# Evaluation is the one surface that must NOT offer v4 alpha2. `agents
+# evaluate` deliberately does not accept it: evaluation's placement
+# conditions are an explicit, disclosed methodology axis, and running them
+# under alpha2's seed-derived placement would produce artifacts labelled
+# alpha2 that actually ran alpha1's fixed opposite placement. The engine
+# rejects the request, so offering it here would be exactly the M1 defect
+# this module exists to prevent -- a Designer surface presenting a Ruleset
+# the engine will then refuse. Kept as its own explicit tuple rather than a
+# filter over DESIGNER_RULESET_OPTIONS so the exclusion is visible at the
+# point of definition; see docs/V4_ALPHA2_DESIGN.md's placement section.
+EVALUATION_RULESET_OPTIONS = (
+    RULESET_V2_OPTION,
+    RULESET_V4_ALPHA1_OPTION,
+    RULESET_V1_OPTION,
+)
 # Advanced/Development keep v4 alpha1 so a historical alpha1 match stays
 # reproducible from the GUI, not only from the CLI. Order is the product
 # preference ``best_designer_ruleset_for_agents`` walks, so an Agent API v2
