@@ -857,6 +857,7 @@ class AgentDesigner(QMainWindow):
             default_output=placeholder_output,
             presets=presets,
             data_root=self.data_root,
+            agent_metadata=self.development.python_agent_metadata(),
             parent=self,
         )
         if not dialog.exec():

@@ -55,8 +55,12 @@ from PySide6.QtWidgets import (
 from app.services.agent_catalog import AgentRow
 from app.services.agent_source import load_agent_source
 from app.services.agent_workflows import DevelopmentTestPresentation, ValidationPresentation
-from app.services.ruleset_options import RULESET_DESCRIPTION
-from app.widgets.ruleset_combo import populate_ruleset_combo, selected_ruleset_id
+from app.services.ruleset_options import RULESET_DESCRIPTION, agent_row_metadata
+from app.widgets.ruleset_combo import (
+    populate_ruleset_combo,
+    selected_ruleset_id,
+    sync_ruleset_choices_for_metadata,
+)
 
 _INVALID_STYLE = "color: #b00020;"
 _TOOL_FAILURE_STYLE = "color: #b06000;"
@@ -196,6 +200,9 @@ class AgentDevelopmentPanel(QWidget):
         self._catalog = catalog
         self._rows: list[AgentRow] = []
         self._busy = False
+        # Whether the selected agent/opponent pairing has any compatible
+        # Ruleset; recomputed by _sync_ruleset and gating Test.
+        self._has_compatible_ruleset = True
         self._current_agent_id: str | None = None
         self._current_agent_name: str | None = None
         self._last_validation: ValidationPresentation | None = None
@@ -377,6 +384,10 @@ class AgentDevelopmentPanel(QWidget):
         self.btnInspectTrace.clicked.connect(self.inspectTraceRequested.emit)
         self.btnEvaluate.clicked.connect(self.evaluateRequested.emit)
         self.agentCombo.currentIndexChanged.connect(self._on_combo_changed)
+        # An explicitly selected opponent is a real entrant, so it
+        # participates in Ruleset compatibility exactly like the tested
+        # agent does.
+        self.opponentCombo.currentIndexChanged.connect(self._on_opponent_changed)
 
         self.opponentCombo.addItem("Reference", None)
         self._update_enablement()
@@ -547,6 +558,15 @@ class AgentDevelopmentPanel(QWidget):
         """
         return [(row.name, _agent_row_id(row)) for row in self._rows]
 
+    def python_agent_metadata(self) -> dict[str, object]:
+        """Every discovered Python agent's compatibility metadata by id.
+
+        Lets the Evaluate dialog ask the same Ruleset-compatibility question
+        this tab and the engine do, instead of offering Rulesets that the
+        selected roster cannot actually run under.
+        """
+        return {_agent_row_id(row): agent_row_metadata(row) for row in self._rows}
+
     def showValidating(self, agent_id: str) -> None:
         self.statusLabel.setStyleSheet(_NEUTRAL_STYLE)
         self.statusLabel.setText(f"Validating {agent_id}…")
@@ -688,13 +708,48 @@ class AgentDevelopmentPanel(QWidget):
         self.btnInspectTrace.setEnabled(False)
 
     # ---- Internal ----
+    def _opponent_row(self) -> AgentRow | None:
+        """The explicitly selected opponent's row, or ``None`` for Reference.
+
+        The internal reference opponent deliberately imposes no Ruleset
+        constraint: ``agents test`` supplies whichever Agent API generation
+        the resolved Ruleset needs, so it can never be the incompatible
+        entrant.
+        """
+
+        opponent_id = self.selected_opponent_id()
+        if opponent_id is None:
+            return None
+        return next(
+            (row for row in self._rows if _agent_row_id(row) == opponent_id), None
+        )
+
+    def _sync_ruleset(self) -> None:
+        """Offer only Rulesets compatible with the selected entrants.
+
+        Only the *Ruleset* choices narrow here -- the agent catalog itself
+        keeps listing every discovered Python agent, so this tab stays
+        usable for historical Agent API v1 agents and current Agent API v2
+        ones alike.
+        """
+
+        rows = [row for row in (self.selectedAgentRow(), self._opponent_row()) if row is not None]
+        self._has_compatible_ruleset = sync_ruleset_choices_for_metadata(
+            self.rulesetCombo, [agent_row_metadata(row) for row in rows]
+        )
+
     def _update_enablement(self) -> None:
         row = self.selectedAgentRow()
         has_agent = row is not None
         can_open_folder = has_agent and Path(row.path).is_dir() if row else False
         self.btnOpenFolder.setEnabled(can_open_folder and not self._busy)
         self.btnExportAgent.setEnabled(has_agent and not self._busy)
-        self.btnTest.setEnabled(has_agent and not self._busy)
+        # Testing is disabled outright when the selected pairing has no
+        # compatible Ruleset, rather than launching a run the engine would
+        # reject as a configuration error.
+        self.btnTest.setEnabled(
+            has_agent and not self._busy and self._has_compatible_ruleset
+        )
         self.btnValidate.setEnabled(has_agent and not self._busy)
         self.btnEvaluate.setEnabled(has_agent and not self._busy)
 
@@ -716,7 +771,12 @@ class AgentDevelopmentPanel(QWidget):
             self.testStatusLabel.setStyleSheet(_NEUTRAL_STYLE)
             self.testStatusLabel.setText("No agent selected.")
 
+    def _on_opponent_changed(self, _index: int | None = None) -> None:
+        self._sync_ruleset()
+        self._update_enablement()
+
     def _on_combo_changed(self, _index: int | None = None) -> None:
+        self._sync_ruleset()
         self._update_enablement()
         row = self.selectedAgentRow()
         self.reloadSource()

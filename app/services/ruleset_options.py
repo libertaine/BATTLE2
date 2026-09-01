@@ -60,7 +60,16 @@ VM_RULESET_EXPLANATION = (
 
 
 def ruleset_supports_runtime_kinds(ruleset_id: str, kinds: set[str]) -> bool:
-    """Project the engine policy's authoritative compatibility information."""
+    """Project the engine policy's authoritative *runtime-kind* compatibility.
+
+    Deliberately answers only half the compatibility question: it cannot
+    tell ``bytefray-rules-2`` from ``bytefray-rules-4-alpha1``, which are
+    both Python-only and differ by Agent API version. Every Designer surface
+    that decides which Rulesets to *offer* therefore uses
+    :func:`ruleset_supports_agent_metadata` instead. This remains for the
+    VM/Python launch guard in ``validate_designer_ruleset``, where the
+    runtime kind genuinely is the whole question.
+    """
     try:
         policy = resolve_ruleset_policy(ruleset_id)
     except UnknownRulesetError:
@@ -74,6 +83,63 @@ def best_designer_ruleset(kinds: set[str]) -> str:
         if ruleset_supports_runtime_kinds(option.ruleset_id, kinds):
             return option.ruleset_id
     return BYTEFRAY_RULESET_ID
+
+
+def ruleset_supports_agent_metadata(
+    ruleset_id: str, metadata: Iterable[object]
+) -> bool:
+    """Does ``ruleset_id`` support *every* selected entrant's metadata?
+
+    The single question every Designer surface asks about Ruleset
+    compatibility, delegating to the engine's own
+    :func:`~battle_engine.ruleset_policy.agent_supported_by_ruleset`
+    predicate -- the same one ``NativeMatchService`` enforces before a match
+    executes -- so the GUI cannot present a Ruleset the engine would then
+    reject, and cannot drift from it as Rulesets are added.
+
+    ``metadata`` is one entry per *selected* entrant, in any projection that
+    predicate accepts (an ``AgentRow.meta`` mapping, an ``AgentSpec``).
+    ``None`` entries mean "this selector has nothing selected yet" and
+    impose no constraint; an empty selection is likewise unconstrained,
+    since there is nothing for a Ruleset to be incompatible with. Anything
+    genuinely selected but unreadable fails closed, exactly as
+    :func:`agent_row_supported_by_ruleset` already does.
+    """
+
+    selected = [item for item in metadata if item is not None]
+    return all(agent_supported_by_ruleset(item, ruleset_id) for item in selected)
+
+
+def best_designer_ruleset_for_agents(
+    metadata: Iterable[object],
+    options: Iterable[DesignerRulesetOption] = DESIGNER_RULESET_OPTIONS,
+) -> str | None:
+    """The first product-preferred Ruleset supporting every selected entrant.
+
+    Returns ``None`` when no offered Ruleset supports the selection, which
+    is a real state a Designer surface must show (and disable execution
+    for) rather than paper over with an incompatible fallback.
+    """
+
+    selected = tuple(metadata)
+    for option in options:
+        if ruleset_supports_agent_metadata(option.ruleset_id, selected):
+            return option.ruleset_id
+    return None
+
+
+def agent_row_metadata(row: object) -> object:
+    """The compatibility metadata carried by one catalog row.
+
+    An unreadable row projects to an empty mapping rather than ``None`` on
+    purpose: ``None`` means "nothing is selected here" and is unconstrained,
+    while a row that *is* selected but carries no usable metadata must fail
+    closed, exactly as :func:`agent_row_supported_by_ruleset` already makes
+    it.
+    """
+
+    metadata = getattr(row, "meta", None)
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def validate_designer_ruleset(ruleset_id: str, kinds: set[str]) -> None:

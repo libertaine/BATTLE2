@@ -49,6 +49,9 @@ class AdvancedPanel(QWidget):
         super().__init__()
         self._catalog = catalog
         self._paths = get_default_paths(data_root)
+        # Whether the current entrant selection has any compatible Ruleset;
+        # recomputed by _sync_ruleset and respected by setBusy.
+        self._has_compatible_ruleset = True
 
         root = QVBoxLayout(self)
         self.tabs = QTabWidget()
@@ -182,13 +185,17 @@ class AdvancedPanel(QWidget):
         self._sync_ruleset()
 
     def _sync_ruleset(self, _index: int | None = None) -> None:
-        sync_ruleset_choices(
+        # Fail closed in the UI rather than after launch: when the selected
+        # agents share no compatible Ruleset (an Agent API v1 and an Agent
+        # API v2 agent, say), Run is disabled and the reason is shown, so
+        # the engine never has to reject a match the UI presented as valid.
+        self._has_compatible_ruleset = sync_ruleset_choices(
             self.ruleset, self.agentA, self.agentB, self.rulesetExplanation
         )
+        self.btnRun.setEnabled(self._has_compatible_ruleset)
 
     def setBusy(self, busy: bool) -> None:
         for w in (
-            self.btnRun,
             self.btnRefresh,
             self.agentA,
             self.agentB,
@@ -202,6 +209,9 @@ class AdvancedPanel(QWidget):
             self.ruleset,
         ):
             w.setEnabled(not busy)
+        # Run stays disabled while no compatible Ruleset exists, so becoming
+        # idle never re-enables launching an incompatible selection.
+        self.btnRun.setEnabled(not busy and self._has_compatible_ruleset)
         self.btnStop.setEnabled(busy)
 
     def enableOpenReplay(self, enable: bool) -> None:

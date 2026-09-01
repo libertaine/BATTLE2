@@ -95,7 +95,14 @@ def test_evaluate_button_enablement_mirrors_test_and_validate():
     panel = AgentDevelopmentPanel()
     try:
         assert not panel.btnEvaluate.isEnabled()
-        row = AgentRow(name="candidate", path="agents/candidate", blob_path=None, meta={"kind": "python"})
+        # api_version is what agent_catalog records for a real Python agent
+        # and what Ruleset compatibility (which gates Test) reads.
+        row = AgentRow(
+            name="candidate",
+            path="agents/candidate",
+            blob_path=None,
+            meta={"kind": "python", "api_version": 1},
+        )
         panel.setAgents([row])
         panel.selectAgent("candidate")
         assert panel.btnEvaluate.isEnabled()

@@ -74,7 +74,11 @@ from app.widgets.evaluation_visuals import (
     rate_stat_bar_data,
     win_rate_bar_data,
 )
-from app.widgets.ruleset_combo import populate_ruleset_combo, selected_ruleset_id
+from app.widgets.ruleset_combo import (
+    populate_ruleset_combo,
+    selected_ruleset_id,
+    sync_ruleset_choices_for_metadata,
+)
 
 
 class EvaluationDialog(QDialog):
@@ -96,6 +100,7 @@ class EvaluationDialog(QDialog):
         default_output: Path,
         presets: dict[str, EvaluationPreset] | None = None,
         data_root: Path | None = None,
+        agent_metadata: dict[str, object] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         """``python_agents`` is ``(display name, discovery id)`` pairs.
@@ -121,6 +126,13 @@ class EvaluationDialog(QDialog):
         self._agents = list(python_agents)
         self._presets = dict(presets) if presets else {}
         self._data_root = data_root
+        self._has_compatible_ruleset = True
+        # discovery id -> that agent's compatibility metadata, used to offer
+        # only Rulesets that support the whole selected pairwise roster. A
+        # caller that supplies none (an older programmatic caller, a test
+        # double) keeps the previous unfiltered behavior rather than having
+        # every Ruleset silently disabled by absent metadata.
+        self._agent_metadata = dict(agent_metadata) if agent_metadata else {}
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -263,12 +275,50 @@ class EvaluationDialog(QDialog):
         self.candidateCombo.currentIndexChanged.connect(self._update_group_preview)
         self.baselineCombo.currentIndexChanged.connect(self._update_group_preview)
         self.opponentsList.itemSelectionChanged.connect(self._update_group_preview)
+        # Every control that changes the pairwise roster re-narrows the
+        # Ruleset choices to those the whole roster can actually run under.
+        self.candidateCombo.currentIndexChanged.connect(self._sync_pairwise_ruleset)
+        self.baselineCombo.currentIndexChanged.connect(self._sync_pairwise_ruleset)
+        self.opponentsList.itemSelectionChanged.connect(self._sync_pairwise_ruleset)
+        self._sync_pairwise_ruleset()
         self.seedsEdit.textChanged.connect(self._update_group_preview)
         self.seedRangeEdit.textChanged.connect(self._update_group_preview)
         self.ticksSpin.valueChanged.connect(self._update_group_preview)
         self.outputEdit.textChanged.connect(self._update_group_preview)
         self._on_mode_changed()
         self.resize(620, 720)
+
+    def _pairwise_roster_metadata(self) -> list[object]:
+        """Metadata for every entrant a pairwise evaluation would launch.
+
+        The candidate, the baseline when one is chosen, and every selected
+        opponent -- the complete roster, not just the candidate, so an
+        incompatible opponent narrows the Ruleset choices exactly as an
+        incompatible candidate does.
+        """
+
+        ids = [self.candidate_id(), self.baseline_id(), *self.opponent_ids()]
+        return [
+            self._agent_metadata[agent_id]
+            for agent_id in ids
+            if agent_id is not None and agent_id in self._agent_metadata
+        ]
+
+    def _sync_pairwise_ruleset(self) -> None:
+        """Offer only Rulesets compatible with the selected pairwise roster.
+
+        Never writes ``runButton`` itself: ``_update_group_preview`` remains
+        the single owner of that enablement, and reads the compatibility
+        state recorded here.
+        """
+
+        if not self._agent_metadata:
+            self._has_compatible_ruleset = True
+            return
+        self._has_compatible_ruleset = sync_ruleset_choices_for_metadata(
+            self.pairwiseRulesetCombo, self._pairwise_roster_metadata()
+        )
+        self._update_group_preview()
 
     def _on_mode_changed(self) -> None:
         group = self.mode() == EVALUATION_MODE_GROUP
@@ -296,7 +346,10 @@ class EvaluationDialog(QDialog):
 
     def _update_group_preview(self) -> None:
         if self.mode() != EVALUATION_MODE_GROUP:
-            self.runButton.setEnabled(True)
+            # Pairwise runs are gated only by whether the selected roster has
+            # a Ruleset it can actually run under; group mode keeps its own
+            # plan-validation gating below, unchanged.
+            self.runButton.setEnabled(self._has_compatible_ruleset)
             self.previewText.clear()
             return
         if self._data_root is None:

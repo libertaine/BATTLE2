@@ -454,7 +454,10 @@ def test_validate_and_test_buttons_reload_source_before_running(monkeypatch, tmp
         "clickable_agent",
         str(result.source_path.parent),
         None,
-        {"kind": "python"},
+        # Mirrors what agent_catalog actually records for the agent this
+        # test just scaffolded: create_agent writes api_version 1, and
+        # Ruleset compatibility (which gates Test) reads that field.
+        {"kind": "python", "api_version": 1},
         agent_id="clickable_agent",
     )
     panel = AgentDevelopmentPanel()

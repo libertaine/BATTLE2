@@ -25,9 +25,16 @@ from PySide6.QtWidgets import QComboBox
 
 from app.services.agent_catalog import AgentRow
 from app.services.designer_workflows import agent_kind, decorate_agent_display
+from app.services.ruleset_options import agent_row_metadata
 
 _NAME_ROLE = Qt.ItemDataRole.UserRole
 _KIND_ROLE = Qt.ItemDataRole.UserRole + 1
+# The row's full compatibility metadata (runtime kind *and* Agent API
+# version). Carried alongside the runtime kind because the kind alone
+# cannot tell bytefray-rules-2 from bytefray-rules-4-alpha1 -- both are
+# Python-only -- so Ruleset filtering needs the whole projection the engine
+# policy consumes, not just this combo's display-oriented kind.
+_META_ROLE = Qt.ItemDataRole.UserRole + 2
 
 
 def populate_agent_combo(combo: QComboBox, rows: list[AgentRow]) -> None:
@@ -54,6 +61,7 @@ def populate_agent_combo(combo: QComboBox, rows: list[AgentRow]) -> None:
             index = combo.count() - 1
             combo.setItemData(index, agent_id, _NAME_ROLE)
             combo.setItemData(index, agent_kind(row), _KIND_ROLE)
+            combo.setItemData(index, agent_row_metadata(row), _META_ROLE)
         if previous is not None:
             index = combo.findData(previous, _NAME_ROLE)
             if index >= 0:
@@ -69,6 +77,16 @@ def selected_agent_name(combo: QComboBox) -> str | None:
 def selected_agent_kind(combo: QComboBox) -> str | None:
     """The runtime kind (``"python"``/``"vm"``) behind the current selection."""
     return combo.itemData(combo.currentIndex(), _KIND_ROLE)
+
+
+def selected_agent_meta(combo: QComboBox) -> object | None:
+    """The full compatibility metadata behind the current selection.
+
+    ``None`` means nothing is selected (an empty catalog's ``(none found)``
+    placeholder carries no metadata), which Ruleset filtering treats as "no
+    constraint yet" rather than as an incompatible entrant.
+    """
+    return combo.itemData(combo.currentIndex(), _META_ROLE)
 
 
 def sync_compatible_b_choices(combo_a: QComboBox, combo_b: QComboBox) -> None:
