@@ -258,6 +258,57 @@ def test_designer_export_agent_requires_a_selection(monkeypatch, tmp_path):
 
 
 @pytest.mark.gui
+def test_designer_construction_survives_one_malformed_bundled_starter(monkeypatch, tmp_path):
+    """Phase 3 M2 product-path control: a malformed bundled starter must not
+    crash Designer construction or block the other bundled starters from
+    installing. Only a wholly missing/unwritable resource root still shows
+    the blocking ``critical`` dialog; a single malformed starter is instead
+    reported through a non-blocking ``warning`` that names it."""
+
+    _make_app()
+    from battle_engine.starters import STARTER_AGENT_NAMES
+
+    import app.agent_designer as agent_designer_module
+    from app.agent_designer import AgentDesigner
+
+    resources = tmp_path / "resources"
+    base = resources / "battle_engine" / "data" / "starter_agents"
+    for name in STARTER_AGENT_NAMES:
+        agent_dir = base / name
+        agent_dir.mkdir(parents=True)
+        agent_dir.joinpath("agent.yaml").write_text(
+            "not json" if name == "v4_scout" else json.dumps({"name": name}),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr("battle_engine.starters.get_resource_root", lambda: resources)
+    data_root = tmp_path / "designer-data"
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(data_root))
+
+    critical = []
+    warned = []
+    monkeypatch.setattr(
+        agent_designer_module.QMessageBox,
+        "critical",
+        staticmethod(lambda *a, **k: critical.append(a) or None),
+    )
+    monkeypatch.setattr(
+        agent_designer_module.QMessageBox,
+        "warning",
+        staticmethod(lambda *a, **k: warned.append(a) or None),
+    )
+
+    designer = AgentDesigner()
+    try:
+        assert critical == []
+        assert len(warned) == 1
+        assert "v4_scout" in warned[0][2]
+        installed = {p.name for p in (data_root / "agents").iterdir()}
+        assert installed == set(STARTER_AGENT_NAMES) - {"v4_scout"}
+    finally:
+        designer.deleteLater()
+
+
+@pytest.mark.gui
 def test_designer_export_agent_writes_a_real_package(monkeypatch, tmp_path):
     _make_app()
     from battle_engine.agent_package import inspect_package

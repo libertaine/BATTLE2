@@ -63,9 +63,13 @@ Non-negotiable constraints carried over from Phases 1–3 and from
 1. Resolves `battle_root = get_data_root()` once (`battle_engine.paths`,
    the same resolver `bytefray`'s CLI, `agent_scaffold`, `agent_validation`,
    and `agent_test` all use — see §4 below for why this matters).
-2. Calls `ensure_starter_agents(data_root=battle_root)` eagerly, surfacing
-   any `FileNotFoundError`/`OSError`/`ValueError` as a `QMessageBox.critical`
-   but continuing startup regardless (non-fatal).
+2. Calls `ensure_starter_agents(data_root=battle_root)` eagerly. Each bundled
+   starter validates and installs independently, so a `QMessageBox.critical`
+   only fires for a wholly missing/unwritable resource root
+   (`FileNotFoundError`/`OSError`); a malformed individual starter is instead
+   reported via a non-blocking `QMessageBox.warning` naming it, and every
+   other bundled starter still installs. Startup continues regardless
+   (non-fatal either way).
 3. Constructs one `AgentCatalog(battle_root)` (`app/services/agent_catalog.py`)
    shared by both tabs.
 4. Constructs `SimplePanel` and `AdvancedPanel`, wiring their

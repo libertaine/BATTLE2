@@ -18,7 +18,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     resolve_omitted_ruleset_for_agents,
 )
-from battle_engine.starters import ensure_starter_agents
+from battle_engine.starters import describe_bootstrap_errors, ensure_starter_agents
 from battle_engine.tournament_service import (
     TournamentConfigurationError,
     TournamentRequest,
@@ -139,7 +139,10 @@ def main(argv: list[str] | None = None) -> int:
 
     root = get_data_root()
     try:
-        ensure_starter_agents(data_root=root)
+        bootstrap = ensure_starter_agents(data_root=root)
+        warning = describe_bootstrap_errors(bootstrap)
+        if warning:
+            print(f"WARNING: {warning}", file=sys.stderr)
         spacing = max(1, args.arena // len(args.agents))
         entrants = tuple(
             _resolve_entrant(root, name, index * spacing)

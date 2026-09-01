@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 from battle_engine.paths import get_data_root, get_resource_root
@@ -91,26 +92,68 @@ def starter_agent_resource_dir(
     return (source_dir / name).resolve()
 
 
+@dataclass(frozen=True)
+class StarterBootstrapError:
+    """One bundled starter that failed validation, captured rather than raised."""
+
+    name: str
+    message: str
+
+
+@dataclass(frozen=True)
+class StarterBootstrapResult:
+    """Outcome of :func:`ensure_starter_agents`.
+
+    Each bundled starter is validated and installed independently, so one
+    malformed starter is recorded in ``errors`` and skipped rather than
+    preventing every other starter in ``installed`` from being copied.
+    """
+
+    installed: tuple[Path, ...]
+    errors: tuple[StarterBootstrapError, ...]
+
+
+def describe_bootstrap_errors(result: StarterBootstrapResult) -> str | None:
+    """Human-readable summary of ``result.errors``, or ``None`` if there were none."""
+
+    if not result.errors:
+        return None
+    lines = ["starter bootstrap completed with errors:"]
+    lines.extend(f"  {error.name}: {error.message}" for error in result.errors)
+    return "\n".join(lines)
+
+
 def ensure_starter_agents(
     *,
     resource_root: Path | None = None,
     data_root: Path | None = None,
-) -> list[Path]:
-    """Copy missing starter files into the writable catalog and return created paths."""
+) -> StarterBootstrapResult:
+    """Copy missing starter files into the writable catalog.
+
+    Validation and installation happen per starter: a malformed starter is
+    recorded in the result's ``errors`` and skipped, it does not prevent any
+    other bundled starter from being validated and installed. Only a wholly
+    missing resource root -- there being no bundled starters to consider at
+    all -- still raises ``FileNotFoundError``, since that is an environment/
+    packaging failure rather than one corrupt starter.
+    """
     resources = (resource_root or get_resource_root()).expanduser().resolve()
     writable = (data_root or get_data_root()).expanduser().resolve()
     source_dir = _starter_resource_dir(resources)
 
-    starter_files = {
-        name: _validate_starter(source_dir, name) for name in STARTER_AGENT_NAMES
-    }
     agents_dir = writable / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
 
     created: list[Path] = []
+    errors: list[StarterBootstrapError] = []
     for name in STARTER_AGENT_NAMES:
+        try:
+            files = _validate_starter(source_dir, name)
+        except (FileNotFoundError, ValueError) as exc:
+            errors.append(StarterBootstrapError(name=name, message=str(exc)))
+            continue
         source_agent_dir = source_dir / name
-        for source in starter_files[name]:
+        for source in files:
             relative = source.relative_to(source_agent_dir)
             destination = agents_dir / name / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -120,4 +163,4 @@ def ensure_starter_agents(
             except FileExistsError:
                 continue
             created.append(destination.resolve())
-    return created
+    return StarterBootstrapResult(installed=tuple(created), errors=tuple(errors))

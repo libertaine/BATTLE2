@@ -25,7 +25,7 @@ from battle_engine.launchers import (
 )
 from battle_engine.paths import get_branding_icon_path, get_data_root
 from battle_engine.project_info import get_project_info
-from battle_engine.starters import ensure_starter_agents
+from battle_engine.starters import describe_bootstrap_errors, ensure_starter_agents
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
@@ -110,13 +110,17 @@ class AgentDesigner(QMainWindow):
         # Build data_root and shared catalog
         data_root = _resolve_data_root()
         try:
-            ensure_starter_agents(data_root=data_root)
-        except (FileNotFoundError, OSError, ValueError) as exc:
+            bootstrap = ensure_starter_agents(data_root=data_root)
+        except (FileNotFoundError, OSError) as exc:
             QMessageBox.critical(
                 self,
                 "Starter Agents Unavailable",
                 f"Bytefray could not initialize its starter agents.\n\n{exc}",
             )
+        else:
+            warning = describe_bootstrap_errors(bootstrap)
+            if warning:
+                QMessageBox.warning(self, "Some Starter Agents Unavailable", warning)
         self.data_root = data_root            # <-- keep for later
         self._proc = None                         # <-- init process handle
         self._last_replay = None                  # <-- init replay capture

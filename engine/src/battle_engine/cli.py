@@ -33,7 +33,7 @@ from battle_engine.ruleset_policy import (
     NoCompatibleRulesetError,
     resolve_omitted_ruleset_for_agents,
 )
-from battle_engine.starters import ensure_starter_agents
+from battle_engine.starters import describe_bootstrap_errors, ensure_starter_agents
 
 DEFAULT_REPLAY_RELATIVE_PATH = Path("runs") / "_loose" / "replay.jsonl"
 
@@ -494,10 +494,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     if getattr(args, "list_agents", False):
         root = _data_root()
         try:
-            ensure_starter_agents(data_root=root)
-        except (FileNotFoundError, OSError, ValueError) as exc:
+            bootstrap = ensure_starter_agents(data_root=root)
+        except (FileNotFoundError, OSError) as exc:
             print(f"ERROR: Could not initialize starter agents: {exc}", file=sys.stderr)
             return 2
+        warning = describe_bootstrap_errors(bootstrap)
+        if warning:
+            print(f"WARNING: {warning}", file=sys.stderr)
         try:
             specs = discover_agents(root)
         except AgentValidationError as exc:
@@ -684,10 +687,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     # discovery command to have run first.  The copy is deliberately
     # non-destructive: existing user files always win.
     try:
-        ensure_starter_agents(data_root=root)
-    except (FileNotFoundError, OSError, ValueError) as exc:
+        bootstrap = ensure_starter_agents(data_root=root)
+    except (FileNotFoundError, OSError) as exc:
         print(f"ERROR: Could not initialize starter agents: {exc}", file=sys.stderr)
         return 2
+    warning = describe_bootstrap_errors(bootstrap)
+    if warning:
+        print(f"WARNING: {warning}", file=sys.stderr)
 
     # Resolve effective start addresses once, before any agent is built --
     # builtin construction bakes ``start`` into the agent's own bytecode
