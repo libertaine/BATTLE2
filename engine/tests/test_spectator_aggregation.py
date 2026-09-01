@@ -197,6 +197,16 @@ def test_aggregate_serialization_is_byte_deterministic() -> None:
     assert serialize_aggregates(aggregates) == serialize_aggregates(aggregates)
 
 
+def test_tool_wrapper_reexports_permanent_aggregation_contract() -> None:
+    from battle_engine import spectator_aggregation as permanent
+
+    from tools import spectator_aggregation as wrapper
+
+    assert wrapper.aggregate_events is permanent.aggregate_events
+    assert wrapper.AggregationConfig is permanent.AggregationConfig
+    assert wrapper.TemporalAggregate is permanent.TemporalAggregate
+
+
 def test_events_must_arrive_in_non_decreasing_tick_order() -> None:
     events = (_overwrite(2, "A", "B", 1), _overwrite(1, "B", "A", 1))
 

@@ -535,6 +535,35 @@ def test_same_replay_serializes_byte_identically(tmp_path: Path) -> None:
     assert serialize_analysis(analyze_replay(path)) == serialize_analysis(analyze_replay(path))
 
 
+def test_tool_wrapper_reexports_permanent_analyzer_contract() -> None:
+    from battle_engine import spectator_events as permanent
+
+    from tools import spectator_analyzer as wrapper
+
+    assert wrapper.analyze_replay is permanent.analyze_replay
+    assert wrapper.SemanticEvent is permanent.SemanticEvent
+    assert wrapper.serialize_analysis is permanent.serialize_analysis
+
+
+def test_tool_wrapper_preserves_engine_cli_error_contract(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+
+    completed = subprocess.run(
+        [sys.executable, str(repo_root / "tools" / "spectator_analyzer.py")],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert completed.stdout == ""
+    assert completed.stderr == "usage: spectator_analyzer.py REPLAY.jsonl\n"
+
+
 def test_hash_seed_does_not_change_three_entrant_output(tmp_path: Path) -> None:
     processes = tuple(
         _process(entrant, "sensor", index, reach=8) for index, entrant in enumerate(("A", "B", "C"))
@@ -551,12 +580,17 @@ def test_hash_seed_does_not_change_three_entrant_output(tmp_path: Path) -> None:
     )
     repo_root = Path(__file__).resolve().parents[2]
     outputs = []
-    for seed in ("1", "7", "91"):
-        environment = os.environ.copy(); environment["PYTHONPATH"] = ".;engine/src"
+    for seed in ("0", "1", "2", "42", "random"):
+        environment = os.environ.copy()
+        environment.pop("PYTHONPATH", None)
         environment["PYTHONHASHSEED"] = seed
         completed = subprocess.run(
-            [sys.executable, "tools/spectator_analyzer.py", str(path)],
-            cwd=repo_root,
+            [
+                sys.executable,
+                str(repo_root / "tools" / "spectator_analyzer.py"),
+                str(path),
+            ],
+            cwd=tmp_path,
             env=environment,
             check=True,
             capture_output=True,
@@ -564,4 +598,4 @@ def test_hash_seed_does_not_change_three_entrant_output(tmp_path: Path) -> None:
         )
         outputs.append(completed.stdout)
 
-    assert outputs[0] == outputs[1] == outputs[2]
+    assert len(set(outputs)) == 1
