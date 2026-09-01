@@ -44,6 +44,7 @@ identifiers -- see ``AGENTS.md``'s "Compatibility requirements"):
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -138,7 +139,80 @@ class DecisionRecord:
     record_type: str = "decision"
 
 
-TraceRecord = TraceHeader | ResetRecord | DecisionRecord
+@dataclass(frozen=True)
+class TraceObservationV2:
+    """Field-for-field mirror of :class:`battle_engine.agent_api.ObservationV2`."""
+
+    current_tick: int
+    last_callback_tick: int
+    previous_action_tick: int
+    self_process_id: str
+    self_anchor: int
+    self_reach: int
+    own_core_base: int
+    own_core_size: int
+    visible_enemy_anchor_addresses: tuple[int, ...]
+    previous_action_applied: bool
+    previous_read_value: int | None
+    previous_read_owner: str | None
+
+
+@dataclass(frozen=True)
+class TraceActionV2:
+    """Mirror of the V2 fields of AgentAction."""
+
+    kind: str
+    operand: int | None = None
+    value: int | None = None
+
+
+@dataclass(frozen=True)
+class TraceResultV2:
+    """The applied outcome of a V2 action."""
+
+    status: str
+    normalized_address: int | None = None
+    read_value: int | None = None
+    read_owner: str | None = None
+
+
+@dataclass(frozen=True)
+class DeclarationRecord:
+    """One process declaration from ``declare_processes()``."""
+
+    agent_id: str
+    process_id: str
+    reach: int
+    share: float
+    record_type: str = "declaration"
+
+
+@dataclass(frozen=True)
+class DecisionRecordV2:
+    """One entrant process's single ``act()`` callback and engine applied outcome."""
+
+    agent_id: str
+    process_id: str
+    wall_time_ms: float
+    observation: TraceObservationV2
+    action: TraceActionV2 | None = None
+    applied_result: TraceResultV2 | None = None
+    diagnostic: TraceDiagnostic | None = None
+    record_type: str = "decision_v2"
+
+
+@dataclass(frozen=True)
+class BindingRecord:
+    """Final record tying a completed trace to its canonical replay."""
+
+    match_id: str
+    replay_sha256: str
+    ruleset_id: str
+    entrant_identities: tuple[str, ...]
+    record_type: str = "binding"
+
+
+TraceRecord = TraceHeader | ResetRecord | DecisionRecord | DeclarationRecord | DecisionRecordV2 | BindingRecord
 
 
 class TraceWriter:
@@ -173,8 +247,14 @@ class TraceWriter:
 
     def __init__(self, path: Path) -> None:
         self._path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self._fh: TextIO = path.open("w", encoding="utf-8")
+        self._fh: TextIO
+        self._failed = False
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._fh = path.open("w", encoding="utf-8")
+        except OSError as exc:
+            self._failed = True
+            print(f"Warning: Failed to open trace file {path}: {exc}", file=sys.stderr)
 
     def write_header(self, header: TraceHeader) -> None:
         self._write(asdict(header))
@@ -185,13 +265,32 @@ class TraceWriter:
     def write_decision(self, record: DecisionRecord) -> None:
         self._write(asdict(record))
 
+    def write_declaration(self, record: DeclarationRecord) -> None:
+        self._write(asdict(record))
+
+    def write_decision_v2(self, record: DecisionRecordV2) -> None:
+        self._write(asdict(record))
+
+    def write_binding(self, record: BindingRecord) -> None:
+        self._write(asdict(record))
+
     def _write(self, payload: dict[str, Any]) -> None:
-        self._fh.write(json.dumps(payload, sort_keys=True))
-        self._fh.write("\n")
-        self._fh.flush()
+        if self._failed:
+            return
+        try:
+            self._fh.write(json.dumps(payload, sort_keys=True))
+            self._fh.write("\n")
+            self._fh.flush()
+        except OSError:
+            self._failed = True
 
     def close(self) -> None:
-        self._fh.close()
+        if not self._failed:
+            try:
+                self._fh.close()
+            except OSError:
+                pass
+            self._failed = True
 
     def __enter__(self) -> TraceWriter:  # noqa: PYI034 -- typing.Self needs 3.11+; runtime floor is 3.10
         return self
@@ -299,7 +398,7 @@ class TraceDocument:
 
     path: Path
     header: TraceHeader
-    records: tuple[ResetRecord | DecisionRecord, ...]
+    records: tuple[ResetRecord | DecisionRecord | BindingRecord, ...]
 
     @property
     def decisions(self) -> tuple[DecisionRecord, ...]:
@@ -324,7 +423,7 @@ class TraceDocument:
         return tuple(d for d in self.decisions if low <= d.tick <= high)
 
     def failures(self) -> tuple[ResetRecord | DecisionRecord, ...]:
-        return tuple(r for r in self.records if r.diagnostic is not None)
+        return tuple(r for r in self.records if isinstance(r, (ResetRecord, DecisionRecord)) and r.diagnostic is not None)
 
 
 def read_trace(path: Path) -> TraceDocument:
@@ -334,7 +433,7 @@ def read_trace(path: Path) -> TraceDocument:
         raise TraceFormatError(f"Trace file not found: {path}")
 
     header: TraceHeader | None = None
-    records: list[ResetRecord | DecisionRecord] = []
+    records: list[ResetRecord | DecisionRecord | BindingRecord] = []
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -357,6 +456,13 @@ def read_trace(path: Path) -> TraceDocument:
             records.append(_parse_reset(payload, path, line_no))
         elif record_type == "decision":
             records.append(_parse_decision(payload, path, line_no))
+        elif record_type == "binding":
+            records.append(BindingRecord(
+                match_id=payload["match_id"],
+                replay_sha256=payload["replay_sha256"],
+                ruleset_id=payload.get("ruleset_id", ""),
+                entrant_identities=tuple(payload.get("entrant_identities", [])),
+            ))
         else:
             raise TraceFormatError(f"{path}:{line_no}: unknown record_type {record_type!r}")
 
@@ -364,6 +470,142 @@ def read_trace(path: Path) -> TraceDocument:
         raise TraceFormatError(f"{path}: missing header record")
     return TraceDocument(path=path, header=header, records=tuple(records))
 
+
+def _parse_observation_v2(payload: Any, path: Path, line_no: int) -> TraceObservationV2:
+    if not isinstance(payload, Mapping):
+        raise TraceFormatError(f"{path}:{line_no}: 'observation' must be an object")
+    return TraceObservationV2(
+        current_tick=_required(payload, "current_tick", path, line_no),
+        last_callback_tick=_required(payload, "last_callback_tick", path, line_no),
+        previous_action_tick=_required(payload, "previous_action_tick", path, line_no),
+        self_process_id=_required(payload, "self_process_id", path, line_no),
+        self_anchor=_required(payload, "self_anchor", path, line_no),
+        self_reach=_required(payload, "self_reach", path, line_no),
+        own_core_base=_required(payload, "own_core_base", path, line_no),
+        own_core_size=_required(payload, "own_core_size", path, line_no),
+        visible_enemy_anchor_addresses=tuple(_required(payload, "visible_enemy_anchor_addresses", path, line_no)),
+        previous_action_applied=_required(payload, "previous_action_applied", path, line_no),
+        previous_read_value=payload.get("previous_read_value"),
+        previous_read_owner=payload.get("previous_read_owner"),
+    )
+
+def _parse_action_v2(payload: Any, path: Path, line_no: int) -> TraceActionV2 | None:
+    if payload is None:
+        return None
+    if not isinstance(payload, Mapping):
+        raise TraceFormatError(f"{path}:{line_no}: 'action' must be an object")
+    return TraceActionV2(
+        kind=_required(payload, "kind", path, line_no),
+        operand=payload.get("operand"),
+        value=payload.get("value"),
+    )
+
+def _parse_result_v2(payload: Any, path: Path, line_no: int) -> TraceResultV2 | None:
+    if payload is None:
+        return None
+    if not isinstance(payload, Mapping):
+        raise TraceFormatError(f"{path}:{line_no}: 'applied_result' must be an object")
+    return TraceResultV2(
+        status=_required(payload, "status", path, line_no),
+        normalized_address=payload.get("normalized_address"),
+        read_value=payload.get("read_value"),
+        read_owner=payload.get("read_owner"),
+    )
+
+def _parse_declaration(payload: Mapping[str, Any], path: Path, line_no: int) -> DeclarationRecord:
+    return DeclarationRecord(
+        agent_id=_required(payload, "agent_id", path, line_no),
+        process_id=_required(payload, "process_id", path, line_no),
+        reach=_required(payload, "reach", path, line_no),
+        share=float(_required(payload, "share", path, line_no)),
+    )
+
+def _parse_decision_v2(payload: Mapping[str, Any], path: Path, line_no: int) -> DecisionRecordV2:
+    return DecisionRecordV2(
+        agent_id=_required(payload, "agent_id", path, line_no),
+        process_id=_required(payload, "process_id", path, line_no),
+        wall_time_ms=float(_required(payload, "wall_time_ms", path, line_no)),
+        observation=_parse_observation_v2(
+            _required(payload, "observation", path, line_no), path, line_no
+        ),
+        action=_parse_action_v2(payload.get("action"), path, line_no),
+        applied_result=_parse_result_v2(payload.get("applied_result"), path, line_no),
+        diagnostic=_parse_diagnostic(payload.get("diagnostic"), path, line_no),
+    )
+
+def _parse_binding(payload: Mapping[str, Any], path: Path, line_no: int) -> BindingRecord:
+    return BindingRecord(
+        match_id=_required(payload, "match_id", path, line_no),
+        replay_sha256=_required(payload, "replay_sha256", path, line_no),
+        ruleset_id=_required(payload, "ruleset_id", path, line_no),
+        entrant_identities=tuple(_required(payload, "entrant_identities", path, line_no)),
+    )
+
+@dataclass(frozen=True)
+class TraceDocumentV2:
+    """A fully parsed API-v2 trace file."""
+    path: Path
+    header: TraceHeader
+    records: tuple[ResetRecord | DeclarationRecord | DecisionRecordV2 | BindingRecord, ...]
+
+    @property
+    def decisions(self) -> tuple[DecisionRecordV2, ...]:
+        return tuple(r for r in self.records if isinstance(r, DecisionRecordV2))
+
+    @property
+    def declarations(self) -> tuple[DeclarationRecord, ...]:
+        return tuple(r for r in self.records if isinstance(r, DeclarationRecord))
+
+    @property
+    def binding(self) -> BindingRecord | None:
+        for r in reversed(self.records):
+            if isinstance(r, BindingRecord):
+                return r
+        return None
+
+def read_trace_v2(path: Path) -> TraceDocumentV2:
+    """Parse one ``bytefray.agent_trace`` v2 file."""
+    if not path.is_file():
+        raise TraceFormatError(f"Trace file not found: {path}")
+
+    header: TraceHeader | None = None
+    records: list[ResetRecord | DeclarationRecord | DecisionRecordV2 | BindingRecord] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise TraceFormatError(f"Could not read trace file {path}: {exc}") from exc
+
+    for line_no, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise TraceFormatError(f"{path}:{line_no}: invalid JSON: {exc}") from exc
+        if not isinstance(payload, Mapping):
+            raise TraceFormatError(f"{path}:{line_no}: record must be a JSON object")
+        record_type = payload.get("record_type")
+        if record_type == "header":
+            header = _parse_header(payload, path, line_no)
+            if header.schema_version != 2:
+                raise TraceFormatError(f"{path}:{line_no}: expected schema_version 2, got {header.schema_version}")
+        elif record_type == "reset":
+            records.append(_parse_reset(payload, path, line_no))
+        elif record_type == "declaration":
+            records.append(_parse_declaration(payload, path, line_no))
+        elif record_type == "decision_v2":
+            records.append(_parse_decision_v2(payload, path, line_no))
+        elif record_type == "binding":
+            records.append(_parse_binding(payload, path, line_no))
+        elif record_type == "decision":
+            raise TraceFormatError(f"{path}:{line_no}: unexpected V1 'decision' record in V2 trace")
+        else:
+            raise TraceFormatError(f"{path}:{line_no}: unknown record_type {record_type!r}")
+
+    if header is None:
+        raise TraceFormatError(f"{path}: missing header record")
+    return TraceDocumentV2(path=path, header=header, records=tuple(records))
 
 @dataclass(frozen=True)
 class Divergence:

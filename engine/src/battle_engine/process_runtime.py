@@ -30,6 +30,15 @@ from battle_engine.agent_api import (
     load_python_agent,
     local_source_fingerprint,
 )
+from battle_engine.agent_trace import (
+    DecisionRecordV2,
+    ResetRecord,
+    TraceActionV2,
+    TraceDiagnostic,
+    TraceObservationV2,
+    TraceResultV2,
+    TraceWriter,
+)
 from battle_engine.agent_worker import AgentWorkerHandle, WorkerCallStatus
 from battle_engine.config import Config
 from battle_engine.python_runtime import (
@@ -307,6 +316,7 @@ class ProcessMatchController:
         *,
         ruleset_policy: RulesetPolicy = RULESET_V4_ALPHA1,
         agent_call_timeout: float | None = None,
+        trace_writer: TraceWriter | None = None,
     ) -> ProcessMatchController:
         """Load API-v2 entrants and consume their declarations before tick zero."""
 
@@ -364,6 +374,9 @@ class ProcessMatchController:
                         rng=random.Random(seed),
                     )
                     instance = cast(AgentV2, loaded.instance)
+                    if trace_writer is not None:
+                        import time
+                        trace_writer.write_reset(ResetRecord(agent_id=entrant.agent_id, wall_time_ms=time.perf_counter_ns() / 1_000_000.0))
                     try:
                         instance.reset(context)
                     except Exception as exc:
@@ -421,6 +434,9 @@ class ProcessMatchController:
                     metadata = load_result.payload["metadata"]
                     source_path = Path(load_result.payload["source_path"])
                     agent_version = str(metadata["version"])
+                    if trace_writer is not None:
+                        import time
+                        trace_writer.write_reset(ResetRecord(agent_id=entrant.agent_id, wall_time_ms=time.perf_counter_ns() / 1_000_000.0))
                     reset_result = handle.reset(
                         match_seed=config.seed,
                         api_version=2,
@@ -506,6 +522,10 @@ class ProcessMatchController:
                     slot=slot,
                     arena_size=config.arena_size,
                 )
+                if trace_writer is not None:
+                    from battle_engine.agent_trace import DeclarationRecord
+                    for item in validated:
+                        trace_writer.write_declaration(DeclarationRecord(agent_id=entrant.agent_id, process_id=item.id, reach=item.reach, share=item.share))
                 processes = [
                     ProcessInstance(
                         declaration.id,
@@ -568,6 +588,7 @@ class ProcessMatchController:
         max_ticks: int,
         ruleset_policy: RulesetPolicy | None = None,
         max_move_delta: int = 64,
+        trace_writer: TraceWriter | None = None,
         **kwargs
     ):
         self.config = config
@@ -576,6 +597,7 @@ class ProcessMatchController:
         self.ruleset_policy = ruleset_policy or RULESET_V4_ALPHA1
         self.disruption_duration = 1
         self.max_move_delta = max_move_delta
+        self.trace_writer = trace_writer
         # v4 alpha2's round-robin process-selection cursor: for each entrant,
         # the index its next intra-entrant selection scan starts from. Alpha1
         # (``process_selection == "priority"``) never reads it. See
@@ -871,6 +893,43 @@ class ProcessMatchController:
             handle.close()
         self._worker_handles.clear()
 
+    @staticmethod
+    def _emit_decision_trace(
+        writer: TraceWriter | None,
+        agent_id: str,
+        process_id: str,
+        trace_start: float,
+        obs: ObservationV2,
+        action: TraceActionV2 | None,
+        diag: TraceDiagnostic | None,
+        res: TraceResultV2 | None,
+    ) -> None:
+        if writer is None:
+            return
+        trace_obs = TraceObservationV2(
+            current_tick=obs.current_tick,
+            last_callback_tick=obs.last_callback_tick,
+            previous_action_tick=obs.previous_action_tick,
+            self_process_id=obs.self_process_id,
+            self_anchor=obs.self_anchor,
+            self_reach=obs.self_reach,
+            own_core_base=obs.own_core_base,
+            own_core_size=obs.own_core_size,
+            visible_enemy_anchor_addresses=obs.visible_enemy_anchor_addresses,
+            previous_action_applied=obs.previous_action_applied,
+            previous_read_value=obs.previous_read_value,
+            previous_read_owner=obs.previous_read_owner,
+        )
+        writer.write_decision_v2(DecisionRecordV2(
+            agent_id=agent_id,
+            process_id=process_id,
+            wall_time_ms=trace_start,
+            observation=trace_obs,
+            action=action,
+            applied_result=res,
+            diagnostic=diag,
+        ))
+
     def run(
         self, sink: ReplaySink | None = None, *, verbose: bool = False
     ) -> dict[str, Any]:
@@ -959,6 +1018,13 @@ class ProcessMatchController:
                     previous_read_owner=last_res.get("read_owner"),
                 )
 
+                trace_start = 0.0
+                if self.trace_writer is not None:
+                    import time
+                    trace_start = time.perf_counter_ns() / 1_000_000.0
+                
+                trace_action: TraceActionV2 | None = None
+                
                 try:
                     action = active_proc.act(obs, slot)
                     if spec.normalized_shares:
@@ -981,6 +1047,11 @@ class ProcessMatchController:
                             "action_slot": slot,
                         }
                     )
+                    ProcessMatchController._emit_decision_trace(self.trace_writer, st.agent_id, active_proc.process_id, trace_start, obs, trace_action, TraceDiagnostic(
+                        code=exc.diagnostic.code, stage=exc.diagnostic.stage, message=exc.diagnostic.message,
+                        agent_id=exc.diagnostic.agent_id, slot=exc.diagnostic.slot, exception_type=exc.diagnostic.exception_type,
+                        tick=exc.diagnostic.tick, action_slot=exc.diagnostic.action_slot
+                    ), TraceResultV2(status="EXCEPTION"))
                     return
                 except ValueError as exc:
                     _proc_actions[st.agent_id][active_proc.process_id] += 1
@@ -1012,6 +1083,11 @@ class ProcessMatchController:
                             "action_slot": slot,
                         }
                     )
+                    ProcessMatchController._emit_decision_trace(self.trace_writer, st.agent_id, active_proc.process_id, trace_start, obs, trace_action, TraceDiagnostic(
+                        code=diagnostic.code, stage=diagnostic.stage, message=diagnostic.message,
+                        agent_id=diagnostic.agent_id, slot=diagnostic.slot, exception_type=diagnostic.exception_type,
+                        tick=diagnostic.tick, action_slot=diagnostic.action_slot
+                    ), TraceResultV2(status="EXCEPTION" if diagnostic.code != "agent_action_invalid" else "REJECTED_INVALID"))
                     return
                 except Exception as exc:
                     _proc_actions[st.agent_id][active_proc.process_id] += 1
@@ -1038,6 +1114,11 @@ class ProcessMatchController:
                             "action_slot": slot,
                         }
                     )
+                    ProcessMatchController._emit_decision_trace(self.trace_writer, st.agent_id, active_proc.process_id, trace_start, obs, trace_action, TraceDiagnostic(
+                        code=diagnostic.code, stage=diagnostic.stage, message=diagnostic.message,
+                        agent_id=diagnostic.agent_id, slot=diagnostic.slot, exception_type=diagnostic.exception_type,
+                        tick=diagnostic.tick, action_slot=diagnostic.action_slot
+                    ), TraceResultV2(status="EXCEPTION" if diagnostic.code != "agent_action_invalid" else "REJECTED_INVALID"))
                     return
                 _proc_actions[st.agent_id][active_proc.process_id] += 1
                 st.cpu_used += 1
@@ -1045,6 +1126,7 @@ class ProcessMatchController:
                 active_proc.telemetry.total_actions += 1
 
                 # Execute action based on model
+                trace_action = TraceActionV2(kind=str(action.kind.value), operand=action.operand, value=action.value)
                 res_info: dict[str, Any] = {
                     "action_kind": action.kind,
                     "operand": action.operand,
@@ -1078,6 +1160,7 @@ class ProcessMatchController:
                         res_info["read_owner"] = None
                         res_info["applied"] = False
                         last_obs_results[st.agent_id][active_proc.process_id] = res_info
+                        ProcessMatchController._emit_decision_trace(self.trace_writer, st.agent_id, active_proc.process_id, trace_start, obs, trace_action, None, TraceResultV2(status="REJECTED_OUT_OF_REACH"))
                         return
 
                     val = self.vm.arena[target_addr]
@@ -1098,6 +1181,7 @@ class ProcessMatchController:
                         # Out of reach: write discarded
                         res_info["applied"] = False
                         last_obs_results[st.agent_id][active_proc.process_id] = res_info
+                        ProcessMatchController._emit_decision_trace(self.trace_writer, st.agent_id, active_proc.process_id, trace_start, obs, trace_action, None, TraceResultV2(status="REJECTED_OUT_OF_REACH"))
                         return
 
                     val = (action.value if action.value is not None else 0) & 0xFF
@@ -1124,7 +1208,16 @@ class ProcessMatchController:
                                     other_p.telemetry.disrupted_match_ticks.add(_tick)
 
                 last_obs_results[st.agent_id][active_proc.process_id] = res_info
-
+                
+                ProcessMatchController._emit_decision_trace(
+                    self.trace_writer, st.agent_id, active_proc.process_id, trace_start, obs, trace_action, None,
+                    TraceResultV2(
+                        status="APPLIED",
+                        normalized_address=active_proc.position if (action and action.kind in (ActionKind.MOVE, ActionKindV2.MOVE)) else res_info.get("normalized_address"),
+                        read_value=res_info.get("read_val"),
+                        read_owner=res_info.get("read_owner"),
+                    )
+                )
 
             # Execute tick via ruleset policy scheduler
             self.ruleset_policy.run_scheduler(

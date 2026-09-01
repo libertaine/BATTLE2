@@ -763,37 +763,17 @@ def _open_trace_writer(request: MatchRequest) -> TraceWriter | None:
     return writer
 
 
-def _run_python_match(
-    request: MatchRequest,
-    replay_path: Path,
-    summary_path: Path,
-    ruleset_policy: RulesetPolicy,
-) -> NativeMatchResult:
-    _remove_python_artifacts(replay_path, summary_path)
-    trace_writer = _open_trace_writer(request)
-    try:
-        return _run_python_match_traced(
-            request, replay_path, summary_path, trace_writer, ruleset_policy
-        )
-    finally:
-        # The trace writer must stay open across both controller
-        # construction (reset records) and controller.run() (decision
-        # records) -- it is only safe to close once both are done,
-        # regardless of success or failure.
-        if trace_writer is not None:
-            trace_writer.close()
+
 
 
 def _run_v4_process_match(
     request: MatchRequest,
     replay_path: Path,
     summary_path: Path,
+    trace_writer: TraceWriter | None,
     ruleset_policy: RulesetPolicy,
 ) -> NativeMatchResult:
     """Execute Ruleset v4 through the canonical spatial-process controller."""
-
-    _remove_python_artifacts(replay_path, summary_path)
-    trace_writer = _open_trace_writer(request)
     controller: ProcessMatchController | None = None
     temporary_path: Path | None = None
     sink: JSONLSink | None = None
@@ -804,6 +784,7 @@ def _run_v4_process_match(
             request.max_ticks,
             ruleset_policy=ruleset_policy,
             agent_call_timeout=request.agent_call_timeout,
+            trace_writer=trace_writer,
         )
         replay_path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary_name = tempfile.mkstemp(
@@ -816,6 +797,7 @@ def _run_v4_process_match(
         sink = None
         recorded_path = temporary_path
         temporary_path = None
+        
         return _build_process_result(controller, summary, request.config, recorded_path)
     except PythonEntrantInitializationError:
         _remove_python_artifacts(replay_path, summary_path)
@@ -848,8 +830,6 @@ def _run_v4_process_match(
                 pass
         if controller is not None:
             controller.close()
-        if trace_writer is not None:
-            trace_writer.close()
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
 
@@ -1373,21 +1353,40 @@ class NativeMatchService:
         replay_path = request.replay_path.resolve()
         summary_path = replay_path.with_name("summary.json")
         if "python" in kinds:
-            recorded = (
-                _run_v4_process_match(
-                    request, replay_path, summary_path, ruleset_policy
-                )
-                if ruleset_policy.ruleset_id in PROCESS_RULESET_IDS
-                else _run_python_match(
-                    request, replay_path, summary_path, ruleset_policy
-                )
-            )
+            _remove_python_artifacts(replay_path, summary_path)
+            trace_writer = _open_trace_writer(request)
             try:
-                return _finalize_native_artifacts(
-                    request, recorded, final_replay_path=replay_path
+                recorded = (
+                    _run_v4_process_match(
+                        request, replay_path, summary_path, trace_writer, ruleset_policy
+                    )
+                    if ruleset_policy.ruleset_id in PROCESS_RULESET_IDS
+                    else _run_python_match_traced(
+                        request, replay_path, summary_path, trace_writer, ruleset_policy
+                    )
                 )
+                try:
+                    final = _finalize_native_artifacts(
+                        request, recorded, final_replay_path=replay_path
+                    )
+                    if trace_writer is not None:
+                        import hashlib
+
+                        from battle_engine.agent_trace import BindingRecord
+                        sha = hashlib.sha256(replay_path.read_bytes()).hexdigest()
+                        trace_writer.write_binding(BindingRecord(
+                            match_id=canonical_match_id(request),
+                            ruleset_id=ruleset_policy.ruleset_id,
+                            entrant_identities=tuple(e.agent_id for e in request.entrants),
+                            replay_sha256=sha,
+                        ))
+                    return final
+                finally:
+                    recorded.replay_path.unlink(missing_ok=True)
             finally:
-                recorded.replay_path.unlink(missing_ok=True)
+                if trace_writer is not None:
+                    trace_writer.close()
+                    
         recorded = _run_vm_match(request, replay_path, summary_path, ruleset_policy)
         try:
             return _finalize_native_artifacts(
