@@ -753,6 +753,110 @@ def compare(summaries: dict[str, dict[str, Any]]) -> None:
 
 
 # --------------------------------------------------------------------------
+# Disruption-lock assessment
+# --------------------------------------------------------------------------
+
+#: An entrant fully disrupted for at least this fraction of the match it was
+#: in, in one unbroken run, is treated as *locked* rather than merely
+#: pressured. Phase 4's finding was specifically that a pursuer can be
+#: disrupted every tick "for the rest of the match" with no way to disengage,
+#: so the measure has to be a sustained run relative to match length -- a
+#: fixed tick count would call a 40-tick run in a 1000-tick match the same
+#: thing as a 40-tick run in a 45-tick one.
+LOCK_FRACTION = 0.5
+
+#: Below this many ticks a match is too short for "sustained lockout" to
+#: mean anything: an entrant killed on tick 3 was not locked out, it lost.
+LOCK_MIN_TICKS = 50
+
+
+def lockout_report(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Measure how often the Phase 4 disruption-lock actually happens.
+
+    Phase 4 (Section E) found that a single-process pursuer which gets close
+    enough to detect a reactive opponent, but not close enough to win, can be
+    re-disrupted every tick indefinitely -- unable to attack *or* retreat,
+    since a disrupted process cannot issue a MOVE either. Phase 5 has to
+    classify that as a rare edge case, a meaningful archetype weakness, or a
+    dominant ecological failure, so it needs a frequency, not an anecdote.
+
+    For every (match, entrant) pair this reports whether the entrant spent an
+    unbroken :data:`LOCK_FRACTION` of the match fully disrupted, and what
+    happened to it when it did. The outcome split is the part that decides
+    the classification: lockout that reliably precedes a loss is a weakness
+    of the locked archetype, while lockout that mostly ends in a draw is the
+    stalemate mechanism Phase 4 described.
+    """
+
+    per_agent: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"played": 0, "locked": 0, "locked_lost": 0, "locked_drew": 0, "locked_won": 0}
+    )
+    eligible = 0
+    locked_matches = 0
+
+    for record in records:
+        ticks = record["ticks_run"]
+        names = {
+            0: record["agent_a"] if record["orientation"] == "a_first" else record["agent_b"],
+            1: record["agent_b"] if record["orientation"] == "a_first" else record["agent_a"],
+        }
+        entrant_ids = {0: record["first"]["agent_id"], 1: record["second"]["agent_id"]}
+        runs = record["replay_metrics"]["max_consecutive_lockout_ticks"]
+        winner = record["winner_agent"]
+        match_counted = False
+        for slot, name in names.items():
+            per_agent[name]["played"] += 1
+            if ticks < LOCK_MIN_TICKS:
+                continue
+            if slot == 0:
+                eligible += 1
+            run = runs.get(entrant_ids[slot], 0)
+            if run < ticks * LOCK_FRACTION:
+                continue
+            per_agent[name]["locked"] += 1
+            if not match_counted:
+                locked_matches += 1
+                match_counted = True
+            if winner is None:
+                per_agent[name]["locked_drew"] += 1
+            elif winner == name:
+                per_agent[name]["locked_won"] += 1
+            else:
+                per_agent[name]["locked_lost"] += 1
+
+    return {
+        "lock_fraction": LOCK_FRACTION,
+        "lock_min_ticks": LOCK_MIN_TICKS,
+        "matches": len(records),
+        "matches_long_enough_to_assess": eligible,
+        "matches_with_a_locked_entrant": locked_matches,
+        "agents": {name: dict(row) for name, row in sorted(per_agent.items())},
+    }
+
+
+def print_lockout(condition: str, report: dict[str, Any]) -> None:
+    print(
+        f"\n=== disruption lock, {condition} "
+        f"(locked = fully disrupted for an unbroken "
+        f"{report['lock_fraction']:.0%} of a match of >= "
+        f"{report['lock_min_ticks']} ticks) ==="
+    )
+    assessable = report["matches_long_enough_to_assess"]
+    share = report["matches_with_a_locked_entrant"] / assessable if assessable else 0.0
+    print(
+        f"{report['matches_with_a_locked_entrant']} of {assessable} assessable "
+        f"matches had a locked entrant ({share:.1%})"
+    )
+    print(f"{'agent':28} {'played':>7} {'locked':>7} {'rate':>7} {'lost':>6} {'drew':>6} {'won':>5}")
+    for name, row in sorted(report["agents"].items(), key=lambda item: -item[1]["locked"]):
+        rate = row["locked"] / row["played"] if row["played"] else 0.0
+        print(
+            f"{name:28} {row['played']:7} {row['locked']:7} {rate:6.1%} "
+            f"{row['locked_lost']:6} {row['locked_drew']:6} {row['locked_won']:5}"
+        )
+
+
+# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
@@ -814,6 +918,11 @@ def main(argv: list[str] | None = None) -> int:
         summaries[path.stem] = summary
         write_summary(path.stem, summary, args.output)
         print_summary(path.stem, summary)
+        report = lockout_report(records)
+        (args.output / f"{path.stem}_lockout.json").write_text(
+            json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+        )
+        print_lockout(path.stem, report)
     if args.compare and {"alpha1", "alpha2"} <= set(summaries):
         compare(summaries)
         (args.output / "alpha1_vs_alpha2.json").write_text(
