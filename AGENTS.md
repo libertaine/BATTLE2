@@ -129,6 +129,21 @@ abbreviated.
   see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)'s "v4.0.0-alpha1
   compatibility boundary" for exactly what stays frozen (API v1, Ruleset
   v1/v2, schema-3 replays) alongside what v4 alpha adds.
+- **Two v4 Rulesets now exist.** `bytefray-rules-4-alpha2` differs from
+  alpha1 in exactly two gameplay semantics — seed-derived core placement and
+  round-robin intra-entrant process selection — on the same Agent API v2 and
+  the same replay schema 4. Alpha1's semantics are **frozen**: an alpha1
+  fixture, golden, or deterministic vector that starts failing is an
+  implementation defect, never something to re-bless. Alpha2 is what an
+  omitted `--ruleset` resolves to for an Agent API v2 roster; alpha1 stays
+  explicitly selectable everywhere. See
+  [docs/V4_ALPHA2_DESIGN.md](docs/V4_ALPHA2_DESIGN.md).
+- A Ruleset's gameplay semantics belong on its
+  `RulesetPolicy` (`core_placement`, `process_selection`, the scheduler
+  fields), not on `MatchRequest`. A per-match override field that only
+  research code can set is how a hidden experiment switch becomes accidental
+  public API — the Phase 4 research branch's five such fields were
+  deliberately not carried into the product for exactly this reason.
 
 ## Git safety
 
@@ -174,6 +189,8 @@ abbreviated.
 | Bytefray Ruleset v1 (gameplay semantics, historical/frozen) | [docs/RULES.md](docs/RULES.md) |
 | Bytefray Ruleset v2 beta (gameplay semantics, historical/frozen) | [docs/RULES_V2.md](docs/RULES_V2.md) |
 | Bytefray Ruleset v4 alpha1 design/semantics -- frozen historical behavior for this alpha, not a live target for further gameplay iteration | [docs/V4_ALPHA1_DESIGN.md](docs/V4_ALPHA1_DESIGN.md) |
+| Bytefray Ruleset v4 alpha2 gameplay contract (current v4 prerelease; written as a delta against the alpha1 freeze) | [docs/V4_ALPHA2_DESIGN.md](docs/V4_ALPHA2_DESIGN.md) |
+| Evidence behind the alpha2 rule changes (Phase 4 controlled gameplay study) | [docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md) |
 | Result schema | [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md) |
 | Replay schema | [docs/REPLAY_SCHEMA.md](docs/REPLAY_SCHEMA.md) |
 | Headless tournaments | [docs/TOURNAMENTS.md](docs/TOURNAMENTS.md) |

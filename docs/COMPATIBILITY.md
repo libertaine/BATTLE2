@@ -52,12 +52,58 @@ The v4 alpha adds three explicitly versioned, mutually consistent surfaces:
 
 These are alpha contracts, not silent replacements for the stable historical
 ones. API-v1 Python entrants continue to run under Ruleset v1/v2 and write
-schema-3 replays. API-v2 entrants run only under Ruleset v4 alpha1 and write
-schema-4 replays. VM/blob entrants remain Ruleset-v1 only. Historical v1-v3
-identity recipes and wire bytes remain frozen; current readers accept their
-artifacts without inserting schema-4 fields or recomputing stored IDs. See
-[AGENT_API_V2.md](AGENT_API_V2.md), [V4_ALPHA1_DESIGN.md](V4_ALPHA1_DESIGN.md),
-and [REPLAY_SCHEMA.md](REPLAY_SCHEMA.md).
+schema-3 replays. API-v2 entrants run under a v4 Ruleset (alpha1 or alpha2)
+and write schema-4 replays. VM/blob entrants remain Ruleset-v1 only.
+Historical v1-v3 identity recipes and wire bytes remain frozen; current readers
+accept their artifacts without inserting schema-4 fields or recomputing stored
+IDs. See [AGENT_API_V2.md](AGENT_API_V2.md),
+[V4_ALPHA1_DESIGN.md](V4_ALPHA1_DESIGN.md), and
+[REPLAY_SCHEMA.md](REPLAY_SCHEMA.md).
+
+## v4.0.0-alpha2 compatibility boundary
+
+`bytefray-rules-4-alpha2` adds **one** new surface: a second v4 Ruleset
+identity. Agent API v2 and replay schema 4 are unchanged, and no other schema,
+identity recipe, or wire shape moves.
+
+Alpha2 differs from alpha1 in exactly two gameplay semantics -- entrant core
+placement is derived from the match seed under a minimum-separation contract
+instead of the fixed evenly-spread seat layout, and an entrant's own processes
+take their action slots in rotation instead of by declared-list priority. Both
+are described in full in [V4_ALPHA2_DESIGN.md](V4_ALPHA2_DESIGN.md), which is
+written as a delta against the frozen alpha1 freeze.
+
+The two are **separate identities, never aliases**: the same agents, seed,
+arena, and seat roster can produce different matches under each, and match /
+result / replay identity already carries the Ruleset ID as a first-class axis
+so the two never collide. Alpha1 keeps its exact frozen semantics, stays
+registered and explicitly selectable everywhere a Ruleset can be named, and is
+still what every persisted alpha1 artifact resolves to.
+
+What *does* change for callers who name no Ruleset: an omitted `--ruleset`
+with an Agent API v2 roster now resolves to alpha2 rather than alpha1. That is
+the prerelease intent the omitted-Ruleset candidate list has always encoded --
+"the newest intended v4 development Ruleset" -- and is the same kind of default
+move that put alpha1 there when alpha1 was newest. An Agent API v1 roster still
+resolves to `bytefray-rules-2`, and a VM/blob roster still resolves to Ruleset
+v1, both unchanged.
+
+Agent API v2 being unchanged means **every** API-v2 agent still loads and runs
+under alpha2. What changes for some of them is whether their *strategy* still
+works: an agent that hardcodes `own_core_base + arena_size // 2` as the
+opponent's core will aim at empty memory under seeded placement. That is a
+disclosed gameplay-balance change to a Ruleset, not a compatibility break --
+the assumption those agents encode was a Ruleset-level historical accident,
+never a documented Agent API contract. `hydra_alpha2` and `nemesis_alpha2` are
+alpha2-targeted derivatives that acquire targets through the observation
+contract instead; the historical `hydra` and `Nemesis` are unchanged.
+
+`agents evaluate` deliberately does **not** accept alpha2. Its placement
+conditions are an explicit, disclosed evaluation-methodology axis, and running
+them under alpha2 would produce artifacts labelled alpha2 that actually ran
+alpha1's fixed opposite placement. The existing fail-closed `--ruleset` guard
+rejects alpha2 with a clear message; adopting it there needs a methodology
+decision this Ruleset change does not supply.
 
 ## Separate compatibility axes
 
@@ -195,10 +241,13 @@ manifest runtime kind and Agent API version together; `NativeMatchService`
 applies the same policy before runtime dispatch, so a stale or programmatically
 constructed v2/API-v2 or v4/API-v1 request fails before agent code executes.
 Agent Designer's Simple Quick Match projects this boundary into the catalog:
-it offers only Ruleset v2 and v4 alpha1 and shows only agents compatible with
-the selected Ruleset. Historical Ruleset v1 and VM/blob selection remain
-available through Advanced workflows, while Agent Development continues to
-receive the complete discovered catalog.
+it offers current gameplay only -- Ruleset v2 and v4 alpha2 -- and shows only
+agents compatible with the selected Ruleset. Historical Ruleset v1, v4 alpha1,
+and VM/blob selection remain available through Advanced workflows, while Agent
+Development continues to receive the complete discovered catalog. The two v4
+alphas are distinguished by label ("current" and "historical") because they are
+identical on every other axis a selector could show: both are Python-only and
+both require Agent API v2.
 
 ## Ruleset-v2 1v1 evaluation methodology (v2.0.0-beta2 Phase 1)
 

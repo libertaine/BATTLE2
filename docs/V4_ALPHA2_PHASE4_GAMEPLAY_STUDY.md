@@ -1,5 +1,23 @@
 # Bytefray v4 Phase 4 — Controlled Gameplay Research Report
 
+> **Provenance note (added when this report was cherry-picked onto the Phase 5
+> product branch; no finding, number, or claim below was altered).** This
+> report is the evidence base for the `bytefray-rules-4-alpha2` gameplay
+> contract — see [V4_ALPHA2_DESIGN.md](V4_ALPHA2_DESIGN.md) for what Phase 5
+> actually adopted from it, which is deliberately less than everything it
+> tested. The harness and probe sources it cites
+> (`tools/v4_alpha2_gameplay_study.py`,
+> `tools/v4_alpha2_research_agents/`) and the five research-only
+> `MatchRequest` override fields described in Section I live **only** on the
+> `v4-alpha2-gameplay-research` branch and were deliberately not carried into
+> the product; Phase 5's own harness is `tools/v4_alpha2_ecology_study.py`,
+> which expresses conditions as Ruleset identities instead. Section I's
+> byte-identical Alpha1 equivalence check is byte-identical *within that
+> research branch*: the additive per-process telemetry it describes also
+> reaches the replay header, so a replay recorded there differs from one
+> recorded on `main` for the same inputs. That telemetry is not in the
+> product either.
+
 Research branch: `v4-alpha2-gameplay-research` (off `main`@`855f7379e1309ec60760d960fff54e7da9648e59`)
 Ruleset under test: `bytefray-rules-4-alpha1` (frozen; not altered — see Section I)
 
