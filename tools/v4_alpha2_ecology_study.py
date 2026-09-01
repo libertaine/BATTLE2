@@ -383,7 +383,12 @@ def run_condition(
     roster: tuple[str, ...],
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    scratch_dir = output_dir / "_scratch_replays"
+    # Per-condition, because a match's transient result.json/summary.json are
+    # named by the engine from the replay's own directory, not from the
+    # replay's stem. Two conditions sharing one scratch directory therefore
+    # race on the same three filenames, and on Windows the loser dies with a
+    # WinError 5 mid-study rather than merely overwriting.
+    scratch_dir = output_dir / f"_scratch_{condition}"
     scratch_dir.mkdir(parents=True, exist_ok=True)
     out_path = output_dir / f"{condition}.jsonl"
 
