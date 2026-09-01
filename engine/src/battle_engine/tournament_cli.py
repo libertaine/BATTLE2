@@ -16,7 +16,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
-    resolve_omitted_ruleset_id,
+    resolve_omitted_ruleset_for_agents,
 )
 from battle_engine.starters import ensure_starter_agents
 from battle_engine.tournament_service import (
@@ -145,11 +145,21 @@ def main(argv: list[str] | None = None) -> int:
             _resolve_entrant(root, name, index * spacing)
             for index, name in enumerate(args.agents)
         )
-        # RC1 default-Ruleset-defect fix: resolve an omitted --ruleset from
-        # the resolved roster's entrant kinds, mirroring `bytefray run`'s
+        # RC1 default-Ruleset-defect fix, made Agent-API-aware: resolve an
+        # omitted --ruleset from the resolved roster's own compatibility
+        # metadata -- runtime kind *and*, for a Python entrant, the Agent
+        # API version its manifest declares -- mirroring `bytefray run`'s
         # own resolution. An explicit --ruleset is returned unchanged.
-        resolved_ruleset_id = resolve_omitted_ruleset_id(
-            args.ruleset, {entrant.kind for entrant in entrants}
+        resolved_ruleset_id = resolve_omitted_ruleset_for_agents(
+            args.ruleset,
+            [
+                {
+                    "agent_id": entrant.agent_id,
+                    "kind": entrant.kind,
+                    "api_version": getattr(entrant.python_spec, "api_version", None),
+                }
+                for entrant in entrants
+            ],
         )
         output = (
             args.output.expanduser().resolve()

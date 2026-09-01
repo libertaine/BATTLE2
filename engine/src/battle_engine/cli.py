@@ -30,7 +30,8 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
-    resolve_omitted_ruleset_id,
+    NoCompatibleRulesetError,
+    resolve_omitted_ruleset_for_agents,
 )
 from battle_engine.starters import ensure_starter_agents
 
@@ -435,10 +436,10 @@ def _resolve_agent(
     sys.exit(2)
 
 
-def _requested_entrant_kind(
+def _requested_entrant_metadata(
     letter: str, spec: dict[str, Any], args: argparse.Namespace, root: Path
-) -> str | None:
-    """Determine slot ``letter``'s runtime kind without building its bytecode.
+) -> dict[str, Any] | None:
+    """Determine slot ``letter``'s compatibility metadata without building it.
 
     Mirrors ``_resolve_agent``'s own precedence chain (env-JSON spec, direct
     blob flag, discovery, built-in fallback) exactly, minus anything that
@@ -451,12 +452,18 @@ def _requested_entrant_kind(
     ``_resolve_agent`` once agent construction actually runs, so a wrong
     guess here can never let an invalid invocation execute -- it can only
     affect which Ruleset an already-valid invocation defaults to.
+
+    Reports both authoritative compatibility fields (``kind`` and, for a
+    discovered Python agent, its declared ``api_version``) rather than the
+    runtime kind alone: ``bytefray-rules-2`` and ``bytefray-rules-4-alpha1``
+    are both Python-only and are told apart by Agent API version, so the
+    kind by itself can no longer choose between them.
     """
     if spec and letter in spec:
-        return "vm"  # env-JSON entrants are always blob/builtin (vm).
+        return {"kind": "vm", "api_version": None}  # env-JSON entrants are blob/builtin.
 
     if getattr(args, f"{letter.lower()}_blob"):
-        return "vm"
+        return {"kind": "vm", "api_version": None}
 
     agent_name = getattr(args, f"{letter.lower()}_type")
     if not agent_name:
@@ -468,8 +475,12 @@ def _requested_entrant_kind(
         spec_obj = None
 
     if spec_obj is not None and spec_obj.kind == "python":
-        return "python"
-    return "vm"
+        return {
+            "agent_id": agent_name,
+            "kind": "python",
+            "api_version": spec_obj.api_version,
+        }
+    return {"agent_id": agent_name, "kind": "vm", "api_version": None}
 
 
 # ----------------------------
@@ -693,20 +704,26 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     # RC1 default-Ruleset-defect fix: resolve an omitted --ruleset from the
     # requested entrants' runtime kinds -- known here without building any
-    # agent's bytecode (see _requested_entrant_kind) -- before it is used
+    # agent's bytecode (see _requested_entrant_metadata) -- before it is used
     # for placement or match execution, so both honor the exact same
     # resolved identity every downstream artifact records. An explicit
     # --ruleset is returned unchanged.
-    requested_kinds = {
-        kind
-        for kind in (
-            _requested_entrant_kind("A", env_spec, args, root),
-            _requested_entrant_kind("B", env_spec, args, root),
-            _requested_entrant_kind("C", env_spec, args, root) if c_requested else None,
+    requested_entrants = [
+        metadata
+        for metadata in (
+            _requested_entrant_metadata("A", env_spec, args, root),
+            _requested_entrant_metadata("B", env_spec, args, root),
+            _requested_entrant_metadata("C", env_spec, args, root) if c_requested else None,
         )
-        if kind is not None
-    }
-    resolved_ruleset_id = resolve_omitted_ruleset_id(args.ruleset, requested_kinds)
+        if metadata is not None
+    ]
+    try:
+        resolved_ruleset_id = resolve_omitted_ruleset_for_agents(
+            args.ruleset, requested_entrants
+        )
+    except NoCompatibleRulesetError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
     resolved_starts = resolve_direct_match_starts(
         ruleset_id=resolved_ruleset_id,

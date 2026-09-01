@@ -17,14 +17,19 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ALPHA1_ID,
     BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    OMITTED_RULESET_CANDIDATES,
     RULESET_V1,
     RULESET_V2,
     RULESET_V2_ALPHA1,
     RULESET_V2_ALPHA11,
+    NoCompatibleRulesetError,
     RulesetPolicy,
     TerminationDecision,
     TerminationReason,
     UnknownRulesetError,
+    resolve_omitted_ruleset_for_agents,
+    resolve_omitted_ruleset_id,
     resolve_ruleset_policy,
 )
 from battle_engine.scheduler import run_sequential_quota
@@ -219,3 +224,135 @@ def test_termination_decision_is_immutable() -> None:
     decision = RULESET_V1.resolve_termination(alive_count=3, tick=1, max_ticks=10)
     with pytest.raises(FrozenInstanceError):
         decision.terminated = True  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 H1: Agent-API-aware omitted-Ruleset resolution
+# ---------------------------------------------------------------------------
+
+
+def _python(api_version: object, agent_id: str = "probe") -> dict[str, object]:
+    return {"agent_id": agent_id, "kind": "python", "api_version": api_version}
+
+
+_VM = {"agent_id": "runner", "kind": "builtin", "api_version": None}
+
+
+@pytest.mark.parametrize(
+    ("roster", "expected"),
+    [
+        # Historical Agent API v1 Python gameplay is unchanged.
+        ([_python(1)], BYTEFRAY_RULESET_V2_ID),
+        ([_python(1, "a"), _python(1, "b")], BYTEFRAY_RULESET_V2_ID),
+        # Agent API v2 reaches the process-agent Ruleset without the author
+        # ever naming it -- the H1 defect this resolution exists to fix.
+        ([_python(2)], BYTEFRAY_RULESET_V4_ALPHA1_ID),
+        ([_python(2, "a"), _python(2, "b")], BYTEFRAY_RULESET_V4_ALPHA1_ID),
+        # VM/blob composition keeps resolving to the only Ruleset that runs it.
+        ([_VM], BYTEFRAY_RULESET_ID),
+        ([_VM, _VM], BYTEFRAY_RULESET_ID),
+        # A mixed Python/VM roster still resolves to v1 exactly as before:
+        # v1 supports both, and NativeMatchService's own homogeneity guard --
+        # not Ruleset resolution -- remains what rejects the composition.
+        ([_python(1), _VM], BYTEFRAY_RULESET_ID),
+        # Nothing to derive a Ruleset from keeps the historical default.
+        ([], BYTEFRAY_RULESET_ID),
+    ],
+)
+def test_omitted_ruleset_resolves_from_runtime_kind_and_api_version(
+    roster: list[dict[str, object]], expected: str
+) -> None:
+    assert resolve_omitted_ruleset_for_agents(None, roster) == expected
+
+
+@pytest.mark.parametrize(
+    "roster",
+    [
+        # No single Ruleset supports both Agent API generations at once.
+        [_python(1, "legacy"), _python(2, "process")],
+        # An Agent API v2 entrant cannot join a VM roster under v1 either.
+        [_python(2), _VM],
+        # Python metadata with no usable API version fails closed, matching
+        # the loader's own fail-closed treatment of it.
+        [{"agent_id": "unversioned", "kind": "python", "api_version": None}],
+        [_python(True)],
+    ],
+)
+def test_incompatible_roster_fails_closed_instead_of_guessing(
+    roster: list[dict[str, object]],
+) -> None:
+    with pytest.raises(NoCompatibleRulesetError) as caught:
+        resolve_omitted_ruleset_for_agents(None, roster)
+
+    assert caught.value.code == "ruleset_resolution_failed"
+    assert "No Bytefray Ruleset supports" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("requested", "roster"),
+    [
+        # Compatible explicit selections are returned unchanged...
+        (BYTEFRAY_RULESET_V4_ALPHA1_ID, [_python(2)]),
+        (BYTEFRAY_RULESET_V2_ID, [_python(1)]),
+        # ...and so are incompatible ones: resolution never overrides a
+        # user's explicit choice, leaving NativeMatchService to reject it
+        # with the clean configuration error the Phase 1 work established.
+        (BYTEFRAY_RULESET_V2_ID, [_python(2)]),
+        (BYTEFRAY_RULESET_V4_ALPHA1_ID, [_python(1)]),
+        # Including a roster automatic resolution would have refused.
+        (BYTEFRAY_RULESET_V2_ID, [_python(1), _python(2)]),
+        # Including an experimental identity automatic resolution never picks.
+        (BYTEFRAY_RULESET_V2_ALPHA1_ID, [_python(1)]),
+    ],
+)
+def test_explicit_ruleset_selection_is_always_authoritative(
+    requested: str, roster: list[dict[str, object]]
+) -> None:
+    assert resolve_omitted_ruleset_for_agents(requested, roster) == requested
+
+
+def test_automatic_resolution_never_selects_an_experimental_identity() -> None:
+    """Automatic resolution may only ever land on a product Ruleset.
+
+    An omitted selection must never wander into an experimental identity
+    (``bytefray-rules-2-alpha1``/``-alpha11``/``bytefray-rules-3-alpha1``)
+    that the user did not ask for by name.
+    """
+
+    assert OMITTED_RULESET_CANDIDATES == (
+        BYTEFRAY_RULESET_V2_ID,
+        BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        BYTEFRAY_RULESET_ID,
+    )
+    assert all("alpha" not in candidate for candidate in OMITTED_RULESET_CANDIDATES[:1])
+
+
+@pytest.mark.parametrize(
+    ("kinds", "expected"),
+    [
+        ({"python"}, BYTEFRAY_RULESET_V2_ID),
+        ({"vm"}, BYTEFRAY_RULESET_ID),
+        ({"python", "vm"}, BYTEFRAY_RULESET_ID),
+        (set(), BYTEFRAY_RULESET_ID),
+        ({"unrecognized"}, BYTEFRAY_RULESET_ID),
+    ],
+)
+def test_kind_only_compatibility_surface_keeps_its_historical_behavior(
+    kinds: set[str], expected: str
+) -> None:
+    """``resolve_omitted_ruleset_id`` is retained for out-of-tree callers.
+
+    It now delegates to the API-aware resolver (so the two cannot drift),
+    projecting a bare ``python`` kind as Agent API v1 -- the assumption its
+    signature always encoded -- and must therefore still answer exactly what
+    it answered before that delegation existed, never raising.
+    """
+
+    assert resolve_omitted_ruleset_id(None, kinds) == expected
+
+
+def test_kind_only_surface_still_passes_explicit_selections_through() -> None:
+    assert (
+        resolve_omitted_ruleset_id(BYTEFRAY_RULESET_V4_ALPHA1_ID, {"python"})
+        == BYTEFRAY_RULESET_V4_ALPHA1_ID
+    )

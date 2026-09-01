@@ -158,6 +158,62 @@ def test_ruleset_kwarg_explicit_v2_produces_v2_artifact_identity(tmp_path):
     assert header.ruleset_id == "bytefray-rules-2"
 
 
+def test_cli_omitted_ruleset_resolves_v4_alpha1_for_a_scaffolded_api_v2_agent(
+    tmp_path, monkeypatch, capsys
+):
+    """H1 end-to-end: `agents create --api-version 2` then `agents test`
+    with no --ruleset must run a real Ruleset v4 alpha1 match, with no
+    manifest hand-editing and without the author naming an internal Ruleset
+    identity anywhere."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    scaffold_create_agent(
+        "process_probe", data_root=tmp_path, resource_root=ROOT, api_version=2
+    )
+
+    exit_code = main(["process_probe", "--ticks", "10"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0, captured.err
+    assert "ruleset: bytefray-rules-4-alpha1" in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_cli_omitted_ruleset_still_resolves_v2_for_a_scaffolded_api_v1_agent(
+    tmp_path, monkeypatch, capsys
+):
+    """The historical Agent API v1 development loop is unchanged."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    scaffold_create_agent("legacy_probe", data_root=tmp_path, resource_root=ROOT)
+
+    exit_code = main(["legacy_probe", "--ticks", "10"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0, captured.err
+    assert "ruleset: bytefray-rules-2" in captured.out
+
+
+def test_cli_omitted_ruleset_fails_closed_on_mixed_api_opponent(
+    tmp_path, monkeypatch, capsys
+):
+    """An explicitly selected opponent participates in resolution, so a
+    mixed Agent API pairing is refused deterministically rather than
+    resolved to one entrant's Ruleset."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    scaffold_create_agent("legacy_probe", data_root=tmp_path, resource_root=ROOT)
+    scaffold_create_agent(
+        "process_probe", data_root=tmp_path, resource_root=ROOT, api_version=2
+    )
+
+    exit_code = main(["legacy_probe", "--opponent", "process_probe", "--ticks", "10"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "stage: configuration" in captured.err
+    assert "code: ruleset_resolution_failed" in captured.err
+    assert "No Bytefray Ruleset supports" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def _write_python_agent_v2(root: Path, name: str) -> Path:
     directory = root / "agents" / name
     directory.mkdir(parents=True)

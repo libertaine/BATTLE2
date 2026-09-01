@@ -465,3 +465,176 @@ def test_cli_template_flag_rejects_unknown_choice(tmp_path, monkeypatch, capsys)
         main(["from_cli", "--template", "bogus"])
     assert excinfo.value.code == 2
     assert not (tmp_path / "agents").exists()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 H1: Agent API v2 scaffolding
+# ---------------------------------------------------------------------------
+
+
+def _context_v2(agent_id: str = "A"):
+    import random
+
+    from battle_engine.agent_api import MatchContextV2
+
+    return MatchContextV2(
+        agent_id=agent_id, seed=1, arena_size=256, tick_limit=10, rng=random.Random(1)
+    )
+
+
+def _observation_v2(anchor: int = 0, reach: int = 1):
+    from battle_engine.agent_api import ObservationV2
+
+    return ObservationV2(
+        current_tick=1,
+        last_callback_tick=0,
+        previous_action_tick=0,
+        self_process_id="main",
+        self_anchor=anchor,
+        self_reach=reach,
+        own_core_base=0,
+        own_core_size=8,
+        visible_enemy_anchor_addresses=(),
+        previous_action_applied=True,
+        previous_read_value=None,
+        previous_read_owner=None,
+    )
+
+
+def test_scaffold_templates_cover_every_supported_api_version() -> None:
+    """A future Agent API generation cannot be added to the authoritative
+    supported set without also giving ``agents create`` a template for it.
+
+    This is the scaffold's half of the Phase 1 "one authoritative supported
+    API set" discipline: the CLI derives its ``--api-version`` choices from
+    ``SUPPORTED_AGENT_API_VERSIONS`` rather than a hand-written list, so an
+    unbacked bump must fail loudly here instead of at a user's first
+    ``agents create --api-version <new>``.
+    """
+
+    from battle_engine.agent_api import SUPPORTED_AGENT_API_VERSIONS
+    from battle_engine.agent_scaffold import (
+        TEMPLATE_DIRECTORIES_BY_API_VERSION,
+        scaffold_api_versions,
+    )
+
+    assert set(TEMPLATE_DIRECTORIES_BY_API_VERSION) == set(SUPPORTED_AGENT_API_VERSIONS)
+    assert scaffold_api_versions() == SUPPORTED_AGENT_API_VERSIONS
+    for directories in TEMPLATE_DIRECTORIES_BY_API_VERSION.values():
+        assert set(directories) == set(TEMPLATE_DIRECTORIES)
+
+
+def test_omitted_api_version_still_scaffolds_agent_api_v1(tmp_path):
+    """`agents create <id>` has always produced an Agent API v1 agent.
+
+    Agent API v2 being newer must never silently repoint this established
+    command's default -- reaching v2 is an explicit opt-in.
+    """
+
+    from battle_engine.agent_scaffold import DEFAULT_API_VERSION
+
+    assert DEFAULT_API_VERSION == 1
+    create_agent("default_api", data_root=tmp_path, resource_root=_resource_root())
+
+    spec = discover_agents(tmp_path)["default_api"]
+    assert spec.api_version == 1
+    assert "api_version: 1" in (tmp_path / "agents" / "default_api" / "agent.yaml").read_text()
+
+
+def test_explicit_api_version_1_is_byte_identical_to_omitting_it(tmp_path):
+    create_agent("implicit", data_root=tmp_path / "a", resource_root=_resource_root())
+    create_agent(
+        "explicit", data_root=tmp_path / "b", resource_root=_resource_root(), api_version=1
+    )
+
+    implicit_dir = tmp_path / "a" / "agents" / "implicit"
+    explicit_dir = tmp_path / "b" / "agents" / "explicit"
+    for filename in ("agent.py", "agent.yaml"):
+        assert (implicit_dir / filename).read_bytes() == (explicit_dir / filename).read_bytes()
+
+
+@pytest.mark.parametrize("template", ["blank", "annotated"])
+def test_api_version_2_scaffold_is_discoverable_loadable_and_runnable(tmp_path, template):
+    """The H1 requirement: a supported command produces an API-v2 agent that
+    is valid without hand-editing -- discoverable, loadable, and exercising
+    the full reset/declare_processes/act lifecycle."""
+
+    from battle_engine.agent_api import ActionKindV2, ProcessDeclaration
+
+    create_agent(
+        "process_agent",
+        data_root=tmp_path,
+        resource_root=_resource_root(),
+        template=template,
+        api_version=2,
+    )
+
+    spec = discover_agents(tmp_path)["process_agent"]
+    assert spec.kind == "python"
+    assert spec.api_version == 2
+    assert spec.entry_point == "agent.py:create_agent"
+
+    loaded = load_python_agent(spec)
+    assert loaded.metadata.api_version == 2
+
+    loaded.instance.reset(_context_v2())
+    declarations = loaded.instance.declare_processes()
+    assert declarations, "an API-v2 agent must declare at least one process"
+    assert all(isinstance(item, ProcessDeclaration) for item in declarations)
+    # The engine requires shares totalling 1.0 with a legal positive reach.
+    assert sum(float(item.share) for item in declarations) == pytest.approx(1.0)
+    assert all(1 <= item.reach < 256 for item in declarations)
+
+    action = loaded.instance.act(_observation_v2())
+    assert isinstance(action.kind, ActionKindV2)
+
+
+def test_api_version_2_templates_differ_from_their_v1_counterparts(tmp_path):
+    create_agent("v1_agent", data_root=tmp_path / "a", resource_root=_resource_root())
+    create_agent(
+        "v2_agent", data_root=tmp_path / "b", resource_root=_resource_root(), api_version=2
+    )
+
+    v1_source = (tmp_path / "a" / "agents" / "v1_agent" / "agent.py").read_text()
+    v2_source = (tmp_path / "b" / "agents" / "v2_agent" / "agent.py").read_text()
+    assert v1_source != v2_source
+    assert "declare_processes" in v2_source
+    assert "declare_processes" not in v1_source
+
+
+def test_unsupported_api_version_is_rejected_without_mutation(tmp_path):
+    with pytest.raises(AgentScaffoldError, match="Unsupported Agent API version"):
+        create_agent("nope", data_root=tmp_path, resource_root=_resource_root(), api_version=99)
+
+    assert not (tmp_path / "agents").exists()
+
+
+def test_cli_api_version_flag_scaffolds_v2_and_reports_it(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    assert main(["from_cli", "--api-version", "2"]) == 0
+
+    out = capsys.readouterr().out
+    assert "api_version: 2" in out
+    assert discover_agents(tmp_path)["from_cli"].api_version == 2
+
+
+def test_cli_api_version_flag_rejects_unsupported_choice(tmp_path, monkeypatch):
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    with pytest.raises(SystemExit) as excinfo:
+        main(["from_cli", "--api-version", "99"])
+    assert excinfo.value.code == 2
+    assert not (tmp_path / "agents").exists()
+
+
+def test_reference_opponent_template_lookup_is_unchanged_by_api_versions() -> None:
+    """``agent_test._reference_opponent_spec`` loads the Agent API v1 blank
+    template positionally; adding API-v2 templates must not move it."""
+
+    assert (
+        template_resource_dir(_resource_root(), "blank")
+        == template_resource_dir(_resource_root(), "blank", api_version=1)
+    )
+    assert (
+        template_resource_dir(_resource_root(), "blank", api_version=2)
+        != template_resource_dir(_resource_root(), "blank")
+    )

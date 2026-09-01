@@ -369,6 +369,14 @@ def _canonical_runtime_kind(kind: str) -> str | None:
     return None
 
 
+def _agent_runtime_metadata(agent: object) -> tuple[object, object]:
+    """Read the two authoritative compatibility fields off one agent projection."""
+
+    if isinstance(agent, Mapping):
+        return agent.get("kind"), agent.get("api_version")
+    return getattr(agent, "kind", None), getattr(agent, "api_version", None)
+
+
 def agent_supported_by_ruleset(agent: object, ruleset_id: str) -> bool:
     """Return whether discovered agent metadata is valid for ``ruleset_id``.
 
@@ -379,12 +387,7 @@ def agent_supported_by_ruleset(agent: object, ruleset_id: str) -> bool:
     deliberately ignored.
     """
 
-    if isinstance(agent, Mapping):
-        kind = agent.get("kind")
-        api_version = agent.get("api_version")
-    else:
-        kind = getattr(agent, "kind", None)
-        api_version = getattr(agent, "api_version", None)
+    kind, api_version = _agent_runtime_metadata(agent)
     if not isinstance(kind, str):
         return False
     if api_version is not None and (isinstance(api_version, bool) or not isinstance(api_version, int)):
@@ -394,6 +397,114 @@ def agent_supported_by_ruleset(agent: object, ruleset_id: str) -> bool:
     except UnknownRulesetError:
         return False
     return policy.supports_agent(kind=kind, api_version=api_version)
+
+
+def _describe_agent(agent: object) -> str:
+    """Name one agent the way ``RulesetAgentUnsupportedError`` already does."""
+
+    kind, api_version = _agent_runtime_metadata(agent)
+    if isinstance(agent, Mapping):
+        name = agent.get("agent_id") or agent.get("name")
+    else:
+        name = getattr(agent, "agent_id", None) or getattr(agent, "name", None)
+    detail = str(kind) if isinstance(kind, str) else "unknown runtime"
+    if kind == "python":
+        detail = f"{detail}, Agent API {api_version!r}"
+    return f"{name} ({detail})" if name else f"({detail})"
+
+
+class NoCompatibleRulesetError(ValueError):
+    """No registered Ruleset supports an omitted-Ruleset request's whole roster.
+
+    Raised by :func:`resolve_omitted_ruleset_for_agents` instead of guessing
+    a Ruleset that a downstream
+    :class:`~battle_engine.match_service.RulesetAgentUnsupportedError` would
+    immediately reject. The incompatibility is already knowable from
+    discovered metadata at resolution time -- for example an Agent API v1
+    entrant paired with an Agent API v2 one, which no single Ruleset
+    executes -- so resolution fails closed and says so, rather than
+    selecting one entrant's Ruleset and letting the other entrant discover
+    the mismatch later.
+
+    Deliberately a ``ValueError`` carrying a ``code``/``diagnostic``, the
+    same shape the CLI configuration-error handlers established in the
+    Phase 1 remediation already present cleanly (``ERROR: <message>``,
+    exit 2, no traceback).
+    """
+
+    code = "ruleset_resolution_failed"
+
+    def __init__(self, agents: Iterable[object]) -> None:
+        roster = tuple(agents)
+        details = ", ".join(_describe_agent(agent) for agent in roster)
+        message = (
+            "No Bytefray Ruleset supports this match's entrants together: "
+            f"{details}. Entrants must share one compatible runtime kind and "
+            "Agent API version; select a compatible roster, or pass an "
+            "explicit Ruleset to override automatic selection."
+        )
+        super().__init__(message)
+        self.agents = roster
+        self.message = message
+
+
+# Which Rulesets an omitted selection may resolve to, in product-preference
+# order. A finite, explicit tuple for the same reason ``_RULESET_POLICIES``
+# is a finite table: automatic resolution must never wander into an
+# experimental identity (``bytefray-rules-2-alpha1``/``-alpha11``/
+# ``bytefray-rules-3-alpha1``) that a user did not ask for by name. Order is
+# the product preference -- current Python gameplay first, then the
+# process-agent preview, then the historical compatibility identity that is
+# the only one executing VM/blob entrants.
+OMITTED_RULESET_CANDIDATES: tuple[str, ...] = (
+    BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_ID,
+)
+
+
+def resolve_omitted_ruleset_for_agents(
+    requested_ruleset_id: str | None,
+    agents: Iterable[object],
+    *,
+    candidates: Iterable[str] = OMITTED_RULESET_CANDIDATES,
+) -> str:
+    """Resolve one product entry point's optional Ruleset from agent metadata.
+
+    The API-aware successor to :func:`resolve_omitted_ruleset_id`: instead of
+    asking only "is every entrant Python?", this asks the authoritative
+    compatibility question -- "does this candidate Ruleset support *every*
+    selected entrant's runtime kind **and** Agent API version?" -- through
+    the same :func:`agent_supported_by_ruleset` predicate
+    ``NativeMatchService`` and Agent Designer use. That is what lets an
+    Agent API v2 roster reach ``bytefray-rules-4-alpha1`` automatically
+    while an Agent API v1 roster keeps resolving to ``bytefray-rules-2``,
+    with neither spelling an internal Ruleset identity by hand.
+
+    ``agents`` is the resolved entrant metadata for *this* request -- any
+    projection :func:`agent_supported_by_ruleset` accepts (an ``AgentSpec``,
+    a manifest mapping, a catalog row's metadata). An empty roster keeps the
+    historical :data:`~battle_engine.rules.BYTEFRAY_RULESET_ID` default:
+    there is nothing to derive a Ruleset from.
+
+    An explicit ``requested_ruleset_id`` is always returned unchanged --
+    this function never validates, corrects, or overrides a user's own
+    selection, including one a downstream compatibility check will go on to
+    reject. Only an omitted Ruleset is resolved here.
+
+    Raises :class:`NoCompatibleRulesetError` when no candidate supports the
+    whole roster, rather than guessing (see that class).
+    """
+
+    if requested_ruleset_id is not None:
+        return requested_ruleset_id
+    roster = tuple(agents)
+    if not roster:
+        return BYTEFRAY_RULESET_ID
+    for candidate in candidates:
+        if all(agent_supported_by_ruleset(agent, candidate) for agent in roster):
+            return candidate
+    raise NoCompatibleRulesetError(roster)
 
 
 
@@ -423,16 +534,26 @@ _PYTHON_ONLY_KINDS: frozenset[str] = frozenset({"python"})
 def resolve_omitted_ruleset_id(
     requested_ruleset_id: str | None, runtime_kinds: Iterable[str]
 ) -> str:
-    """Resolve one product-facing CLI/API entry point's optional ``--ruleset``.
+    """Resolve an optional ``--ruleset`` from entrant runtime kinds alone.
 
     This is the RC1 default-Ruleset-defect fix: the seam a user-facing
     caller (``bytefray run``, ``bytefray agents test``, ``bytefray agents
-    evaluate``, ``bytefray tournament``) calls, with the entrant runtime
+    evaluate``, ``bytefray tournament``) called, with the entrant runtime
     kinds it already knows for *this* request, to turn a caller's omitted
     ``--ruleset`` into the same current-gameplay identity Agent Designer has
     used since v3.0.0-alpha2 (see ``app/services/ruleset_options.py``),
     instead of the historical Ruleset-v1 identity every native execution
     path fell back to before this fix.
+
+    **A runtime kind alone is no longer enough information to resolve a
+    Ruleset**, because ``bytefray-rules-2`` and ``bytefray-rules-4-alpha1``
+    are both Python-only and are told apart by Agent API version, not
+    runtime kind. Every in-tree product entry point therefore now calls
+    :func:`resolve_omitted_ruleset_for_agents` with real entrant metadata.
+    This function is retained as the kind-only compatibility surface for
+    out-of-tree callers, delegating to that same resolver with Python
+    projected as Agent API v1 -- the assumption its signature has always
+    encoded -- so its documented behavior below is unchanged.
 
     ``requested_ruleset_id`` is ``None`` for "the caller omitted --ruleset"
     and any other value for "the caller explicitly selected this Ruleset".
@@ -473,9 +594,23 @@ def resolve_omitted_ruleset_id(
     if requested_ruleset_id is not None:
         return requested_ruleset_id
     kinds = frozenset(runtime_kinds)
-    if kinds and kinds <= _PYTHON_ONLY_KINDS:
-        return BYTEFRAY_RULESET_V2_ID
-    return BYTEFRAY_RULESET_ID
+    if not kinds:
+        return BYTEFRAY_RULESET_ID
+    # Delegates to the one resolution implementation rather than repeating
+    # its candidate walk, so this compatibility surface cannot drift from
+    # the API-aware resolver. A bare runtime kind carries no Agent API
+    # version, so Python is projected as Agent API v1 -- exactly the
+    # assumption this signature has always encoded -- and any roster no
+    # candidate supports keeps this function's historical Ruleset-v1
+    # fallback instead of raising a new exception at an old call site.
+    projected = [
+        {"kind": kind, "api_version": 1 if kind in _PYTHON_ONLY_KINDS else None}
+        for kind in sorted(kinds)
+    ]
+    try:
+        return resolve_omitted_ruleset_for_agents(None, projected)
+    except NoCompatibleRulesetError:
+        return BYTEFRAY_RULESET_ID
 
 
 __all__ = [
@@ -484,17 +619,20 @@ __all__ = [
     "BYTEFRAY_RULESET_V2_ID",
     "BYTEFRAY_RULESET_V3_ALPHA1_ID",
     "BYTEFRAY_RULESET_V4_ALPHA1_ID",
+    "OMITTED_RULESET_CANDIDATES",
     "RULESET_V1",
     "RULESET_V2",
     "RULESET_V2_ALPHA1",
     "RULESET_V2_ALPHA11",
     "RULESET_V3_ALPHA1",
     "RULESET_V4_ALPHA1",
+    "NoCompatibleRulesetError",
     "RulesetPolicy",
     "TerminationDecision",
     "TerminationReason",
     "UnknownRulesetError",
     "agent_supported_by_ruleset",
+    "resolve_omitted_ruleset_for_agents",
     "resolve_omitted_ruleset_id",
     "resolve_ruleset_policy",
 ]

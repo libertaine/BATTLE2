@@ -61,7 +61,8 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
-    resolve_omitted_ruleset_id,
+    NoCompatibleRulesetError,
+    resolve_omitted_ruleset_for_agents,
 )
 from battle_engine.starters import starter_agent_resource_dir
 
@@ -915,6 +916,27 @@ def _print_tool_error(agent_id: str, exc: AgentTestError) -> None:
     print(f"error: {diagnostic.message}", file=sys.stderr)
 
 
+def _entrant_compatibility_metadata(agent_id: str) -> dict[str, object]:
+    """Best-effort Ruleset-compatibility metadata for one CLI-named entrant.
+
+    Deliberately never raises for an unknown, unreadable, or malformed
+    agent: reporting those is ``_resolve_python_entrant``'s job, in this
+    module's own diagnostic vocabulary (``agent_unknown``,
+    ``agent_kind_unsupported``, ...), and it runs a moment later with the
+    full tool-error presentation around it. An id that cannot be resolved
+    here therefore falls back to the historical Python/Agent API v1
+    projection, which resolves the same Ruleset this CLI resolved before --
+    leaving the established error path to produce the real diagnostic
+    rather than pre-empting it with a resolution failure.
+    """
+
+    try:
+        spec = resolve_agent(get_data_root(), agent_id)
+    except (SystemExit, AgentValidationError, OSError, ValueError):
+        return {"agent_id": agent_id, "kind": "python", "api_version": 1}
+    return {"agent_id": agent_id, "kind": spec.kind, "api_version": spec.api_version}
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bytefray agents test",
@@ -989,14 +1011,38 @@ def main(argv: list[str] | None = None) -> int:
     # --timeout. Direct library callers (existing tests, other tooling)
     # keep test_agent()'s own unsupervised default unless they opt in.
     effective_timeout = DEFAULT_AGENT_TIMEOUT if args.timeout is None else args.timeout
-    # RC1 default-Ruleset-defect fix: `agents test` entrants (the tested
-    # agent and its opponent) are always Python -- _resolve_python_entrant
-    # rejects anything else -- so an omitted --ruleset resolves to current
-    # Python gameplay here, matching `bytefray run`'s own Python-only
-    # resolution. test_agent()'s own `ruleset_id=None` default (used by
-    # every direct library/test caller that never goes through this CLI)
-    # is untouched -- only this CLI boundary resolves the omission.
-    resolved_ruleset_id = resolve_omitted_ruleset_id(args.ruleset, {"python"})
+    # RC1 default-Ruleset-defect fix, made Agent-API-aware: `agents test`
+    # entrants are always Python -- _resolve_python_entrant rejects anything
+    # else -- but "Python" alone no longer identifies a Ruleset, since
+    # bytefray-rules-2 and bytefray-rules-4-alpha1 are both Python-only and
+    # differ by Agent API version. The tested agent's own declared metadata
+    # therefore selects the Ruleset, so an Agent API v2 agent reaches v4
+    # alpha1 without its author naming an internal Ruleset identity.
+    #
+    # The default reference opponent is deliberately not part of this
+    # roster: _reference_opponent_spec already supplies whichever Agent API
+    # generation the resolved Ruleset needs, so including it would be
+    # circular. An explicit --opponent is a real user-selected entrant and
+    # does participate.
+    #
+    # test_agent()'s own `ruleset_id=None` default (used by every direct
+    # library/test caller that never goes through this CLI) is untouched --
+    # only this CLI boundary resolves the omission.
+    roster = [_entrant_compatibility_metadata(args.agent_id)]
+    if args.opponent is not None:
+        roster.append(_entrant_compatibility_metadata(args.opponent))
+    try:
+        resolved_ruleset_id = resolve_omitted_ruleset_for_agents(args.ruleset, roster)
+    except NoCompatibleRulesetError as exc:
+        _print_tool_error(
+            args.agent_id,
+            AgentTestError(
+                RuntimeDiagnostic(
+                    code=exc.code, stage="configuration", message=str(exc)
+                )
+            ),
+        )
+        return 2
 
     try:
         outcome = test_agent(

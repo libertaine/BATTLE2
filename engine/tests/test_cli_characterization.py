@@ -127,6 +127,101 @@ def _write_python_agent_v2(root: Path, name: str) -> None:
     )
 
 
+def _scaffold(root: Path, name: str, api_version: int) -> None:
+    """Create a real scaffolded agent, exercising the shipped templates."""
+
+    from battle_engine.agent_scaffold import create_agent
+
+    create_agent(name, data_root=root, resource_root=ROOT, api_version=api_version)
+
+
+def test_run_omitted_ruleset_resolves_v4_alpha1_for_api_v2_agents(tmp_path, monkeypatch):
+    """H1: an Agent API v2 roster with --ruleset omitted must reach the
+    process-agent Ruleset automatically. Before this, resolution saw only
+    "python", chose bytefray-rules-2, and the match died on a compatibility
+    error the user had no obvious way to fix but to learn an internal
+    Ruleset identity and pass it by hand."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _scaffold(tmp_path, "v2_alpha", api_version=2)
+    _scaffold(tmp_path, "v2_beta", api_version=2)
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "5", "--arena", "128", "--seed", "7",
+        "--a-type", "v2_alpha", "--b-type", "v2_beta", "--b-start", "64",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    canonical = json.loads((replay.parent / "result.json").read_text())
+    assert canonical["ruleset_id"] == "bytefray-rules-4-alpha1"
+    header = json.loads(replay.read_text().splitlines()[0])
+    assert header["ruleset_id"] == "bytefray-rules-4-alpha1"
+
+
+def test_run_omitted_ruleset_still_resolves_v2_for_api_v1_agents(tmp_path, monkeypatch):
+    """The historical Agent API v1 default is untouched by API awareness."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _scaffold(tmp_path, "v1_alpha", api_version=1)
+    _scaffold(tmp_path, "v1_beta", api_version=1)
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "5", "--arena", "128", "--seed", "7",
+        "--a-type", "v1_alpha", "--b-type", "v1_beta", "--b-start", "64",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    canonical = json.loads((replay.parent / "result.json").read_text())
+    assert canonical["ruleset_id"] == "bytefray-rules-2"
+
+
+def test_run_omitted_ruleset_fails_closed_on_mixed_agent_api_roster(tmp_path, monkeypatch):
+    """H1 fail-closed requirement: no single Ruleset runs Agent API v1 and
+    v2 together, and that is knowable from discovered metadata, so
+    resolution must say so rather than guess one and let the other entrant
+    discover the mismatch later."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _scaffold(tmp_path, "v1_agent", api_version=1)
+    _scaffold(tmp_path, "v2_agent", api_version=2)
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "5", "--arena", "128", "--seed", "7",
+        "--a-type", "v1_agent", "--b-type", "v2_agent", "--b-start", "64",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2
+    assert result.stderr.startswith("ERROR:")
+    assert "No Bytefray Ruleset supports" in result.stderr
+    assert "Traceback (most recent call last)" not in result.stderr
+    assert not replay.exists()
+    assert not (replay.parent / "result.json").exists()
+
+
+def test_run_explicit_ruleset_still_overrides_automatic_resolution(tmp_path, monkeypatch):
+    """An explicit --ruleset stays authoritative, and an incompatible one
+    keeps the Phase 1 clean configuration-error presentation."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _scaffold(tmp_path, "v2_alpha", api_version=2)
+    _scaffold(tmp_path, "v2_beta", api_version=2)
+    replay = tmp_path / "match" / "replay.jsonl"
+    result = _run(
+        "-m", "battle_engine.cli",
+        "--ticks", "5", "--arena", "128", "--seed", "7",
+        "--a-type", "v2_alpha", "--b-type", "v2_beta", "--b-start", "64",
+        "--ruleset", "bytefray-rules-2",
+        "--replay", str(replay), "--quiet",
+        cwd=tmp_path,
+    )
+    assert result.returncode == 2
+    assert "does not support entrant metadata" in result.stderr
+    assert "Traceback (most recent call last)" not in result.stderr
+    assert not replay.exists()
+
+
 def test_run_reports_ruleset_agent_unsupported_cleanly_with_no_traceback(tmp_path, monkeypatch):
     """H2 regression: an API-v2 Python agent under a Ruleset that only
     supports API v1 entrants (``bytefray-rules-2``) must surface as a
