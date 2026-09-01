@@ -5,11 +5,16 @@
 deliberately kept free of anything executable so it can sit underneath the
 runtime, artifact, and evaluation layers without risk of an import cycle
 (see its own module docstring). This module is the next layer up: it pairs
-that identity with the *executable* Ruleset-v1 semantics that, as of v1.5
-Phase 4, have a single shared implementation -- entrant scheduling
-(``battle_engine.scheduler.run_sequential_quota``) and match termination
-decision/reason (``RulesetPolicy.resolve_termination``) -- and provides one
-fail-closed resolver from a Ruleset ID string to its policy.
+that identity with the *executable* Ruleset semantics that, as of v1.5
+Phase 4, have a single shared implementation -- entrant scheduling (all
+Rulesets dispatch through ``battle_engine.scheduler.run_chunked_quota`` via
+:meth:`RulesetPolicy.run_scheduler`; sequential-mode Rulesets supply a
+``chunk_size`` equal to the entrant quota with no start rotation, which
+preserves the original declaration/seat-order sequential-turn behavior that
+``run_sequential_quota`` -- still exported, unchanged, and directly tested,
+just no longer on this dispatch path -- used to provide directly) and match
+termination decision/reason (``RulesetPolicy.resolve_termination``) -- and
+provides one fail-closed resolver from a Ruleset ID string to its policy.
 
 This is deliberately a thin seam, not a Ruleset framework. Exactly one
 Ruleset exists (Ruleset v1); the resolver exists so runtime construction

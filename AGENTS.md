@@ -120,9 +120,15 @@ abbreviated.
   Obsolete predecessor variables are intentionally ignored.
 - Schema/version changes (replay, result, Agent API) are versioned
   explicitly — see [docs/REPLAY_SCHEMA.md](docs/REPLAY_SCHEMA.md),
-  [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md), and
-  [docs/AGENT_API_V1.md](docs/AGENT_API_V1.md). Bump the version and update
+  [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md),
+  [docs/AGENT_API_V1.md](docs/AGENT_API_V1.md), and
+  [docs/AGENT_API_V2.md](docs/AGENT_API_V2.md). Bump the version and update
   the schema doc rather than silently changing wire shape in place.
+- v4.0.0-alpha1's Ruleset (`bytefray-rules-4-alpha1`) and Agent API v2 are
+  alpha contracts, not replacements for the frozen historical ones above —
+  see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)'s "v4.0.0-alpha1
+  compatibility boundary" for exactly what stays frozen (API v1, Ruleset
+  v1/v2, schema-3 replays) alongside what v4 alpha adds.
 
 ## Git safety
 
@@ -163,9 +169,11 @@ abbreviated.
 | Linux wheel install | [docs/LINUX_INSTALL.md](docs/LINUX_INSTALL.md) |
 | Writing agents | [docs/AGENT_AUTHORING.md](docs/AGENT_AUTHORING.md) |
 | Debugging agents: trace, inspect, diverge, timeouts | [docs/AGENT_LAB.md](docs/AGENT_LAB.md) |
-| Agent API v1 contract | [docs/AGENT_API_V1.md](docs/AGENT_API_V1.md) |
-| Bytefray Ruleset v1 (gameplay semantics) | [docs/RULES.md](docs/RULES.md) |
-| Bytefray Ruleset v2 beta (gameplay semantics) | [docs/RULES_V2.md](docs/RULES_V2.md) |
+| Agent API v1 contract (historical, frozen) | [docs/AGENT_API_V1.md](docs/AGENT_API_V1.md) |
+| Agent API v2 contract (`declare_processes()`, `ObservationV2`, `ActionKindV2`) | [docs/AGENT_API_V2.md](docs/AGENT_API_V2.md) |
+| Bytefray Ruleset v1 (gameplay semantics, historical/frozen) | [docs/RULES.md](docs/RULES.md) |
+| Bytefray Ruleset v2 beta (gameplay semantics, historical/frozen) | [docs/RULES_V2.md](docs/RULES_V2.md) |
+| Bytefray Ruleset v4 alpha1 design/semantics -- frozen historical behavior for this alpha, not a live target for further gameplay iteration | [docs/V4_ALPHA1_DESIGN.md](docs/V4_ALPHA1_DESIGN.md) |
 | Result schema | [docs/RESULT_SCHEMA.md](docs/RESULT_SCHEMA.md) |
 | Replay schema | [docs/REPLAY_SCHEMA.md](docs/REPLAY_SCHEMA.md) |
 | Headless tournaments | [docs/TOURNAMENTS.md](docs/TOURNAMENTS.md) |

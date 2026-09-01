@@ -2,12 +2,15 @@
 
 ## Supported release line
 
-Bytefray follows a single stable release line. Security fixes are made
-against the latest stable release (currently the `2.x` line); there are no
-older maintained major versions. See [CHANGELOG.md](CHANGELOG.md) for release
-history and [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for what each
-major line guarantees (Ruleset, Agent API, and schema stability) do and do
-not cover.
+Bytefray follows a single active release line — there are no older
+maintained major versions receiving separate fixes; security fixes are made
+against that line's current state. See [CHANGELOG.md](CHANGELOG.md) for
+release history. As of this writing, that line is in the `4.x` alpha
+prerelease series (`4.0.0-alpha1`) — an alpha, not yet a stable release; the
+most recent stable release was `3.0.0`. See
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for what the current line's
+Ruleset, Agent API, and schema contracts do and do not guarantee as stable
+while v4 remains in alpha.
 
 ## Reporting a vulnerability
 
@@ -31,10 +34,13 @@ timeline has been agreed with the maintainer.
 input inside a hostile-code sandbox.** This is true for both supported
 agent formats:
 
-- **Python agents** (Agent API v1) run in-process or in a worker subprocess
-  with the same OS-level privileges and filesystem/network access as the
-  process running Bytefray. The optional worker-subprocess timeout used by
-  `bytefray agents validate`/`test` and Agent Lab (see
+- **Python agents** (Agent API v1 and Agent API v2) run in-process or in a
+  worker subprocess with the same OS-level privileges and filesystem/network
+  access as the process running Bytefray. Agent API v2 (used by Ruleset
+  `bytefray-rules-4-alpha1`) changes the Python programming contract, not
+  the execution/isolation model — the same non-sandboxed guarantees below
+  apply identically to both API generations. The optional worker-subprocess
+  timeout used by `bytefray agents validate`/`test` and Agent Lab (see
   [docs/AGENT_LAB.md](docs/AGENT_LAB.md)) exists to contain accidental
   non-returning `reset()`/`act()` calls during agent development — it is
   **development-time hang containment, not a security boundary**, and it is

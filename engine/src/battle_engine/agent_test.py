@@ -558,10 +558,16 @@ class GroupEntrantSpec:
     ``seat`` is the physical match-identity slot (mirrors ``TESTED_AGENT_
     SLOT``/``OPPONENT_SLOT``'s own convention, generalized: ``"A"``,
     ``"B"``, ``"C"``, ...) -- also the entrant's position in scheduler/
-    execution order: ``battle_engine.scheduler.run_sequential_quota``
-    executes states in exactly the order it is given, with no separate
-    "seat" concept at the engine level, so seat order *is* scheduler
-    order (see ``docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md``).
+    execution order for sequential-mode Rulesets: production dispatches
+    through ``battle_engine.scheduler.run_chunked_quota`` with
+    ``chunk_size`` equal to the entrant quota and no start rotation, which
+    preserves the same given-order execution ``run_sequential_quota`` used
+    to provide directly, with no separate "seat" concept at the engine
+    level, so seat order *is* scheduler order (see
+    ``docs/V2_0_BETA2_PHASE2_MULTI_ENTRANT_EVALUATION.md``). Ruleset v4
+    alpha1 is the one exception -- it uses ``run_chunked_quota`` with a
+    rotating start (``chunk_size=2``), so declared seat order and a given
+    tick's execution order diverge there.
     """
 
     seat: str

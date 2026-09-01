@@ -357,10 +357,15 @@ def seat_label(index: int) -> str:
 
     Mirrors ``agent_test.TESTED_AGENT_SLOT``/``OPPONENT_SLOT``'s existing
     ``"A"``/``"B"`` convention exactly -- a seat *is* the entrant's
-    ``MatchEntrant.agent_id`` for that position, and (per
-    ``battle_engine.scheduler.run_sequential_quota``, which executes states
-    in exactly the order it is given) also its scheduler/execution-order
-    position. There is no separate "execution order" axis to track.
+    ``MatchEntrant.agent_id`` for that position, and for sequential-mode
+    Rulesets also its scheduler/execution-order position: production
+    dispatches through ``battle_engine.scheduler.run_chunked_quota`` with
+    ``chunk_size`` equal to the entrant quota and no start rotation, which
+    preserves the same given-order execution ``run_sequential_quota`` used
+    to provide directly, so there is no separate "execution order" axis to
+    track. Ruleset v4 alpha1 is the one exception -- it uses
+    ``run_chunked_quota`` with a rotating start (``chunk_size=2``), so
+    declared seat order and a given tick's execution order diverge there.
     """
 
     if not (0 <= index < 26):
