@@ -16,6 +16,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
     resolve_omitted_ruleset_for_agents,
 )
 from battle_engine.starters import describe_bootstrap_errors, ensure_starter_agents
@@ -59,17 +60,21 @@ def _parser() -> argparse.ArgumentParser:
             BYTEFRAY_RULESET_ID,
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
+            BYTEFRAY_RULESET_V4_ALPHA2_ID,
         ],
         default=None,
         help=(
-            "gameplay Ruleset identity. If omitted, Python-only rosters use "
-            f"{BYTEFRAY_RULESET_V2_ID} and VM/blob-only rosters use "
-            f"{BYTEFRAY_RULESET_ID}; a mixed Python/VM roster without an "
-            f"explicit choice uses {BYTEFRAY_RULESET_ID}. "
-            f"{BYTEFRAY_RULESET_V2_ID} and {BYTEFRAY_RULESET_V4_ALPHA1_ID} "
-            "support Python entrants only; v4 requires Agent API v2. Affects "
-            "gameplay semantics and is recorded in each match's result/replay "
-            "artifacts."
+            "gameplay Ruleset identity. If omitted, Agent API v1 Python-only "
+            f"rosters use {BYTEFRAY_RULESET_V2_ID}, Agent API v2 Python-only "
+            f"rosters use {BYTEFRAY_RULESET_V4_ALPHA2_ID}, and VM/blob-only "
+            f"rosters use {BYTEFRAY_RULESET_ID}; a mixed Python/VM roster "
+            f"without an explicit choice uses {BYTEFRAY_RULESET_ID}. "
+            f"{BYTEFRAY_RULESET_V2_ID} and both v4 alphas support Python "
+            "entrants only; v4 requires Agent API v2. v4 alpha2 is the current v4 prerelease gameplay and is what an omitted Ruleset selects for an Agent API v2 roster; v4 alpha1 remains selectable by name to reproduce historical alpha1 matches. Under v4 "
+            "alpha2 each scheduled pairing is placed from its own derived "
+            "match seed rather than from the roster-wide seat spacing. "
+            "Affects gameplay semantics and is recorded in each match's "
+            "result/replay artifacts."
         ),
     )
     parser.add_argument("--output", type=Path)

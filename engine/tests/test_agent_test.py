@@ -158,19 +158,41 @@ def test_ruleset_kwarg_explicit_v2_produces_v2_artifact_identity(tmp_path):
     assert header.ruleset_id == "bytefray-rules-2"
 
 
-def test_cli_omitted_ruleset_resolves_v4_alpha1_for_a_scaffolded_api_v2_agent(
+def test_cli_omitted_ruleset_resolves_current_v4_for_a_scaffolded_api_v2_agent(
     tmp_path, monkeypatch, capsys
 ):
     """H1 end-to-end: `agents create --api-version 2` then `agents test`
-    with no --ruleset must run a real Ruleset v4 alpha1 match, with no
-    manifest hand-editing and without the author naming an internal Ruleset
-    identity anywhere."""
+    with no --ruleset must run a real v4 process match, with no manifest
+    hand-editing and without the author naming an internal Ruleset identity
+    anywhere. The identity it lands on is the current v4 prerelease
+    (alpha2 from v4.0.0-alpha2 onward), not whichever v4 alpha happened to
+    be newest when this test was written."""
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     scaffold_create_agent(
         "process_probe", data_root=tmp_path, resource_root=ROOT, api_version=2
     )
 
     exit_code = main(["process_probe", "--ticks", "10"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0, captured.err
+    assert "ruleset: bytefray-rules-4-alpha2" in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_cli_explicit_v4_alpha1_still_runs_the_historical_ruleset(
+    tmp_path, monkeypatch, capsys
+):
+    """Alpha2 taking the omitted-Ruleset default must not make alpha1
+    unreachable: naming it explicitly still runs an alpha1 match."""
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    scaffold_create_agent(
+        "process_probe", data_root=tmp_path, resource_root=ROOT, api_version=2
+    )
+
+    exit_code = main(
+        ["process_probe", "--ticks", "10", "--ruleset", "bytefray-rules-4-alpha1"]
+    )
     captured = capsys.readouterr()
 
     assert exit_code == 0, captured.err

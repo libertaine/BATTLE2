@@ -31,8 +31,13 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
+from typing import ClassVar
 
-from battle_engine.rules import BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V4_ALPHA1_ID
+from battle_engine.rules import (
+    BYTEFRAY_RULESET_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+)
 from battle_engine.scheduler import StateT, run_chunked_quota
 
 
@@ -95,6 +100,40 @@ class RulesetPolicy:
     scheduler_mode: str = "sequential"
     scheduler_chunk_size: int | None = None
     scheduler_rotate_start: bool = False
+    core_placement: str = "zero"
+    process_selection: str = "priority"
+
+    #: Every value :attr:`core_placement` may take. ``"zero"`` is every
+    #: Ruleset whose omitted start addresses historically defaulted to the
+    #: literal 0 (Ruleset v1 and the frozen v2/v3 alpha identities);
+    #: ``"seat_spread"`` is the evenly-spaced seat layout the RC2 placement
+    #: fix introduced for the permanent Ruleset v2 identity and every
+    #: Ruleset since; ``"seeded"`` is v4 alpha2's seed-derived,
+    #: minimum-separated placement.
+    CORE_PLACEMENT_MODES: ClassVar[frozenset[str]] = frozenset(
+        {"zero", "seat_spread", "seeded"}
+    )
+    #: Every value :attr:`process_selection` may take. ``"priority"`` is
+    #: Alpha1's frozen "always resume scanning from the first declared
+    #: process" rule; ``"round_robin"`` is Alpha2's order-independent
+    #: rotation. Only process Rulesets (Agent API v2) read this at all.
+    PROCESS_SELECTION_MODES: ClassVar[frozenset[str]] = frozenset(
+        {"priority", "round_robin"}
+    )
+
+    def __post_init__(self) -> None:
+        if self.core_placement not in self.CORE_PLACEMENT_MODES:
+            raise ValueError(
+                f"unknown core_placement {self.core_placement!r} for Ruleset "
+                f"{self.ruleset_id!r}; expected one of "
+                f"{sorted(self.CORE_PLACEMENT_MODES)!r}"
+            )
+        if self.process_selection not in self.PROCESS_SELECTION_MODES:
+            raise ValueError(
+                f"unknown process_selection {self.process_selection!r} for "
+                f"Ruleset {self.ruleset_id!r}; expected one of "
+                f"{sorted(self.PROCESS_SELECTION_MODES)!r}"
+            )
 
     def unsupported_runtime_kinds(self, kinds: Iterable[str]) -> frozenset[str]:
         """Return which of ``kinds`` this Ruleset does not support executing.
@@ -282,6 +321,7 @@ RULESET_V2 = RulesetPolicy(
     ruleset_id=BYTEFRAY_RULESET_V2_ID,
     supported_runtime_kinds=frozenset({"python"}),
     supported_python_api_versions=frozenset({1}),
+    core_placement="seat_spread",
 )
 
 
@@ -312,11 +352,17 @@ RULESET_V3_ALPHA1 = RulesetPolicy(
     ruleset_id=BYTEFRAY_RULESET_V3_ALPHA1_ID,
     supported_runtime_kinds=frozenset({"python"}),
     supported_python_api_versions=frozenset({1}),
+    core_placement="seat_spread",
 )
 
 
 # v4 research: K=2 chunked round-robin with deterministic rotating start.
 # R0/R0b/R0c selected this policy as the scheduler research closure.
+#
+# ``core_placement="seat_spread"`` and ``process_selection="priority"`` are
+# both spelled out rather than left to the field defaults: they are exactly
+# the two semantics v4 alpha2 changes, and alpha1's are frozen historical
+# behavior that must stay legible next to alpha2's below.
 RULESET_V4_ALPHA1 = RulesetPolicy(
     ruleset_id=BYTEFRAY_RULESET_V4_ALPHA1_ID,
     supported_runtime_kinds=frozenset({"python"}),
@@ -324,6 +370,55 @@ RULESET_V4_ALPHA1 = RulesetPolicy(
     scheduler_mode="chunked",
     scheduler_chunk_size=2,
     scheduler_rotate_start=True,
+    core_placement="seat_spread",
+    process_selection="priority",
+)
+
+
+# v4.0.0-alpha2. Identical to alpha1 on every axis this policy or any other
+# product surface exposes -- Agent API v2, Python-only, K=2 chunked
+# scheduling with a rotating entrant start, the same termination rule, the
+# same 8-cell core, the same reach legality, the same replay schema 4 --
+# except the two gameplay semantics the Phase 4 controlled gameplay study
+# produced evidence for (docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md Sections
+# F2/G, docs/V4_ALPHA2_DESIGN.md):
+#
+#   1. ``core_placement="seeded"`` -- entrant cores are placed from the
+#      match seed under a minimum-separation contract instead of alpha1's
+#      fixed evenly-spread seat layout, so ``own_core_base + arena_size //
+#      2`` is no longer a generally valid way to compute an opponent's core
+#      without observing anything. Phase 4 measured this as the single
+#      largest source of strategic distortion in the alpha1 ecology.
+#   2. ``process_selection="round_robin"`` -- an entrant's own processes
+#      take their action slots in rotation rather than always offering
+#      freed-up mid-tick quota to the earliest-declared eligible process,
+#      removing an undocumented, accidental declaration-order priority
+#      lever worth up to ~14 percentage points of win rate.
+#
+# Quota allocation, quota redistribution, and disruption eligibility are
+# deliberately untouched by (2): round-robin changes *which* eligible
+# process receives the next slot, never how many slots each is owed.
+RULESET_V4_ALPHA2 = RulesetPolicy(
+    ruleset_id=BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    supported_runtime_kinds=frozenset({"python"}),
+    supported_python_api_versions=frozenset({2}),
+    scheduler_mode="chunked",
+    scheduler_chunk_size=2,
+    scheduler_rotate_start=True,
+    core_placement="seeded",
+    process_selection="round_robin",
+)
+
+
+# Which Ruleset identities execute on the Agent API v2 process runtime
+# (``battle_engine.process_runtime.ProcessMatchController``) rather than the
+# Agent API v1 ``PythonEntrantController``. A finite, explicit set for the
+# same reason ``_RULESET_POLICIES`` is a finite table -- and the one place
+# ``match_service`` asks the question, so adding a future process Ruleset
+# never means hunting down scattered ``== BYTEFRAY_RULESET_V4_ALPHA1_ID``
+# comparisons.
+PROCESS_RULESET_IDS: frozenset[str] = frozenset(
+    {BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID}
 )
 
 
@@ -363,6 +458,7 @@ _RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
     RULESET_V2.ruleset_id: RULESET_V2,
     RULESET_V3_ALPHA1.ruleset_id: RULESET_V3_ALPHA1,
     RULESET_V4_ALPHA1.ruleset_id: RULESET_V4_ALPHA1,
+    RULESET_V4_ALPHA2.ruleset_id: RULESET_V4_ALPHA2,
 }
 
 
@@ -461,9 +557,21 @@ class NoCompatibleRulesetError(ValueError):
 # the product preference -- current Python gameplay first, then the
 # process-agent preview, then the historical compatibility identity that is
 # the only one executing VM/blob entrants.
+#
+# v4 alpha2 replaces v4 alpha1 in the process-agent preview slot rather than
+# being appended after it. Both v4 alphas accept exactly the same rosters
+# (Python-only, Agent API v2), so a candidate walk that reached alpha1 first
+# would make alpha2 unreachable, and one that listed alpha1 after alpha2
+# would list an entry no roster can ever select. The prerelease intent this
+# tuple encodes is "an omitted Ruleset gets the *newest intended* v4
+# development semantics" -- exactly what put alpha1 here when it was the
+# newest. alpha1 is not hidden by this: it stays fully registered in
+# ``_RULESET_POLICIES``, explicitly selectable by name from every CLI and
+# Designer surface, and is still what every persisted alpha1 artifact
+# resolves to -- see docs/COMPATIBILITY.md's v4 alpha section.
 OMITTED_RULESET_CANDIDATES: tuple[str, ...] = (
     BYTEFRAY_RULESET_V2_ID,
-    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
     BYTEFRAY_RULESET_ID,
 )
 
@@ -624,13 +732,16 @@ __all__ = [
     "BYTEFRAY_RULESET_V2_ID",
     "BYTEFRAY_RULESET_V3_ALPHA1_ID",
     "BYTEFRAY_RULESET_V4_ALPHA1_ID",
+    "BYTEFRAY_RULESET_V4_ALPHA2_ID",
     "OMITTED_RULESET_CANDIDATES",
+    "PROCESS_RULESET_IDS",
     "RULESET_V1",
     "RULESET_V2",
     "RULESET_V2_ALPHA1",
     "RULESET_V2_ALPHA11",
     "RULESET_V3_ALPHA1",
     "RULESET_V4_ALPHA1",
+    "RULESET_V4_ALPHA2",
     "NoCompatibleRulesetError",
     "RulesetPolicy",
     "TerminationDecision",

@@ -54,6 +54,8 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    PROCESS_RULESET_IDS,
     RulesetPolicy,
     resolve_ruleset_policy,
 )
@@ -356,7 +358,17 @@ class OverlappingCoreError(ValueError):
 # alpha identities are deliberately still excluded: their execution
 # semantics are frozen.
 _CORE_PLACEMENT_GUARDED_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_V3_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA1_ID}
+    {
+        BYTEFRAY_RULESET_V2_ID,
+        BYTEFRAY_RULESET_V3_ALPHA1_ID,
+        BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        # v4 alpha2 keeps this guard for exactly alpha1's reason, and needs
+        # it more: its own seeded placement is separation-checked by
+        # construction, but an *explicitly* supplied pair of starts bypasses
+        # that entirely, and this remains the one check every caller passes
+        # -- including direct ``MatchRequest`` construction.
+        BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    }
 )
 
 
@@ -1101,7 +1113,12 @@ def _finalize_native_artifacts(
     runtime_kind = cast(RuntimeKind, request.entrants[0].kind)
     resolved_ruleset_id = _resolve_ruleset_id(request)
 
-    replay_schema_version = 4 if resolved_ruleset_id == BYTEFRAY_RULESET_V4_ALPHA1_ID else 3
+    # Schema 4 is the process-agent replay shape, not one Ruleset's: v4
+    # alpha2 records the identical schema-4 structure alpha1 does, so this
+    # asks which *runtime* produced the replay rather than naming Rulesets
+    # one at a time. See docs/V4_ALPHA2_DESIGN.md's schema section for why
+    # alpha2 does not bump the replay schema.
+    replay_schema_version = 4 if resolved_ruleset_id in PROCESS_RULESET_IDS else 3
     header: ReplayHeader | None = None
     ticks: list[Any] = []
     for record in iter_replay(source_replay_path):
@@ -1360,7 +1377,7 @@ class NativeMatchService:
                 _run_v4_process_match(
                     request, replay_path, summary_path, ruleset_policy
                 )
-                if ruleset_policy.ruleset_id == BYTEFRAY_RULESET_V4_ALPHA1_ID
+                if ruleset_policy.ruleset_id in PROCESS_RULESET_IDS
                 else _run_python_match(
                     request, replay_path, summary_path, ruleset_policy
                 )

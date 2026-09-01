@@ -18,6 +18,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ALPHA1_ID,
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
     OMITTED_RULESET_CANDIDATES,
     RULESET_V1,
     RULESET_V2,
@@ -245,9 +246,13 @@ _VM = {"agent_id": "runner", "kind": "builtin", "api_version": None}
         ([_python(1)], BYTEFRAY_RULESET_V2_ID),
         ([_python(1, "a"), _python(1, "b")], BYTEFRAY_RULESET_V2_ID),
         # Agent API v2 reaches the process-agent Ruleset without the author
-        # ever naming it -- the H1 defect this resolution exists to fix.
-        ([_python(2)], BYTEFRAY_RULESET_V4_ALPHA1_ID),
-        ([_python(2, "a"), _python(2, "b")], BYTEFRAY_RULESET_V4_ALPHA1_ID),
+        # ever naming it -- the H1 defect this resolution exists to fix. The
+        # identity it reaches is the *newest intended* v4 development
+        # Ruleset, which is alpha2 from v4.0.0-alpha2 onward; alpha1 stays
+        # explicitly selectable (asserted directly below) but is no longer
+        # what an omitted Ruleset lands on.
+        ([_python(2)], BYTEFRAY_RULESET_V4_ALPHA2_ID),
+        ([_python(2, "a"), _python(2, "b")], BYTEFRAY_RULESET_V4_ALPHA2_ID),
         # VM/blob composition keeps resolving to the only Ruleset that runs it.
         ([_VM], BYTEFRAY_RULESET_ID),
         ([_VM, _VM], BYTEFRAY_RULESET_ID),
@@ -321,10 +326,55 @@ def test_automatic_resolution_never_selects_an_experimental_identity() -> None:
 
     assert OMITTED_RULESET_CANDIDATES == (
         BYTEFRAY_RULESET_V2_ID,
-        BYTEFRAY_RULESET_V4_ALPHA1_ID,
+        BYTEFRAY_RULESET_V4_ALPHA2_ID,
         BYTEFRAY_RULESET_ID,
     )
     assert all("alpha" not in candidate for candidate in OMITTED_RULESET_CANDIDATES[:1])
+    # The v4 prerelease slot holds exactly one identity. Listing both v4
+    # alphas would make whichever came second unreachable (they accept
+    # identical rosters), so the tuple must never grow a second one rather
+    # than quietly carrying a candidate no roster can select.
+    assert (
+        sum(
+            candidate.startswith("bytefray-rules-4")
+            for candidate in OMITTED_RULESET_CANDIDATES
+        )
+        == 1
+    )
+
+
+def test_v4_alpha1_remains_explicitly_selectable_after_alpha2_takes_the_default() -> None:
+    """Alpha2 becoming the automatic v4 choice must not retire alpha1.
+
+    Automatic resolution moving to alpha2 is a *default* change, not a
+    compatibility removal: every historical alpha1 match must stay
+    reproducible by naming alpha1 explicitly, and alpha1's policy must keep
+    executing with its own frozen semantics rather than resolving to alpha2.
+    """
+
+    assert (
+        resolve_omitted_ruleset_for_agents(BYTEFRAY_RULESET_V4_ALPHA1_ID, [_python(2)])
+        == BYTEFRAY_RULESET_V4_ALPHA1_ID
+    )
+    alpha1 = resolve_ruleset_policy(BYTEFRAY_RULESET_V4_ALPHA1_ID)
+    alpha2 = resolve_ruleset_policy(BYTEFRAY_RULESET_V4_ALPHA2_ID)
+    assert alpha1.ruleset_id != alpha2.ruleset_id
+    assert (alpha1.core_placement, alpha1.process_selection) == (
+        "seat_spread",
+        "priority",
+    )
+    assert (alpha2.core_placement, alpha2.process_selection) == (
+        "seeded",
+        "round_robin",
+    )
+    # Everything else about the two policies is deliberately identical.
+    assert alpha1.supported_runtime_kinds == alpha2.supported_runtime_kinds
+    assert (
+        alpha1.supported_python_api_versions == alpha2.supported_python_api_versions
+    )
+    assert alpha1.scheduler_mode == alpha2.scheduler_mode
+    assert alpha1.scheduler_chunk_size == alpha2.scheduler_chunk_size
+    assert alpha1.scheduler_rotate_start == alpha2.scheduler_rotate_start
 
 
 @pytest.mark.parametrize(

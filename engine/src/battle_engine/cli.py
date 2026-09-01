@@ -30,6 +30,7 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
     NoCompatibleRulesetError,
     resolve_omitted_ruleset_for_agents,
 )
@@ -207,15 +208,17 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
             BYTEFRAY_RULESET_ID,
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
+            BYTEFRAY_RULESET_V4_ALPHA2_ID,
         ],
         default=None,
         help=(
-            "gameplay Ruleset identity. If omitted, Python-only matches use "
-            f"{BYTEFRAY_RULESET_V2_ID} and VM/blob matches use "
-            f"{BYTEFRAY_RULESET_ID}; a mixed Python/VM match without an "
+            "gameplay Ruleset identity. If omitted, Agent API v1 Python-only "
+            f"matches use {BYTEFRAY_RULESET_V2_ID}, Agent API v2 Python-only "
+            f"matches use {BYTEFRAY_RULESET_V4_ALPHA2_ID}, and VM/blob matches "
+            f"use {BYTEFRAY_RULESET_ID}; a mixed Python/VM match without an "
             f"explicit choice uses {BYTEFRAY_RULESET_ID}. "
-            f"{BYTEFRAY_RULESET_V2_ID} and {BYTEFRAY_RULESET_V4_ALPHA1_ID} "
-            "support Python entrants only; v4 requires Agent API v2. Affects "
+            f"{BYTEFRAY_RULESET_V2_ID} and both v4 alphas support Python "
+            "entrants only; v4 requires Agent API v2. v4 alpha2 is the current v4 prerelease gameplay and is what an omitted Ruleset selects for an Agent API v2 roster; v4 alpha1 remains selectable by name to reproduce historical alpha1 matches. Affects "
             "gameplay semantics and is recorded in the match's result/replay "
             "artifacts."
         ),
@@ -736,6 +739,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         arena_size=cfg.arena_size,
         entrant_count=entrant_count,
         supplied_starts=supplied_starts,
+        # The same seed this match actually runs under, so a v4 alpha2
+        # match's seed-derived core placement is reproducible from nothing
+        # but its recorded inputs. Inert for every other Ruleset.
+        seed=cfg.seed,
     )
     args.a_start, args.b_start = resolved_starts[0], resolved_starts[1]
     if c_requested:
