@@ -617,6 +617,142 @@ def print_summary(condition: str, summary: dict[str, Any]) -> None:
 
 
 # --------------------------------------------------------------------------
+# Shard merge
+# --------------------------------------------------------------------------
+
+
+def _cell_key(record: dict[str, Any]) -> tuple:
+    return (
+        record["agent_a"],
+        record["agent_b"],
+        record["arena_size"],
+        record["seed"],
+        record["orientation"],
+    )
+
+
+def merge_shards(
+    inputs: list[Path], output: Path, expected: int | None
+) -> list[dict[str, Any]]:
+    """Fold seed-partitioned shard files into one condition file.
+
+    A condition may be executed as concurrent workers over disjoint seed
+    ranges when a single-threaded run would take too long. Every worker
+    covers the full pair x arena x orientation matrix for its own seeds, so
+    no matrix cell is ever split across workers -- but a shard set may still
+    overlap an earlier partial run of the same condition, so cells are
+    de-duplicated by identity rather than concatenated blindly.
+
+    First occurrence wins, and duplicates are counted and reported. Every
+    match is deterministic in its own recorded inputs and shares no state
+    with any other, so which worker produced a given cell cannot change it;
+    a duplicate that *disagreed* would mean the study was not reproducible,
+    so disagreements are reported as errors rather than silently resolved.
+    """
+
+    seen: dict[tuple, dict[str, Any]] = {}
+    duplicates = 0
+    conflicts: list[tuple] = []
+    for path in inputs:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            key = _cell_key(record)
+            if key in seen:
+                duplicates += 1
+                previous = seen[key]
+                if (
+                    previous["winner_agent"],
+                    previous["ticks_run"],
+                    previous["termination_reason"],
+                ) != (
+                    record["winner_agent"],
+                    record["ticks_run"],
+                    record["termination_reason"],
+                ):
+                    conflicts.append(key)
+                continue
+            seen[key] = record
+
+    print(
+        f"merged {len(inputs)} shard file(s): {len(seen)} unique cells, "
+        f"{duplicates} duplicate(s) discarded, {len(conflicts)} conflict(s)"
+    )
+    if conflicts:
+        raise SystemExit(
+            f"non-deterministic duplicate cells found: {conflicts[:5]!r} "
+            "-- the study is not reproducible and must not be summarised"
+        )
+    if expected is not None and len(seen) != expected:
+        raise SystemExit(
+            f"expected {expected} unique cells, merged {len(seen)}; "
+            "the matrix is incomplete"
+        )
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", encoding="utf-8") as handle:
+        for key in sorted(seen, key=lambda item: tuple(map(str, item))):
+            handle.write(json.dumps(seen[key]) + "\n")
+    print(f"wrote {output}")
+    return list(seen.values())
+
+
+# --------------------------------------------------------------------------
+# Paired alpha1/alpha2 comparison
+# --------------------------------------------------------------------------
+
+
+def compare(summaries: dict[str, dict[str, Any]]) -> None:
+    """Print the Phase 5L side-by-side table.
+
+    Deliberately a *paired* comparison over an identical matrix: same roster,
+    pairs, arenas, seeds, and both orientations in both conditions, so a
+    difference in any row is the Ruleset rather than a difference in what was
+    measured.
+    """
+
+    alpha1, alpha2 = summaries["alpha1"], summaries["alpha2"]
+    rows = [
+        ("matches", f"{alpha1['matches']}", f"{alpha2['matches']}"),
+        ("median match ticks", f"{alpha1['median_ticks']:.1f}", f"{alpha2['median_ticks']:.1f}"),
+        ("mean match ticks", f"{alpha1['mean_ticks']:.1f}", f"{alpha2['mean_ticks']:.1f}"),
+        ("tick-limit rate", f"{alpha1['tick_limit_rate']:.1%}", f"{alpha2['tick_limit_rate']:.1%}"),
+        ("draw rate", f"{alpha1['draw_rate']:.1%}", f"{alpha2['draw_rate']:.1%}"),
+        ("contact rate", f"{alpha1['contact_rate']:.1%}", f"{alpha2['contact_rate']:.1%}"),
+        (
+            "median first contact tick",
+            str(alpha1["median_first_contact_tick"]),
+            str(alpha2["median_first_contact_tick"]),
+        ),
+    ]
+    print("\n=== Phase 5L: alpha1 vs alpha2 (paired, identical matrix) ===")
+    print(f"{'metric':32} {'alpha1':>14} {'alpha2':>14}")
+    for label, a, b in rows:
+        print(f"{label:32} {a:>14} {b:>14}")
+
+    def agent_rows(field: str, fmt: str) -> None:
+        print(f"\n-- {field} --")
+        print(f"{'agent':28} {'alpha1':>12} {'alpha2':>12} {'delta':>12}")
+        for name in sorted(set(alpha1["agents"]) | set(alpha2["agents"])):
+            a = alpha1["agents"].get(name, {}).get(field)
+            b = alpha2["agents"].get(name, {}).get(field)
+            if a is None or b is None:
+                continue
+            print(
+                f"{name:28} {format(a, fmt):>12} {format(b, fmt):>12} "
+                f"{format(b - a, '+' + fmt):>12}"
+            )
+
+    agent_rows("win_rate", ".1%")
+    agent_rows("seat_delta", ".1%")
+    agent_rows("mean_moves", ".1f")
+    agent_rows("mean_unique_anchors", ".1f")
+    agent_rows("mean_full_lockout_ticks", ".1f")
+    agent_rows("matches_with_long_lockout", "d")
+
+
+# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
@@ -643,8 +779,18 @@ def main(argv: list[str] | None = None) -> int:
     summarizer = sub.add_parser("summarize")
     summarizer.add_argument("--input", type=Path, required=True)
     summarizer.add_argument("--output", type=Path, required=True)
+    summarizer.add_argument("--compare", action="store_true")
+
+    merger = sub.add_parser("merge")
+    merger.add_argument("--inputs", type=Path, nargs="+", required=True)
+    merger.add_argument("--output", type=Path, required=True)
+    merger.add_argument("--expect", type=int, default=None)
 
     args = parser.parse_args(argv)
+
+    if args.command == "merge":
+        merge_shards(list(args.inputs), args.output, args.expect)
+        return 0
 
     if args.command == "run":
         run_condition(
@@ -657,6 +803,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    summaries: dict[str, dict[str, Any]] = {}
     for path in sorted(args.input.glob("*.jsonl")):
         records = [
             json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
@@ -664,8 +811,14 @@ def main(argv: list[str] | None = None) -> int:
         summary = summarize(records)
         if not summary:
             continue
+        summaries[path.stem] = summary
         write_summary(path.stem, summary, args.output)
         print_summary(path.stem, summary)
+    if args.compare and {"alpha1", "alpha2"} <= set(summaries):
+        compare(summaries)
+        (args.output / "alpha1_vs_alpha2.json").write_text(
+            json.dumps(summaries, indent=2, sort_keys=True), encoding="utf-8"
+        )
     return 0
 
 
