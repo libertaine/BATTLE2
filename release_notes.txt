@@ -1,0 +1,18 @@
+# Bytefray v4.0.0-alpha1
+
+This is the first production alpha of the spatial multi-process game.
+
+## Key Features
+- **Spatial multi-process entrants**: Agents can declare independent spatial process anchors.
+- **Agent API v2**: Introduces absolute READ/WRITE addresses and signed relative MOVE deltas.
+- **Local process reach and MOVE**: Agents operate within localized boundaries.
+- **Local enemy-anchor detection**: Observe other process anchors in local proximity.
+- **Temporary process disruption**: D=1 exact-anchor disruption with fair quota redistribution.
+- **Schema-4 process replay**: Replays now trace full spatial process state and disruption events.
+- **New v4 starter population**: Includes 4_claimer, 4_concentrated_attacker, 4_local_defender, 4_scout, and 4_defender_scout.
+
+## Important compatibility changes
+- Historical v1-v3 execution and artifact compatibility remains intact via API v1.
+- The new v4 mechanics must be explicitly requested using the ytefray-rules-4-alpha1 ruleset and pi_version: 2.
+
+*This is an alpha release. We welcome gameplay feedback!*
