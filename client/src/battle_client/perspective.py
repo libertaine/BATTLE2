@@ -134,6 +134,20 @@ class PerspectiveManager:
         return tuple(sorted(self._availability.derivation.binding.entrant_identities))
 
     @property
+    def derivation(self) -> SpectatorDerivation | None:
+        """The already-verified, already-derived event stream, if available.
+
+        This is the same ``SpectatorDerivation`` produced once by
+        ``_probe_availability``'s ``analyze_pair`` call -- exposed so a
+        second consumer (the spectator Director) can build its plans from it
+        directly instead of re-running ``verify_pair``/``derive_events``,
+        which costs seconds on a large match (see the Phase 6 research
+        document's `analyze_pair` timing). ``None`` when perspective is
+        unavailable.
+        """
+        return self._availability.derivation
+
+    @property
     def mode(self) -> str:
         """Current view mode: 'broadcast' or an entrant identity string."""
         return self._mode

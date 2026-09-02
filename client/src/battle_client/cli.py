@@ -104,6 +104,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="--renderer pygame only: initial entrant perspective ('broadcast' or entrant ID like 'A')",
     )
+    p.add_argument(
+        "--director",
+        action="store_true",
+        help="--renderer pygame only: enable automatic Director playback pacing "
+        "(requires a trace; off by default -- press G in-viewer to toggle)",
+    )
     args = p.parse_args(argv)
 
     replay_path = Path(args.replay).expanduser().resolve()
@@ -173,6 +179,30 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
             initial_mode=args.perspective or "broadcast",
         )
 
+    # DirectorManager is built from the PerspectiveManager's already-computed
+    # SpectatorDerivation (Sec. 25/27) rather than re-running verify_pair/
+    # derive_events -- it never pays that cost a second time. Constructed
+    # even when --director was not passed (building a plan is a cheap single
+    # pass over already-derived events, not the expensive analysis pass), so
+    # the in-viewer G key can turn Director on without a restart; only the
+    # *initial* enabled state depends on the flag.
+    from battle_client.director import DirectorManager
+
+    director_manager = None
+    if trace_path is not None:
+        director_manager = DirectorManager(
+            perspective_manager.derivation if perspective_manager is not None else None,
+            unavailable_reason=(
+                perspective_manager.status_message if perspective_manager is not None else None
+            ),
+        )
+    if args.director and (director_manager is None or not director_manager.available):
+        reason = director_manager.status_message if director_manager is not None else (
+            "no trace supplied and no companion trace.jsonl beside "
+            f"{replay_path.name}."
+        )
+        print(f"[battle_client] Director unavailable: {reason}", file=sys.stderr)
+
     # An explicitly requested perspective must never fail silently.  The viewer
     # still opens on the canonical replay -- ordinary replay never depends on a
     # trace -- but the user is told why Perspective Cam is not available rather
@@ -215,6 +245,8 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
             initial_speed=args.speed,
             perspective_manager=perspective_manager,
             initial_perspective=args.perspective,
+            director_manager=director_manager,
+            initial_director_enabled=args.director,
         )
     except KeyboardInterrupt:
         pass

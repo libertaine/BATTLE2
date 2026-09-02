@@ -467,15 +467,18 @@ def format_entrant_card_lines(
 
 COMPACT_HELP_TEXT = "Space play/pause · arrows step · drag timeline · ? controls"
 # The footer's help panel is a fixed 3 lines (status + these 2) at the
-# supported 640px-wide minimum, and this second line already sits at its
-# character budget there (see test_expanded_help_replaces_event_and_graph_
-# without_covering_arena). Adding the Phase 6 perspective bindings (1-9
-# direct select, D/F3 debug overlay) meant dropping "drag timeline" from
-# this line rather than growing to an unsupported 4th line or a wider
-# column; the compact hint above still advertises dragging.
+# supported 640px-wide minimum, and this second line already sat at its
+# character budget there before Phase 7 (see test_expanded_help_replaces_
+# event_and_graph_without_covering_arena) -- Phase 6 dropped "drag timeline"
+# from this line to make room for the perspective bindings rather than
+# growing to an unsupported 4th line or a wider column (the compact hint
+# above still advertises dragging). Phase 7's "G director" addition measured
+# 5 characters of remaining slack at the 640px minimum before adding it
+# (see the Phase 7 research document); if a future addition finds no slack
+# left, drop something here rather than truncating silently.
 EXPANDED_HELP_LINES = (
     "Space play/pause · arrows step · Shift+arrows seek 10 · Home/End first/last · Esc/Q quit",
-    "+/- speed · [/] zoom · 0 fit · T trails · V/1-9 persp · D/F3 debug · ? close",
+    "+/- speed · [/] zoom · 0 fit · T trails · V/1-9 persp · D/F3 debug · G dir · ? close",
 )
 
 
@@ -536,10 +539,30 @@ def format_match_header_lines(
     return (line1, line2)
 
 
-def format_playback_line(*, tick: int, final_tick: int | None, status_label: str, speed: float) -> str:
-    """The footer's first line: current tick / total, playback state, speed."""
+def format_playback_line(
+    *,
+    tick: int,
+    final_tick: int | None,
+    status_label: str,
+    speed: float,
+    director_label: str | None = None,
+) -> str:
+    """The footer's first line: current tick / total, playback state, speed.
+
+    ``director_label`` (Phase 7), when given, is appended as a short
+    restrained suffix rather than a new footer line -- the footer's line
+    budget is already fully used at the documented 640x480 minimum (see the
+    Phase 6 research document), so a Director indicator piggybacks on this
+    existing line instead of claiming one of its own. It is the last thing
+    in the string, so the existing tick/status/speed information -- already
+    relied on by manual QA and clicks -- survives truncation on an
+    undersized window; only the suffix itself is at risk of being clipped.
+    """
     total = "?" if final_tick is None else str(final_tick)
-    return f"Tick {tick}/{total}   [{status_label}]   speed {speed:g}x"
+    line = f"Tick {tick}/{total}   [{status_label}]   speed {speed:g}x"
+    if director_label:
+        line += f"   {director_label}"
+    return line
 
 
 # ---------------------------------------------------------------------------

@@ -226,6 +226,20 @@ class PlaybackController:
             self.playing = False
             self._accumulated = 0.0
 
+    def reset_accumulator(self) -> None:
+        """Discard any partially-accumulated tick-advance time.
+
+        Exists for an external pacing layer (the spectator Director, see
+        ``battle_client.director``) that temporarily suspends calling
+        ``update()`` -- for an impact hold, for example -- and needs to
+        discard the real time that passed during that suspension so it is
+        not misread as a burst of accumulated ticks once ``update()``
+        resumes. Ordinary playback never needs to call this directly; every
+        discrete navigation method above already resets the accumulator
+        inline as part of its own pause.
+        """
+        self._accumulated = 0.0
+
     # ---------- internals: recorded-tick-aware navigation ----------
 
     def _adjacent_recorded_tick(self, direction: int) -> int | None:

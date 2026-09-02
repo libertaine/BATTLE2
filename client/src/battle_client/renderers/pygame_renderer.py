@@ -61,6 +61,7 @@ from battle_client.analysis import (
     selected_cell_info,
     timeline_event_marks,
 )
+from battle_client.director import DirectorManager, PlaybackDirectorRuntime
 from battle_client.hud_layout import (
     CARD_LINE_HEIGHT,
     COMPACT_HELP_TEXT,
@@ -576,6 +577,8 @@ class KeyAction:
     cycle_perspective: bool = False
     select_perspective_index: int | None = None
     toggle_perspective_debug: bool = False
+    toggle_director: bool = False
+    restarted: bool = False
 
 
 def dispatch_key(
@@ -600,6 +603,7 @@ def dispatch_key(
         controller.seek_relative(-10) if shift else controller.step_backward()
     elif key == pg.K_HOME:
         controller.restart()
+        return KeyAction(restarted=True)
     elif key == pg.K_END:
         controller.jump_to_end()
     elif key in (pg.K_PLUS, pg.K_EQUALS, pg.K_PAGEUP):
@@ -616,6 +620,8 @@ def dispatch_key(
         return KeyAction(cycle_perspective=True)
     elif key in (getattr(pg, "K_F3", -3), pg.K_d):
         return KeyAction(toggle_perspective_debug=True)
+    elif key == pg.K_g:
+        return KeyAction(toggle_director=True)
     elif key == getattr(pg, "K_1", -10) and not shift:
         return KeyAction(select_perspective_index=0)
     elif key == getattr(pg, "K_2", -11) and not shift:
@@ -775,6 +781,11 @@ class PygameRenderer:
         self._perspective_manager: PerspectiveManager | None = None
         self._perspective_debug: bool = False
 
+        # Spectator Director state (Phase 7). Off by default even when a
+        # DirectorManager is supplied -- see the CLI's --director flag.
+        self._director_manager: DirectorManager | None = None
+        self._director_enabled: bool = False
+
     # ---------- grid geometry (pure, presentation-only) ----------
 
     def _resolve_grid_dims(self, arena_cells: int) -> tuple[int, int]:
@@ -845,6 +856,8 @@ class PygameRenderer:
         initial_speed: float | None = None,
         perspective_manager: PerspectiveManager | None = None,
         initial_perspective: str | None = None,
+        director_manager: DirectorManager | None = None,
+        initial_director_enabled: bool = False,
     ) -> None:
         """Open an interactive window and play ``session`` until the user
         quits. Blocks until then. Raises ``RendererDependencyError`` if
@@ -862,6 +875,13 @@ class PygameRenderer:
         self._perspective_manager = perspective_manager
         if perspective_manager is not None and initial_perspective is not None:
             perspective_manager.set_mode(initial_perspective)
+
+        self._director_manager = director_manager
+        self._director_enabled = (
+            initial_director_enabled
+            and director_manager is not None
+            and director_manager.available
+        )
 
         self.arena = session.header.config.arena_size if session.header else 0
         self.grid_cols, self.grid_rows = self._resolve_grid_dims(self.arena)
@@ -1048,6 +1068,25 @@ class PygameRenderer:
         if self.scale != old:
             self._resize_window()
 
+    def _active_director_runtime(self) -> PlaybackDirectorRuntime | None:
+        """The Director runtime for the currently-selected view mode, if
+        Director pacing is enabled and available for that mode.
+
+        Broadcast and each entrant's Perspective have independent cached
+        runtimes (`DirectorManager.runtime_for`), so cutting between modes
+        mid-match never shares or resets another mode's own hold-consumption
+        history -- this lookup simply follows whichever mode
+        ``self._perspective_manager`` currently reports.
+        """
+        if not self._director_enabled or self._director_manager is None:
+            return None
+        mode_key = (
+            self._perspective_manager.mode
+            if self._perspective_manager is not None
+            else BROADCAST_MODE
+        )
+        return self._director_manager.runtime_for(mode_key)
+
     # ---------- main loop ----------
 
     def _loop(self, controller: PlaybackController) -> None:
@@ -1061,6 +1100,7 @@ class PygameRenderer:
                     running = False
                     break
                 if event.type == pg.KEYDOWN:
+                    speed_before = controller.speed
                     action = dispatch_key(pg, event.key, event.mod, controller)
                     if action.quit_requested:
                         running = False
@@ -1087,6 +1127,22 @@ class PygameRenderer:
                             self._perspective_manager.set_mode(entrant_id)
                     if action.toggle_perspective_debug:
                         self._perspective_debug = not self._perspective_debug
+                    if (
+                        action.toggle_director
+                        and self._director_manager is not None
+                        and self._director_manager.available
+                    ):
+                        self._director_enabled = not self._director_enabled
+                    if action.restarted and self._director_manager is not None:
+                        self._director_manager.restart()
+                    if controller.speed != speed_before:
+                        # Manual speed selection is an explicit user action
+                        # (Sec. 21): it must win outright rather than being
+                        # silently overridden by the Director's own rate on
+                        # the very next frame, so it disables the Director
+                        # instead of fighting it. The user can re-enable
+                        # with G if they want automatic pacing back.
+                        self._director_enabled = False
                 elif event.type in (pg.VIDEORESIZE, getattr(pg, "WINDOWRESIZED", 32769)):
                     w, h = getattr(event, "size", self.screen.get_size())
                     self._handle_window_resize((w, h))
@@ -1106,7 +1162,11 @@ class PygameRenderer:
             if self._timeline_scrubbing:
                 self._timeline_seek(controller, pg.mouse.get_pos())
 
-            controller.update(elapsed_ms / 1000.0)
+            director_runtime = self._active_director_runtime()
+            if director_runtime is not None:
+                director_runtime.update(controller, elapsed_ms / 1000.0)
+            else:
+                controller.update(elapsed_ms / 1000.0)
             self._advance_transient_effects(controller.session.current_state)
             self._redraw(controller)
             pg.display.flip()
@@ -1431,6 +1491,11 @@ class PygameRenderer:
             if self._perspective_debug:
                 self._draw_perspective_debug_overlay(state, perspective_state)
 
+        if self._perspective_debug:
+            director_runtime = self._active_director_runtime()
+            if director_runtime is not None:
+                self._draw_director_debug_overlay(state, director_runtime)
+
         self._draw_selection_highlight()
         statuses = self._draw_top_band(controller)
         self._draw_capture_callout(controller, statuses)
@@ -1539,6 +1604,52 @@ class PygameRenderer:
             )
             overlay_surf.blit(rendered, (padding, padding + idx * line_height))
         self.screen.blit(overlay_surf, (ax + 10, ay + 10))
+
+    def _draw_director_debug_overlay(
+        self, state: ReplayState, director_runtime: PlaybackDirectorRuntime
+    ) -> None:
+        """Developer-only Director diagnostics (Phase 7 brief Sec. 24).
+
+        Anchored to the arena's top-right corner rather than the top-left
+        used by ``_draw_perspective_debug_overlay`` so the two never overlap
+        when both are visible at once (Perspective Cam + Director, both
+        gated by the same F3/D toggle). Source event identities are shown as
+        bare ``(tick, sequence)`` pairs -- developer-only detail, not the
+        restrained on-screen indicator in the footer -- and never resolve to
+        the underlying event's actual field content, so this overlay cannot
+        itself become a second, undisclosed presentation path for omniscient
+        facts in Perspective mode.
+        """
+        decision = director_runtime.decision_for_tick(state.tick)
+        ax, ay, aw, _ah = self._arena_rect()
+        overlay_w = min(360, max(240, aw - 40))
+        if decision.hold_ms > 0:
+            rate_line = f"Hold: {decision.hold_ms}ms (remaining {director_runtime.hold_remaining_ms(state.tick):.0f}ms)"
+        else:
+            rate_line = f"Rate: {decision.rate_tps:g} TPS"
+        lines = [
+            f"DIRECTOR DEBUG: {decision.visibility_basis}",
+            f"Tick: {decision.tick}  State: {decision.state.value}",
+            rate_line,
+            f"Reason: {decision.reason.value}",
+            f"Boundary: {'yes' if decision.boundary else 'no'}",
+            f"Source events: {list(decision.source_events)}",
+        ]
+        padding = 8
+        line_height = 16
+        overlay_h = padding * 2 + len(lines) * line_height
+        overlay_surf = self.pg.Surface((overlay_w, overlay_h), flags=self.pg.SRCALPHA)
+        overlay_surf.fill((12, 14, 20, 230))
+        self.pg.draw.rect(overlay_surf, (240, 150, 80), overlay_surf.get_rect(), 1)
+        for idx, line in enumerate(lines):
+            color = (255, 220, 100) if idx == 0 else TEXT_COLOR
+            rendered = self.hud_font.render(
+                truncate_with_ellipsis(line, (overlay_w - 2 * padding) // HUD_CHAR_WIDTH_PX),
+                True,
+                color,
+            )
+            overlay_surf.blit(rendered, (padding, padding + idx * line_height))
+        self.screen.blit(overlay_surf, (ax + aw - overlay_w - 10, ay + 10))
 
     def _draw_agent_marker(self, agent_id: str, pos: tuple[int, int]) -> None:
         color = AGENT_COLORS.get(agent_id, DEFAULT_AGENT_COLOR)
@@ -2033,11 +2144,26 @@ class PygameRenderer:
         status_label = "PLAYING" if controller.playing else "PAUSED"
         if session.at_end and not controller.playing:
             status_label = "PAUSED (end)"
+
+        # Restrained by design (Sec. 22/23): shown only while Director is
+        # actually active, so a trace-backed replay with Director available
+        # but off (the default) looks exactly like ordinary replay.
+        director_label: str | None = None
+        director_runtime = self._active_director_runtime()
+        if director_runtime is not None:
+            decision = director_runtime.decision_for_tick(state.tick)
+            if decision.hold_ms > 0:
+                remaining = director_runtime.hold_remaining_ms(state.tick)
+                director_label = f"DIRECTOR {decision.state.value} HOLD {remaining:.0f}ms"
+            else:
+                director_label = f"DIRECTOR {decision.state.value} {decision.rate_tps:g}tps"
+
         line1 = format_playback_line(
             tick=state.tick,
             final_tick=session.final_tick,
             status_label=status_label,
             speed=controller.speed,
+            director_label=director_label,
         )
 
         selected = self._selected_cell_info(state)
