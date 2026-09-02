@@ -13,15 +13,17 @@ maneuver multiple processes to spot enemies, and weigh defensive posture
 against aggressive coverage. Historical Ruleset-v1/v2 and VM workflows remain
 available for compatibility.
 
-Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible evaluation and tournament tools, and a complete command-line workflow. 
+Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible
+evaluation and tournament tools, and a complete command-line workflow.
 
-[![GitHub stable release](https://img.shields.io/github/v/release/libertaine/Bytefray?label=alpha%20release)](https://github.com/libertaine/Bytefray/releases/latest)
+[![GitHub prerelease](https://img.shields.io/github/v/release/libertaine/Bytefray?include_prereleases&label=alpha%20release)](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Current pre-release:** [Bytefray v4.0.0-alpha3](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
 — see [Downloads](#downloads) below. Earlier [v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
-releases remain available for historical and compatibility use.
+remains the current stable release for users who do not want alpha gameplay or
+Agent API changes.
 
 ## What is Bytefray?
 
@@ -39,7 +41,8 @@ Bytefray is both a game and a deterministic experimentation platform:
 2. **Starter Agents**: Explore the bundled v4 agents in `agents/v4_claimer`, `agents/v4_scout`, etc., to see examples of spatial mechanics.
 3. **Run a Match**: Start the Agent Designer with `bytefray design`, or run a
    headless match with `bytefray run` and inspect it with `bytefray replay`.
-4. **Feedback**: As this is an alpha release, please open an issue to share feedback on the new spatial positioning and disruption mechanics!
+4. **Feedback**: As this is an alpha release, please open an issue to share
+   feedback on the spatial gameplay and the new spectator experience.
 
 ## Bytefray v4 alpha
 
@@ -51,9 +54,10 @@ rotating scheduling, bounded local reach, movement, `D=1` temporary anchor
 disruption with fair redistribution, current-only local detection, and the
 minimal Agent API v2 observation contract.
 
-`bytefray-rules-4-alpha2` is the **current** v4 prerelease. It keeps Agent API
-v2, replay schema 4, and every mechanic above, and changes exactly two things
-that a controlled gameplay study identified as accidental rather than designed:
+`bytefray-rules-4-alpha2` is the **current v4 gameplay Ruleset**. It keeps
+Agent API v2, replay schema 4, and every mechanic above, and changes exactly
+two things that a controlled gameplay study identified as accidental rather
+than designed:
 
 - **Core placement is derived from the match seed**, under a minimum
   separation, instead of a fixed evenly-spread seat layout. An opponent's core
@@ -67,6 +71,11 @@ Alpha1 remains fully supported and explicitly selectable for reproducing
 historical matches. See the [v4 alpha2 gameplay contract](docs/V4_ALPHA2_DESIGN.md)
 for the full delta and [the Phase 4 study](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
 for the evidence behind it.
+
+The `v4.0.0-alpha3` product release does **not** introduce a third gameplay
+Ruleset. It adds the trace-backed spectator presentation suite on top of the
+unchanged alpha1/alpha2 Rulesets, Agent API v2, and replay schema 4. Broadcast
+replay remains the default and works without a trace.
 
 The reports under [`docs/research/v4/`](docs/research/v4/) remain the evidence
 and decision history behind the alpha. They are not alternate runtime
@@ -92,7 +101,7 @@ scores at the tick limit. Ruleset v2 supports Python entrants only.
 processes whose anchors move independently. `READ` and `WRITE` use absolute
 arena addresses; `MOVE` uses a signed delta from the acting process anchor.
 All three consume the same per-entrant `Q=8` action budget. Alpha2 is the
-current v4 prerelease and differs from alpha1 only in seed-derived core
+current v4 gameplay Ruleset and differs from alpha1 only in seed-derived core
 placement and round-robin process selection.
 
 The engine and evaluation model support multiple entrants. Quick Match in the
@@ -143,12 +152,13 @@ bytefray design
   <img src="docs/screenshots/v3-replay-viewer.png" alt="Bytefray Replay Viewer showing the Raider starter capturing Claimer's core, with the active CORE CAPTURED callout, whole-match timeline, and territory HUD" width="640">
 </p>
 
-**Replay Viewer** — whole-match navigation and a visible Vulnerable-Core
-capture event.
+**Replay Viewer** — canonical Broadcast playback plus the alpha3 spectator
+suite.
 
 The Pygame Replay Viewer reconstructs the arena directly from a canonical
-replay; it never reruns the match. Its presentation, introduced for Beta3 and
-retained in RC1, includes:
+replay; it never reruns the match. Broadcast mode remains fixed-rate and needs
+no trace. When a matching API-v2 trace is supplied—or a companion
+`trace.jsonl` is beside the replay—alpha3 also enables:
 
 - a responsive arena view with ownership, recent activity, trails, selection,
   and write markers
@@ -156,13 +166,25 @@ retained in RC1, includes:
 - layouts that remain readable for multi-entrant replays
 - play/pause, stepping, seeking, speed, zoom/fit, event navigation, and trails
 - territory history and a clear winner/termination presentation
+- **Perspective Cam**, showing only a selected entrant's delivered knowledge:
+  own-process reach, anonymous `CURRENT` contacts, aged `STALE` contacts, and
+  historical READ samples—without inventing enemy identity or continuity
+- a perspective-safe HUD that redacts unknown opponent facts during live play
+- the deterministic **Spectator Director** for dynamic playback pacing
+- the **Fight Night** factual event ribbon for 2-, 3-, and 4-entrant matches
 
 ```bash
 bytefray replay --replay path/to/replay.jsonl --renderer pygame
+bytefray replay --replay path/to/replay.jsonl --trace path/to/trace.jsonl \
+  --renderer pygame --perspective A --director --fight-night
 ```
 
 Press `Space` to pause, the arrow keys to step or seek, `Home`/`End` to jump,
 `+`/`-` to change speed, `[`/`]` to zoom, `0` to fit, and `T` to toggle trails.
+Use `V`/`P` to cycle Broadcast and entrant perspectives, `1`–`9` to select an
+entrant directly, `G` to toggle Director pacing, `N` to toggle Fight Night,
+and `?` for the in-viewer help panel. If the trace is missing, invalid, or
+mismatched, replay viewing remains available in Broadcast mode.
 
 ## Quick Start
 
@@ -194,20 +216,22 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-**Current pre-release:** [Bytefray v4.0.0-alpha2](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha2)
-— adds Ruleset `bytefray-rules-4-alpha2` (seed-derived core placement and
-round-robin intra-entrant process selection) alongside unchanged Agent API v2
-and replay schema 4. `bytefray-rules-4-alpha1` remains available for
-historical reproduction. Retains historical v1-v3 execution and artifact
-compatibility.
+**Current pre-release:** [Bytefray v4.0.0-alpha3](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
+— adds Perspective Cam, deterministic Director pacing, perspective-safe HUD
+gating, and Fight Night presentation. Gameplay remains on unchanged Rulesets
+`bytefray-rules-4-alpha1` and `bytefray-rules-4-alpha2`; Agent API v2 and replay
+schema 4 are unchanged, and historical v1–v3 execution/artifact compatibility
+is retained.
 
 | Package | Download | Notes |
 |---|---|---|
-| Windows installer | [Bytefray-Setup-4.0.0-alpha2.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/Bytefray-Setup-4.0.0-alpha2.exe) | Administrative AMD64/x64 installation; unsigned, see [INSTALL.md](INSTALL.md) |
-| Portable Windows applications | [bytefray-4.0.0-alpha2-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0-alpha2-windows.zip) | Complete onedir layouts for all four executables |
-| Python wheel | [bytefray-4.0.0a2-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0a2-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-4.0.0a2.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/bytefray-4.0.0a2.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha2/SHA256SUMS.txt) | SHA-256 values for all alpha2 assets |
+| Portable Windows applications | [bytefray-4.0.0-alpha3-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0-alpha3-windows.zip) | AMD64 onedir applications for the Bytefray CLI, Agent Designer, and Replay Viewer workflows |
+| Python wheel | [bytefray-4.0.0a3-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0a3-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-4.0.0a3.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0a3.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/SHA256SUMS.txt) | SHA-256 values for all published alpha3 assets |
+
+Alpha3 does not publish a Windows installer; use the portable Windows archive
+or a Python package. See [Installation](INSTALL.md) for setup guidance.
 
 **Current stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 remains available for users who do not want alpha gameplay/API changes.
@@ -303,14 +327,14 @@ See [Writing Agents](docs/AGENT_AUTHORING.md), the
 
 | Ruleset | Designer role | Runtime compatibility |
 |---|---|---|
-| `bytefray-rules-4-alpha2` | Current alpha preview for spatial process matches | Agent API v2 Python entrants only |
+| `bytefray-rules-4-alpha2` | Current v4 gameplay Ruleset for spatial process matches | Agent API v2 Python entrants only |
 | `bytefray-rules-4-alpha1` | Historical alpha preview, for reproducing earlier v4 alpha matches | Agent API v2 Python entrants only |
 | `bytefray-rules-2` | Current/recommended for compatible Python direct matches | Python entrants only |
 | `bytefray-rules-1` | Compatibility: historical reproduction, and the only ruleset that runs VM/blob entrants | VM/blob and Python native matches |
 
 Agent API v1 Python agents run under Ruleset v1 or v2. Agent API v2 Python
 agents run under either v4 alpha; omitting `--ruleset` selects alpha2, the
-current one. VM/blob agents run under Ruleset v1 only. Redcode/pMARS is
+current v4 gameplay Ruleset. VM/blob agents run under Ruleset v1 only. Redcode/pMARS is
 separate from all four — see below.
 
 Agent Designer passes its selection explicitly everywhere, including the
@@ -381,6 +405,7 @@ See [pMARS build/runtime guidance](README.md) and
 - [Agent Authoring Guide](docs/AGENT_AUTHORING.md)
 - [Agent API v2 Technical Contract](docs/AGENT_API_V2.md)
 - [Agent API v1 Technical Contract](docs/AGENT_API_V1.md)
+- [v4 Spectator Perspective Contract](docs/specs/v4_spectator_perspective.md)
 - [Ruleset v4 Alpha2 Gameplay Contract](docs/V4_ALPHA2_DESIGN.md)
 - [Ruleset v4 Alpha1 Design](docs/V4_ALPHA1_DESIGN.md)
 - [Agent Lab: trace, inspect, diverge, timeouts, and evaluation](docs/AGENT_LAB.md)
@@ -435,10 +460,6 @@ intelligence suite (Perspective Cam, Spectator Director, Fight Night) on top
 of the spatial multi-process model. The alpha identity is intentionally
 provisional; historical identities and wire formats remain distinct and
 readable.
-
-See the [detailed roadmap and complete milestone history](docs/ROADMAP.md),
-[release-by-release changelog](CHANGELOG.md), and maturity-labeled
-[future-plans catalogue](docs/FUTURE_PLANS.md).
 
 The earlier BATTLE2 name and migration history are preserved in
 [Project History](docs/PROJECT_HISTORY.md); all current product commands,
