@@ -41,7 +41,11 @@ from battle_engine.evaluation_group_analysis import (
 from battle_engine.evaluation_history.models import evaluation_cells_from_raw
 from battle_engine.launchers import build_agents_command, build_tournament_command
 from battle_engine.result_model import read_result
-from battle_engine.ruleset_policy import BYTEFRAY_RULESET_V2_ID
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+)
 
 from app.services.agent_catalog import AgentRow
 
@@ -116,6 +120,32 @@ def validate_homogeneous(rows: Iterable[AgentRow], *, minimum: int = 2) -> str:
 def match_artifact_paths(replay_path: Path) -> tuple[Path, Path]:
     replay = replay_path.expanduser().resolve()
     return replay.with_name("result.json"), replay
+
+
+# Ruleset identities for which a normal Designer match automatically
+# records the Alpha3 spectator trace alongside its replay -- v4 alpha1/
+# alpha2 today. v1 and v2 deliberately keep their existing artifact set
+# unchanged: a normal v4 Designer match should automatically be
+# spectator-capable, without a new opt-in control (Alpha3 follow-up
+# Phase 2).
+DESIGNER_AUTO_TRACE_RULESET_IDS: frozenset[str] = frozenset(
+    {BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID}
+)
+
+
+def designer_trace_path(replay_path: Path, ruleset_id: str) -> Path | None:
+    """The sibling spectator-trace artifact path for one Designer match run.
+
+    Mirrors :func:`match_artifact_paths`: the trace is a sibling of
+    ``replay_path`` inside the same unique run directory, so it can never
+    collide across independent Designer runs. Returns ``None`` for a
+    Ruleset outside :data:`DESIGNER_AUTO_TRACE_RULESET_IDS`, leaving that
+    match's artifact set exactly as it was before this policy existed.
+    """
+    if ruleset_id not in DESIGNER_AUTO_TRACE_RULESET_IDS:
+        return None
+    replay = replay_path.expanduser().resolve()
+    return replay.with_name("trace.jsonl")
 
 
 def new_match_run_directory(data_root: Path) -> Path:

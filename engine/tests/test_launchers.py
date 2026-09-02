@@ -272,3 +272,59 @@ def test_replay_service_starts_shared_command_without_a_shell(monkeypatch, tmp_p
     )
     assert kwargs["cwd"] == str(tmp_path)
     assert "shell" not in kwargs
+
+
+def test_replay_service_appends_trace_flag_when_sibling_trace_exists(monkeypatch, tmp_path):
+    """Designer replay launching must discover a sibling ``trace.jsonl``.
+
+    This is the artifact layout a v4 Designer match now produces
+    (``result.json``/``replay.jsonl``/``trace.jsonl`` as siblings in one
+    run directory): opening the replay must automatically forward the
+    trace to the Replay Viewer so Spectator Director/Fight Night/
+    Perspective Cam are available, without any new Designer UI control.
+    """
+    python = tmp_path / "Python With Spaces" / "python.exe"
+    run_dir = tmp_path / "Replay Files"
+    run_dir.mkdir()
+    replay = run_dir / "replay.jsonl"
+    replay.touch()
+    trace = run_dir / "trace.jsonl"
+    trace.touch()
+    _set_source(monkeypatch, python)
+    calls = []
+
+    def fake_popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return object()
+
+    monkeypatch.setattr(engine_commands, "Popen", fake_popen)
+
+    engine_commands.open_pygame_client_direct(tmp_path, replay)
+
+    command, _kwargs = calls[0]
+    assert command == launchers.build_replay_command(
+        replay,
+        ("--renderer", "pygame", "--tick-delay", "0.02", "--trace", str(trace)),
+    )
+
+
+def test_replay_service_omits_trace_flag_when_no_sibling_trace_exists(monkeypatch, tmp_path):
+    """Broadcast replay must stay available when no trace was produced."""
+    python = tmp_path / "Python With Spaces" / "python.exe"
+    run_dir = tmp_path / "Replay Files"
+    run_dir.mkdir()
+    replay = run_dir / "replay.jsonl"
+    replay.touch()
+    _set_source(monkeypatch, python)
+    calls = []
+
+    def fake_popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return object()
+
+    monkeypatch.setattr(engine_commands, "Popen", fake_popen)
+
+    engine_commands.open_pygame_client_direct(tmp_path, replay)
+
+    command, _kwargs = calls[0]
+    assert "--trace" not in command

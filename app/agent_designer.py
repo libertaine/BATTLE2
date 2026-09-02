@@ -53,6 +53,7 @@ from app.services.designer_workflows import (
     build_designer_evaluate_command_from_plan,
     build_designer_evaluation_plan,
     build_designer_tournament_command,
+    designer_trace_path,
     match_artifact_paths,
     new_match_run_directory,
     read_evaluation_presentation,
@@ -380,6 +381,9 @@ class AgentDesigner(QMainWindow):
             seed=seed,
         )
         match_arguments.extend(("--replay", str(replay_path)))
+        trace_path = designer_trace_path(replay_path, cfg.ruleset_id)
+        if trace_path is not None:
+            match_arguments.extend(("--trace", str(trace_path)))
         try:
             command = build_match_command(match_arguments)
         except FileNotFoundError as exc:
@@ -507,6 +511,9 @@ class AgentDesigner(QMainWindow):
             b_blob=getattr(rowB, "blob_path", None),
         )
         match_arguments.extend(("--replay", str(replay_path)))
+        trace_path = designer_trace_path(replay_path, cfg.ruleset_id)
+        if trace_path is not None:
+            match_arguments.extend(("--trace", str(trace_path)))
         try:
             command = build_match_command(match_arguments)
         except FileNotFoundError as exc:

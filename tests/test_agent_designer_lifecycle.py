@@ -402,3 +402,59 @@ def test_advanced_run_exports_agent_params_json_to_child_env(monkeypatch, tmp_pa
     assert env.contains("BYTEFRAY_AGENT_B_PARAMS_JSON") is False
 
     designer.deleteLater()
+
+
+@pytest.mark.gui
+@pytest.mark.parametrize("run_method", ["_on_simple_run", "_on_advanced_run"])
+@pytest.mark.parametrize(
+    ("ruleset_id", "agent_a", "agent_b", "expects_trace"),
+    [
+        pytest.param(
+            "bytefray-rules-4-alpha1", "v4_claimer", "v4_scout", True, id="v4-alpha1"
+        ),
+        pytest.param(
+            "bytefray-rules-4-alpha2", "v4_claimer", "v4_scout", True, id="v4-alpha2"
+        ),
+        pytest.param("bytefray-rules-1", "runner", "writer", False, id="v1"),
+        pytest.param("bytefray-rules-2", "adaptive", "hunter", False, id="v2"),
+    ],
+)
+def test_designer_run_requests_trace_only_for_v4_rulesets(
+    monkeypatch, tmp_path, run_method, ruleset_id, agent_a, agent_b, expects_trace
+):
+    """Simple and Advanced must follow the same v4-only automatic-trace policy.
+
+    v4 alpha1/alpha2 Designer matches now request ``--trace <run-dir>/trace.jsonl``
+    alongside ``--replay`` so the Alpha3 spectator suite (Perspective Cam,
+    Spectator Director, Fight Night) is naturally available after "Open Replay".
+    Historical Ruleset v1/v2 matches must keep their existing artifact set
+    (no ``--trace``) unchanged.
+    """
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app.agent_designer import AgentDesigner
+    from app.services.engine import RunConfig
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "data"))
+    QApplication.instance() or QApplication([])
+    designer = AgentDesigner()
+    captured = _capture_match_launch(monkeypatch, designer)
+
+    cfg = RunConfig(
+        a_type=agent_a, b_type=agent_b, ruleset_id=ruleset_id, arena=64, ticks=10
+    )
+    getattr(designer, run_method)(cfg)
+
+    assert captured["started"] is True
+    command = captured["command"]
+    replay_value = _argument_value(command, "--replay")
+    if expects_trace:
+        trace_value = _argument_value(command, "--trace")
+        assert os.path.dirname(trace_value) == os.path.dirname(replay_value)
+        assert os.path.basename(trace_value) == "trace.jsonl"
+    else:
+        assert "--trace" not in command
+
+    designer.deleteLater()

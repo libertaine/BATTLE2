@@ -4,9 +4,18 @@ import json
 import sys
 
 import pytest
+from battle_engine.agent_trace import read_trace_v2
+from battle_engine.cli import main as run_cli
+from battle_engine.launchers import build_designer_match_arguments
 from battle_engine.project_info import get_project_info
 from battle_engine.replay import SCHEMA_VERSION as REPLAY_SCHEMA_VERSION
 from battle_engine.result_model import SCHEMA_VERSION as RESULT_SCHEMA_VERSION
+from battle_engine.rules import BYTEFRAY_RULESET_ID
+from battle_engine.ruleset_policy import (
+    BYTEFRAY_RULESET_V2_ID,
+    BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+)
 
 from app.services.agent_catalog import AgentRow
 from app.services.designer_workflows import (
@@ -14,6 +23,7 @@ from app.services.designer_workflows import (
     agent_runtime_label,
     build_designer_tournament_command,
     decorate_agent_display,
+    designer_trace_path,
     match_artifact_paths,
     new_match_run_directory,
     read_match_presentation,
@@ -57,6 +67,78 @@ def test_new_match_run_directory_is_unique_and_isolated(tmp_path):
     second_result, second_replay = match_artifact_paths(second / "replay.jsonl")
     assert first_result != second_result
     assert first_replay != second_replay
+
+
+@pytest.mark.parametrize(
+    "ruleset_id", [BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID]
+)
+def test_designer_trace_path_is_requested_for_v4_rulesets(tmp_path, ruleset_id):
+    replay_path = tmp_path / "runs" / "_designer" / "run-1" / "replay.jsonl"
+    trace_path = designer_trace_path(replay_path, ruleset_id)
+    assert trace_path == replay_path.parent / "trace.jsonl"
+    assert trace_path.name == "trace.jsonl"
+
+
+@pytest.mark.parametrize("ruleset_id", [BYTEFRAY_RULESET_ID, BYTEFRAY_RULESET_V2_ID])
+def test_designer_trace_path_is_none_for_historical_rulesets(tmp_path, ruleset_id):
+    replay_path = tmp_path / "runs" / "_designer" / "run-1" / "replay.jsonl"
+    assert designer_trace_path(replay_path, ruleset_id) is None
+
+
+def test_designer_trace_path_cannot_collide_across_independent_runs(tmp_path):
+    first_replay = new_match_run_directory(tmp_path) / "replay.jsonl"
+    second_replay = new_match_run_directory(tmp_path) / "replay.jsonl"
+
+    first_trace = designer_trace_path(first_replay, BYTEFRAY_RULESET_V4_ALPHA1_ID)
+    second_trace = designer_trace_path(second_replay, BYTEFRAY_RULESET_V4_ALPHA2_ID)
+
+    assert first_trace != second_trace
+    assert first_trace.parent == first_replay.parent
+    assert second_trace.parent == second_replay.parent
+    # Neither trace lives in a shared/global location -- each stays inside
+    # its own run's directory, a sibling of that run's own replay/result.
+    assert first_trace.parent != tmp_path
+    assert second_trace.parent != tmp_path
+
+
+def test_designer_v4_match_produces_full_spectator_artifact_set(tmp_path, monkeypatch):
+    """A short, real v4 match run with the exact arguments a Designer match
+    now builds must produce result.json/replay.jsonl/trace.jsonl together as
+    siblings, with the trace readable by the existing trace-parsing
+    machinery -- proving the Designer's automatic-trace policy actually
+    yields a spectator-capable run end to end, not just a command line that
+    claims to.
+    """
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+
+    run_directory = new_match_run_directory(tmp_path)
+    result_path, replay_path = match_artifact_paths(run_directory / "replay.jsonl")
+    trace_path = designer_trace_path(replay_path, BYTEFRAY_RULESET_V4_ALPHA2_ID)
+    assert trace_path is not None
+
+    arguments = build_designer_match_arguments(
+        ticks=2,
+        arena=64,
+        a_type="v4_claimer",
+        b_type="v4_scout",
+        ruleset_id=BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    )
+    arguments.extend(("--replay", str(replay_path)))
+    arguments.extend(("--trace", str(trace_path)))
+
+    assert run_cli(arguments) == 0
+
+    assert result_path.is_file()
+    assert replay_path.is_file()
+    assert trace_path.is_file()
+    assert trace_path.parent == replay_path.parent == result_path.parent
+
+    # v4 (Agent API v2) matches record a schema_version-2 trace; the v1
+    # reader deliberately rejects it (agent_trace.py's format-check
+    # docstring), so this is the reader the Alpha3 spectator suite itself
+    # uses for v4 traces.
+    document = read_trace_v2(trace_path)
+    assert document.decisions
 
 
 def test_match_artifacts_and_canonical_replay_reference(tmp_path):

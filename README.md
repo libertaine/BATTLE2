@@ -135,6 +135,10 @@ developing Python agents:
 - Pairwise and Ruleset-v2 Group Evaluation with matrix preview
 - evaluation history, comparison, provenance, and revision restoration
 
+v4 matches launched from the Agent Designer (Simple or Advanced) automatically
+record the spectator trace used by Perspective Cam, Spectator Director, and
+Fight Night, so **Open Replay** has them available without any extra setup.
+
 Source viewing is deliberately read-only in the 2.0 release. Use
 **Open Folder** to edit an agent with your preferred editor. See the
 [Agent Authoring Guide](docs/AGENT_AUTHORING.md) and
