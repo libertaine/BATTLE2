@@ -110,6 +110,12 @@ def main(argv: list[str] | None = None) -> int:
         help="--renderer pygame only: enable automatic Director playback pacing "
         "(requires a trace; off by default -- press G in-viewer to toggle)",
     )
+    p.add_argument(
+        "--fight-night",
+        action="store_true",
+        help="--renderer pygame only: enable Fight Night broadcast presentation "
+        "(requires a trace; off by default -- press N in-viewer to toggle)",
+    )
     args = p.parse_args(argv)
 
     replay_path = Path(args.replay).expanduser().resolve()
@@ -203,6 +209,28 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
         )
         print(f"[battle_client] Director unavailable: {reason}", file=sys.stderr)
 
+    # Fight Night is built from the same shared SpectatorDerivation, on the
+    # same terms as the Director above: constructed whenever a trace exists so
+    # the in-viewer N key works without a restart, with only the *initial*
+    # enabled state depending on the flag. The two features are independent --
+    # neither manager is required for the other to be built or enabled.
+    from battle_client.fight_night import FightNightManager
+
+    fight_night_manager = None
+    if trace_path is not None:
+        fight_night_manager = FightNightManager(
+            perspective_manager.derivation if perspective_manager is not None else None,
+            unavailable_reason=(
+                perspective_manager.status_message if perspective_manager is not None else None
+            ),
+        )
+    if args.fight_night and (fight_night_manager is None or not fight_night_manager.available):
+        reason = fight_night_manager.status_message if fight_night_manager is not None else (
+            "no trace supplied and no companion trace.jsonl beside "
+            f"{replay_path.name}."
+        )
+        print(f"[battle_client] Fight Night unavailable: {reason}", file=sys.stderr)
+
     # An explicitly requested perspective must never fail silently.  The viewer
     # still opens on the canonical replay -- ordinary replay never depends on a
     # trace -- but the user is told why Perspective Cam is not available rather
@@ -247,6 +275,8 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
             initial_perspective=args.perspective,
             director_manager=director_manager,
             initial_director_enabled=args.director,
+            fight_night_manager=fight_night_manager,
+            initial_fight_night_enabled=args.fight_night,
         )
     except KeyboardInterrupt:
         pass

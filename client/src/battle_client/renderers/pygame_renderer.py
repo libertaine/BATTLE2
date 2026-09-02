@@ -62,9 +62,16 @@ from battle_client.analysis import (
     timeline_event_marks,
 )
 from battle_client.director import DirectorManager, PlaybackDirectorRuntime
+from battle_client.fight_night import (
+    FightNightManager,
+    FightNightPhase,
+    FightNightState,
+)
 from battle_client.hud_layout import (
     CARD_LINE_HEIGHT,
     COMPACT_HELP_TEXT,
+    FIGHT_NIGHT_LINE_HEIGHT,
+    FIGHT_NIGHT_PADDING,
     FOOTER_HEIGHT,
     FOOTER_LINE_HEIGHT,
     HEADER_LINE_HEIGHT,
@@ -73,7 +80,14 @@ from battle_client.hud_layout import (
     CardMode,
     ViewerLayout,
     calculate_layout,
+    fight_night_card_rect,
+    fight_night_ribbon_capacity,
+    fight_night_ribbon_rect,
     format_entrant_card_lines,
+    format_fight_night_opening_lines,
+    format_fight_night_result_lines,
+    format_fight_night_ribbon_line,
+    format_fight_night_ribbon_title,
     format_help_lines,
     format_match_header_lines,
     format_playback_line,
@@ -214,6 +228,19 @@ TIMELINE_MARK_WIDTH = 2
 CAPTURE_CALLOUT_BG: tuple[int, int, int] = (20, 16, 10)
 CAPTURE_CALLOUT_MAX_WIDTH = 360
 CAPTURE_CALLOUT_MARGIN = 40
+
+# Fight Night chrome (Phase 8). Deliberately one fixed accent pair, not the
+# per-entrant OWNERSHIP_TINT/AGENT_COLORS palette: a ribbon entry tinted with
+# its subject's own color would let a viewer associate an anonymous on-arena
+# contact with a named entrant purely from matching hues, which is exactly
+# the identity leak the Phase 8 brief's Sec. 27/37 name as a negative
+# regression. Entry text therefore never varies by entrant.
+FIGHT_NIGHT_BG: tuple[int, int, int] = (10, 12, 18)
+FIGHT_NIGHT_BORDER: tuple[int, int, int] = (90, 130, 190)
+FIGHT_NIGHT_TITLE_COLOR: tuple[int, int, int] = (140, 190, 255)
+FIGHT_NIGHT_ENTRY_COLOR: tuple[int, int, int] = (225, 228, 235)
+FIGHT_NIGHT_PANEL_ALPHA = 205
+FIGHT_NIGHT_CARD_ALPHA = 235
 
 
 @dataclass(frozen=True)
@@ -578,6 +605,7 @@ class KeyAction:
     select_perspective_index: int | None = None
     toggle_perspective_debug: bool = False
     toggle_director: bool = False
+    toggle_fight_night: bool = False
     restarted: bool = False
 
 
@@ -622,6 +650,8 @@ def dispatch_key(
         return KeyAction(toggle_perspective_debug=True)
     elif key == pg.K_g:
         return KeyAction(toggle_director=True)
+    elif key == pg.K_n:
+        return KeyAction(toggle_fight_night=True)
     elif key == getattr(pg, "K_1", -10) and not shift:
         return KeyAction(select_perspective_index=0)
     elif key == getattr(pg, "K_2", -11) and not shift:
@@ -786,6 +816,14 @@ class PygameRenderer:
         self._director_manager: DirectorManager | None = None
         self._director_enabled: bool = False
 
+        # Fight Night presentation state (Phase 8). Off by default even when
+        # a FightNightManager is supplied -- see the CLI's --fight-night flag.
+        # Independent of the Director in both directions: Fight Night draws
+        # from its own plan and never consults Director state, so either can
+        # be enabled without the other.
+        self._fight_night_manager: FightNightManager | None = None
+        self._fight_night_enabled: bool = False
+
     # ---------- grid geometry (pure, presentation-only) ----------
 
     def _resolve_grid_dims(self, arena_cells: int) -> tuple[int, int]:
@@ -858,6 +896,8 @@ class PygameRenderer:
         initial_perspective: str | None = None,
         director_manager: DirectorManager | None = None,
         initial_director_enabled: bool = False,
+        fight_night_manager: FightNightManager | None = None,
+        initial_fight_night_enabled: bool = False,
     ) -> None:
         """Open an interactive window and play ``session`` until the user
         quits. Blocks until then. Raises ``RendererDependencyError`` if
@@ -881,6 +921,13 @@ class PygameRenderer:
             initial_director_enabled
             and director_manager is not None
             and director_manager.available
+        )
+
+        self._fight_night_manager = fight_night_manager
+        self._fight_night_enabled = (
+            initial_fight_night_enabled
+            and fight_night_manager is not None
+            and fight_night_manager.available
         )
 
         self.arena = session.header.config.arena_size if session.header else 0
@@ -1133,8 +1180,18 @@ class PygameRenderer:
                         and self._director_manager.available
                     ):
                         self._director_enabled = not self._director_enabled
+                    if (
+                        action.toggle_fight_night
+                        and self._fight_night_manager is not None
+                        and self._fight_night_manager.available
+                    ):
+                        self._fight_night_enabled = not self._fight_night_enabled
                     if action.restarted and self._director_manager is not None:
                         self._director_manager.restart()
+                    # Fight Night deliberately has nothing to reset on
+                    # restart: its whole presentation is a pure function of
+                    # (plan, tick), so returning to tick 0 already produces
+                    # exactly the tick-0 presentation with no residue.
                     if controller.speed != speed_before:
                         # Manual speed selection is an explicit user action
                         # (Sec. 21): it must win outright rather than being
@@ -1498,6 +1555,7 @@ class PygameRenderer:
 
         self._draw_selection_highlight()
         statuses = self._draw_top_band(controller)
+        self._draw_fight_night(controller, statuses)
         self._draw_capture_callout(controller, statuses)
         self._draw_footer(controller)
 
@@ -1999,6 +2057,169 @@ class PygameRenderer:
             self._draw_entrant_card(status, rect, ordinal=ordinal, mode=layout.card_mode)
 
         return statuses
+
+    # ---------- Fight Night presentation (Phase 8) ----------
+
+    def _active_fight_night_state(self, tick: int) -> FightNightState | None:
+        """This frame's Fight Night state for the selected view mode.
+
+        Keyed on ``PerspectiveManager.mode`` exactly like
+        ``_active_director_runtime``, so Broadcast and each entrant's
+        Perspective consume separately-built plans. In an entrant's
+        Perspective that plan was assembled from *only* that entrant's
+        visible events, so a hidden fact is absent from the ribbon
+        structurally -- it was never in the list the plan was built from --
+        rather than being drawn and then skipped here.
+        """
+
+        if not self._fight_night_enabled or self._fight_night_manager is None:
+            return None
+        mode_key = (
+            self._perspective_manager.mode
+            if self._perspective_manager is not None
+            else BROADCAST_MODE
+        )
+        return self._fight_night_manager.state_at_tick(mode_key, tick)
+
+    def _draw_fight_night(
+        self, controller: PlaybackController, statuses: Sequence[EntrantReplayStatus]
+    ) -> None:
+        """Draw the Fight Night ribbon and opening/result cards.
+
+        Drawn as overlays inside the already-computed arena viewport, after
+        the top band and before the footer, reserving no layout space of its
+        own -- ``self._layout`` is never consulted for a Fight Night band
+        because there isn't one (see ``hud_layout``'s Fight Night section for
+        why a reserved band would break the four-entrant 640x480 grid). A
+        no-op whenever Fight Night is disabled, unavailable, or no layout has
+        been computed yet.
+
+        ``statuses`` (this frame's already-computed status tuple from
+        ``_draw_top_band``) supplies display names and the alive set, so this
+        method never issues a second ``get_entrant_statuses`` call and never
+        derives liveness itself.
+        """
+
+        layout = self._layout
+        if layout is None:
+            return
+        state = self._active_fight_night_state(controller.session.current_state.tick)
+        if state is None:
+            return
+
+        names = {status.agent_id: status.name for status in statuses}
+        viewport = layout.arena_viewport_rect
+
+        if state.phase is FightNightPhase.OPENING:
+            self._draw_fight_night_card(
+                viewport,
+                format_fight_night_opening_lines(
+                    state.entrants,
+                    names,
+                    ruleset_label=self._ruleset_label,
+                    max_chars=self._fight_night_card_chars(viewport),
+                ),
+                accent=TERMINAL_TEXT_COLOR,
+            )
+        elif state.phase is FightNightPhase.RESULT:
+            self._draw_fight_night_card(
+                viewport,
+                format_fight_night_result_lines(
+                    winner=state.winner,
+                    termination_reason=state.termination_reason,
+                    result_ticks=state.result_ticks,
+                    survivors=tuple(s.agent_id for s in statuses if s.alive),
+                    names=names,
+                    max_chars=self._fight_night_card_chars(viewport),
+                ),
+                accent=TERMINAL_TEXT_COLOR,
+            )
+
+        self._draw_fight_night_ribbon(viewport, state)
+
+    def _fight_night_card_chars(self, viewport: tuple[int, int, int, int]) -> int:
+        rect = fight_night_card_rect(viewport, 1)
+        return max(6, (rect[2] - 2 * FIGHT_NIGHT_PADDING) // HUD_CHAR_WIDTH_PX)
+
+    def _draw_fight_night_ribbon(
+        self, viewport: tuple[int, int, int, int], state: FightNightState
+    ) -> None:
+        """The recent-events ribbon, anchored to the arena band's lower-left.
+
+        The title line always names the ribbon's information domain
+        (``BROADCAST`` or ``<entrant> KNOWS``), so a viewer never has to
+        infer whether they are reading canonical facts or the selected
+        entrant's own knowledge -- the Phase 8 brief's Sec. 18 "no ambiguous
+        middle state" requirement, answered on screen rather than only in
+        documentation.
+
+        Entry text is drawn in the ribbon's own single accent color, never in
+        the subject entrant's palette color. Coloring an entry by entrant
+        would create exactly the identity association Sec. 27/37 forbid: an
+        anonymous contact and a colored ribbon entry appearing together would
+        let a viewer join the two.
+        """
+
+        capacity = fight_night_ribbon_capacity(viewport, len(state.ribbon))
+        if capacity <= 0:
+            return
+        entries = state.ribbon[-capacity:]
+        rect = fight_night_ribbon_rect(viewport, len(entries))
+        x, y, width, height = rect
+        if width <= 0 or height <= 0:
+            return
+
+        panel = self.pg.Surface((width, height), flags=self.pg.SRCALPHA)
+        panel.fill((*FIGHT_NIGHT_BG, FIGHT_NIGHT_PANEL_ALPHA))
+        self.pg.draw.rect(panel, FIGHT_NIGHT_BORDER, panel.get_rect(), 1)
+
+        max_chars = max(6, (width - 2 * FIGHT_NIGHT_PADDING) // HUD_CHAR_WIDTH_PX)
+        title = truncate_with_ellipsis(
+            format_fight_night_ribbon_title(state.visibility_basis), max_chars
+        )
+        panel.blit(
+            self.hud_font.render(title, True, FIGHT_NIGHT_TITLE_COLOR),
+            (FIGHT_NIGHT_PADDING, FIGHT_NIGHT_PADDING),
+        )
+        for index, entry in enumerate(entries, start=1):
+            text = format_fight_night_ribbon_line(
+                entry.label, entry.subject, entry.tick, max_chars=max_chars
+            )
+            panel.blit(
+                self.hud_font.render(text, True, FIGHT_NIGHT_ENTRY_COLOR),
+                (FIGHT_NIGHT_PADDING, FIGHT_NIGHT_PADDING + index * FIGHT_NIGHT_LINE_HEIGHT),
+            )
+        self.screen.blit(panel, (x, y))
+
+    def _draw_fight_night_card(
+        self,
+        viewport: tuple[int, int, int, int],
+        lines: Sequence[str],
+        *,
+        accent: tuple[int, int, int],
+    ) -> None:
+        """One centered opening/result card. Shown only outside live play."""
+
+        rect = fight_night_card_rect(viewport, len(lines))
+        x, y, width, height = rect
+        if width <= 0 or height <= 0:
+            return
+        panel = self.pg.Surface((width, height), flags=self.pg.SRCALPHA)
+        panel.fill((*FIGHT_NIGHT_BG, FIGHT_NIGHT_CARD_ALPHA))
+        self.pg.draw.rect(panel, accent, panel.get_rect(), 2)
+        max_chars = max(6, (width - 2 * FIGHT_NIGHT_PADDING) // HUD_CHAR_WIDTH_PX)
+        for index, line in enumerate(lines):
+            line_y = FIGHT_NIGHT_PADDING + index * FIGHT_NIGHT_LINE_HEIGHT
+            if line_y + FIGHT_NIGHT_LINE_HEIGHT > height:
+                break
+            if not line:
+                continue
+            color = accent if index == 0 else TEXT_COLOR
+            rendered = self.hud_font.render(
+                truncate_with_ellipsis(line, max_chars), True, color
+            )
+            panel.blit(rendered, ((width - rendered.get_width()) // 2, line_y))
+        self.screen.blit(panel, (x, y))
 
     def _draw_capture_callout(
         self, controller: PlaybackController, statuses: Sequence[EntrantReplayStatus]

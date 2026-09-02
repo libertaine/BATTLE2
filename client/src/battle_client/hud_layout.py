@@ -26,6 +26,7 @@ Two governing rules, both enforced by construction here:
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -476,9 +477,17 @@ COMPACT_HELP_TEXT = "Space play/pause · arrows step · drag timeline · ? contr
 # 5 characters of remaining slack at the 640px minimum before adding it
 # (see the Phase 7 research document); if a future addition finds no slack
 # left, drop something here rather than truncating silently.
+#
+# Phase 8 hit exactly that case: "N night" needs 10 characters against the 5
+# that remained, so following the instruction above, "0 fit" was dropped
+# rather than every other binding being abbreviated down to a zero-slack
+# line. Zoom-to-fit stays bound to `0`; it is simply no longer advertised
+# here, being both the viewer's own default state and adjacent to the `[/]`
+# zoom hint that is still listed. The line now measures 86 characters
+# against the 89-character budget at the 640px minimum -- 3 to spare.
 EXPANDED_HELP_LINES = (
     "Space play/pause · arrows step · Shift+arrows seek 10 · Home/End first/last · Esc/Q quit",
-    "+/- speed · [/] zoom · 0 fit · T trails · V/1-9 persp · D/F3 debug · G dir · ? close",
+    "+/- speed · [/] zoom · T trails · V/1-9 persp · D/F3 debug · G dir · N night · ? close",
 )
 
 
@@ -566,6 +575,189 @@ def format_playback_line(
 
 
 # ---------------------------------------------------------------------------
+# Fight Night presentation (Phase 8) -- pure geometry and text, no drawing.
+#
+# Every function below is an *overlay* computation: Fight Night reserves no
+# band of its own and ``calculate_layout`` is completely untouched by it, so
+# turning Fight Night on never shrinks the arena, never re-flows the entrant
+# cards, and never moves the footer. This follows the already-qualified
+# core-capture callout's precedent (see ``pygame_renderer._draw_capture_
+# callout``) rather than growing the HUD: at the documented 640x480 minimum a
+# four-entrant detailed card grid already sits within 4px of the top band's
+# cap, so a reserved ribbon band there would silently re-flow that layout.
+# ---------------------------------------------------------------------------
+FIGHT_NIGHT_LINE_HEIGHT = 15
+FIGHT_NIGHT_PADDING = 6
+FIGHT_NIGHT_RIBBON_MAX_WIDTH = 260
+FIGHT_NIGHT_CARD_MAX_WIDTH = 420
+
+# Below this viewport height the ribbon is dropped entirely rather than
+# squeezed: a two-line ribbon over a very short arena band obscures more than
+# it explains. Above it, the ribbon is capped to whatever whole lines fit.
+FIGHT_NIGHT_MIN_VIEWPORT_HEIGHT = 120
+
+
+def fight_night_ribbon_capacity(viewport_rect: Rect, requested: int) -> int:
+    """How many ribbon lines actually fit above ``viewport_rect``'s bottom.
+
+    Graceful degradation for small windows (Phase 8 brief Sec. 34): the
+    ribbon shrinks line by line and then disappears, rather than either
+    overflowing the arena band or forcing a larger minimum window. The
+    header line is counted, so a return of ``0`` means "not even a titled
+    single-entry ribbon fits".
+    """
+
+    _vx, _vy, vw, vh = viewport_rect
+    if vw < 200 or vh < FIGHT_NIGHT_MIN_VIEWPORT_HEIGHT or requested <= 0:
+        return 0
+    # Half the viewport is the ceiling: the arena stays visually primary even
+    # on a short band (Phase 8 brief Sec. 33).
+    budget = min(vh // 2, vh - FIGHT_NIGHT_PADDING * 2)
+    fits = budget // FIGHT_NIGHT_LINE_HEIGHT - 1  # -1 for the header line
+    return max(0, min(requested, fits))
+
+
+def fight_night_ribbon_rect(viewport_rect: Rect, line_count: int) -> Rect:
+    """The ribbon overlay's rect, anchored to the arena band's bottom-left.
+
+    Bottom-left rather than centered or top-anchored: the top band already
+    carries the entrant cards and the match header, the footer is at its
+    line budget, and the arena's own action is centered -- so the lower-left
+    corner is the least contended real estate on screen. Returns a
+    degenerate (zero-size) rect when nothing fits, which every drawing
+    caller already treats as "skip".
+    """
+
+    vx, vy, vw, vh = viewport_rect
+    if line_count <= 0 or vw <= 0 or vh <= 0:
+        return (vx, vy, 0, 0)
+    height = FIGHT_NIGHT_PADDING * 2 + (line_count + 1) * FIGHT_NIGHT_LINE_HEIGHT
+    height = min(height, vh)
+    width = min(FIGHT_NIGHT_RIBBON_MAX_WIDTH, max(0, vw - FIGHT_NIGHT_PADDING * 2))
+    return (vx + FIGHT_NIGHT_PADDING, vy + vh - height - FIGHT_NIGHT_PADDING, width, height)
+
+
+def fight_night_card_rect(viewport_rect: Rect, line_count: int) -> Rect:
+    """The opening/result card's rect: centered in the arena band.
+
+    A card is shown only at the first tick or at/after the result tick --
+    never during live play -- so centering it costs no mid-match visibility.
+    """
+
+    vx, vy, vw, vh = viewport_rect
+    if line_count <= 0 or vw <= 0 or vh <= 0:
+        return (vx, vy, 0, 0)
+    height = min(vh, FIGHT_NIGHT_PADDING * 2 + line_count * FIGHT_NIGHT_LINE_HEIGHT)
+    width = min(FIGHT_NIGHT_CARD_MAX_WIDTH, max(0, vw - FIGHT_NIGHT_PADDING * 2))
+    return (vx + (vw - width) // 2, vy + max(0, (vh - height) // 2), width, height)
+
+
+def format_fight_night_ribbon_title(visibility_basis: str) -> str:
+    """The ribbon's own header line, naming its information domain out loud.
+
+    Phase 8 brief Sec. 18 forbids an ambiguous middle state between "these
+    are broadcast facts" and "this is what the selected entrant knows". The
+    ribbon resolves that by *saying which it is* on every frame it is
+    visible, rather than relying on the viewer to remember which view mode
+    they selected.
+    """
+
+    if visibility_basis.startswith("perspective:"):
+        entrant = visibility_basis.split(":", 1)[1]
+        return f"FIGHT NIGHT · {entrant} KNOWS"
+    return "FIGHT NIGHT · BROADCAST"
+
+
+def format_fight_night_ribbon_line(
+    label: str,
+    subject: str | None,
+    tick: int,
+    *,
+    max_chars: int | None = None,
+) -> str:
+    """One ribbon entry: ``T12 A · CORE CELL LOST``.
+
+    Names at most one entrant, by construction -- ``subject`` is a single
+    optional id and there is no second slot to put a counterparty in. When
+    ``max_chars`` forces a choice the tick prefix is dropped first (it is the
+    lowest-value clause; the ribbon is ordered anyway), then the text is
+    ellipsis-truncated, so the label itself survives longest.
+    """
+
+    who = f"{subject} · " if subject else ""
+    full = f"T{tick} {who}{label}"
+    if max_chars is None or len(full) <= max_chars:
+        return full
+    without_tick = f"{who}{label}"
+    if len(without_tick) <= max_chars:
+        return without_tick
+    return truncate_with_ellipsis(without_tick, max_chars)
+
+
+def format_fight_night_opening_lines(
+    entrants: Sequence[str],
+    names: Mapping[str, str],
+    *,
+    ruleset_label: str,
+    max_chars: int | None = None,
+) -> tuple[str, ...]:
+    """The pre-match opening card's lines.
+
+    Deliberately one line per entrant rather than a single "A vs B vs C vs D"
+    string: at the documented 640x480 minimum a four-entrant single line with
+    realistic display names does not fit, and wrapping it would put the
+    breaks in arbitrary places. One line each also lets each name truncate
+    independently instead of the last entrant losing its whole name.
+    """
+
+    lines = ["BYTEFRAY FIGHT NIGHT", ""]
+    for index, entrant in enumerate(entrants):
+        if index:
+            lines.append("vs")
+        display = names.get(entrant, entrant)
+        lines.append(truncate_with_ellipsis(f"{entrant} · {display.upper()}", max_chars))
+    lines.append("")
+    lines.append(truncate_with_ellipsis(f"Ruleset {ruleset_label}", max_chars))
+    return tuple(lines)
+
+
+def format_fight_night_result_lines(
+    *,
+    winner: str | None,
+    termination_reason: str | None,
+    result_ticks: int,
+    survivors: Sequence[str],
+    names: Mapping[str, str],
+    max_chars: int | None = None,
+) -> tuple[str, ...]:
+    """The end-of-match result card's lines.
+
+    Every value shown is already publicly qualified: the winner and
+    termination reason come from the canonical replay's own result record
+    (via the Fight Night plan), and ``survivors`` is the caller's
+    already-derived alive set. Nothing is inferred here, and a match with no
+    winner is reported as a draw exactly the way
+    :func:`format_terminal_state_line` already reports it, rather than
+    inventing a different wording for the same fact.
+    """
+
+    outcome = (
+        f"WINNER · {names.get(winner, winner).upper()}" if winner is not None else "DRAW / TIE"
+    )
+    lines = [
+        "MATCH COMPLETE",
+        "",
+        truncate_with_ellipsis(outcome, max_chars),
+        truncate_with_ellipsis((termination_reason or "unknown").replace("_", " "), max_chars),
+        truncate_with_ellipsis(f"tick {result_ticks}", max_chars),
+    ]
+    if survivors:
+        joined = ", ".join(survivors)
+        lines.append(truncate_with_ellipsis(f"survivors: {joined}", max_chars))
+    return tuple(lines)
+
+
+# ---------------------------------------------------------------------------
 # Match-timeline coordinate math -- pure, inverse-consistent, no drawing.
 # Both directions are deliberately defined over the *whole* match (first to
 # final recorded tick), so the track always represents the same span no
@@ -632,6 +824,11 @@ __all__ = [
     "COMPACT_HELP_TEXT",
     "DETAILED_CARD_MIN_WIDTH",
     "EXPANDED_HELP_LINES",
+    "FIGHT_NIGHT_CARD_MAX_WIDTH",
+    "FIGHT_NIGHT_LINE_HEIGHT",
+    "FIGHT_NIGHT_MIN_VIEWPORT_HEIGHT",
+    "FIGHT_NIGHT_PADDING",
+    "FIGHT_NIGHT_RIBBON_MAX_WIDTH",
     "FOOTER_GRAPH_MIN_WINDOW_WIDTH",
     "FOOTER_GRAPH_WIDTH",
     "FOOTER_HEIGHT",
@@ -652,9 +849,16 @@ __all__ = [
     "Rect",
     "ViewerLayout",
     "calculate_layout",
+    "fight_night_card_rect",
+    "fight_night_ribbon_capacity",
+    "fight_night_ribbon_rect",
     "format_entrant_card_lines",
     "format_entrant_stats_line",
     "format_entrant_status_line",
+    "format_fight_night_opening_lines",
+    "format_fight_night_result_lines",
+    "format_fight_night_ribbon_line",
+    "format_fight_night_ribbon_title",
     "format_help_lines",
     "format_match_header_lines",
     "format_playback_line",
