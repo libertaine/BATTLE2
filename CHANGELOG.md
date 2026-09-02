@@ -2,6 +2,47 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [4.0.0-alpha3] - 2026-09-02
+
+### Spectator Intelligence, Perspective Cam, and Fight Night
+
+This alpha introduces the Bytefray v4 spectator presentation pipeline. Replay
+viewing now offers first-person entrant perspective modes, deterministic
+dynamic playback pacing, and contextual event feeds without altering canonical
+simulation determinism.
+
+* **Perspective Cam (`V` / `P` to cycle, `1`–`9` direct select).** View a
+  match strictly from an entrant's own delivered knowledge boundary under
+  Agent API v2:
+  * **Anonymous sensor contacts**: Observed enemies appear as prominent gold
+    `CURRENT` radar contacts and ghosted `STALE` rings with tick age (`T-{age}`).
+    No synthetic enemy tracks, entrant IDs, process IDs, or continuity are
+    inferred or displayed.
+  * **Own-process reach**: Visualizes active process anchors and their local
+    sensor reach boundaries.
+  * **READ history**: Displays historical memory cell sample tints, strictly
+    separated from spatial contact identities.
+  * **Perspective-safe HUD**: Opponent persistent cards redact lifecycle to
+    `UNKNOWN` and core/score/territory/kills to `?` placeholders during live
+    viewing, revealing canonical values at the match terminal tick. Reactive
+    core-capture callouts suppress opponent-vs-opponent captures and strip
+    killer attribution on own capture.
+* **Spectator Director (`G` to toggle).** Deterministic dynamic playback
+  pacing that accelerates through quiet exploration periods (up to 18 tps)
+  and decelerates/holds during key combat events (disruptions, core damage,
+  first contacts, eliminations). Multi-entrant and Perspective pacing strictly
+  respect the active entrant's knowledge domain.
+* **Fight Night Presentation (`N` to toggle).** Compact factual event
+  ribbon anchored in the arena letterbox gutter showing recent contact, write,
+  disruption, and elimination events with 2-, 3-, and 4-entrant presentation.
+* **Non-Intrusive Architecture & Compatibility.** Fixed-rate canonical
+  Broadcast replay remains default. Replay playback functions independently
+  with zero trace dependency, gracefully falling back to Broadcast mode if no
+  trace is supplied. Retained incremental cursor (`PerspectiveCursor`) maintains
+  $O(1)$ amortized per-frame performance. Canonical simulation rulesets
+  (`bytefray-rules-4-alpha1` / `bytefray-rules-4-alpha2`), Agent API v2, and
+  replay schema 4 remain 100% frozen.
+
 ## [4.0.0-alpha2] - 2026-09-01
 
 ### Ruleset `bytefray-rules-4-alpha2`

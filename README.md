@@ -4,7 +4,7 @@
   <img src="assets/branding/bytefray-logo-horizontal.png" alt="Bytefray logo" width="420">
 </p>
 
-> **Note: Bytefray is currently in v4.0.0-alpha2.** This is an alpha release introducing the new spatial multi-process model. We welcome gameplay feedback!
+> **Note: Bytefray is currently in v4.0.0-alpha3.** This alpha release introduces the spatial multi-process model and the new spectator presentation suite (Perspective Cam, Spectator Director, Fight Night). We welcome gameplay and viewer feedback!
 
 **Bytefray** is a deterministic programmable-agent combat simulator in which
 agents compete over a shared circular memory arena. The v4 alpha adds a
@@ -19,7 +19,7 @@ Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible 
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Current pre-release:** [Bytefray v4.0.0-alpha2](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha2)
+**Current pre-release:** [Bytefray v4.0.0-alpha3](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
 — see [Downloads](#downloads) below. Earlier [v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 releases remain available for historical and compatibility use.
 
@@ -430,10 +430,11 @@ read-only agent-source inspection, refreshed onboarding, and current product
 screenshots.
 
 Bytefray v3.0.0 remains the stable product on top of Ruleset v2. Bytefray
-v4.0.0-alpha2 is the current pre-release and productionizes the closed R0-R6
-spatial-process endpoint summarized in [Bytefray v4 alpha](#bytefray-v4-alpha).
-The alpha identity is intentionally provisional; historical identities and
-wire formats remain distinct and readable.
+v4.0.0-alpha3 is the current pre-release and adds the qualified spectator
+intelligence suite (Perspective Cam, Spectator Director, Fight Night) on top
+of the spatial multi-process model. The alpha identity is intentionally
+provisional; historical identities and wire formats remain distinct and
+readable.
 
 See the [detailed roadmap and complete milestone history](docs/ROADMAP.md),
 [release-by-release changelog](CHANGELOG.md), and maturity-labeled

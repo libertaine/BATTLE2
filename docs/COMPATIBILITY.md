@@ -105,6 +105,24 @@ alpha1's fixed opposite placement. The existing fail-closed `--ruleset` guard
 rejects alpha2 with a clear message; adopting it there needs a methodology
 decision this Ruleset change does not supply.
 
+## v4.0.0-alpha3 compatibility boundary
+
+The `v4.0.0-alpha3` release adds spectator presentation capabilities:
+Perspective Cam, Spectator Director, Fight Night, and Perspective-safe HUD
+gating.
+
+* **Simulation and rulesets are 100% frozen**: `bytefray-rules-4-alpha1` and
+  `bytefray-rules-4-alpha2` gameplay semantics, deterministic outcomes, and
+  seed derivations are untouched.
+* **Agent API v2 and replay schema 4 are unchanged**: Persisted replays and
+  traces written by earlier v4 alphas remain bitwise valid and readable.
+* **Non-intrusive presentation extensions**: Spectator events
+  (`SpectatorEventKind`), pair derivation (`analyze_pair`), Perspective
+  projection (`PerspectiveProjection`), dynamic pacing (`DirectorPlan`), and
+  Fight Night (`FightNightPlan`) operate strictly as consumer-side analysis
+  and presentation layers. If companion `trace.jsonl` is absent or corrupt,
+  the viewer gracefully falls back to canonical Broadcast replay.
+
 ## Separate compatibility axes
 
 These axes are independent and must not be conflated — a change to one

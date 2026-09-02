@@ -1132,7 +1132,7 @@ none was moved, retagged, or rewritten by this promotion.
 
 ### v4.0.0-alpha2 — Seeded Placement & Process Fairness
 
-**Status: QUALIFIED, pending publication.** Adds a second v4 Ruleset
+**Published September 1, 2026.** Adds a second v4 Ruleset
 identity, `bytefray-rules-4-alpha2`, differing from `bytefray-rules-4-alpha1`
 in exactly two gameplay semantics that the Phase 4 controlled gameplay study
 (~36,000 matches) identified as accidental rather than designed:
@@ -1144,21 +1144,31 @@ disruption, and quota redistribution are all unchanged; `bytefray-rules-4-alpha1
 remains unchanged and explicitly selectable everywhere a Ruleset can be
 named.
 
-Phase 5 qualification: 2623 passed / 14 skipped / 2 deselected (Windows),
-2620 passed / 17 skipped (Linux), 242 passed (GUI), Ruff and both mypy gates
-clean, six deterministic cross-platform vectors byte-identical on placement,
-match/result identity, and replay bytes, and a controlled Alpha1 firewall
-check confirming `replay.jsonl`/`result.json` stay byte-identical against a
-clean `main` checkout. See [V4_ALPHA2_DESIGN.md](V4_ALPHA2_DESIGN.md) for the
-full contract, [V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md](V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
-for the evidence behind the two rule changes, and
-[V4_ALPHA2_PHASE5_QUALIFICATION.md](V4_ALPHA2_PHASE5_QUALIFICATION.md) for
-the complete qualification and release-decision record.
+### v4.0.0-alpha3 — Spectator Intelligence, Perspective Cam, & Fight Night
 
-Known limitation, disclosed rather than treated as a last-minute Ruleset
-change: global reach still provides whole-arena detection at no explicit
-cost, so alpha2 removes the closed-form placement exploit without creating a
-reach economy.
+**Status: QUALIFIED, release candidate.** Adds the complete v4 spectator
+presentation pipeline across the replay viewer and CLI:
+
+* **Perspective Cam**: First-person entrant perspective replay mode (`V`/`P`
+  cycle, `1`–`9` direct selection) rendering only what an entrant has a basis
+  to know under Agent API v2 (own core base, own process anchors with reach
+  radii, anonymous CURRENT gold radar contacts, and anonymous STALE ghosted
+  contacts with tick age).
+* **Perspective-Safe HUD**: Persistent opponent cards redact lifecycle state
+  to `UNKNOWN` and core/score/territory/kills to `?` placeholders during live
+  viewing, revealing canonical values at the match terminal tick. Reactive
+  core-capture callouts suppress opponent-vs-opponent eliminations.
+* **Spectator Director**: Deterministic dynamic playback pacing (`G` toggle)
+  cruising through quiet exploration ticks and decelerating/holding during
+  key combat events.
+* **Fight Night Presentation**: Compact factual event ribbon (`N` toggle) in
+  the arena letterbox gutter with 2-, 3-, and 4-entrant layouts.
+* **Non-Intrusive Design**: Pure fallback to Broadcast mode when no trace is
+  supplied; $O(1)$ per-frame playback via `PerspectiveCursor`; canonical
+  simulation rulesets and Agent API v2 remain 100% frozen.
+* **Candidate Phase 9 (Future/Exploratory)**: Color Commentator commentary
+  generation (independent research built on top of the qualified spectator
+  foundation).
 
 ## After v1.0
 
