@@ -20,6 +20,7 @@ from battle_client.fight_night import (
 from battle_client.hud_layout import (
     EXPANDED_HELP_LINES,
     FIGHT_NIGHT_LINE_HEIGHT,
+    FIGHT_NIGHT_MIN_GUTTER_WIDTH,
     MIN_VIEWER_SIZE,
     calculate_layout,
     fight_night_card_rect,
@@ -310,6 +311,44 @@ def test_ribbon_fits_the_documented_minimum_window_for_two_three_and_four_entran
         assert rect[2] > 0 and rect[3] > 0
         # The ribbon never claims more than half the arena band.
         assert rect[3] <= viewport[3] // 2 + FIGHT_NIGHT_LINE_HEIGHT
+
+
+def test_the_ribbon_takes_the_letterbox_gutter_instead_of_covering_the_arena() -> None:
+    """The arena stays visually primary: no cell is covered when it need not be.
+
+    The arena is drawn at an integer cell scale centered in its band, so a
+    letterbox column beside it is the ordinary case. Where that column is
+    wide enough, the ribbon must sit entirely within it rather than on top of
+    the battlefield.
+    """
+
+    for window in ((640, 480), (1280, 820)):
+        for entrants in (2, 3, 4):
+            layout = calculate_layout(window, entrants, (20, 20))
+            viewport = layout.arena_viewport_rect
+            arena = layout.arena_rect
+            gutter = arena[0] - viewport[0]
+            assert gutter >= FIGHT_NIGHT_MIN_GUTTER_WIDTH, (window, entrants, gutter)
+
+            rect = fight_night_ribbon_rect(viewport, 4, arena)
+            # Entirely to the left of the arena's own left edge.
+            assert rect[0] + rect[2] <= arena[0], (window, entrants, rect, arena)
+            # And still wide enough to read.
+            assert rect[2] >= FIGHT_NIGHT_MIN_GUTTER_WIDTH - 2 * 6
+
+
+def test_the_ribbon_overlays_only_when_the_arena_spans_the_full_width() -> None:
+    """A gutter-free window falls back to overlaying, and says so by geometry."""
+
+    viewport = (0, 100, 640, 600)
+    full_width_arena = (0, 100, 640, 600)
+    rect = fight_night_ribbon_rect(viewport, 4, full_width_arena)
+    assert rect[2] > 0
+    # No gutter exists, so the ribbon keeps its full width and overlaps.
+    assert rect[0] + rect[2] > full_width_arena[0]
+    # Without an arena rect at all, behaviour is unchanged from the overlay
+    # default -- callers that do not know the arena still get a usable rect.
+    assert fight_night_ribbon_rect(viewport, 4) == rect
 
 
 def test_ribbon_degrades_gracefully_rather_than_forcing_a_larger_window() -> None:

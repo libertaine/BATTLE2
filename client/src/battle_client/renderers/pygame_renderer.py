@@ -2135,14 +2135,17 @@ class PygameRenderer:
                 accent=TERMINAL_TEXT_COLOR,
             )
 
-        self._draw_fight_night_ribbon(viewport, state)
+        self._draw_fight_night_ribbon(viewport, layout.arena_rect, state)
 
     def _fight_night_card_chars(self, viewport: tuple[int, int, int, int]) -> int:
         rect = fight_night_card_rect(viewport, 1)
         return max(6, (rect[2] - 2 * FIGHT_NIGHT_PADDING) // HUD_CHAR_WIDTH_PX)
 
     def _draw_fight_night_ribbon(
-        self, viewport: tuple[int, int, int, int], state: FightNightState
+        self,
+        viewport: tuple[int, int, int, int],
+        arena_rect: tuple[int, int, int, int],
+        state: FightNightState,
     ) -> None:
         """The recent-events ribbon, anchored to the arena band's lower-left.
 
@@ -2164,7 +2167,10 @@ class PygameRenderer:
         if capacity <= 0:
             return
         entries = state.ribbon[-capacity:]
-        rect = fight_night_ribbon_rect(viewport, len(entries))
+        # The real arena rect (not the viewport) is passed so the ribbon can
+        # take the letterbox column beside the battlefield instead of sitting
+        # on top of it whenever one is wide enough.
+        rect = fight_night_ribbon_rect(viewport, len(entries), arena_rect)
         x, y, width, height = rect
         if width <= 0 or height <= 0:
             return

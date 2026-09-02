@@ -596,6 +596,15 @@ FIGHT_NIGHT_CARD_MAX_WIDTH = 420
 # it explains. Above it, the ribbon is capped to whatever whole lines fit.
 FIGHT_NIGHT_MIN_VIEWPORT_HEIGHT = 120
 
+# The narrowest letterbox column the ribbon will move into rather than
+# overlay the arena. 150px is ~19 monospace HUD characters, which fits every
+# label in the ribbon vocabulary once the droppable tick prefix is shed (the
+# longest, "A · FIRST HOSTILE WRITE", is 23 characters and truncates
+# gracefully below that). Narrower than this the ribbon would be shedding
+# text to avoid covering cells it barely covers anyway, so it overlays
+# instead.
+FIGHT_NIGHT_MIN_GUTTER_WIDTH = 150
+
 
 def fight_night_ribbon_capacity(viewport_rect: Rect, requested: int) -> int:
     """How many ribbon lines actually fit above ``viewport_rect``'s bottom.
@@ -617,15 +626,32 @@ def fight_night_ribbon_capacity(viewport_rect: Rect, requested: int) -> int:
     return max(0, min(requested, fits))
 
 
-def fight_night_ribbon_rect(viewport_rect: Rect, line_count: int) -> Rect:
-    """The ribbon overlay's rect, anchored to the arena band's bottom-left.
+def fight_night_ribbon_rect(
+    viewport_rect: Rect, line_count: int, arena_rect: Rect | None = None
+) -> Rect:
+    """The ribbon's rect, preferring the arena's own letterbox gutter.
 
     Bottom-left rather than centered or top-anchored: the top band already
     carries the entrant cards and the match header, the footer is at its
     line budget, and the arena's own action is centered -- so the lower-left
-    corner is the least contended real estate on screen. Returns a
-    degenerate (zero-size) rect when nothing fits, which every drawing
-    caller already treats as "skip".
+    corner is the least contended real estate on screen.
+
+    When ``arena_rect`` is supplied, the ribbon is placed in the empty
+    letterbox column to the *left of the arena* whenever that column is wide
+    enough to be useful. The arena is drawn at an integer cell scale centered
+    in its band, so a horizontal gutter is the normal case rather than a
+    lucky one: measured across the supported window sizes and entrant counts,
+    that column runs 130-320px wide while the gutter *below* the arena is
+    only ever 0-6px. Preferring it means the ribbon covers no battlefield
+    cell at all in the ordinary case, honoring the standing "the arena shows
+    the battle, the HUD explains the battle" rule rather than merely staying
+    inside the band. A window whose arena already spans the full width (no
+    gutter) falls back to overlaying the band's lower-left corner, which is
+    the same tradeoff the already-qualified core-capture callout makes
+    against the top band.
+
+    Returns a degenerate (zero-size) rect when nothing fits, which every
+    drawing caller already treats as "skip".
     """
 
     vx, vy, vw, vh = viewport_rect
@@ -634,6 +660,12 @@ def fight_night_ribbon_rect(viewport_rect: Rect, line_count: int) -> Rect:
     height = FIGHT_NIGHT_PADDING * 2 + (line_count + 1) * FIGHT_NIGHT_LINE_HEIGHT
     height = min(height, vh)
     width = min(FIGHT_NIGHT_RIBBON_MAX_WIDTH, max(0, vw - FIGHT_NIGHT_PADDING * 2))
+
+    if arena_rect is not None:
+        gutter = max(0, arena_rect[0] - vx - FIGHT_NIGHT_PADDING * 2)
+        if gutter >= FIGHT_NIGHT_MIN_GUTTER_WIDTH:
+            width = min(width, gutter)
+
     return (vx + FIGHT_NIGHT_PADDING, vy + vh - height - FIGHT_NIGHT_PADDING, width, height)
 
 
@@ -826,6 +858,7 @@ __all__ = [
     "EXPANDED_HELP_LINES",
     "FIGHT_NIGHT_CARD_MAX_WIDTH",
     "FIGHT_NIGHT_LINE_HEIGHT",
+    "FIGHT_NIGHT_MIN_GUTTER_WIDTH",
     "FIGHT_NIGHT_MIN_VIEWPORT_HEIGHT",
     "FIGHT_NIGHT_PADDING",
     "FIGHT_NIGHT_RIBBON_MAX_WIDTH",
