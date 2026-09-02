@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -259,6 +260,68 @@ def test_perspective_manager_lifecycle_and_mode_cycling(tmp_path: Path) -> None:
     assert mgr.set_mode("A")
     assert mgr.mode == "A"
     assert not mgr.set_mode("INVALID_ENTRANT")
+    assert mgr.mode == "A"
+
+
+def test_lazy_load_failure_for_one_entrant_does_not_break_the_other(tmp_path: Path) -> None:
+    """One entrant's malformed callback stream must not affect the other.
+
+    Lazy per-entrant loading means each entrant's projection is only built
+    (and validated) when that entrant is actually selected. This proves the
+    isolation is real: B's trace is corrupted -- its second callback's
+    ``self_reach`` is made to contradict its own process declaration, a
+    ``project_perspective``-only check that ``verify_pair``/``derive_events``
+    do not perform -- while A's callbacks are untouched. The pair itself
+    still validates (``analyze_pair`` succeeds, so ``available`` and the
+    ``entrants`` roster are unaffected), A must load and remain selectable
+    before *and* after B's failed attempt, B's failure must be visible
+    (never a silent fall back to broadcast), and the roster must still name
+    B even though it can never actually be loaded.
+    """
+
+    replay_path, trace_path, _result = _duel(tmp_path, "corrupt_b")
+    assert trace_path is not None
+
+    lines = trace_path.read_text(encoding="utf-8").splitlines()
+    out = []
+    mutated = False
+    for line in lines:
+        record = json.loads(line)
+        if (
+            not mutated
+            and record.get("record_type") == "decision_v2"
+            and record.get("agent_id") == "B"
+        ):
+            record["observation"]["self_reach"] = record["observation"]["self_reach"] + 99
+            mutated = True
+        out.append(json.dumps(record, sort_keys=True, separators=(",", ":")))
+    trace_path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    assert mutated, "fixture must actually corrupt one of B's callbacks"
+
+    mgr = PerspectiveManager(replay_path, trace_path)
+    assert mgr.available, mgr.status_message
+    assert set(mgr.entrants) == {"A", "B"}
+
+    assert mgr.set_mode("A")
+    assert mgr.mode == "A"
+    state_a = mgr.state_at_tick(1)
+    assert state_a is not None and state_a.entrant_id == "A"
+
+    assert not mgr.set_mode("B")
+    assert mgr.mode == "A", "a failed load must not silently revert to broadcast"
+    assert mgr.load_error_for("B") is not None
+    assert "self_reach" in str(mgr.load_error_for("B"))
+    assert mgr.load_error_for("A") is None
+
+    # A must still work after B's failed attempt -- B's corruption must not
+    # have poisoned any shared state.
+    assert mgr.set_mode("broadcast")
+    assert mgr.set_mode("A")
+    state_a_again = mgr.state_at_tick(1)
+    assert state_a_again is not None and state_a_again.entrant_id == "A"
+
+    # A retrying B does not raise again or change the recorded error/mode.
+    assert not mgr.set_mode("B")
     assert mgr.mode == "A"
 
 
