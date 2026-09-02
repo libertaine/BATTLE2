@@ -82,6 +82,12 @@ from battle_client.hud_layout import (
     timeline_x_for_tick,
     truncate_with_ellipsis,
 )
+from battle_client.perspective import (
+    BROADCAST_MODE,
+    KnowledgeStatus,
+    PerspectiveManager,
+    PerspectiveState,
+)
 from battle_client.player import PlaybackController
 from battle_client.renderers.base import RendererDependencyError
 from battle_client.replay_status import (
@@ -567,6 +573,9 @@ class KeyAction:
     toggle_help: bool = False
     rescale: int = 0  # +1/-1 window scale step
     fit_to_display: bool = False
+    cycle_perspective: bool = False
+    select_perspective_index: int | None = None
+    toggle_perspective_debug: bool = False
 
 
 def dispatch_key(
@@ -603,6 +612,28 @@ def dispatch_key(
         return KeyAction(rescale=1)
     elif key == pg.K_t:
         return KeyAction(toggle_trails=True)
+    elif key in (pg.K_v, pg.K_p):
+        return KeyAction(cycle_perspective=True)
+    elif key in (getattr(pg, "K_F3", -3), pg.K_d):
+        return KeyAction(toggle_perspective_debug=True)
+    elif key == getattr(pg, "K_1", -10) and not shift:
+        return KeyAction(select_perspective_index=0)
+    elif key == getattr(pg, "K_2", -11) and not shift:
+        return KeyAction(select_perspective_index=1)
+    elif key == getattr(pg, "K_3", -12) and not shift:
+        return KeyAction(select_perspective_index=2)
+    elif key == getattr(pg, "K_4", -13) and not shift:
+        return KeyAction(select_perspective_index=3)
+    elif key == getattr(pg, "K_5", -14) and not shift:
+        return KeyAction(select_perspective_index=4)
+    elif key == getattr(pg, "K_6", -15) and not shift:
+        return KeyAction(select_perspective_index=5)
+    elif key == getattr(pg, "K_7", -16) and not shift:
+        return KeyAction(select_perspective_index=6)
+    elif key == getattr(pg, "K_8", -17) and not shift:
+        return KeyAction(select_perspective_index=7)
+    elif key == getattr(pg, "K_9", -18) and not shift:
+        return KeyAction(select_perspective_index=8)
     elif key == getattr(pg, "K_QUESTION", -1) or (
         key == getattr(pg, "K_SLASH", -2) and shift
     ):
@@ -740,6 +771,10 @@ class PygameRenderer:
         self._active_capture_callout: tuple[int, tuple[CoreCaptureAttribution, ...]] | None = None
         self._capture_callout_expires_after_tick = 0
 
+        # Entrant Perspective Cam state (Phase 5).
+        self._perspective_manager: PerspectiveManager | None = None
+        self._perspective_debug: bool = False
+
     # ---------- grid geometry (pure, presentation-only) ----------
 
     def _resolve_grid_dims(self, arena_cells: int) -> tuple[int, int]:
@@ -808,6 +843,8 @@ class PygameRenderer:
         start_tick: int | None = None,
         start_paused: bool = False,
         initial_speed: float | None = None,
+        perspective_manager: PerspectiveManager | None = None,
+        initial_perspective: str | None = None,
     ) -> None:
         """Open an interactive window and play ``session`` until the user
         quits. Blocks until then. Raises ``RendererDependencyError`` if
@@ -821,6 +858,10 @@ class PygameRenderer:
             ) from exc
         self.pg = pygame
         pygame.init()
+
+        self._perspective_manager = perspective_manager
+        if perspective_manager is not None and initial_perspective is not None:
+            perspective_manager.set_mode(initial_perspective)
 
         self.arena = session.header.config.arena_size if session.header else 0
         self.grid_cols, self.grid_rows = self._resolve_grid_dims(self.arena)
@@ -1032,6 +1073,20 @@ class PygameRenderer:
                         self._rescale(action.rescale)
                     if action.fit_to_display:
                         self._fit_to_display()
+                    if action.cycle_perspective and self._perspective_manager is not None:
+                        self._perspective_manager.cycle_mode()
+                    if (
+                        action.select_perspective_index is not None
+                        and self._perspective_manager is not None
+                    ):
+                        idx = action.select_perspective_index
+                        if idx == 0:
+                            self._perspective_manager.set_mode(BROADCAST_MODE)
+                        elif 1 <= idx <= len(self._perspective_manager.entrants):
+                            entrant_id = self._perspective_manager.entrants[idx - 1]
+                            self._perspective_manager.set_mode(entrant_id)
+                    if action.toggle_perspective_debug:
+                        self._perspective_debug = not self._perspective_debug
                 elif event.type in (pg.VIDEORESIZE, getattr(pg, "WINDOWRESIZED", 32769)):
                     w, h = getattr(event, "size", self.screen.get_size())
                     self._handle_window_resize((w, h))
@@ -1245,6 +1300,10 @@ class PygameRenderer:
         gs = self.grid_surf
         state = controller.session.current_state
 
+        perspective_state: PerspectiveState | None = None
+        if self._perspective_manager is not None and self._perspective_manager.available:
+            perspective_state = self._perspective_manager.state_at_tick(state.tick)
+
         # The window background, visible only where a band doesn't paint
         # over it (e.g. a footer graph panel narrower than its rect) --
         # matches the panel bands' own color rather than the arena's, since
@@ -1259,59 +1318,118 @@ class PygameRenderer:
         for y in range(0, self.grid_rows, step):
             pg.draw.line(gs, GRID_LINE, (0, y), (self.grid_cols - 1, y))
 
-        for address, owner in enumerate(state.owners):
-            if owner is None:
-                continue
-            xy = self._to_xy(address)
-            if xy is None:
-                continue
-            tint = OWNERSHIP_TINT.get(owner, DEFAULT_TINT)
-            gs.set_at(xy, self._blend(GRID_BG, tint, 0.65))
-
-        for address, changed_tick in self._recent_changes.items():
-            intensity = activity_intensity(state.tick, changed_tick, ACTIVITY_WINDOW_TICKS)
-            if intensity <= 0.0:
-                continue
-            xy = self._to_xy(address)
-            if xy is None:
-                continue
-            current = tuple(gs.get_at(xy))[:3]
-            gs.set_at(xy, self._blend(current, ACTIVITY_COLOR, 0.6 * intensity))
-
-        for xy, (color, _ttl) in self._flash.items():
-            if 0 <= xy[0] < self.grid_cols and 0 <= xy[1] < self.grid_rows:
-                gs.set_at(xy, color)
-
-        ax, ay, aw, ah = self._arena_rect()
-        scaled = pg.transform.scale(gs, (max(1, aw), max(1, ah)))
-        self.screen.blit(scaled, (ax, ay))
-
-        if self.trails_enabled:
-            for agent_id, points in self._trail_points.items():
-                if len(points) < 2:
+        if perspective_state is None:
+            # BROADCAST / OMNISCIENT MODE
+            for address, owner in enumerate(state.owners):
+                if owner is None:
                     continue
-                color = self._blend(
-                    AGENT_COLORS.get(agent_id, DEFAULT_AGENT_COLOR), (255, 255, 255), 0.25
-                )
-                self._draw_polyline(points[-TRAIL_LENGTH:], color)
+                xy = self._to_xy(address)
+                if xy is None:
+                    continue
+                tint = OWNERSHIP_TINT.get(owner, DEFAULT_TINT)
+                gs.set_at(xy, self._blend(GRID_BG, tint, 0.65))
 
-        for agent_id, agent in state.agents.items():
-            if not agent.alive:
-                continue
-            xy = self._vm_marker_xy(state, agent)
-            if xy is None:
-                continue
-            self._draw_agent_marker(agent_id, xy)
+            for address, changed_tick in self._recent_changes.items():
+                intensity = activity_intensity(state.tick, changed_tick, ACTIVITY_WINDOW_TICKS)
+                if intensity <= 0.0:
+                    continue
+                xy = self._to_xy(address)
+                if xy is None:
+                    continue
+                current = tuple(gs.get_at(xy))[:3]
+                gs.set_at(xy, self._blend(current, ACTIVITY_COLOR, 0.6 * intensity))
 
-        for process in state.processes.values():
-            xy = self._to_xy(process.anchor)
-            if xy is not None:
-                self._draw_process_anchor(
-                    process.entrant_id,
-                    process.process_id,
-                    xy,
-                    disrupted=process.disrupted,
-                )
+            for xy, (color, _ttl) in self._flash.items():
+                if 0 <= xy[0] < self.grid_cols and 0 <= xy[1] < self.grid_rows:
+                    gs.set_at(xy, color)
+
+            ax, ay, aw, ah = self._arena_rect()
+            scaled = pg.transform.scale(gs, (max(1, aw), max(1, ah)))
+            self.screen.blit(scaled, (ax, ay))
+
+            if self.trails_enabled:
+                for agent_id, points in self._trail_points.items():
+                    if len(points) < 2:
+                        continue
+                    color = self._blend(
+                        AGENT_COLORS.get(agent_id, DEFAULT_AGENT_COLOR), (255, 255, 255), 0.25
+                    )
+                    self._draw_polyline(points[-TRAIL_LENGTH:], color)
+
+            for agent_id, agent in state.agents.items():
+                if not agent.alive:
+                    continue
+                xy = self._vm_marker_xy(state, agent)
+                if xy is None:
+                    continue
+                self._draw_agent_marker(agent_id, xy)
+
+            for process in state.processes.values():
+                xy = self._to_xy(process.anchor)
+                if xy is not None:
+                    self._draw_process_anchor(
+                        process.entrant_id,
+                        process.process_id,
+                        xy,
+                        disrupted=process.disrupted,
+                    )
+        else:
+            # ENTRANT PERSPECTIVE MODE (Knowledge-Limited)
+            # 1. Own core cells
+            if (
+                perspective_state.own_core_base is not None
+                and perspective_state.own_core_size is not None
+            ):
+                own_tint = OWNERSHIP_TINT.get(perspective_state.entrant_id, DEFAULT_TINT)
+                for offset in range(perspective_state.own_core_size):
+                    addr = (perspective_state.own_core_base + offset) % self.arena
+                    xy = self._to_xy(addr)
+                    if xy is not None:
+                        gs.set_at(xy, self._blend(GRID_BG, own_tint, 0.70))
+
+            # 2. Historical delivered READ cell samples
+            for read in perspective_state.read_history:
+                if read.normalized_address is not None and read.applied:
+                    xy = self._to_xy(read.normalized_address)
+                    if xy is not None:
+                        read_tint = (
+                            OWNERSHIP_TINT.get(read.owner, (60, 65, 85))
+                            if read.owner
+                            else (50, 50, 60)
+                        )
+                        current_c = tuple(gs.get_at(xy))[:3]
+                        gs.set_at(xy, self._blend(current_c, read_tint, 0.45))
+
+            ax, ay, aw, ah = self._arena_rect()
+            scaled = pg.transform.scale(gs, (max(1, aw), max(1, ah)))
+            self.screen.blit(scaled, (ax, ay))
+
+            # 3. Own process anchors and sensor reach
+            for proc in perspective_state.own_processes:
+                if proc.anchor is not None:
+                    xy = self._to_xy(proc.anchor)
+                    if xy is not None:
+                        self._draw_sensor_reach(
+                            perspective_state.entrant_id, proc.anchor, proc.reach
+                        )
+                        self._draw_process_anchor(
+                            perspective_state.entrant_id,
+                            proc.process_id,
+                            xy,
+                            disrupted=False,
+                        )
+
+            # 4. Anonymous CURRENT sensor contacts
+            for contact in perspective_state.current_contacts:
+                self._draw_perspective_contact(contact.address, KnowledgeStatus.CURRENT)
+
+            # 5. Anonymous STALE sensor contacts
+            for contact in perspective_state.stale_contacts:
+                age = state.tick - contact.last_observed_at.tick
+                self._draw_perspective_contact(contact.address, KnowledgeStatus.STALE, age=age)
+
+            if self._perspective_debug:
+                self._draw_perspective_debug_overlay(state, perspective_state)
 
         self._draw_selection_highlight()
         statuses = self._draw_top_band(controller)
@@ -1326,6 +1444,101 @@ class PygameRenderer:
             int(a[1] * (1 - alpha) + b[1] * alpha),
             int(a[2] * (1 - alpha) + b[2] * alpha),
         )
+
+    def _draw_perspective_contact(
+        self,
+        address: int,
+        status: KnowledgeStatus,
+        *,
+        age: int = 0,
+    ) -> None:
+        """Draw an anonymous sensor contact marker on the arena.
+
+        Never renders opponent identity, process identity, process count, or
+        synthetic track ID.
+        """
+        xy = self._to_xy(address)
+        if xy is None:
+            return
+        sx, sy = self._screen_xy(*xy)
+        _ax, _ay, aw, ah = self._arena_rect()
+        cell_scale = min(aw / self.grid_cols, ah / self.grid_rows)
+
+        if status == KnowledgeStatus.CURRENT:
+            radius = max(3, int(0.65 * cell_scale))
+            contact_color = (255, 215, 0)
+            self.pg.draw.circle(self.screen, contact_color, (sx, sy), radius, 2)
+            self.pg.draw.circle(self.screen, (255, 255, 255), (sx, sy), max(1, radius // 3))
+            label = self.hud_font.render("CONTACT", True, contact_color)
+            label_w = getattr(label, "get_width", lambda: 0)()
+            label_h = getattr(label, "get_height", lambda: 0)()
+            self.screen.blit(label, (sx - label_w // 2, sy - radius - 2 - label_h))
+        elif status == KnowledgeStatus.STALE:
+            radius = max(2, int(0.5 * cell_scale))
+            stale_color = (150, 150, 160)
+            self.pg.draw.circle(self.screen, stale_color, (sx, sy), radius, 1)
+            age_label = self.hud_font.render(f"T-{age}", True, stale_color)
+            label_w = getattr(age_label, "get_width", lambda: 0)()
+            label_h = getattr(age_label, "get_height", lambda: 0)()
+            self.screen.blit(age_label, (sx - label_w // 2, sy - radius - 1 - label_h))
+
+    def _draw_sensor_reach(
+        self,
+        entrant_id: str,
+        anchor: int,
+        reach: int,
+    ) -> None:
+        """Draw sensor reach boundary around an observed anchor."""
+        xy = self._to_xy(anchor)
+        if xy is None:
+            return
+        sx, sy = self._screen_xy(*xy)
+        _ax, _ay, aw, ah = self._arena_rect()
+        cell_scale = min(aw / self.grid_cols, ah / self.grid_rows)
+        reach_px = max(1, int(reach * cell_scale))
+        reach_surf = self.pg.Surface((reach_px * 2 + 4, reach_px * 2 + 4), flags=self.pg.SRCALPHA)
+        agent_color = AGENT_COLORS.get(entrant_id, DEFAULT_AGENT_COLOR)
+        reach_color = (*agent_color, 45)
+        self.pg.draw.circle(reach_surf, reach_color, (reach_px + 2, reach_px + 2), reach_px, 1)
+        self.screen.blit(reach_surf, (sx - reach_px - 2, sy - reach_px - 2))
+
+    def _draw_perspective_debug_overlay(
+        self, state: ReplayState, perspective_state: PerspectiveState
+    ) -> None:
+        """Draw diagnostic debug overlay for perspective qualification."""
+        ax, ay, aw, _ah = self._arena_rect()
+        overlay_w = min(460, max(280, aw - 40))
+        last_pt = perspective_state.last_visibility_sample_at
+        last_pt_str = (
+            f"T{last_pt.tick} (D{last_pt.decision_index}, {last_pt.process_id})"
+            if last_pt is not None
+            else "never"
+        )
+        lines = [
+            f"PERSPECTIVE DEBUG: Entrant {perspective_state.entrant_id}",
+            f"Tick: {state.tick} (Boundary: {perspective_state.boundary.value})",
+            f"Sampled this tick: {'yes' if perspective_state.sampled_this_tick else 'no'}",
+            f"Latest visibility sample: {last_pt_str}",
+            f"Current contacts ({len(perspective_state.current_contacts)}): {[c.address for c in perspective_state.current_contacts]}",
+            f"Stale contacts ({len(perspective_state.stale_contacts)}): {[c.address for c in perspective_state.stale_contacts]}",
+            f"Delivered READs: {len(perspective_state.read_history)}",
+            f"Own processes: {len(perspective_state.own_processes)}",
+        ]
+        padding = 8
+        line_height = 16
+        overlay_h = padding * 2 + len(lines) * line_height
+        overlay_surf = self.pg.Surface((overlay_w, overlay_h), flags=self.pg.SRCALPHA)
+        overlay_surf.fill((12, 14, 20, 230))
+        self.pg.draw.rect(overlay_surf, (80, 150, 240), overlay_surf.get_rect(), 1)
+        for idx, line in enumerate(lines):
+            color = (255, 220, 100) if idx == 0 else TEXT_COLOR
+            rendered = self.hud_font.render(
+                truncate_with_ellipsis(line, (overlay_w - 2 * padding) // HUD_CHAR_WIDTH_PX),
+                True,
+                color,
+            )
+            overlay_surf.blit(rendered, (padding, padding + idx * line_height))
+        self.screen.blit(overlay_surf, (ax + 10, ay + 10))
 
     def _draw_agent_marker(self, agent_id: str, pos: tuple[int, int]) -> None:
         color = AGENT_COLORS.get(agent_id, DEFAULT_AGENT_COLOR)
@@ -1635,6 +1848,18 @@ class PygameRenderer:
             icon_y = hy + (HEADER_LINES * HEADER_LINE_HEIGHT - HEADER_ICON_SIZE) // 2
             self.screen.blit(self._header_icon, (hx + 6, icon_y))
         text_x = hx + 6 + icon_reserved
+
+        view_label: str | None = None
+        if self._perspective_manager is not None and self._perspective_manager.available:
+            if self._perspective_manager.mode == BROADCAST_MODE:
+                view_label = "View: BROADCAST [V to switch]"
+            else:
+                ent_id = self._perspective_manager.mode
+                ent_name = next((s.name for s in statuses if s.agent_id == ent_id), ent_id)
+                view_label = f"View: ENTRANT {ent_id} ({ent_name}) · PERSPECTIVE CAM"
+        elif self._perspective_manager is not None and not self._perspective_manager.available:
+            view_label = "View: BROADCAST (No Perspective)"
+
         header_lines = format_match_header_lines(
             ruleset_label=self._ruleset_label,
             runtime_kind=state.runtime_kind or "unknown",
@@ -1643,6 +1868,7 @@ class PygameRenderer:
             winner=session.winner,
             termination_reason=session.termination_reason,
             result_available=session.result is not None,
+            view_label=view_label,
         )
         header_max_chars = max(6, (hw - 6 - icon_reserved) // HUD_CHAR_WIDTH_PX)
         for index, text in enumerate(header_lines):
@@ -1793,6 +2019,10 @@ class PygameRenderer:
         session = controller.session
         state = session.current_state
 
+        perspective_state: PerspectiveState | None = None
+        if self._perspective_manager is not None and self._perspective_manager.available:
+            perspective_state = self._perspective_manager.state_at_tick(state.tick)
+
         footer_y = layout.window_size[1] - layout.footer_height
         band_rect = self.pg.Rect(0, footer_y, layout.window_size[0], layout.footer_height)
         self.pg.draw.rect(self.screen, PANEL_BG, band_rect)
@@ -1813,8 +2043,83 @@ class PygameRenderer:
         selected = self._selected_cell_info(state)
         recent = events_near_tick(self._match_events, state.tick, window=1)
         if selected is not None:
-            inspector = format_inspector_lines(selected, recently_changed=self._selected_recently_changed())
-            line2 = "Selected cell: " + inspector[1].strip() if len(inspector) > 1 else "Selected cell:"
+            if perspective_state is not None:
+                addr = selected.address
+                contact = next(
+                    (c for c in perspective_state.current_contacts if c.address == addr),
+                    None,
+                )
+                stale = next(
+                    (c for c in perspective_state.stale_contacts if c.address == addr),
+                    None,
+                )
+                matching_reads = [
+                    r for r in perspective_state.read_history if r.normalized_address == addr
+                ]
+                if contact is not None:
+                    desc = (
+                        f"[CURRENT CONTACT] (first T{contact.first_observed_at.tick}, "
+                        f"last T{contact.last_observed_at.tick}, count={contact.observation_count})"
+                    )
+                elif stale is not None:
+                    age = state.tick - stale.last_observed_at.tick
+                    staled_t = (
+                        f"T{stale.became_stale_at.tick}"
+                        if stale.became_stale_at is not None
+                        else "?"
+                    )
+                    desc = (
+                        f"[STALE CONTACT] (last confirmed T{stale.last_observed_at.tick}, "
+                        f"staled {staled_t}, age={age}t)"
+                    )
+                elif matching_reads:
+                    latest_read = matching_reads[-1]
+                    val_str = (
+                        f"0x{latest_read.value:02x}"
+                        if latest_read.value is not None
+                        else "?"
+                    )
+                    owner_str = (
+                        latest_read.owner
+                        if latest_read.owner is not None
+                        else "none"
+                    )
+                    desc = (
+                        f"[DELIVERED READ] byte={val_str}  cell_owner={owner_str} "
+                        f"(sampled T{latest_read.sampled_at.tick} by {latest_read.process_id}, "
+                        f"delivered T{latest_read.delivered_at.tick})"
+                    )
+                else:
+                    desc = "[UNKNOWN / UNSAMPLED]"
+                line2 = f"Selected cell:   addr={addr}  {desc}"
+            else:
+                inspector = format_inspector_lines(
+                    selected, recently_changed=self._selected_recently_changed()
+                )
+                line2 = (
+                    "Selected cell: " + inspector[1].strip()
+                    if len(inspector) > 1
+                    else "Selected cell:"
+                )
+            self._event_panel_origin = None
+            self._event_panel_size = None
+            self._event_panel_ticks = ()
+        elif perspective_state is not None:
+            if perspective_state.sampled_this_tick:
+                sample_status = f"Sampled: tick {state.tick}"
+            else:
+                last_t = (
+                    perspective_state.last_visibility_sample_at.tick
+                    if perspective_state.last_visibility_sample_at is not None
+                    else 0
+                )
+                sample_status = f"Unsampled this tick (last sample: tick {last_t})"
+            curr_n = len(perspective_state.current_contacts)
+            stale_n = len(perspective_state.stale_contacts)
+            line2 = (
+                f"Perspective Cam: Entrant {perspective_state.entrant_id}  |  "
+                f"{sample_status}  |  Contacts: {curr_n} current, {stale_n} stale"
+            )
             self._event_panel_origin = None
             self._event_panel_size = None
             self._event_panel_ticks = ()

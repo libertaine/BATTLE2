@@ -468,7 +468,7 @@ def format_entrant_card_lines(
 COMPACT_HELP_TEXT = "Space play/pause · arrows step · drag timeline · ? controls"
 EXPANDED_HELP_LINES = (
     "Space play/pause · arrows step · Shift+arrows seek 10 · Home/End first/last · Esc/Q quit",
-    "+/- speed · [/] zoom · 0 fit · T trails · drag timeline · click inspect/seek · ? close",
+    "+/- speed · [/] zoom · 0 fit · T trails · V perspective · drag timeline · ? close",
 )
 
 
@@ -504,6 +504,7 @@ def format_match_header_lines(
     winner: str | None,
     termination_reason: str | None,
     result_available: bool,
+    view_label: str | None = None,
 ) -> tuple[str, str]:
     """The top band's two match-identity lines.
 
@@ -515,9 +516,10 @@ def format_match_header_lines(
     top band's total height never changes between an in-progress and a
     finished replay.
     """
+    view_part = f"entrants {entrant_count}" if view_label is None else view_label
     line1 = (
         f"Bytefray Replay — Ruleset {ruleset_label}  |  runtime {runtime_kind}  |  "
-        f"arena {arena_size}  |  entrants {entrant_count}"
+        f"arena {arena_size}  |  {view_part}"
     )
     line2 = format_terminal_state_line(
         winner=winner,

@@ -696,7 +696,7 @@ class _FakeSurface:
     def get_height(self):
         return self._size[1]
 
-    def get_rect(self):
+    def get_rect(self, **kwargs):
         return (0, 0, *self._size)
 
 
@@ -2031,3 +2031,139 @@ def test_timeline_of_an_eventless_match_still_shows_progress(tmp_path):
     colors = [color for _s, color, _r, _w in renderer.pg.draw.rects]
     assert TIMELINE_PLAYHEAD_COLOR in colors
     assert TIMELINE_TRACK_COLOR in colors
+
+
+# ---------------------------------------------------------------------------
+# Perspective Cam rendering integration (Phase 5)
+# ---------------------------------------------------------------------------
+def test_perspective_top_band_and_footer_rendering(tmp_path):
+    session = _v2_two_entrant_session(tmp_path)
+    controller = PlaybackController(session, playing=False)
+    renderer = _band_renderer((960, 700), entrant_count=2, arena_size=32)
+
+    # Mock PerspectiveManager with PerspectiveState
+    from battle_engine.spectator_perspective import (
+        CallbackPoint,
+        ContactKnowledge,
+        KnowledgeStatus,
+        OwnProcessKnowledge,
+        PerspectiveState,
+        ReadKnowledge,
+        TickBoundary,
+    )
+
+    p_state = PerspectiveState(
+        entrant_id="A",
+        tick=0,
+        boundary=TickBoundary.END,
+        through_decision_index=0,
+        last_visibility_sample_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+        sampled_this_tick=True,
+        own_core_base=0,
+        own_core_size=8,
+        current_contacts=(
+            ContactKnowledge(
+                address=10,
+                status=KnowledgeStatus.CURRENT,
+                first_observed_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+                last_observed_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+                observation_count=1,
+            ),
+        ),
+        stale_contacts=(
+            ContactKnowledge(
+                address=20,
+                status=KnowledgeStatus.STALE,
+                first_observed_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+                last_observed_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+                observation_count=1,
+                became_stale_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+            ),
+        ),
+        read_history=(
+            ReadKnowledge(
+                process_id="body",
+                requested_address=0,
+                normalized_address=0,
+                applied=True,
+                value=0xCE,
+                owner="A",
+                sampled_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+                delivered_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+            ),
+        ),
+        own_processes=(
+            OwnProcessKnowledge(
+                process_id="body",
+                reach=4,
+                share=1.0,
+                anchor=0,
+                last_observed_at=CallbackPoint(tick=0, decision_index=0, process_id="body"),
+            ),
+        ),
+        arena_size=32,
+    )
+
+    class MockPerspectiveManager:
+        available = True
+        mode = "A"
+        entrants = ("A", "B")
+
+        def state_at_tick(self, tick, boundary=TickBoundary.END):
+            return p_state
+
+    renderer._perspective_manager = MockPerspectiveManager()
+
+    # 1. Top band header displays Entrant Perspective mode
+    renderer._draw_top_band(controller)
+    rendered_header = "\n".join(renderer.hud_font.rendered)
+    assert "PERSPECTIVE CAM" in rendered_header
+    assert "ENTRANT A" in rendered_header
+
+    # 2. Footer status with no selection displays perspective status
+    renderer.hud_font.rendered.clear()
+    renderer._selected_address = None
+    renderer._draw_footer(controller)
+    rendered_footer = "\n".join(renderer.hud_font.rendered)
+    assert "Perspective Cam: Entrant A" in rendered_footer
+    assert "Contacts: 1 current, 1 stale" in rendered_footer
+
+    # 3. Footer with selected address on CURRENT contact
+    renderer.hud_font.rendered.clear()
+    renderer._selected_address = 10
+    renderer._draw_footer(controller)
+    rendered_footer = "\n".join(renderer.hud_font.rendered)
+    assert "addr=10" in rendered_footer
+    assert "[CURRENT CONTACT]" in rendered_footer
+
+    # 4. Footer with selected address on STALE contact
+    renderer.hud_font.rendered.clear()
+    renderer._selected_address = 20
+    renderer._draw_footer(controller)
+    rendered_footer = "\n".join(renderer.hud_font.rendered)
+    assert "addr=20" in rendered_footer
+    assert "[STALE CONTACT]" in rendered_footer
+
+    # 5. Footer with selected address on DELIVERED READ
+    renderer.hud_font.rendered.clear()
+    renderer._selected_address = 0
+    renderer._draw_footer(controller)
+    rendered_footer = "\n".join(renderer.hud_font.rendered)
+    assert "addr=0" in rendered_footer
+    assert "[DELIVERED READ]" in rendered_footer
+    assert "0xce" in rendered_footer.lower()
+    assert "cell_owner=A" in rendered_footer
+
+    # 6. Footer with selected address on UNKNOWN / UNSAMPLED
+    renderer.hud_font.rendered.clear()
+    renderer._selected_address = 31
+    renderer._draw_footer(controller)
+    rendered_footer = "\n".join(renderer.hud_font.rendered)
+    assert "addr=31" in rendered_footer
+    assert "[UNKNOWN / UNSAMPLED]" in rendered_footer
+
+    # 7. Perspective contact and reach drawing smoke
+    renderer._draw_perspective_contact(10, KnowledgeStatus.CURRENT)
+    renderer._draw_perspective_contact(20, KnowledgeStatus.STALE, age=2)
+    renderer._draw_sensor_reach("A", 0, 4)
+    renderer._draw_perspective_debug_overlay(controller.session.current_state, p_state)

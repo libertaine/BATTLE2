@@ -9,6 +9,7 @@ validation.  See ``docs/specs/v4_spectator_perspective.md``.
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import sys
 from collections.abc import Sequence
@@ -257,6 +258,17 @@ class PerspectiveProjection:
             )
         return self.state_at_decision(self.frames[entrant_callback_index].point.decision_index)
 
+    def cursor(self) -> PerspectiveCursor:
+        """Return a retained incremental cursor for efficient sequential playback.
+
+        Equivalent to repeated :meth:`state_at_tick` END-boundary calls, but
+        sequential and same-tick queries amortize to O(1) instead of re-folding
+        the full callback history on every call.  See
+        :class:`PerspectiveCursor`.
+        """
+
+        return PerspectiveCursor(self)
+
 
 @dataclass
 class _ContactAccumulator:
@@ -264,6 +276,166 @@ class _ContactAccumulator:
     last: CallbackPoint
     count: int
     stale_at: CallbackPoint | None = None
+
+
+class PerspectiveCursor:
+    """Retained incremental fold cursor over one :class:`PerspectiveProjection`.
+
+    Sequential 60fps playback repeatedly asks for state at consecutive or
+    unchanged ticks.  Re-folding the full callback history from scratch on
+    every displayed frame would introduce rendering stutter on longer
+    matches.  This cursor keeps running accumulators and only folds the
+    frames newly covered by a query, advancing monotonically for consecutive
+    ticks.  Backward steps and arbitrary seeks reset the accumulators and
+    replay forward from the start of the callback history to the target
+    tick.  Repeated calls at the same tick (while paused, or rendering
+    multiple display frames per tick) return the cached
+    :class:`PerspectiveState` in O(1).
+
+    Results are always equivalent to calling
+    :meth:`PerspectiveProjection.state_at_tick` directly; this cursor is a
+    performance optimization only and folds the same frames in the same
+    trace order.
+    """
+
+    def __init__(self, projection: PerspectiveProjection) -> None:
+        self._projection = projection
+        self._reset_accumulators()
+
+    def _reset_accumulators(self) -> None:
+        self._frame_index = 0
+        self._last_point: CallbackPoint | None = None
+        self._contacts: dict[int, _ContactAccumulator] = {}
+        self._current: set[int] = set()
+        self._reads: list[ReadKnowledge] = []
+        self._own: dict[str, OwnProcessKnowledge] = {
+            declaration.process_id: OwnProcessKnowledge(
+                process_id=declaration.process_id,
+                reach=declaration.reach,
+                share=declaration.share,
+                anchor=None,
+                last_observed_at=None,
+            )
+            for declaration in self._projection.declarations
+        }
+        self._core_base: int | None = None
+        self._core_size: int | None = None
+        self._cached_query: tuple[int, TickBoundary] | None = None
+        self._cached_state: PerspectiveState | None = None
+
+    def _fold_one(self, frame: PerspectiveFrame) -> None:
+        visible = set(frame.visible_contact_addresses)
+        for address in self._current - visible:
+            self._contacts[address].stale_at = frame.point
+        for address in visible:
+            known = self._contacts.get(address)
+            if known is None:
+                self._contacts[address] = _ContactAccumulator(
+                    first=frame.point,
+                    last=frame.point,
+                    count=1,
+                )
+            else:
+                known.last = frame.point
+                known.count += 1
+                known.stale_at = None
+        self._current = visible
+
+        declared = self._own[frame.point.process_id]
+        self._own[frame.point.process_id] = OwnProcessKnowledge(
+            process_id=frame.point.process_id,
+            reach=frame.self_reach,
+            share=declared.share,
+            anchor=frame.self_anchor,
+            last_observed_at=frame.point,
+        )
+        self._core_base = frame.own_core_base
+        self._core_size = frame.own_core_size
+        if frame.delivered_read is not None:
+            self._reads.append(frame.delivered_read)
+        self._last_point = frame.point
+
+    def _advance_to(self, target_index: int) -> None:
+        if target_index < self._frame_index:
+            self._reset_accumulators()
+        frames = self._projection.frames
+        while self._frame_index < target_index:
+            self._fold_one(frames[self._frame_index])
+            self._frame_index += 1
+
+    def state_at_tick(
+        self, tick: int, *, boundary: TickBoundary = TickBoundary.END
+    ) -> PerspectiveState:
+        """Incremental equivalent of ``PerspectiveProjection.state_at_tick``."""
+
+        if boundary not in (TickBoundary.START, TickBoundary.END):
+            raise ValueError("tick queries support START or END boundaries")
+        if isinstance(tick, bool) or not isinstance(tick, int):
+            raise TypeError("tick must be an integer")
+        if tick < self._projection.first_tick or tick > self._projection.result_ticks:
+            raise ValueError(
+                f"tick {tick} outside projection range "
+                f"[{self._projection.first_tick}, {self._projection.result_ticks}]"
+            )
+
+        query = (tick, boundary)
+        if query == self._cached_query and self._cached_state is not None:
+            return self._cached_state
+
+        frames = self._projection.frames
+        if boundary is TickBoundary.END:
+            target_index = bisect.bisect_right(frames, tick, key=lambda frame: frame.point.tick)
+        else:
+            target_index = bisect.bisect_left(frames, tick, key=lambda frame: frame.point.tick)
+        self._advance_to(target_index)
+
+        sampled_this_tick = (
+            boundary is TickBoundary.END
+            and self._last_point is not None
+            and self._last_point.tick == tick
+        )
+        current_contacts = tuple(
+            ContactKnowledge(
+                address=address,
+                status=KnowledgeStatus.CURRENT,
+                first_observed_at=self._contacts[address].first,
+                last_observed_at=self._contacts[address].last,
+                observation_count=self._contacts[address].count,
+            )
+            for address in sorted(self._current)
+        )
+        stale_contacts = tuple(
+            ContactKnowledge(
+                address=address,
+                status=KnowledgeStatus.STALE,
+                first_observed_at=known.first,
+                last_observed_at=known.last,
+                observation_count=known.count,
+                became_stale_at=known.stale_at,
+            )
+            for address, known in sorted(self._contacts.items())
+            if address not in self._current
+        )
+        state = PerspectiveState(
+            entrant_id=self._projection.entrant_id,
+            tick=tick,
+            boundary=boundary,
+            through_decision_index=(
+                None if self._last_point is None else self._last_point.decision_index
+            ),
+            last_visibility_sample_at=self._last_point,
+            sampled_this_tick=sampled_this_tick,
+            own_core_base=self._core_base,
+            own_core_size=self._core_size,
+            current_contacts=current_contacts,
+            stale_contacts=stale_contacts,
+            read_history=tuple(self._reads),
+            own_processes=tuple(self._own[key] for key in sorted(self._own)),
+            arena_size=self._projection.arena_size,
+        )
+        self._cached_query = query
+        self._cached_state = state
+        return state
 
 
 def _fail(index: int, message: str) -> PerspectiveConsistencyError:
@@ -924,6 +1096,7 @@ __all__ = [
     "KnowledgeStatus",
     "OwnProcessKnowledge",
     "PerspectiveConsistencyError",
+    "PerspectiveCursor",
     "PerspectiveError",
     "PerspectiveFrame",
     "PerspectiveProjection",

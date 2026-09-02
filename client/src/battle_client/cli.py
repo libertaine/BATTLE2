@@ -92,6 +92,18 @@ def main(argv: list[str] | None = None) -> int:
         help="--renderer pygame only: initial playback speed multiplier "
         f"(snapped to the nearest of {list(SPEEDS)})",
     )
+    p.add_argument(
+        "--trace",
+        type=Path,
+        default=None,
+        help="--renderer pygame only: path to bound API-v2 trace JSONL for perspective viewing",
+    )
+    p.add_argument(
+        "--perspective",
+        type=str,
+        default=None,
+        help="--renderer pygame only: initial entrant perspective ('broadcast' or entrant ID like 'A')",
+    )
     args = p.parse_args(argv)
 
     replay_path = Path(args.replay).expanduser().resolve()
@@ -143,6 +155,24 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
     RendererClass = _resolve_renderer("pygame")
     renderer = RendererClass()  # type: ignore[call-arg]
 
+    trace_path: Path | None = None
+    if args.trace is not None:
+        trace_path = Path(args.trace).expanduser().resolve()
+    else:
+        candidate = replay_path.with_name("trace.jsonl")
+        if candidate.is_file():
+            trace_path = candidate
+
+    perspective_manager = None
+    if trace_path is not None:
+        from battle_client.perspective import PerspectiveManager
+
+        perspective_manager = PerspectiveManager(
+            replay_path,
+            trace_path,
+            initial_mode=args.perspective or "broadcast",
+        )
+
     try:
         renderer.run(
             session,
@@ -150,6 +180,8 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
             start_tick=args.start_tick,
             start_paused=args.paused,
             initial_speed=args.speed,
+            perspective_manager=perspective_manager,
+            initial_perspective=args.perspective,
         )
     except KeyboardInterrupt:
         pass

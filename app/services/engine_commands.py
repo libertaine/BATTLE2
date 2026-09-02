@@ -77,9 +77,11 @@ def open_pygame_client_direct(data_root: Path, replay_path: Path) -> None:
     """Launch the source or packaged replay application without a shell."""
     if not replay_path.exists():
         raise FileNotFoundError(f"Replay not found: {replay_path}")
-    command = build_replay_command(
-        replay_path, ("--renderer", "pygame", "--tick-delay", "0.02")
-    )
+    extra_flags: list[str] = ["--renderer", "pygame", "--tick-delay", "0.02"]
+    trace_path = replay_path.with_name("trace.jsonl")
+    if trace_path.is_file():
+        extra_flags.extend(["--trace", str(trace_path)])
+    command = build_replay_command(replay_path, tuple(extra_flags))
     try:
         Popen(command, cwd=str(data_root), env=_source_environment(data_root))
     except OSError as exc:

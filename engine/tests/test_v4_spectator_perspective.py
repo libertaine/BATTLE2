@@ -909,3 +909,37 @@ def test_tool_wrapper_reexports_projection_contract_and_cli_rejects_mismatch(
     assert bad.returncode == 2
     assert bad.stdout == ""
     assert "binding mismatch" in bad.stderr
+
+
+def test_perspective_cursor_sequential_and_seeking_equivalence(tmp_path: Path) -> None:
+    replay_path, trace_path, _result = _duel(tmp_path, "cursor_duel", seed=88)
+    assert trace_path is not None
+    projection = analyze_perspective(replay_path, trace_path, "A")
+    cursor = projection.cursor()
+
+    # 1. Sequential forward stepping from first_tick to result_ticks
+    for tick in range(projection.first_tick, projection.result_ticks + 1):
+        direct_state = projection.state_at_tick(tick, boundary=TickBoundary.END)
+        cursor_state = cursor.state_at_tick(tick, boundary=TickBoundary.END)
+        assert cursor_state == direct_state
+        # Repeated call at same tick (e.g. paused frame)
+        assert cursor.state_at_tick(tick, boundary=TickBoundary.END) == direct_state
+
+    # 2. Backward stepping
+    for tick in range(projection.result_ticks, projection.first_tick - 1, -1):
+        direct_state = projection.state_at_tick(tick, boundary=TickBoundary.END)
+        cursor_state = cursor.state_at_tick(tick, boundary=TickBoundary.END)
+        assert cursor_state == direct_state
+
+    # 3. Arbitrary seeks
+    for seek_target in (5, 0, 8, 2, 8, 1, 4):
+        if seek_target <= projection.result_ticks:
+            direct_state = projection.state_at_tick(seek_target, boundary=TickBoundary.END)
+            cursor_state = cursor.state_at_tick(seek_target, boundary=TickBoundary.END)
+            assert cursor_state == direct_state
+
+    # 4. START boundary queries
+    for tick in range(projection.first_tick, projection.result_ticks + 1):
+        direct_start = projection.state_at_tick(tick, boundary=TickBoundary.START)
+        cursor_start = cursor.state_at_tick(tick, boundary=TickBoundary.START)
+        assert cursor_start == direct_start
