@@ -603,16 +603,19 @@ def _hostile_read_events(
     index: int,
     decision: DecisionRecordV2,
     state: _MatchState,
+    feedback_delivered: bool,
     with_provenance: bool,
 ) -> list[tuple[int, int, SpectatorEvent]]:
     """Derive hostile-read events from one applied ``READ`` decision.
 
     A read is hostile when the engine's own applied result names an owner
     that is another entrant. Nothing is inferred: ``read_owner`` is a value
-    the engine computed and handed back, and the reading entrant receives it
-    on its next observation as ``previous_read_owner`` -- which is why the
-    reader, and only the reader, is in ``visible_to``. A v4 read mutates
-    nothing, so the entrant that owns the cell is never told it was inspected.
+    the engine computed after the callback. The reading entrant receives it
+    only on that process's next observation as ``previous_read_owner``. The
+    reader is therefore in ``visible_to`` only when that delivery callback
+    exists; a final READ remains an omniscient factual event. A v4 read
+    mutates nothing, so the entrant that owns the cell is never told it was
+    inspected.
     """
 
     result = decision.applied_result
@@ -621,6 +624,7 @@ def _hostile_read_events(
     address = _effective_address(decision)
     target = result.read_owner
     pair = (decision.agent_id, target)
+    audience = (decision.agent_id,) if feedback_delivered else ()
     provenance = (
         Provenance(
             rule="applied_read_with_foreign_owner",
@@ -642,7 +646,7 @@ def _hostile_read_events(
                 kind=SpectatorEventKind.HOSTILE_READ,
                 actors=(decision.agent_id,),
                 targets=(target,),
-                visible_to=(decision.agent_id,),
+                visible_to=audience,
                 process_id=decision.process_id,
                 address=address,
                 read_value=result.read_value,
@@ -662,7 +666,7 @@ def _hostile_read_events(
                     kind=SpectatorEventKind.FIRST_HOSTILE_READ,
                     actors=(decision.agent_id,),
                     targets=(target,),
-                    visible_to=(decision.agent_id,),
+                    visible_to=audience,
                     process_id=decision.process_id,
                     address=address,
                     read_value=result.read_value,
@@ -991,10 +995,17 @@ def derive_events(
     state = _seed_state(loaded, arena_size)
 
     decisions_by_tick: dict[int, list[tuple[int, DecisionRecordV2]]] = {}
+    feedback_delivered: set[int] = set()
+    previous_by_process: dict[tuple[str, str], int] = {}
     for index, decision in enumerate(document.decisions):
         decisions_by_tick.setdefault(decision.observation.current_tick, []).append(
             (index, decision)
         )
+        process_key = (decision.agent_id, decision.process_id)
+        previous_index = previous_by_process.get(process_key)
+        if previous_index is not None:
+            feedback_delivered.add(previous_index)
+        previous_by_process[process_key] = index
     snapshot_ticks = {snapshot.tick for snapshot in loaded.ticks}
     unknown = sorted(set(decisions_by_tick) - snapshot_ticks)
     if unknown:
@@ -1043,7 +1054,15 @@ def derive_events(
                 checked_cores.add(decision.agent_id)
             key = (decision.agent_id, decision.process_id)
             if _applied(decision, "read"):
-                anchored.extend(_hostile_read_events(index, decision, state, with_provenance))
+                anchored.extend(
+                    _hostile_read_events(
+                        index,
+                        decision,
+                        state,
+                        index in feedback_delivered,
+                        with_provenance,
+                    )
+                )
             elif _applied(decision, "write"):
                 address = _effective_address(decision)
                 previous_owner = state.owners[address]

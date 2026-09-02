@@ -1047,7 +1047,14 @@ def test_no_event_ever_tells_an_entrant_something_the_engine_withheld(
         assert trace_path is not None
         for event in analyze_pair(replay_path, trace_path).events:
             if event.kind in entrant_visible:
-                assert event.visible_to, f"{event.kind} must name its observer"
+                # A READ result is supplied on the same process's next
+                # callback. A final-callback READ remains factual but has no
+                # delivered audience.
+                if event.kind not in (
+                    SpectatorEventKind.HOSTILE_READ,
+                    SpectatorEventKind.FIRST_HOSTILE_READ,
+                ):
+                    assert event.visible_to, f"{event.kind} must name its observer"
                 # Only the acting/observing entrant is ever told.
                 assert set(event.visible_to) <= set(event.actors)
             else:

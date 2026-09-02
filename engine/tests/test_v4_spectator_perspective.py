@@ -516,6 +516,15 @@ def test_three_entrant_colocation_remains_one_anonymous_contact(
     assert len(state.current_contacts) == 1
     assert state.read_history
     assert state.read_history[0].owner in {"B", "C"}
+    hostile_reads = [
+        event
+        for event in analyze_pair(replay, trace).events
+        if event.kind is SpectatorEventKind.HOSTILE_READ and event.actors == ("A",)
+    ]
+    assert len(hostile_reads) == 8
+    assert all(event.visible_to == ("A",) for event in hostile_reads[:-1])
+    assert hostile_reads[-1].visible_to == ()
+    assert len(state.read_history) == len(hostile_reads) - 1
     contact = state.current_contacts[0]
     assert not hasattr(contact, "owner")
     assert not hasattr(contact, "entrant_id")
