@@ -351,7 +351,50 @@ def truncate_with_ellipsis(text: str, max_chars: int | None) -> str:
     return text[: max_chars - 1].rstrip() + "…"
 
 
-def format_entrant_status_line(status: EntrantReplayStatus, *, max_chars: int | None = None) -> str:
+def entrant_card_known(
+    status: EntrantReplayStatus,
+    *,
+    selected_entrant_id: str | None,
+    is_terminal: bool,
+) -> bool:
+    """Whether ``status``'s life/core/score/territory/kills fields may show
+    their real canonical values on an entrant card (Phase 8.5).
+
+    This is the remediation for the leak Phase 8 §11.1 disclosed and left
+    unfixed: "the existing top-band cards show canonical core/territory/
+    score/kills for every entrant, unchanged, in Perspective mode."
+    ``selected_entrant_id`` is ``None`` in Broadcast, where nothing is ever
+    hidden. The selected entrant's own card (``status.agent_id ==
+    selected_entrant_id``) is always known -- an entrant is never "spied on"
+    by itself, so its own life/core/score/territory/kills are its own facts,
+    not an opponent's. Every card is also known once the match has reached
+    its terminal tick: this is the same "the whole match is over, there is
+    no more hidden gameplay to protect" boundary the Director's
+    ``TERMINAL_HOLD`` override (Phase 7 §3) and Fight Night's result card
+    (Phase 8 §12) already use, reused here rather than inventing a second
+    terminal concept -- callers should pass ``tick >=
+    SpectatorDerivation.result_ticks`` for ``is_terminal``, exactly what
+    ``FightNightManager.state_at_tick`` already computes for its own
+    OPENING/LIVE/RESULT phase split.
+
+    Every other card, at every other tick, is not known: the engine never
+    delivers an opponent's core damage, territory, score, kill count, or
+    lifecycle change to a Perspective viewer (all eight of
+    ``CORE_CELL_LOST``, ``PROCESS_DISRUPTED``, ``AGENT_ELIMINATED``,
+    ``AGENT_FORFEITED`` and friends are omniscient-only per Phase 3's
+    ``visible_to`` computation -- Phase 7 §2), so presenting the canonical
+    value would show the selected entrant a fact it has no basis to know.
+    """
+    if selected_entrant_id is None:
+        return True
+    if status.agent_id == selected_entrant_id:
+        return True
+    return is_terminal
+
+
+def format_entrant_status_line(
+    status: EntrantReplayStatus, *, max_chars: int | None = None, known: bool = True
+) -> str:
     """One entrant's alive/dead/captured (+ core, when applicable) line.
 
     Ruleset-v1 (``status.core is None``) never shows a core field -- no
@@ -363,7 +406,20 @@ def format_entrant_status_line(status: EntrantReplayStatus, *, max_chars: int | 
     and core integrity are always kept, per the governing task's Phase 4N
     hierarchy: identity/alive state and core integrity outrank
     attribution), with a final ellipsis fallback if even that doesn't fit.
+
+    ``known=False`` (Phase 8.5, see :func:`entrant_card_known`) renders life
+    state as ``UNKNOWN`` and core integrity as ``Core ?/N`` (``N`` -- the
+    core's fixed size -- is a Ruleset-wide constant, never a secret; only the
+    *intact count* is hidden) instead of this entrant's real canonical
+    values -- the least-misleading presentation available, since Perspective
+    mode has no entrant-safe substitute value to show instead.
     """
+    if not known:
+        core = status.core
+        core_clause = f"Core ?/{core.total_cells}" if core is not None else None
+        full = f"UNKNOWN | {core_clause}" if core_clause else "UNKNOWN"
+        return truncate_with_ellipsis(full, max_chars)
+
     core = status.core
     captured = core is not None and core.captured
     if captured:
@@ -388,14 +444,32 @@ def format_entrant_status_line(status: EntrantReplayStatus, *, max_chars: int | 
     return truncate_with_ellipsis(without_killer, max_chars)
 
 
-def format_entrant_stats_line(status: EntrantReplayStatus, *, max_chars: int | None = None) -> str:
+def format_entrant_stats_line(
+    status: EntrantReplayStatus, *, max_chars: int | None = None, known: bool = True
+) -> str:
     """One entrant's score/territory/kills line, in that priority order
     (Phase 4N: score outranks territory outranks kills). When ``max_chars``
     forces a choice, the lowest-priority clause is dropped first: kills,
     then the territory percentage refinement, then territory itself,
     leaving score as the last thing ever dropped (and even then only
     ellipsis-truncated, never omitted outright).
+
+    ``known=False`` (Phase 8.5, see :func:`entrant_card_known`) replaces all
+    three values with ``?`` placeholders. Unlike life/core state, none of
+    score, territory or kills has *any* entrant-safe equivalent anywhere in
+    ``PerspectiveState`` -- there is no semantic event for "your opponent's
+    score changed" -- so there is no qualified alternative value to show
+    instead of a placeholder.
     """
+    if not known:
+        candidates = ["Score ? | Territory ? | Kills ?", "Score ? | Territory ?", "Score ?"]
+        if max_chars is None:
+            return candidates[0]
+        for candidate in candidates:
+            if len(candidate) <= max_chars:
+                return candidate
+        return truncate_with_ellipsis(candidates[-1], max_chars)
+
     score_part = f"Score {status.score:g}"
     territory_full = f"Territory {status.territory_cells} ({status.territory_percentage:.1f}%)"
     territory_short = f"Territory {status.territory_cells}"
@@ -421,6 +495,7 @@ def format_entrant_card_lines(
     max_chars: int | None = None,
     ordinal: int | None = None,
     mode: CardMode = "detailed",
+    known: bool = True,
 ) -> tuple[str, ...]:
     """One entrant card's detailed or compact text lines.
 
@@ -433,6 +508,16 @@ def format_entrant_card_lines(
     retain identity on line one and textual life/core/score state on line two;
     lower-priority name/core/score clauses yield deliberately as width narrows,
     while the ordinal+agent id and Alive/Dead/CAPTURED state remain last.
+
+    ``known`` (Phase 8.5, see :func:`entrant_card_known`) never affects the
+    identity line -- an entrant's display name, ordinal badge and agent id
+    are public roster metadata (the established Phase 4-8 policy: a
+    Perspective viewer may already know who is participating even when
+    on-arena contact identity stays anonymous), never derived from
+    engine-delivered knowledge, so there is nothing to hide there. It is
+    threaded through to :func:`format_entrant_status_line` and
+    :func:`format_entrant_stats_line` for the detailed card, and applied
+    directly to the equivalent compact-card fields below.
     """
 
     bare_identity = status.name.upper()
@@ -442,15 +527,20 @@ def format_entrant_card_lines(
     if mode == "detailed":
         return (
             identity,
-            format_entrant_status_line(status, max_chars=max_chars),
-            format_entrant_stats_line(status, max_chars=max_chars),
+            format_entrant_status_line(status, max_chars=max_chars, known=known),
+            format_entrant_stats_line(status, max_chars=max_chars, known=known),
         )
 
     core = status.core
-    captured = core is not None and core.captured
-    life = "CAPTURED" if captured else ("Alive" if status.alive else "Dead")
-    core_part = f"Core {core.intact_cells}/{core.total_cells}" if core is not None else None
-    score_part = f"Score {status.score:g}"
+    if not known:
+        life = "UNKNOWN"
+        core_part = f"Core ?/{core.total_cells}" if core is not None else None
+        score_part = "Score ?"
+    else:
+        captured = core is not None and core.captured
+        life = "CAPTURED" if captured else ("Alive" if status.alive else "Dead")
+        core_part = f"Core {core.intact_cells}/{core.total_cells}" if core is not None else None
+        score_part = f"Score {status.score:g}"
     candidates = [
         " | ".join(part for part in (life, core_part, score_part) if part),
         " | ".join(part for part in (life, core_part) if part),
@@ -882,6 +972,7 @@ __all__ = [
     "Rect",
     "ViewerLayout",
     "calculate_layout",
+    "entrant_card_known",
     "fight_night_card_rect",
     "fight_night_ribbon_capacity",
     "fight_night_ribbon_rect",

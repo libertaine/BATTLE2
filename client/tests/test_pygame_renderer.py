@@ -2108,6 +2108,11 @@ def test_perspective_top_band_and_footer_rendering(tmp_path):
         available = True
         mode = "A"
         entrants = ("A", "B")
+        # Phase 8.5: _perspective_card_knowledge_basis reads this to decide
+        # the terminal-tick exception; None means "no real derivation
+        # available", the same conservative default the renderer method
+        # itself falls back to (see its own docstring).
+        derivation = None
 
         def state_at_tick(self, tick, boundary=TickBoundary.END):
             return p_state

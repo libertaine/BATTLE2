@@ -80,6 +80,7 @@ from battle_client.hud_layout import (
     CardMode,
     ViewerLayout,
     calculate_layout,
+    entrant_card_known,
     fight_night_card_rect,
     fight_night_ribbon_capacity,
     fight_night_ribbon_rect,
@@ -170,6 +171,12 @@ DIM_TEXT_COLOR: tuple[int, int, int] = (150, 150, 155)
 STATUS_ALIVE_COLOR: tuple[int, int, int] = (120, 220, 140)
 STATUS_DEAD_COLOR: tuple[int, int, int] = (225, 100, 100)
 STATUS_CAPTURED_COLOR: tuple[int, int, int] = (235, 150, 70)
+# Phase 8.5: a Perspective card whose life/core state is not known to the
+# selected entrant (see hud_layout.entrant_card_known) is colored neutrally
+# -- never the real alive/dead/captured color, which would leak the hidden
+# fact through styling even while the text itself correctly reads "UNKNOWN"
+# (the Phase 8.5 brief's Sec. 13 "no hidden association through styling").
+STATUS_UNKNOWN_COLOR: tuple[int, int, int] = (150, 150, 155)
 TERMINAL_TEXT_COLOR: tuple[int, int, int] = (255, 220, 120)
 # Rough monospace glyph width for the HUD font, used only to convert a
 # card's pixel width into a character budget for deterministic truncation
@@ -287,6 +294,44 @@ def core_captures_at_tick(
         if agent_state is not None and agent_state.termination_reason == CORE_CAPTURE_TERMINATION_REASON:
             captures.append(CoreCaptureAttribution(victim=event.victim, killer=event.killer))
     return tuple(captures)
+
+
+def _perspective_safe_captures(
+    captures: Sequence[CoreCaptureAttribution],
+    *,
+    selected_entrant_id: str | None,
+    is_terminal: bool,
+) -> tuple[CoreCaptureAttribution, ...]:
+    """Which of ``captures`` the capture callout may show for one tick
+    (Phase 8.5's remediation for the brief's Sec. 16 "hidden core-loss
+    regression": the callout is a reactive banner in the same top HUD band
+    as the entrant cards, and naming *both* victim and killer makes it a
+    more severe leak than the ambient cards were -- it must obey the same
+    knowledge boundary ``hud_layout.entrant_card_known`` gives the cards,
+    computed from the same ``(selected_entrant_id, is_terminal)`` basis.
+
+    Broadcast (``selected_entrant_id is None``) and the terminal tick show
+    every capture unchanged, matching ``entrant_card_known``'s own "no more
+    hidden gameplay to protect" exception. Otherwise a capture is shown only
+    when the selected entrant is its *victim* -- an entrant trivially knows
+    its own core was captured -- and even then with ``killer`` stripped to
+    ``None``: the attacker's identity is never delivered to the victim
+    through the qualified anonymous-contact model (spec Sec. 6), so naming
+    one here would associate a named entrant with the victim's own
+    anonymous-contact history exactly as Sec. 13 forbids. An opponent-vs-
+    opponent capture, or one where the selected entrant is the *attacker*,
+    is suppressed entirely, with no "unless you did it" exception --
+    ``AGENT_ELIMINATED`` is omniscient-only unconditionally (Phase 7 §2),
+    and this callout does not invent a narrower rule than the Director and
+    Fight Night already settled on.
+    """
+    if selected_entrant_id is None or is_terminal:
+        return tuple(captures)
+    return tuple(
+        CoreCaptureAttribution(victim=capture.victim, killer=None)
+        for capture in captures
+        if capture.victim == selected_entrant_id
+    )
 
 
 def format_core_capture_callout_lines(
@@ -1361,6 +1406,13 @@ class PygameRenderer:
         ``state`` (v3.0 "fun feature" -- see
         docs/V3_CORE_CAPTURE_CALLOUT.md).
 
+        Captures are filtered through ``_perspective_safe_captures`` (Phase
+        8.5) before being queued, so a capture the selected entrant has no
+        basis to know about is never queued at all -- it does not flash
+        briefly and get hidden by a later check; it is simply never a
+        candidate for the queue for that Perspective mode, the same
+        filter-before-assembly discipline Fight Night's ribbon already uses.
+
         Deliberately does **not** reuse ``is_linear_step`` as computed
         above in ``_advance_transient_effects``: that check treats "the
         tick hasn't changed since the last call" (an entirely ordinary
@@ -1391,6 +1443,13 @@ class PygameRenderer:
         last = self._last_rendered_tick
         if last is not None and state.tick == last + 1:
             captures = core_captures_at_tick(self._match_events, state.tick, state.agents)
+            if captures:
+                selected_entrant_id, is_terminal = self._perspective_card_knowledge_basis(
+                    state.tick
+                )
+                captures = _perspective_safe_captures(
+                    captures, selected_entrant_id=selected_entrant_id, is_terminal=is_terminal
+                )
             if captures:
                 self._capture_callout_queue.append((state.tick, captures))
         elif last is not None and state.tick != last:
@@ -2051,12 +2110,38 @@ class PygameRenderer:
             if line_y + HEADER_LINE_HEIGHT <= hy + layout.header_rect[3]:
                 self.screen.blit(rendered, (text_x, line_y))
 
+        selected_entrant_id, is_terminal = self._perspective_card_knowledge_basis(state.tick)
         for ordinal, (status, rect) in enumerate(
             zip(statuses, layout.entrant_card_rects), start=1
         ):
-            self._draw_entrant_card(status, rect, ordinal=ordinal, mode=layout.card_mode)
+            known = entrant_card_known(
+                status, selected_entrant_id=selected_entrant_id, is_terminal=is_terminal
+            )
+            self._draw_entrant_card(status, rect, ordinal=ordinal, mode=layout.card_mode, known=known)
 
         return statuses
+
+    def _perspective_card_knowledge_basis(self, tick: int) -> tuple[str | None, bool]:
+        """``(selected_entrant_id, is_terminal)`` for ``entrant_card_known``.
+
+        ``selected_entrant_id`` is ``None`` in Broadcast (or whenever no
+        Perspective is active), matching ``entrant_card_known``'s own
+        "nothing hidden" case. ``is_terminal`` reuses ``SpectatorDerivation.
+        result_ticks`` -- the same match-over boundary already computed by
+        ``DirectorManager`` (Phase 7) and ``FightNightManager.state_at_tick``
+        (Phase 8) -- rather than a third independent terminal check; it is
+        conservatively ``False`` whenever a derivation isn't available (a
+        Perspective mode cannot actually be entered without one, so this
+        only matters for defensive robustness, never live behavior).
+        """
+        if self._perspective_manager is None or not self._perspective_manager.available:
+            return None, False
+        mode = self._perspective_manager.mode
+        if mode == BROADCAST_MODE:
+            return None, False
+        derivation = self._perspective_manager.derivation
+        is_terminal = derivation is not None and tick >= derivation.result_ticks
+        return mode, is_terminal
 
     # ---------- Fight Night presentation (Phase 8) ----------
 
@@ -2305,10 +2390,20 @@ class PygameRenderer:
         *,
         ordinal: int,
         mode: CardMode,
+        known: bool = True,
     ) -> None:
         """One entrant's responsive status card, entirely
         formatted by ``battle_client.hud_layout.format_entrant_card_lines``
         -- this method only chooses colors and blit positions.
+
+        ``known`` (Phase 8.5, computed once per entrant per frame by
+        ``_perspective_card_knowledge_basis`` + ``hud_layout.
+        entrant_card_known``) governs both the text (threaded into
+        ``format_entrant_card_lines``) and the status color: a card whose
+        real life state is not known to the selected entrant is colored
+        ``STATUS_UNKNOWN_COLOR`` rather than the real alive/dead/captured
+        color, so the hidden fact cannot leak through styling alone even if
+        a future caller ever draws the color without the text.
         """
         cx, cy, cw, ch = rect
         if cw <= 0 or ch <= 0:
@@ -2319,9 +2414,12 @@ class PygameRenderer:
             max_chars=max_chars,
             ordinal=ordinal,
             mode="compact" if mode == "compact" else "detailed",
+            known=known,
         )
 
-        if status.core is not None and status.core.captured:
+        if not known:
+            status_color = STATUS_UNKNOWN_COLOR
+        elif status.core is not None and status.core.captured:
             status_color = STATUS_CAPTURED_COLOR
         elif status.alive:
             status_color = STATUS_ALIVE_COLOR

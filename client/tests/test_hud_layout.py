@@ -24,6 +24,7 @@ from battle_client.hud_layout import (
     MIN_VIEWER_SIZE,
     TOP_BAND_HEIGHT,
     calculate_layout,
+    entrant_card_known,
     format_entrant_card_lines,
     format_entrant_stats_line,
     format_entrant_status_line,
@@ -479,6 +480,151 @@ def test_compact_card_deliberately_keeps_token_and_text_state_when_narrow():
     assert len(identity) <= 12
     assert identity.startswith("#5")
     assert state == "Alive"
+
+
+# ---------------------------------------------------------------------------
+# Phase 8.5: entrant_card_known and known=False redaction.
+#
+# See ``hud_layout.entrant_card_known`` and its callers -- this is the
+# remediation for the leak Phase 8 Sec. 11.1 disclosed: canonical
+# core/territory/score/kills for every entrant, unchanged, in Perspective
+# mode. Broadcast and the selected entrant's own card are always known;
+# every other entrant's card is known only once the match has reached its
+# terminal tick.
+# ---------------------------------------------------------------------------
+def test_entrant_card_known_true_in_broadcast_regardless_of_entrant():
+    status = _status(agent_id="B")
+    assert entrant_card_known(status, selected_entrant_id=None, is_terminal=False) is True
+    assert entrant_card_known(status, selected_entrant_id=None, is_terminal=True) is True
+
+
+def test_entrant_card_known_true_for_the_selected_entrants_own_card():
+    status = _status(agent_id="A")
+    assert entrant_card_known(status, selected_entrant_id="A", is_terminal=False) is True
+
+
+def test_entrant_card_known_false_for_an_opponent_before_the_terminal_tick():
+    status = _status(agent_id="B")
+    assert entrant_card_known(status, selected_entrant_id="A", is_terminal=False) is False
+
+
+def test_entrant_card_known_true_for_an_opponent_at_the_terminal_tick():
+    status = _status(agent_id="B")
+    assert entrant_card_known(status, selected_entrant_id="A", is_terminal=True) is True
+
+
+def test_status_line_hidden_shows_unknown_with_placeholder_core():
+    status = _status(core=_core(intact=3, total=8), alive=False, killer_id="B")
+    line = format_entrant_status_line(status, known=False)
+    assert line == "UNKNOWN | Core ?/8"
+    assert "3" not in line
+    assert "B" not in line
+
+
+def test_status_line_hidden_omits_core_clause_for_ruleset_v1():
+    status = _status(core=None, alive=False)
+    line = format_entrant_status_line(status, known=False)
+    assert line == "UNKNOWN"
+
+
+def test_status_line_hidden_respects_max_chars():
+    status = _status(core=_core(intact=3, total=8), alive=False)
+    truncated = format_entrant_status_line(status, known=False, max_chars=6)
+    assert len(truncated) <= 6
+
+
+def test_stats_line_hidden_shows_placeholders_not_real_values():
+    status = _status(score=1842, territory_cells=1130, territory_percentage=44.1, kills_so_far=2)
+    line = format_entrant_stats_line(status, known=False)
+    assert line == "Score ? | Territory ? | Kills ?"
+    assert "1842" not in line
+    assert "1130" not in line
+
+
+def test_stats_line_hidden_degrades_under_narrow_width():
+    status = _status(score=1842, territory_cells=1130, territory_percentage=44.1, kills_so_far=2)
+    full = format_entrant_stats_line(status, known=False)
+    narrow = format_entrant_stats_line(status, known=False, max_chars=len(full) - 1)
+    assert "Kills" not in narrow
+    assert narrow == "Score ? | Territory ?"
+    narrower = format_entrant_stats_line(status, known=False, max_chars=len("Score ?"))
+    assert narrower == "Score ?"
+
+
+def test_card_lines_hidden_keeps_identity_but_redacts_status_and_stats():
+    status = _status(
+        name="Claimer",
+        core=_core(intact=3, total=8),
+        alive=False,
+        killer_id="B",
+        score=1842,
+        territory_cells=1130,
+    )
+    known_lines = format_entrant_card_lines(status, known=True)
+    hidden_lines = format_entrant_card_lines(status, known=False)
+    assert hidden_lines[0] == known_lines[0]  # identity is public, never hidden
+    assert hidden_lines[1] == "UNKNOWN | Core ?/8"
+    assert "Score ?" in hidden_lines[2]
+    assert "1842" not in hidden_lines[1] + hidden_lines[2]
+    assert "B" not in hidden_lines[1]
+
+
+def test_card_lines_hidden_compact_mode_redacts_life_core_score():
+    status = _status(core=_core(intact=3, total=8), alive=False, killer_id="B", score=1842)
+    identity, state = format_entrant_card_lines(status, mode="compact", known=False, max_chars=40)
+    assert state == "UNKNOWN | Core ?/8 | Score ?"
+    assert "1842" not in state
+    assert "B" not in state
+    assert identity  # identity line still produced normally
+
+
+def test_card_lines_hidden_compact_mode_degrades_like_the_known_case():
+    status = _status(core=_core(intact=3, total=8), alive=False, score=1842)
+    _, narrow_state = format_entrant_card_lines(status, mode="compact", known=False, max_chars=4)
+    assert len(narrow_state) <= 4
+    assert narrow_state.endswith("…")
+
+
+def test_entrant_card_known_across_a_four_entrant_roster():
+    statuses = [_status(agent_id=agent_id) for agent_id in ("A", "B", "C", "D")]
+    live = {
+        s.agent_id: entrant_card_known(s, selected_entrant_id="C", is_terminal=False)
+        for s in statuses
+    }
+    assert live == {"A": False, "B": False, "C": True, "D": False}
+
+    terminal = {
+        s.agent_id: entrant_card_known(s, selected_entrant_id="C", is_terminal=True)
+        for s in statuses
+    }
+    assert all(terminal.values())
+
+
+def test_hidden_fields_are_identical_regardless_of_the_real_underlying_values():
+    """No distinguishing signal survives redaction: two entrants with very
+    different real canonical state redact to identical status/stats text
+    once ``known=False``, so a Perspective viewer cannot use hidden-state
+    differences to tell two opponents' cards apart -- the card-layer half
+    of the co-location/READ-owner anonymity properties Phase 8 already
+    qualified at the arena/ribbon layer (only the public identity line may
+    ever differ).
+    """
+    alive_b = _status(
+        agent_id="B", name="Bravo", core=_core(intact=8), alive=True, score=9999,
+        territory_cells=500, territory_percentage=80.0, kills_so_far=3,
+    )
+    captured_c = _status(
+        agent_id="C", name="Charlie", core=_core(intact=0, captured=True, capture_tick=12),
+        alive=False, killer_id="A", score=0, territory_cells=0, territory_percentage=0.0,
+    )
+
+    lines_b = format_entrant_card_lines(alive_b, known=False)
+    lines_c = format_entrant_card_lines(captured_c, known=False)
+    assert lines_b[1:] == lines_c[1:]
+
+    compact_b = format_entrant_card_lines(alive_b, mode="compact", known=False)
+    compact_c = format_entrant_card_lines(captured_c, mode="compact", known=False)
+    assert compact_b[1:] == compact_c[1:]
 
 
 def test_compact_help_fits_minimum_footer_text_column_and_expands_to_two_lines():
