@@ -173,6 +173,29 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
             initial_mode=args.perspective or "broadcast",
         )
 
+    # An explicitly requested perspective must never fail silently.  The viewer
+    # still opens on the canonical replay -- ordinary replay never depends on a
+    # trace -- but the user is told why Perspective Cam is not available rather
+    # than being dropped into broadcast with no explanation.
+    if args.perspective is not None or args.trace is not None:
+        if perspective_manager is None:
+            print(
+                "[battle_client] Perspective Cam unavailable: no trace supplied and no "
+                f"companion trace.jsonl beside {replay_path.name}.",
+                file=sys.stderr,
+            )
+        elif not perspective_manager.available:
+            print(f"[battle_client] {perspective_manager.status_message}", file=sys.stderr)
+        elif args.perspective is not None and not perspective_manager.is_mode_valid(
+            args.perspective
+        ):
+            available = ", ".join(("broadcast", *perspective_manager.entrants))
+            print(
+                f"[battle_client] Unknown perspective {args.perspective!r}; "
+                f"available: {available}. Showing broadcast.",
+                file=sys.stderr,
+            )
+
     try:
         renderer.run(
             session,

@@ -82,9 +82,6 @@ class PerspectiveManager:
                     failed = True
                     break
 
-            if not failed and initial_mode != BROADCAST_MODE:
-                if self.is_mode_valid(initial_mode):
-                    self._mode = initial_mode
             if (
                 not failed
                 and initial_mode != BROADCAST_MODE

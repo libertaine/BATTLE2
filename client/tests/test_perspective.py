@@ -328,3 +328,195 @@ def test_perspective_cam_keyboard_dispatch() -> None:
 
     action_3 = dispatch_key(pg_mock, pg_mock.K_3, 0, ctrl_mock)
     assert action_3.select_perspective_index == 2  # Entrant 2
+
+class _RecordingSurface:
+    """Minimal surface that records which grid pixels were painted."""
+
+    def __init__(self, size=(0, 0)):
+        self._size = size
+        self.painted: dict[tuple[int, int], tuple[int, int, int]] = {}
+
+    def fill(self, color):
+        self.painted.clear()
+
+    def set_at(self, xy, color):
+        self.painted[xy] = color
+
+    def get_at(self, xy):
+        return self.painted.get(xy, (0, 0, 0))
+
+    def blit(self, source, pos):
+        pass
+
+    def get_size(self):
+        return self._size
+
+    def get_width(self):
+        return self._size[0]
+
+    def get_height(self):
+        return self._size[1]
+
+    def get_rect(self, **kwargs):
+        return (0, 0, *self._size)
+
+
+class _NullDraw:
+    def line(self, *a, **k):
+        pass
+
+    def circle(self, *a, **k):
+        pass
+
+    def rect(self, *a, **k):
+        pass
+
+
+class _NullTransform:
+    def scale(self, surface, size):
+        return surface
+
+
+class _FakePygame:
+    def __init__(self):
+        self.draw = _NullDraw()
+        self.transform = _NullTransform()
+        self.SRCALPHA = 1
+
+    def Surface(self, size, flags=0):
+        return _RecordingSurface(size)
+
+    def Rect(self, x, y, w, h):
+        return (x, y, w, h)
+
+
+def _blind_duel(root: Path, label: str = "blind"):
+    """Two entrants whose reach never covers the other: A can never see B.
+
+    Canonical replay still holds B's process anchor and owned core cells, so
+    this is the geometry trap at the *rendering* layer -- Perspective Cam must
+    paint nothing derived from B.
+    """
+
+    _write_agent(root, "anvil_a", ANVIL)
+    _write_agent(root, "anvil_b", ANVIL)
+    run = root / label
+    run.mkdir(parents=True, exist_ok=True)
+    replay_path = run / "replay.jsonl"
+    trace_path = run / "trace.jsonl"
+    NativeMatchService().run(
+        MatchRequest(
+            config=Config(
+                seed=11, arena_size=64, instr_per_tick=8, win_mode="capture", weights=Weights()
+            ),
+            entrants=(
+                MatchEntrant.python("A", "anvil_a", 0, resolve_agent(root, "anvil_a")),
+                MatchEntrant.python("B", "anvil_b", 32, resolve_agent(root, "anvil_b")),
+            ),
+            max_ticks=6,
+            replay_path=replay_path,
+            trace_path=trace_path,
+            ruleset_id=RULESET_V4_ALPHA1.ruleset_id,
+        )
+    )
+    return replay_path, trace_path
+
+
+def _instrumented_renderer(arena_size: int):
+    """A renderer wired to fakes, with every non-grid band stubbed out."""
+
+    from battle_client.hud_layout import calculate_layout
+    from battle_client.renderers.pygame_renderer import PygameRenderer
+
+    renderer = PygameRenderer()
+    renderer.pg = _FakePygame()
+    renderer.screen = _RecordingSurface((960, 700))
+    renderer.grid_surf = _RecordingSurface((arena_size, arena_size))
+    renderer.hud_font = SimpleNamespace(render=lambda *a, **k: _RecordingSurface((1, 1)))
+    renderer.font = renderer.hud_font
+    renderer.arena = arena_size
+    renderer.grid_cols, renderer.grid_rows = renderer._resolve_grid_dims(arena_size)
+    renderer._entrant_count = 2
+    renderer._layout = calculate_layout(
+        (960, 700), 2, (renderer.grid_cols, renderer.grid_rows)
+    )
+    renderer.grid_surf = _RecordingSurface((renderer.grid_cols, renderer.grid_rows))
+
+    calls: dict[str, list] = {"agent": [], "anchor": [], "contact": [], "reach": []}
+    renderer._draw_agent_marker = lambda *a, **k: calls["agent"].append(a)
+    renderer._draw_process_anchor = lambda *a, **k: calls["anchor"].append(a)
+    renderer._draw_perspective_contact = lambda *a, **k: calls["contact"].append(a)
+    renderer._draw_sensor_reach = lambda *a, **k: calls["reach"].append(a)
+    renderer._draw_selection_highlight = lambda *a, **k: None
+    renderer._draw_top_band = lambda *a, **k: ()
+    renderer._draw_capture_callout = lambda *a, **k: None
+    renderer._draw_footer = lambda *a, **k: None
+    return renderer, calls
+
+
+def test_renderer_perspective_grid_never_paints_unobserved_enemy_geometry(
+    tmp_path: Path,
+) -> None:
+    """The render path itself, not just PerspectiveState, must stay knowledge-limited.
+
+    Drives the real grid renderer with a real ``PerspectiveManager`` over a
+    real match in which entrant A never observes B.  Canonical replay knows
+    exactly where B is; Perspective Cam must paint none of it, and must not
+    fall back to replay entity coordinates for markers.
+    """
+
+    from battle_client.player import PlaybackController
+    from battle_client.session import ReplaySession
+
+    replay_path, trace_path = _blind_duel(tmp_path)
+    session = ReplaySession()
+    session.load(replay_path)
+    controller = PlaybackController(session, playing=False)
+    controller.seek_relative(3)
+    state = session.current_state
+
+    manager = PerspectiveManager(replay_path, trace_path)
+    assert manager.available, manager.status_message
+    assert manager.set_mode("A")
+    perspective = manager.state_at_tick(state.tick)
+    assert perspective is not None
+    assert perspective.current_contacts == ()
+    assert perspective.stale_contacts == ()
+
+    # Canonical replay really does place B in the arena at this tick; that is
+    # exactly the knowledge Perspective Cam must refuse to render.
+    canonical_b = {
+        address for address, owner in enumerate(state.owners) if owner == "B"
+    }
+    assert canonical_b, "fixture must give B canonical owned cells"
+
+    renderer, calls = _instrumented_renderer(64)
+    renderer._perspective_manager = manager
+    renderer._redraw(controller)
+
+    xy_to_address = {
+        renderer._to_xy(address): address for address in range(64)
+        if renderer._to_xy(address) is not None
+    }
+    painted = {
+        xy_to_address[xy] for xy in renderer.grid_surf.painted if xy in xy_to_address
+    }
+    assert painted.isdisjoint(canonical_b), (
+        f"perspective grid painted B-owned canonical cells: {sorted(painted & canonical_b)}"
+    )
+    assert calls["agent"] == [], "omniscient VM markers must not render in perspective mode"
+    assert calls["contact"] == [], "no contact was ever observed, so none may be drawn"
+    assert all(anchor[0] == "A" for anchor in calls["anchor"]), calls["anchor"]
+
+    # Control: the same renderer in broadcast mode *does* render B, proving the
+    # assertions above would catch a genuine disclosure leak.
+    renderer_b, calls_b = _instrumented_renderer(64)
+    renderer_b._perspective_manager = None
+    renderer_b._redraw(controller)
+    painted_broadcast = {
+        xy_to_address[xy] for xy in renderer_b.grid_surf.painted if xy in xy_to_address
+    }
+    assert painted_broadcast & canonical_b, "broadcast must still be omniscient"
+    assert any(anchor[0] == "B" for anchor in calls_b["anchor"]), (
+        "broadcast must still draw B's process anchors"
+    )

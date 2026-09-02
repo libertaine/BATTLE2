@@ -943,3 +943,130 @@ def test_perspective_cursor_sequential_and_seeking_equivalence(tmp_path: Path) -
         direct_start = projection.state_at_tick(tick, boundary=TickBoundary.START)
         cursor_start = cursor.state_at_tick(tick, boundary=TickBoundary.START)
         assert cursor_start == direct_start
+
+
+def _cursor_case(root: Path):
+    """A real multi-process, multi-entrant, co-located match for cursor audits.
+
+    ``A`` declares two processes and issues READs, ``B`` and ``C`` supply the
+    contact traffic (including a co-located pair), so one projection exercises
+    multi-process own-state, contact gain/loss, co-location, delivered READ
+    history, and unsampled ticks together.
+    """
+
+    replay_path, trace_path, _result = _run_match(
+        root,
+        "cursor_multi",
+        (
+            ("A", "multi_reader", MULTI_READER, 0),
+            ("B", "anvil_b", ANVIL, 32),
+            ("C", "colocator", COLOCATOR, 40),
+        ),
+        max_ticks=12,
+        seed=23,
+    )
+    assert trace_path is not None
+    return analyze_perspective(replay_path, trace_path, "A")
+
+
+def test_perspective_cursor_matches_projection_across_every_tick_and_boundary(
+    tmp_path: Path,
+) -> None:
+    """The cursor must equal the reference fold for every supported query.
+
+    Phase 5's cursor was reconstructed after the original implementation was
+    lost, so equivalence is proven exhaustively against
+    ``PerspectiveProjection.state_at_tick`` rather than sampled.
+    """
+
+    projection = _cursor_case(tmp_path)
+    ticks = range(projection.first_tick, projection.result_ticks + 1)
+    assert len(projection.declarations) == 2, "multi-process own-state coverage required"
+
+    # Interleaving both boundaries at the same tick exercises the bisect_left /
+    # bisect_right split, including a START query that must *not* include a
+    # frame the immediately preceding END query already folded.
+    cursor = projection.cursor()
+    for tick in ticks:
+        for boundary in (TickBoundary.END, TickBoundary.START, TickBoundary.END):
+            assert cursor.state_at_tick(tick, boundary=boundary) == projection.state_at_tick(
+                tick, boundary=boundary
+            )
+
+    # An adversarial access pattern: restart, large forward jump, backward
+    # seek, repeated same-tick reads, and end-of-match, all on one retained
+    # cursor whose accumulators must reset correctly on every backward move.
+    last = projection.result_ticks
+    first = projection.first_tick
+    middle = (first + last) // 2
+    pattern = (
+        last, first, last, middle, first, first, last, middle, middle, first, last
+    )
+    seeking = projection.cursor()
+    for tick in pattern:
+        assert seeking.state_at_tick(tick) == projection.state_at_tick(tick)
+
+    # A cursor driven only sequentially and one driven only by seeks must agree
+    # at the same tick: the cursor's own history may not influence its answer.
+    sequential = projection.cursor()
+    for tick in ticks:
+        sequential.state_at_tick(tick)
+    assert sequential.state_at_tick(middle) == seeking.state_at_tick(middle)
+
+
+def test_perspective_cursor_results_never_mutate_under_later_advancement(
+    tmp_path: Path,
+) -> None:
+    """A returned state must not change when the cursor advances afterwards.
+
+    The cursor folds through retained mutable accumulators.  If a returned
+    ``PerspectiveState`` aliased those accumulators, a rendered frame's
+    contacts, READ history, or own-process anchors could silently change
+    later in playback.  This is the regression guard for that aliasing.
+    """
+
+    projection = _cursor_case(tmp_path)
+    cursor = projection.cursor()
+
+    captured: list[tuple[int, object, str]] = []
+    for tick in range(projection.first_tick, projection.result_ticks + 1):
+        state = cursor.state_at_tick(tick)
+        # serialize_state is a full value snapshot taken *before* any further
+        # advancement, so a later in-place mutation would diverge from it.
+        captured.append((tick, state, serialize_state(state)))
+
+    # Drive the cursor across the whole match again, forwards and backwards,
+    # so every accumulator is folded, reset, and re-folded after capture.
+    for tick in range(projection.first_tick, projection.result_ticks + 1):
+        cursor.state_at_tick(tick)
+    for tick in range(projection.result_ticks, projection.first_tick - 1, -1):
+        cursor.state_at_tick(tick)
+
+    for tick, state, snapshot in captured:
+        assert serialize_state(state) == snapshot, f"cursor state at tick {tick} mutated"
+        assert state == projection.state_at_tick(tick)
+
+    # The same guarantee must hold for the cached same-tick result, which is
+    # returned by identity rather than rebuilt.
+    repeated = cursor.state_at_tick(projection.result_ticks)
+    again = cursor.state_at_tick(projection.result_ticks)
+    assert repeated is again
+    assert repeated == projection.state_at_tick(projection.result_ticks)
+
+
+def test_perspective_cursor_rejects_queries_outside_the_projection_range(
+    tmp_path: Path,
+) -> None:
+    """Range and type validation must match the projection it stands in for."""
+
+    projection = _cursor_case(tmp_path)
+    cursor = projection.cursor()
+    for bad_tick in (projection.first_tick - 1, projection.result_ticks + 1):
+        with pytest.raises(ValueError):
+            cursor.state_at_tick(bad_tick)
+        with pytest.raises(ValueError):
+            projection.state_at_tick(bad_tick)
+    with pytest.raises(ValueError):
+        cursor.state_at_tick(projection.first_tick, boundary=TickBoundary.CALLBACK)
+    with pytest.raises(TypeError):
+        cursor.state_at_tick(True)
