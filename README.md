@@ -225,13 +225,11 @@ is retained.
 
 | Package | Download | Notes |
 |---|---|---|
+| Windows installer | [Bytefray-Setup-4.0.0-alpha3.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/Bytefray-Setup-4.0.0-alpha3.exe) | Administrative AMD64/x64 installation; unsigned, see [Installation](INSTALL.md) |
 | Portable Windows applications | [bytefray-4.0.0-alpha3-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0-alpha3-windows.zip) | AMD64 onedir applications for the Bytefray CLI, Agent Designer, and Replay Viewer workflows |
 | Python wheel | [bytefray-4.0.0a3-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0a3-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
 | Source archive | [bytefray-4.0.0a3.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0a3.tar.gz) | Python/source workflows |
 | Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/SHA256SUMS.txt) | SHA-256 values for all published alpha3 assets |
-
-Alpha3 does not publish a Windows installer; use the portable Windows archive
-or a Python package. See [Installation](INSTALL.md) for setup guidance.
 
 **Current stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 remains available for users who do not want alpha gameplay/API changes.
