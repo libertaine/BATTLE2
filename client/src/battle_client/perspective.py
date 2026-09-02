@@ -12,7 +12,6 @@ from pathlib import Path
 
 from battle_engine.spectator_derivation import (
     SpectatorDerivation,
-    SpectatorPairError,
     analyze_pair,
 )
 from battle_engine.spectator_perspective import (
@@ -47,6 +46,16 @@ class PerspectiveManager:
     ReplaySession remains canonical-replay-only; this class coordinates the
     corresponding perspective projection by tick when a valid bound trace is
     present.
+
+    Availability and the entrant roster come from the cheap, shared
+    prerequisite -- ``verify_pair`` plus ``derive_events`` (``analyze_pair``)
+    -- which is run once, eagerly, in the constructor. Building one entrant's
+    actual knowledge projection (``project_perspective``, which walks every
+    one of that entrant's callbacks) is comparatively expensive and scales
+    with both match length and entrant count, so it is deferred until that
+    entrant is first selected as the active view mode. A projection that is
+    built is retained for the life of the manager, so switching back to an
+    already-visited entrant never repeats the cost.
     """
 
     def __init__(
@@ -61,33 +70,15 @@ class PerspectiveManager:
         self._availability = self._probe_availability()
         self._projections: dict[str, PerspectiveProjection] = {}
         self._cursors: dict[str, PerspectiveCursor] = {}
+        self._load_errors: dict[str, Exception] = {}
         self._mode = BROADCAST_MODE
 
-        if self._availability.available and self._availability.derivation is not None:
-            derivation = self._availability.derivation
-            failed = False
-            for entrant_id in derivation.binding.entrant_identities:
-                try:
-                    projection = project_perspective(derivation, entrant_id)
-                    self._projections[entrant_id] = projection
-                    self._cursors[entrant_id] = projection.cursor()
-                except (SpectatorPairError, PerspectiveError, Exception) as exc:
-                    self._availability = PerspectiveAvailability(
-                        available=False,
-                        status_message=f"Perspective projection failed: {exc}",
-                        error=exc,
-                    )
-                    self._projections.clear()
-                    self._cursors.clear()
-                    failed = True
-                    break
-
-            if (
-                not failed
-                and initial_mode != BROADCAST_MODE
-                and self.is_mode_valid(initial_mode)
-            ):
-                self._mode = initial_mode
+        if (
+            self._availability.available
+            and initial_mode != BROADCAST_MODE
+            and self.is_mode_valid(initial_mode)
+        ):
+            self.set_mode(initial_mode)
 
     def _probe_availability(self) -> PerspectiveAvailability:
         if self.trace_path is None:
@@ -132,10 +123,15 @@ class PerspectiveManager:
 
     @property
     def entrants(self) -> tuple[str, ...]:
-        """All entrant identities available for perspective viewing."""
-        if not self.available:
+        """All entrant identities available for perspective viewing.
+
+        Reflects the trace's validated entrant roster (from the shared,
+        eagerly-checked pair binding), independent of whether any given
+        entrant's knowledge projection has actually been built yet.
+        """
+        if not self.available or self._availability.derivation is None:
             return ()
-        return tuple(sorted(self._projections.keys()))
+        return tuple(sorted(self._availability.derivation.binding.entrant_identities))
 
     @property
     def mode(self) -> str:
@@ -143,31 +139,83 @@ class PerspectiveManager:
         return self._mode
 
     def is_mode_valid(self, mode: str) -> bool:
-        """Whether `mode` is a supported view mode."""
+        """Whether `mode` names a real entrant in the bound trace (or broadcast).
+
+        This is a cheap roster-membership check; it does not attempt to
+        build that entrant's projection, so it says nothing about whether
+        loading it would actually succeed. Use :meth:`set_mode`'s return
+        value for that.
+        """
         if mode == BROADCAST_MODE:
             return True
-        return self.available and mode in self._projections
+        return self.available and mode in self.entrants
+
+    def load_error_for(self, entrant_id: str) -> Exception | None:
+        """The lazy-load failure recorded for one entrant, if any."""
+        return self._load_errors.get(entrant_id)
+
+    def _ensure_loaded(self, entrant_id: str) -> bool:
+        """Lazily build and cache one entrant's projection and cursor.
+
+        Deferred here rather than built eagerly for every entrant: on a long
+        match, ``project_perspective`` walks every one of that entrant's
+        callbacks, and the interactive viewer usually only ever looks at one
+        or two entrants per session. A projection that is built is retained
+        for the life of the manager. A load failure is cached too (as a
+        recorded error, not retried), so a broken entrant's trace does not
+        raise repeatedly on every switch attempt.
+        """
+        if entrant_id in self._cursors:
+            return True
+        if entrant_id in self._load_errors:
+            return False
+        derivation = self._availability.derivation
+        if derivation is None:
+            return False
+        try:
+            projection = project_perspective(derivation, entrant_id)
+        except Exception as exc:
+            self._load_errors[entrant_id] = exc
+            return False
+        self._projections[entrant_id] = projection
+        self._cursors[entrant_id] = projection.cursor()
+        return True
 
     def set_mode(self, mode: str) -> bool:
-        """Set active view mode. Returns True if mode was updated successfully."""
+        """Set active view mode. Returns True if mode was updated successfully.
+
+        For an entrant mode, this triggers that entrant's lazy projection
+        load on first selection. Returns False, leaving the mode unchanged,
+        if ``mode`` does not name a real entrant or if loading it fails; call
+        :meth:`load_error_for` to distinguish the latter case.
+        """
         if not self.is_mode_valid(mode):
+            return False
+        if mode != BROADCAST_MODE and not self._ensure_loaded(mode):
             return False
         self._mode = mode
         return True
 
     def cycle_mode(self) -> str:
-        """Cycle through: broadcast -> Entrant 1 -> Entrant 2 -> ... -> broadcast."""
-        if not self.available or not self._projections:
+        """Cycle through: broadcast -> Entrant 1 -> Entrant 2 -> ... -> broadcast.
+
+        A candidate entrant whose lazy load fails is skipped back to
+        broadcast rather than leaving the cycle stuck on an unusable mode.
+        """
+        roster = self.entrants
+        if not self.available or not roster:
             self._mode = BROADCAST_MODE
             return self._mode
 
-        modes = [BROADCAST_MODE, *sorted(self._projections.keys())]
+        modes = [BROADCAST_MODE, *roster]
         try:
             current_index = modes.index(self._mode)
             next_index = (current_index + 1) % len(modes)
         except ValueError:
             next_index = 0
-        self._mode = modes[next_index]
+        candidate = modes[next_index]
+        if not self.set_mode(candidate):
+            self.set_mode(BROADCAST_MODE)
         return self._mode
 
     def state_at_tick(

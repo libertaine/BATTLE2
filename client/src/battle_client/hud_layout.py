@@ -466,9 +466,16 @@ def format_entrant_card_lines(
 
 
 COMPACT_HELP_TEXT = "Space play/pause · arrows step · drag timeline · ? controls"
+# The footer's help panel is a fixed 3 lines (status + these 2) at the
+# supported 640px-wide minimum, and this second line already sits at its
+# character budget there (see test_expanded_help_replaces_event_and_graph_
+# without_covering_arena). Adding the Phase 6 perspective bindings (1-9
+# direct select, D/F3 debug overlay) meant dropping "drag timeline" from
+# this line rather than growing to an unsupported 4th line or a wider
+# column; the compact hint above still advertises dragging.
 EXPANDED_HELP_LINES = (
     "Space play/pause · arrows step · Shift+arrows seek 10 · Home/End first/last · Esc/Q quit",
-    "+/- speed · [/] zoom · 0 fit · T trails · V perspective · drag timeline · ? close",
+    "+/- speed · [/] zoom · 0 fit · T trails · V/1-9 persp · D/F3 debug · ? close",
 )
 
 

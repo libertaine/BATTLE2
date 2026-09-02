@@ -160,7 +160,7 @@ class PerspectiveState:
     own_core_size: int | None
     current_contacts: tuple[ContactKnowledge, ...]
     stale_contacts: tuple[ContactKnowledge, ...]
-    read_history: tuple[ReadKnowledge, ...]
+    read_history: Sequence[ReadKnowledge]
     own_processes: tuple[OwnProcessKnowledge, ...]
     arena_size: int
 
@@ -261,9 +261,12 @@ class PerspectiveProjection:
     def cursor(self) -> PerspectiveCursor:
         """Return a retained incremental cursor for efficient sequential playback.
 
-        Equivalent to repeated :meth:`state_at_tick` END-boundary calls, but
-        sequential and same-tick queries amortize to O(1) instead of re-folding
-        the full callback history on every call.  See
+        Equivalent to repeated :meth:`state_at_tick` END-boundary calls, but a
+        query's cost is proportional only to the callback frames newly
+        crossed since the previous query (plus O(1) state materialization),
+        instead of re-folding the full callback history on every call.  A
+        repeated query at an unchanged tick is genuinely O(1): the cached
+        :class:`PerspectiveState` is returned by identity.  See
         :class:`PerspectiveCursor`.
         """
 
@@ -276,6 +279,59 @@ class _ContactAccumulator:
     last: CallbackPoint
     count: int
     stale_at: CallbackPoint | None = None
+
+
+class ReadHistoryView(Sequence[ReadKnowledge]):
+    """O(1) immutable snapshot of an append-only READ list's first N entries.
+
+    :class:`PerspectiveCursor` retains one growing list of delivered reads
+    across the whole match and only ever appends to it (a backward seek
+    replaces it wholesale with a new empty list; it is never truncated or
+    mutated in place). A view that captures just the list reference and its
+    length at query time is therefore a stable, O(1)-to-construct snapshot of
+    "every read delivered so far": entries before the captured length are
+    never touched by later appends, so this view cannot change after it is
+    returned even though the underlying list keeps growing. Materializing the
+    entries themselves (iteration, equality, indexing) is O(length), same as
+    a plain tuple, but that cost is paid only by a caller that actually
+    consumes the history -- not by every cursor query.
+    """
+
+    __slots__ = ("_cache", "_length", "_source")
+
+    def __init__(self, source: list[ReadKnowledge], length: int) -> None:
+        self._source = source
+        self._length = length
+        self._cache: tuple[ReadKnowledge, ...] | None = None
+
+    def _materialized(self) -> tuple[ReadKnowledge, ...]:
+        if self._cache is None:
+            self._cache = tuple(self._source[: self._length])
+        return self._cache
+
+    def __len__(self) -> int:
+        return self._length
+
+    def __getitem__(self, index: int | slice) -> Any:
+        return self._materialized()[index]
+
+    def __iter__(self) -> Any:
+        return iter(self._materialized())
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, ReadHistoryView):
+            return self._materialized() == other._materialized()
+        if isinstance(other, tuple):
+            return self._materialized() == other
+        if isinstance(other, Sequence):
+            return self._materialized() == tuple(other)
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._materialized())
+
+    def __repr__(self) -> str:
+        return repr(self._materialized())
 
 
 class PerspectiveCursor:
@@ -291,6 +347,13 @@ class PerspectiveCursor:
     tick.  Repeated calls at the same tick (while paused, or rendering
     multiple display frames per tick) return the cached
     :class:`PerspectiveState` in O(1).
+
+    The returned state's ``read_history`` is a :class:`ReadHistoryView`, an
+    O(1)-to-construct snapshot over the cursor's retained, append-only READ
+    accumulator (see its docstring). This keeps state materialization cheap
+    even late in a long match with a large accumulated READ history; only a
+    caller that actually iterates the full history pays a cost proportional
+    to its length, and never a query that does not.
 
     Results are always equivalent to calling
     :meth:`PerspectiveProjection.state_at_tick` directly; this cursor is a
@@ -429,7 +492,7 @@ class PerspectiveCursor:
             own_core_size=self._core_size,
             current_contacts=current_contacts,
             stale_contacts=stale_contacts,
-            read_history=tuple(self._reads),
+            read_history=ReadHistoryView(self._reads, len(self._reads)),
             own_processes=tuple(self._own[key] for key in sorted(self._own)),
             arena_size=self._projection.arena_size,
         )
@@ -1101,6 +1164,7 @@ __all__ = [
     "PerspectiveFrame",
     "PerspectiveProjection",
     "PerspectiveState",
+    "ReadHistoryView",
     "ReadKnowledge",
     "TickBoundary",
     "analyze_perspective",

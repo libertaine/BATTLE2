@@ -78,6 +78,102 @@ def create_agent() -> AgentV2:
 """
 )
 
+FLYBY = (
+    _IMPORTS
+    + """
+class Flyby:
+    api_version = 2
+    def declare_processes(self):
+        return [ProcessDeclaration(id="wing", reach=4, share=1.0)]
+    def reset(self, context: MatchContextV2):
+        pass
+    def act(self, obs: ObservationV2) -> AgentAction:
+        return AgentAction(ActionKindV2.MOVE, 1)
+def create_agent() -> AgentV2:
+    return Flyby()
+"""
+)
+
+SLEEPER = (
+    _IMPORTS
+    + """
+class Sleeper:
+    api_version = 2
+    def declare_processes(self):
+        return [ProcessDeclaration(id="z", reach=1, share=1.0)]
+    def reset(self, context: MatchContextV2):
+        pass
+    def act(self, obs: ObservationV2) -> AgentAction:
+        return AgentAction(ActionKindV2.READ, obs.self_anchor)
+def create_agent() -> AgentV2:
+    return Sleeper()
+"""
+)
+
+WATCHER = (
+    _IMPORTS
+    + """
+class Watcher:
+    api_version = 2
+    def declare_processes(self):
+        return [ProcessDeclaration(id="eye", reach=20, share=1.0)]
+    def reset(self, context: MatchContextV2):
+        pass
+    def act(self, obs: ObservationV2) -> AgentAction:
+        if obs.visible_enemy_anchor_addresses:
+            return AgentAction(ActionKindV2.READ, obs.visible_enemy_anchor_addresses[0])
+        return AgentAction(ActionKindV2.MOVE, 1)
+def create_agent() -> AgentV2:
+    return Watcher()
+"""
+)
+
+HOLDER = (
+    _IMPORTS
+    + """
+class Holder:
+    api_version = 2
+    def declare_processes(self):
+        return [ProcessDeclaration(id="core", reach=2, share=1.0)]
+    def reset(self, context: MatchContextV2):
+        pass
+    def act(self, obs: ObservationV2) -> AgentAction:
+        return AgentAction(ActionKindV2.WRITE, obs.own_core_base, 0x7B)
+def create_agent() -> AgentV2:
+    return Holder()
+"""
+)
+
+
+def _run_match(
+    root: Path,
+    label: str,
+    entrants: tuple[tuple[str, str, str, int], ...],
+    *,
+    arena_size: int = 64,
+    max_ticks: int = 12,
+    seed: int = 11,
+):
+    for _entrant_id, agent_name, source, _start in entrants:
+        _write_agent(root, agent_name, source)
+    run = root / label
+    run.mkdir(parents=True, exist_ok=True)
+    replay_path = run / "replay.jsonl"
+    trace_path = run / "trace.jsonl"
+    request = MatchRequest(
+        config=Config(seed=seed, arena_size=arena_size, instr_per_tick=8, win_mode="capture", weights=Weights()),
+        entrants=tuple(
+            MatchEntrant.python(entrant_id, agent_name, start, resolve_agent(root, agent_name))
+            for entrant_id, agent_name, _source, start in entrants
+        ),
+        max_ticks=max_ticks,
+        replay_path=replay_path,
+        trace_path=trace_path,
+        ruleset_id=RULESET_V4_ALPHA1.ruleset_id,
+    )
+    result = NativeMatchService().run(request)
+    return replay_path, trace_path, result
+
 
 def _write_agent(root: Path, name: str, source: str) -> None:
     directory = root / "agents" / name
@@ -520,3 +616,168 @@ def test_renderer_perspective_grid_never_paints_unobserved_enemy_geometry(
     assert any(anchor[0] == "B" for anchor in calls_b["anchor"]), (
         "broadcast must still draw B's process anchors"
     )
+
+
+def test_renderer_stale_contact_uses_real_projection_transition(tmp_path: Path) -> None:
+    """The render path must reflect a *real* CURRENT -> STALE transition.
+
+    A drifts past B (never moving) and gains, loses, and later regains the
+    contact at address 20 -- proven first against the engine oracle exactly
+    as the qualified engine cursor equivalence tests do, then driven through
+    a real ``PerspectiveManager`` and the real grid renderer at those exact
+    ticks. This is the render-layer counterpart Phase 5 left as a gap: prior
+    coverage exercised ``_draw_perspective_contact`` only with a hand-built
+    ``PerspectiveState``, never with contacts that actually transitioned.
+    """
+
+    from battle_client.player import PlaybackController
+    from battle_client.session import ReplaySession
+
+    replay_path, trace_path, _result = _run_match(
+        tmp_path,
+        "flyby",
+        (
+            ("A", "flyby", FLYBY, 0),
+            ("B", "sleeper", SLEEPER, 20),
+        ),
+        max_ticks=20,
+        seed=17,
+    )
+
+    projection = analyze_perspective(replay_path, trace_path, "A")
+    gained = [f for f in projection.frames if f.gained_contact_addresses]
+    lost = [f for f in projection.frames if f.staled_contact_addresses]
+    assert len(gained) >= 2 and len(lost) >= 1, "fixture must exercise gain and loss"
+    assert gained[0].gained_contact_addresses == (20,)
+    assert lost[0].staled_contact_addresses == (20,)
+    gain_tick = gained[0].point.tick
+    stale_tick = lost[0].point.tick
+    assert stale_tick > gain_tick
+
+    session = ReplaySession()
+    session.load(replay_path)
+    controller = PlaybackController(session, playing=False)
+
+    manager = PerspectiveManager(replay_path, trace_path)
+    assert manager.available, manager.status_message
+    assert manager.set_mode("A")
+
+    # At the gain tick, the real cursor-backed state must be CURRENT, and the
+    # real render path must actually be handed and use that state.
+    controller.seek_relative(gain_tick - session.current_state.tick)
+    assert session.current_state.tick == gain_tick
+    renderer, calls = _instrumented_renderer(64)
+    renderer._perspective_manager = manager
+    renderer._redraw(controller)
+    assert (20, KnowledgeStatus.CURRENT) in calls["contact"], calls["contact"]
+    assert not any(
+        addr == 20 and status is KnowledgeStatus.STALE for addr, status, *_ in calls["contact"]
+    )
+
+    # At the loss tick, the same real projection must now report STALE, and
+    # the render path must follow it rather than continuing to show CURRENT.
+    controller.seek_relative(stale_tick - session.current_state.tick)
+    assert session.current_state.tick == stale_tick
+    renderer_stale, calls_stale = _instrumented_renderer(64)
+    renderer_stale._perspective_manager = manager
+    renderer_stale._redraw(controller)
+    assert (20, KnowledgeStatus.STALE) in calls_stale["contact"], calls_stale["contact"]
+    assert not any(
+        addr == 20 and status is KnowledgeStatus.CURRENT
+        for addr, status, *_ in calls_stale["contact"]
+    )
+
+
+def test_renderer_read_sample_uses_real_projection_and_never_rewrites(tmp_path: Path) -> None:
+    """The render path must paint a *real* delivered READ sample correctly.
+
+    Watcher (A) continuously observes and READs Holder's (B, static) core
+    cell at address 10. This proves, against a real match and real trace:
+
+    * the delivered READ tint is painted at the real sampled address, using
+      the real renderer blend the production code path uses (not a
+      hand-replicated approximation);
+    * the sampled owner drives only the memory-cell tint, never the
+      anonymous spatial contact, which the same render call also draws with
+      no owner attached at all;
+    * exactly one READ per callback is excluded from history -- the final
+      one requested, which nothing later ever delivers feedback for; and
+    * an early sampled value is never rewritten to match a later canonical
+      write to the same cell (B's core content changes from 0xCE to 0x7B
+      during the match; the first delivered sample must stay 0xCE forever).
+    """
+
+    from battle_client.player import PlaybackController
+    from battle_client.renderers.pygame_renderer import GRID_BG, OWNERSHIP_TINT
+    from battle_client.session import ReplaySession
+
+    replay_path, trace_path, _result = _run_match(
+        tmp_path,
+        "watch",
+        (
+            ("A", "watcher", WATCHER, 0),
+            ("B", "holder", HOLDER, 10),
+        ),
+        max_ticks=10,
+        seed=11,
+    )
+
+    projection = analyze_perspective(replay_path, trace_path, "A")
+    final_state = projection.state_at_tick(projection.result_ticks)
+    assert final_state.current_contacts and final_state.current_contacts[0].address == 10
+    assert not hasattr(final_state.current_contacts[0], "owner")
+
+    # Exactly the final requested READ (whose feedback nothing later
+    # delivers) is missing from history -- not more, not fewer.
+    assert len(final_state.read_history) == len(projection.frames) - 1
+    for read in final_state.read_history:
+        assert read.normalized_address == 10
+        assert read.owner == "B"
+
+    # The very first delivered sample must survive byte-for-byte even though
+    # B's core content visibly changes later in the same match (the engine's
+    # initial core fill pattern 0xCE gives way to Holder's own 0x7B writes).
+    first_read = final_state.read_history[0]
+    last_read = final_state.read_history[-1]
+    assert first_read.value == 0xCE
+    assert last_read.value == 0x7B
+    assert first_read.value != last_read.value, "fixture must show B's core content actually change"
+
+    session = ReplaySession()
+    session.load(replay_path)
+    controller = PlaybackController(session, playing=False)
+    controller.seek_relative(projection.result_ticks - session.current_state.tick)
+
+    manager = PerspectiveManager(replay_path, trace_path)
+    assert manager.available, manager.status_message
+    assert manager.set_mode("A")
+    perspective_state = manager.state_at_tick(session.current_state.tick)
+    assert perspective_state is not None
+    assert perspective_state.read_history[0].value == 0xCE, (
+        "cursor-backed render state must not rewrite the stale sample either"
+    )
+
+    renderer, calls = _instrumented_renderer(64)
+    renderer._perspective_manager = manager
+    renderer._redraw(controller)
+
+    # The anonymous contact carries no owner; only the memory-tint path does.
+    assert (10, KnowledgeStatus.CURRENT) in calls["contact"], calls["contact"]
+
+    xy = renderer._to_xy(10)
+    assert xy is not None
+    # Address 10 is outside A's own core [0, 8), so nothing else paints this
+    # pixel first. Start from what the recording-surface fake actually
+    # reports for an untouched pixel after fill() (its fill() clears the
+    # paint log rather than recording GRID_BG per pixel -- matching what the
+    # renderer's own ``gs.get_at(xy)`` call sees through this same fake).
+    expected_color = (0, 0, 0)
+    for read in perspective_state.read_history:
+        if read.normalized_address == 10 and read.applied:
+            tint = OWNERSHIP_TINT.get(read.owner, (60, 65, 85)) if read.owner else (50, 50, 60)
+            expected_color = renderer._blend(expected_color, tint, 0.45)
+    assert renderer.grid_surf.painted.get(xy) == expected_color, (
+        f"painted {renderer.grid_surf.painted.get(xy)} != expected {expected_color}"
+    )
+    assert expected_color != (0, 0, 0), "fixture must actually paint the pixel"
+    assert expected_color != GRID_BG

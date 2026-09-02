@@ -195,6 +195,16 @@ def _run_interactive(args: argparse.Namespace, replay_path: Path) -> int:
                 f"available: {available}. Showing broadcast.",
                 file=sys.stderr,
             )
+        elif args.perspective is not None and perspective_manager.mode != args.perspective:
+            # is_mode_valid passed (a real entrant), but the manager's own
+            # attempt to select it during construction did not stick -- that
+            # entrant's lazy projection load failed.
+            load_error = perspective_manager.load_error_for(args.perspective)
+            print(
+                f"[battle_client] Perspective {args.perspective!r} unavailable: "
+                f"{load_error}. Showing broadcast.",
+                file=sys.stderr,
+            )
 
     try:
         renderer.run(
