@@ -450,6 +450,7 @@ def test_perspective_cam_keyboard_dispatch() -> None:
         K_p=112,
         K_d=100,
         K_g=103,
+        K_n=110,
         K_F3=284,
         K_1=49,
         K_2=50,

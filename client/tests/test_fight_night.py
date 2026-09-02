@@ -204,7 +204,7 @@ def test_seeking_reproduces_identical_presentation_state(tmp_path: Path) -> None
     """Sec. 43/44: the same tick must present identically along any path."""
 
     manager, last, _result = _four_entrant_manager(tmp_path)
-    ticks = list(range(0, last + 1))
+    ticks = list(range(last + 1))
 
     sequential = {tick: manager.state_at_tick(BROADCAST_MODE, tick) for tick in ticks}
 
@@ -263,7 +263,7 @@ def test_a_blind_entrant_never_receives_a_ribbon_entry_at_any_tick(
 ) -> None:
     manager, last, _result = _four_entrant_manager(tmp_path)
     for entrant in ("B", "D"):
-        for tick in range(0, last + 1):
+        for tick in range(last + 1):
             state = manager.state_at_tick(entrant, tick)
             assert state is not None
             assert state.ribbon == ()
