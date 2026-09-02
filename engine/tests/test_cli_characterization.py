@@ -419,6 +419,26 @@ def test_cli_help_lists_product_rulesets_including_v4_alpha1():
     assert "bytefray-rules-3-alpha1" not in result.stdout
 
 
+def test_run_help_documents_the_trace_flag():
+    result = _run("-m", "battle_engine.cli", "--help")
+    assert result.returncode == 0
+    assert "--trace TRACE" in result.stdout
+
+
+def test_trace_flag_accepts_an_explicit_path():
+    from battle_engine.cli import parse_args
+
+    args = parse_args(["--trace", "/tmp/example-trace.jsonl"])
+    assert args.trace == "/tmp/example-trace.jsonl"
+
+
+def test_trace_flag_omitted_is_none_in_parsed_arguments():
+    from battle_engine.cli import parse_args
+
+    args = parse_args(["--a-type", "writer", "--b-type", "runner"])
+    assert args.trace is None
+
+
 def test_resolve_agent_applies_per_agent_env_json_to_builtin_construction(
     monkeypatch, tmp_path
 ):

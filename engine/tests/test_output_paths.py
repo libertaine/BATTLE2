@@ -87,3 +87,60 @@ def test_controlled_match_failure_removes_replay_and_stale_summary(
 
     assert not replay.exists()
     assert not summary.exists()
+
+
+def _capture_match_request(monkeypatch):
+    """Intercept the ``MatchRequest`` the CLI builds without running a match."""
+    captured: dict[str, object] = {}
+
+    def capture_run(self, request):
+        del self
+        captured["request"] = request
+        raise RuntimeError("stop before executing the match")
+
+    monkeypatch.setattr(match_service.NativeMatchService, "run", capture_run)
+    return captured
+
+
+def test_trace_flag_omitted_leaves_match_request_trace_path_none(
+    monkeypatch, tmp_path
+):
+    captured = _capture_match_request(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(RuntimeError, match="stop before executing the match"):
+        cli.main(_match_arguments(tmp_path / "replay.jsonl"))
+
+    assert captured["request"].trace_path is None
+
+
+def test_explicit_relative_trace_path_resolves_relative_to_working_directory(
+    monkeypatch, tmp_path
+):
+    working = tmp_path / "working"
+    working.mkdir()
+    monkeypatch.chdir(working)
+    captured = _capture_match_request(monkeypatch)
+
+    arguments = _match_arguments(working / "replay.jsonl") + [
+        "--trace",
+        str(Path("chosen") / "relative-trace.jsonl"),
+    ]
+    with pytest.raises(RuntimeError, match="stop before executing the match"):
+        cli.main(arguments)
+
+    assert captured["request"].trace_path == working / "chosen" / "relative-trace.jsonl"
+
+
+def test_explicit_absolute_trace_path_remains_absolute(monkeypatch, tmp_path):
+    working = tmp_path / "working"
+    working.mkdir()
+    monkeypatch.chdir(working)
+    captured = _capture_match_request(monkeypatch)
+
+    trace = tmp_path / "absolute output" / "trace.jsonl"
+    arguments = _match_arguments(working / "replay.jsonl") + ["--trace", str(trace)]
+    with pytest.raises(RuntimeError, match="stop before executing the match"):
+        cli.main(arguments)
+
+    assert captured["request"].trace_path == trace

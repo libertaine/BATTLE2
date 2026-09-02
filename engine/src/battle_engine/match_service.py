@@ -124,12 +124,16 @@ class MatchRequest:
     ``trace_path`` and ``agent_call_timeout`` are Agent Lab's two
     independently optional development-time additions
     (``docs/specs/agent_lab.md`` §4). Both default to ``None`` -- the
-    "normal match path" (``bytefray run``/tournament) never sets either,
-    so it executes the exact unmodified v0.4.0
+    "normal match path" (``bytefray run``/tournament) never sets either
+    unless a caller opts in, so an ordinary invocation still executes the
+    exact unmodified v0.4.0
     :class:`~battle_engine.python_runtime.PythonEntrantController` code
-    path. Only Python compositions honor either field; a VM match request
-    that happens to set them is a no-op, since VM matches have no Python
-    Agent API boundary to trace or supervise.
+    path. ``bytefray run --trace PATH`` is the one normal-path caller that
+    sets ``trace_path`` explicitly (Alpha3 follow-up Phase 1); omitting
+    ``--trace`` leaves it ``None`` exactly as before. Only Python
+    compositions honor either field; a VM match request that happens to
+    set them is a no-op, since VM matches have no Python Agent API
+    boundary to trace or supervise.
 
     ``ruleset_id`` is v2.0.0-alpha.1's one additive selector (see
     ``docs/V2_0_ALPHA_ARCHITECTURE.md`` Sec 6): ``None`` continues to

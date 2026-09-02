@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from battle_engine import command
+from battle_engine.agent_trace import read_trace
 from battle_engine.starters import STARTER_AGENT_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -322,6 +323,93 @@ def test_cli_runs_python_vs_python_match(tmp_path):
     summary = json.loads(replay.with_name("summary.json").read_text())
     assert summary["agents"] == {"A": "py_writer", "B": "py_passive"}
     assert summary["agent_stats"]["A"]["mem_writes"] == 4
+
+
+def test_cli_trace_flag_writes_artifact_without_changing_match_identity(tmp_path):
+    """``bytefray run --trace`` must produce a real trace artifact through the
+    existing trace machinery, and requesting one must not perturb the
+    canonical match/result identity or gameplay outcome relative to the
+    same deterministic match run without it (Alpha3 follow-up Phase 1).
+    """
+    data_root = tmp_path / "data"
+    _write_cli_python_agent(
+        data_root, "py_writer", "AgentAction(ActionKind.WRITE, 11, 77)"
+    )
+    _write_cli_python_agent(data_root, "py_passive", "AgentAction(ActionKind.NOP)")
+    env = dict(os.environ, BYTEFRAY_ROOT=str(data_root))
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(ROOT / "engine" / "src"), str(ROOT / "client" / "src"), str(ROOT)]
+    )
+
+    def run_match(label: str, *extra_args: str) -> Path:
+        replay = tmp_path / label / "replay.jsonl"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "battle_engine",
+                "run",
+                "--a-type",
+                "py_writer",
+                "--b-type",
+                "py_passive",
+                "--ticks",
+                "2",
+                "--quota",
+                "2",
+                "--arena",
+                "64",
+                "--seed",
+                "5",
+                "--replay",
+                str(replay),
+                "--quiet",
+                *extra_args,
+            ],
+            cwd=tmp_path,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        return replay
+
+    replay_without_trace = run_match("no-trace")
+    trace_path = tmp_path / "trace-out" / "trace.jsonl"
+    replay_with_trace = run_match("with-trace", "--trace", str(trace_path))
+
+    # E: a real trace artifact was produced through the existing trace reader.
+    assert trace_path.is_file()
+    document = read_trace(trace_path)
+    assert document.decisions
+
+    # Omitting --trace must never produce a trace artifact alongside the run.
+    assert not replay_without_trace.with_name("trace.jsonl").exists()
+
+    # F: identity/outcome invariance -- requesting a trace changes nothing
+    # about canonical gameplay or result identity. Trace bytes themselves
+    # are deliberately excluded from this comparison.
+    summary_without_trace = json.loads(
+        replay_without_trace.with_name("summary.json").read_text()
+    )
+    summary_with_trace = json.loads(
+        replay_with_trace.with_name("summary.json").read_text()
+    )
+    assert summary_without_trace["winner"] == summary_with_trace["winner"]
+    assert summary_without_trace["score"] == summary_with_trace["score"]
+    assert summary_without_trace["agent_stats"] == summary_with_trace["agent_stats"]
+
+    result_without_trace = json.loads(
+        replay_without_trace.with_name("result.json").read_text()
+    )
+    result_with_trace = json.loads(
+        replay_with_trace.with_name("result.json").read_text()
+    )
+    assert result_without_trace["match_id"] == result_with_trace["match_id"]
+    assert result_without_trace["result_id"] == result_with_trace["result_id"]
+
+    assert replay_without_trace.read_bytes() == replay_with_trace.read_bytes()
 
 
 def test_cli_rejects_mixed_vm_python_without_traceback(tmp_path):

@@ -87,6 +87,18 @@ def _resolve_replay_path(value: str | None) -> Path:
     return Path(value).expanduser().resolve()
 
 
+def _resolve_trace_path(value: str | None) -> Path | None:
+    """Resolve an explicit trace path from the CWD, or ``None`` if omitted.
+
+    Unlike ``--replay``, ``--trace`` has no implicit default: omission must
+    stay ``None`` all the way into ``MatchRequest.trace_path`` so ordinary
+    ``bytefray run`` invocations never start writing a trace artifact.
+    """
+    if value is None:
+        return None
+    return Path(value).expanduser().resolve()
+
+
 def _parse_env_json(varname: str) -> dict[str, Any]:
     """
     Read JSON object from environment variable.
@@ -177,6 +189,15 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         help=(
             "replay output path; explicit relative paths use the current working "
             "directory (default: <data-root>/runs/_loose/replay.jsonl)"
+        ),
+    )
+    p.add_argument(
+        "--trace",
+        default=None,
+        help=(
+            "optional match trace output path; explicit relative paths use "
+            "the current working directory. Omitted by default, which "
+            "matches current behavior: no trace artifact is written."
         ),
     )
     p.add_argument(
@@ -560,6 +581,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     replay_path = _resolve_replay_path(args.replay)
     summary_path = replay_path.with_name("summary.json")
+    trace_path = _resolve_trace_path(args.trace)
 
     if args.mode == "redcode94":
         replay_path.parent.mkdir(parents=True, exist_ok=True)
@@ -830,6 +852,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 max_ticks=args.ticks,
                 replay_path=replay_path,
                 verbose=not args.quiet,
+                trace_path=trace_path,
                 ruleset_id=resolved_ruleset_id,
             )
         )
