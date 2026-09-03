@@ -349,6 +349,22 @@ class AdaptedCell:
     # varied placement before this phase. A schema-5 cell reads this as
     # ``RECORDED``.
     placement: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 7): the resolved
+    # start addresses this cell's `placement` id actually names. Present on
+    # the raw wire shape since schema 5 (v2.0.0-beta2 Phase 1) as
+    # "subject_start"/"opponent_start", but never previously surfaced onto
+    # `AdaptedCell` because nothing needed to independently re-verify a v2
+    # cell's placement against a reconstruction; the stable v4 methodology
+    # requires exactly that (`evaluation_history.verification.verify_cell`
+    # checks a v4-seeded cell's recorded starts against `placement.
+    # resolve_direct_match_starts`, the same production seam that produced
+    # them, via `agent_evaluation.resolve_v4_seed_geometry` -- "the
+    # artifact must be verifiable, not merely self-consistent"). Recovered
+    # as `ConfidenceValue.recovered(0)` for schema < 5, mirroring
+    # `placement`'s own "fixed"/both-zero recovery exactly -- the historical
+    # fact is certain there too.
+    subject_start: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
+    opponent_start: ConfidenceValue = field(default_factory=ConfidenceValue.unknown)
     # v2.0.0-beta2 Phase 2 (design doc Sec Identity): multi-entrant
     # ("group") axes -- mirroring orientation/placement's identical
     # recovery pattern exactly. Every schema version that predates group

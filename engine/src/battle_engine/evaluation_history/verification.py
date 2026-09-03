@@ -15,7 +15,10 @@ from typing import Any
 
 from battle_engine.agent_evaluation import (
     ORIENTATION_CANDIDATE_FIRST,
+    ORIENTATION_OPPONENT_FIRST,
+    is_ruleset_v4_methodology,
     physical_slots_for_orientation,
+    resolve_v4_seed_geometry,
     seat_label,
 )
 from battle_engine.agent_revisions import agent_revisions_root, verify_revision
@@ -78,7 +81,11 @@ def _identity_mismatch(
 
 
 def verify_cell(
-    cell: AdaptedCell, base_dir: Path, subject_identity: ConfidenceValue | None = None
+    cell: AdaptedCell,
+    base_dir: Path,
+    subject_identity: ConfidenceValue | None = None,
+    *,
+    expected_placement: tuple[int, int] | None = None,
 ) -> CellVerificationOutcome:
     """Deep-verify one completed, scored cell against its nested artifacts.
 
@@ -96,7 +103,10 @@ def verify_cell(
     silently treated as matching), that identity matches the result's own
     per-entrant metadata (H1: now including ``entry_point``/
     ``local_source_fingerprint``, not just source_sha256/api_version/
-    agent_version).
+    agent_version); and, when ``expected_placement`` is given (a v4-seeded
+    cell only -- see ``verify_summary``), that the cell's own recorded
+    ``subject_start``/``opponent_start`` reconstruct exactly from its seed
+    via the production placement seam (research report Sec H.1 item 7).
 
     H1 (Beta2 Phase 4.1): a group (multi-entrant, N>=3, ``cell.seat_agent_
     ids`` non-empty) cell is verified through the identical checks above,
@@ -290,6 +300,44 @@ def verify_cell(
         orientation = cell.orientation.value or ORIENTATION_CANDIDATE_FIRST
         subject_slot, opponent_slot = physical_slots_for_orientation(orientation)
 
+    # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 7): a v4-seeded
+    # cell's recorded subject_start/opponent_start must be exactly
+    # reconstructible from its own seed via the same production placement
+    # seam that produced them, not merely internally self-consistent with
+    # its own condition_fingerprint -- "the artifact must be verifiable,
+    # not merely self-consistent". `expected_placement` is `(seat_a,
+    # seat_b)`, the un-swapped pair `resolve_v4_seed_geometry` resolves for
+    # this cell's seed; which start each role is expected to have depends
+    # on orientation exactly as `build_matrix` assigns it: seat A always
+    # goes to whichever role occupies the always-first-acting physical
+    # slot, so a `candidate_first` cell expects `(subject=seat_a,
+    # opponent=seat_b)` and an `opponent_first` cell expects the pair
+    # swapped. `expected_placement` is only ever passed for a non-group,
+    # v4-seeded cell (see `verify_summary`); still guarded on
+    # `not is_group_cell` here so this can never fire for a hand-built
+    # fixture that passes both.
+    if expected_placement is not None and not is_group_cell:
+        seat_a, seat_b = expected_placement
+        expected_subject_start, expected_opponent_start = (
+            (seat_b, seat_a) if orientation == ORIENTATION_OPPONENT_FIRST else (seat_a, seat_b)
+        )
+        recorded_subject_start = cell.subject_start.value
+        recorded_opponent_start = cell.opponent_start.value
+        if (
+            recorded_subject_start != expected_subject_start
+            or recorded_opponent_start != expected_opponent_start
+        ):
+            return CellVerificationOutcome(
+                cell.schedule_id,
+                True,
+                False,
+                f"recorded placement (subject_start={recorded_subject_start!r}, "
+                f"opponent_start={recorded_opponent_start!r}) does not reconstruct from "
+                f"seed {cell.seed!r} under the v4-seeded methodology (expected "
+                f"subject_start={expected_subject_start!r}, "
+                f"opponent_start={expected_opponent_start!r})",
+            )
+
     winner = envelope.winner
     expected_outcome = (
         "tie"
@@ -411,6 +459,28 @@ def verify_summary(
 
     store_root = agent_revisions_root(data_root if data_root is not None else get_data_root())
 
+    # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 7): resolved once,
+    # evaluation-wide, from the summary's own recorded rules_compatibility_
+    # id/effective_conditions -- never per cell, since both are constant
+    # across one evaluation. `None` (rather than raising) for anything not
+    # confidently a v4-seeded evaluation at a known arena size: a v1/v2/
+    # group evaluation, or a v4 one whose arena size could not be
+    # confidently recovered, simply gets no placement-reconstruction check
+    # (`verify_cell`'s existing checks are unaffected either way).
+    rules_id = (
+        summary.rules_compatibility_id.value
+        if summary.rules_compatibility_id.confidence == FieldConfidence.RECORDED
+        else None
+    )
+    is_v4_seeded = isinstance(rules_id, str) and is_ruleset_v4_methodology(rules_id)
+    v4_arena_size: int | None = None
+    if is_v4_seeded and summary.effective_conditions.confidence == FieldConfidence.RECORDED:
+        conditions_value = summary.effective_conditions.value
+        if isinstance(conditions_value, dict):
+            raw_arena = conditions_value.get("arena_size")
+            if isinstance(raw_arena, int) and not isinstance(raw_arena, bool):
+                v4_arena_size = raw_arena
+
     candidate_revision_status = _revision_status(summary.candidate_agent_revision_id, store_root)
     baseline_revision_status = _revision_status(summary.baseline_agent_revision_id, store_root)
 
@@ -434,7 +504,16 @@ def verify_summary(
         subject_identity = (
             summary.candidate_identity if cell.subject_role == "candidate" else summary.baseline_identity
         )
-        outcome = verify_cell(cell, summary.location.directory, subject_identity)
+        expected_placement: tuple[int, int] | None = None
+        if (
+            v4_arena_size is not None
+            and isinstance(rules_id, str)
+            and cell.placement.confidence == FieldConfidence.RECORDED
+        ):
+            expected_placement = resolve_v4_seed_geometry(rules_id, v4_arena_size, cell.seed)
+        outcome = verify_cell(
+            cell, summary.location.directory, subject_identity, expected_placement=expected_placement
+        )
         outcomes.append(outcome)
         opponent_revision_status = _opponent_status(cell.opponent_agent_revision_id)
         if outcome.eligible:

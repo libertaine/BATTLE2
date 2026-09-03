@@ -417,6 +417,16 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             if version in _PLACEMENT_AWARE_VERSIONS
             else ConfidenceValue.recovered("fixed")
         )
+        # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 7): the resolved
+        # start addresses `placement` names -- same version gate, same
+        # recovery pattern (both zero is the certain historical fact for
+        # every "fixed"-alignment cell, schema < 5).
+        if version in _PLACEMENT_AWARE_VERSIONS:
+            cell_subject_start = _recorded_or_unknown(raw, "subject_start", expected_type=int)
+            cell_opponent_start = _recorded_or_unknown(raw, "opponent_start", expected_type=int)
+        else:
+            cell_subject_start = ConfidenceValue.recovered(0)
+            cell_opponent_start = ConfidenceValue.recovered(0)
         # v2.0.0-beta2 Phase 2 (Sec Identity): schema < 6 never fielded more
         # than one opponent per cell -- recovered as the certain historical
         # fact (an empty roster/seat/layout), mirroring placement above.
@@ -460,6 +470,8 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
                 opponent_agent_revision_error=opponent_agent_revision_error,
                 orientation=orientation,
                 placement=placement,
+                subject_start=cell_subject_start,
+                opponent_start=cell_opponent_start,
                 roster=roster,
                 seat_agent_ids=cell_seat_agent_ids,
                 layout_id=layout,
