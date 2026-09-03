@@ -73,7 +73,7 @@ from battle_engine.match_service import (
     canonical_match_id,
 )
 from battle_engine.paths import contained_path, get_data_root
-from battle_engine.placement import spread_seat_starts
+from battle_engine.placement import resolve_direct_match_starts, spread_seat_starts
 from battle_engine.project_info import get_project_info
 from battle_engine.python_runtime import (
     CORE_SIZE,
@@ -95,7 +95,10 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
-    resolve_omitted_ruleset_id,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    PROCESS_RULESET_IDS,
+    NoCompatibleRulesetError,
+    resolve_omitted_ruleset_for_agents,
 )
 
 SCHEMA_NAME = "bytefray.evaluation"
@@ -221,6 +224,45 @@ SCHEMA_VERSION_V2_GROUP = 6
 # seeds -- an explicit seed selection always overrides it.
 STANDARD_V2_SEEDS: tuple[int, ...] = (1, 2, 3, 4, 5)
 
+# v4.0.0-rc1 Phase 1 (docs/research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md
+# Sec H): the stable v4 evaluation methodology's own arena-alignment
+# identifier -- a fourth sibling value to EVALUATION_ARENA_ALIGNMENT_MODE/
+# _V2_STANDARD/_V2_GROUP_STANDARD above, never a replacement for any of
+# them. Selected only when a request's --ruleset resolves to
+# BYTEFRAY_RULESET_V4_ALPHA2_ID. Unlike the v2 methodologies, this one does
+# not impose explicit placements at all: the Ruleset's own production
+# placement seam (placement.resolve_direct_match_starts, the same one
+# `bytefray run` uses) derives entrant cores from each cell's own seed, so
+# "seeded" names what changed -- fixed/imposed placement becomes
+# Ruleset-derived, deterministic placement.
+EVALUATION_ARENA_ALIGNMENT_MODE_V4_SEEDED = "ruleset_v4_seeded_placements"
+
+# A third, additive identity/schema recipe (research report Sec H.1 item 6),
+# used only by an evaluation whose resolved Ruleset is
+# BYTEFRAY_RULESET_V4_ALPHA2_ID. Every v1/v2/v2-group evaluation keeps
+# hashing and persisting under its own existing identity_version/
+# schema_version exactly as before -- this constant has no historical
+# artifact to stay compatible with, since bytefray-rules-4-alpha2 evaluation
+# has never been a supported product path before this phase (the v2
+# methodologies explicitly reject it; see resolve_evaluation_ruleset_id's
+# _V2_METHODOLOGY_RULESET_IDS, which never includes alpha2).
+IDENTITY_VERSION_V4 = 7
+SCHEMA_VERSION_V4 = 7
+
+# Stable v4 evaluation methodology (research report Sec H.1 items 2/3):
+# eight deterministic placement samples, and the arena size the methodology
+# is pinned to -- not inherited from Config().arena_size, and not a casual
+# per-run tuning knob for the *standard* methodology (an explicit
+# --arena-size override that disagrees with this is rejected, never
+# silently honored under the v4-seeded methodology label; see
+# EvaluationService._validate). Used only as the v4-seeded methodology's
+# *default* seed set when the CLI is not given an explicit --seeds/
+# --seed-range and no --preset supplies seeds, mirroring exactly how
+# STANDARD_V2_SEEDS is used today -- an explicit seed selection always
+# overrides it.
+STANDARD_V4_SEEDS: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8)
+STANDARD_V4_ARENA_SIZE: int = 512
+
 CANDIDATE = "candidate"
 BASELINE = "baseline"
 
@@ -240,6 +282,85 @@ ORIENTATION_MODE_CANDIDATE_FIRST_ONLY = "candidate_first_only"
 _OUTCOME_RANK = {"loss": 0, "tie": 1, "win": 2}
 _REAL_OUTCOMES = frozenset(_OUTCOME_RANK)
 _TERMINAL_RESUME_STATUSES = ("completed", "failed", "corrupted", "drift_detected")
+
+# v4.0.0-rc1 Phase 1 (F.6 remediation, docs task Sec 4): the top-level
+# `lifecycle_state` an evaluation.json's *scheduler* reaches when it stops
+# running. `LIFECYCLE_STATE_FINISHED` and `LIFECYCLE_STATE_FINISHED_WITH_
+# FAILURES` are both "the scheduler is done" -- the distinction is entirely
+# about whether every persisted cell also executed successfully, never
+# about whether more work remains to schedule. This was previously
+# conflated: every non-aborted evaluation, including one in which every
+# single cell failed (`bytefray-rules-2` rejecting an Agent API v2 roster,
+# for example), was persisted as the bare `"finished"` a fully successful
+# evaluation gets, with `"complete": true` alongside it -- a reader had to
+# open `cells[]` and count statuses to discover the evaluation had not
+# actually succeeded. See `_resolved_lifecycle_state` below, the one
+# function both `EvaluationService.run` and `_write_state` now go through
+# for this decision.
+LIFECYCLE_STATE_RUNNING = "running"
+LIFECYCLE_STATE_FINISHED = "finished"
+LIFECYCLE_STATE_FINISHED_WITH_FAILURES = "finished_with_failures"
+LIFECYCLE_STATE_ABORTED = "aborted"
+
+#: Which per-cell `EvaluationCell.status` values represent a cell that did
+#: NOT execute successfully, for the purpose of the top-level lifecycle-
+#: state/`complete` integrity rule above. Deliberately the same two
+#: statuses `evaluation_history`'s own health-code computation already
+#: flags a "finished" artifact's cells against (`HealthCode.
+#: FINISHED_WITH_FAILED_CELLS`/`FINISHED_WITH_CORRUPTED_CELLS`) -- this
+#: generalizes that existing read-side reasoning to the write side rather
+#: than inventing a second, competing definition of "unsuccessful cell".
+#: `"drift_detected"` is deliberately excluded: a drifted cell already
+#: forces the whole evaluation to `LIFECYCLE_STATE_ABORTED` unconditionally
+#: (see `_resolved_lifecycle_state`), a stronger and more specific signal
+#: than "finished with failures" would be.
+UNSUCCESSFUL_CELL_STATUSES: frozenset[str] = frozenset({"failed", "corrupted"})
+
+
+def _resolved_lifecycle_state(
+    cells: Sequence[EvaluationCell], drift: Mapping[str, Any] | None
+) -> str:
+    """The truthful top-level terminal state for one fully-scheduled evaluation write.
+
+    F.6 remediation (docs task Sec 4): "the scheduler finished attempting
+    every cell" and "the evaluation succeeded" are different claims, and an
+    evaluation must never be represented as successfully complete merely
+    because the former is true. Source drift is checked first and wins
+    unconditionally -- an aborted evaluation is already an unambiguous,
+    stronger signal and must never be relabeled by this function. Otherwise:
+    every persisted cell must have executed successfully (`status` not in
+    `UNSUCCESSFUL_CELL_STATUSES`) for the truthful state to be
+    `LIFECYCLE_STATE_FINISHED`; if even one has not -- whether every cell
+    failed or only some did -- this evaluation's scheduling completed but
+    its outcome did not, and the persisted state says so explicitly rather
+    than reusing the same string a fully successful evaluation gets.
+
+    Applies uniformly to every methodology (v1/v2/v2-group/v4) and to a
+    bare resume that reconstructs a historically-failed cell from prior
+    state without re-executing anything -- it is a pure function of
+    ``cells``' own persisted status, never of whether *this* invocation did
+    any new work, so a resumed evaluation can never convert historical
+    failed cells into a successful aggregate merely because no work
+    remained to schedule.
+    """
+
+    if drift is not None:
+        return LIFECYCLE_STATE_ABORTED
+    if any(cell.status in UNSUCCESSFUL_CELL_STATUSES for cell in cells):
+        return LIFECYCLE_STATE_FINISHED_WITH_FAILURES
+    return LIFECYCLE_STATE_FINISHED
+
+
+#: Which `lifecycle_state` values represent "the scheduler has stopped and
+#: will not resume this evaluation's cell dispatch on its own" -- used by
+#: `EvaluationService.run`'s M1 no-op-resume chronology check, which must
+#: treat a bare resume of an already-`LIFECYCLE_STATE_FINISHED_WITH_
+#: FAILURES` artifact exactly like one of an already-`LIFECYCLE_STATE_
+#: FINISHED` one (preserve the original `finished_at` rather than minting a
+#: new one), since both are equally "nothing new was scheduled this run".
+TERMINAL_LIFECYCLE_STATES: frozenset[str] = frozenset(
+    {LIFECYCLE_STATE_FINISHED, LIFECYCLE_STATE_FINISHED_WITH_FAILURES}
+)
 
 
 def _utc_now_iso() -> str:
@@ -518,7 +639,36 @@ def is_ruleset_v2_methodology(rules_compatibility_id: str) -> bool:
     return rules_compatibility_id in _V2_METHODOLOGY_RULESET_IDS
 
 
-def resolved_arena_alignment_mode(is_v2_methodology: bool, group: bool = False) -> str:
+#: Which resolved rules-compatibility ids select the stable v4 seeded-
+#: placement evaluation methodology (research report Sec H). Finite and
+#: explicit, mirroring `_V2_METHODOLOGY_RULESET_IDS` exactly. Deliberately
+#: disjoint from that set -- a Ruleset id selects at most one evaluation
+#: methodology, never both -- and deliberately excludes
+#: `BYTEFRAY_RULESET_V4_ALPHA1_ID`: alpha1 keeps its existing, historical
+#: v2-methodology evaluation behavior (fixed standard placements) exactly as
+#: it has always had it; only alpha2 -- whose defining gameplay change *is*
+#: seed-derived placement -- gets the new methodology that actually lets it
+#: place.
+_V4_METHODOLOGY_RULESET_IDS: frozenset[str] = frozenset({BYTEFRAY_RULESET_V4_ALPHA2_ID})
+
+
+def is_ruleset_v4_methodology(rules_compatibility_id: str) -> bool:
+    """Whether a resolved rules-compatibility id selects the stable v4 methodology.
+
+    See `is_ruleset_v2_methodology`'s docstring for the general shape of
+    this question; this is its v4 sibling; Sec H.1 item 6 of
+    docs/research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md is the
+    accepted decision this implements.
+    """
+
+    return rules_compatibility_id in _V4_METHODOLOGY_RULESET_IDS
+
+
+def resolved_arena_alignment_mode(
+    is_v2_methodology: bool, group: bool = False, is_v4_methodology: bool = False
+) -> str:
+    if is_v4_methodology:
+        return EVALUATION_ARENA_ALIGNMENT_MODE_V4_SEEDED
     if is_v2_methodology and group:
         return EVALUATION_ARENA_ALIGNMENT_MODE_V2_GROUP_STANDARD
     return (
@@ -528,16 +678,50 @@ def resolved_arena_alignment_mode(is_v2_methodology: bool, group: bool = False) 
     )
 
 
-def resolved_identity_version(is_v2_methodology: bool, group: bool = False) -> int:
+def resolved_identity_version(
+    is_v2_methodology: bool, group: bool = False, is_v4_methodology: bool = False
+) -> int:
+    if is_v4_methodology:
+        return IDENTITY_VERSION_V4
     if is_v2_methodology and group:
         return IDENTITY_VERSION_V2_GROUP
     return IDENTITY_VERSION_V2 if is_v2_methodology else IDENTITY_VERSION
 
 
-def resolved_schema_version(is_v2_methodology: bool, group: bool = False) -> int:
+def resolved_schema_version(
+    is_v2_methodology: bool, group: bool = False, is_v4_methodology: bool = False
+) -> int:
+    if is_v4_methodology:
+        return SCHEMA_VERSION_V4
     if is_v2_methodology and group:
         return SCHEMA_VERSION_V2_GROUP
     return SCHEMA_VERSION_V2 if is_v2_methodology else SCHEMA_VERSION
+
+
+def resolve_v4_seed_geometry(
+    rules_compatibility_id: str, arena_size: int, seed: int
+) -> tuple[int, int]:
+    """The (seat A, seat B) start addresses one v4-seeded placement sample resolves to.
+
+    A thin, single-call wrapper around `placement.resolve_direct_match_starts`
+    -- bit-for-bit the same seam `bytefray run`/`agent_test` use, called with
+    both starts omitted so the Ruleset's own seeded placement (`placement.
+    seeded_seat_starts` for `bytefray-rules-4-alpha2`) resolves them --
+    rather than a second, independently-maintained placement formula. Both
+    `build_matrix` and `EvaluationService._evaluation_id` call this one
+    function so the persisted schedule and the identity hash can never drift
+    from each other or from the production seam (research report Sec H.1
+    items 1/7).
+    """
+
+    starts = resolve_direct_match_starts(
+        ruleset_id=rules_compatibility_id,
+        arena_size=arena_size,
+        entrant_count=2,
+        supplied_starts=[None, None],
+        seed=seed,
+    )
+    return starts[0], starts[1]
 
 
 class EvaluationConfigurationError(ValueError):
@@ -1225,9 +1409,25 @@ class EvaluationRequest:
         and display -- never `Config().arena_size` read independently at
         each site, which is exactly how a matrix could otherwise be built
         for one arena and executed in another.
+
+        v4.0.0-rc1 Phase 1 (research report Sec H.1 item 3): an omitted
+        ``arena_size`` under the stable v4 methodology resolves to the
+        pinned ``STANDARD_V4_ARENA_SIZE`` (512), never the inherited
+        ``Config().arena_size`` default (4096) every other methodology
+        still falls back to -- the whole point of pinning the arena is that
+        it must not silently track an unrelated global default.
+        ``EvaluationService._validate`` already rejects any *explicit*
+        ``arena_size`` that disagrees with the pin for a v4-methodology
+        request, so by the time this property is read on a validated
+        request, ``self.arena_size`` is either ``None`` or already exactly
+        ``STANDARD_V4_ARENA_SIZE`` here.
         """
 
-        return Config().arena_size if self.arena_size is None else self.arena_size
+        if self.arena_size is not None:
+            return self.arena_size
+        if self.is_v4_methodology:
+            return STANDARD_V4_ARENA_SIZE
+        return Config().arena_size
 
     @property
     def resolved_instr_per_tick(self) -> int:
@@ -1252,6 +1452,10 @@ class EvaluationRequest:
     @property
     def is_v2_methodology(self) -> bool:
         return is_ruleset_v2_methodology(self.resolved_rules_compatibility_id)
+
+    @property
+    def is_v4_methodology(self) -> bool:
+        return is_ruleset_v4_methodology(self.resolved_rules_compatibility_id)
 
     @property
     def roster_agent_ids(self) -> tuple[str, ...]:
@@ -1513,13 +1717,19 @@ def build_matrix(
     (Phase 5 spec Sec I.3) -- only ``candidate_first`` otherwise.
 
     Placement is resolved from ``request.ruleset_id`` (via ``request.
-    is_v2_methodology``), never from an external parameter: a v1-methodology
-    request (omitted or explicit ``bytefray-rules-1``) generates exactly one
-    placement per (subject, opponent, seed) -- the historical fixed
-    alignment, ``placement_id="fixed"``, both starts ``0`` -- reproducing
-    today's exact matrix shape and size. A v2-methodology request
-    (``bytefray-rules-2``) generates ``len(standard_placements())`` (3)
-    placements per (subject, opponent, seed) instead.
+    is_v2_methodology``/``request.is_v4_methodology``), never from an
+    external parameter: a v1-methodology request (omitted or explicit
+    ``bytefray-rules-1``) generates exactly one placement per (subject,
+    opponent, seed) -- the historical fixed alignment, ``placement_id=
+    "fixed"``, both starts ``0`` -- reproducing today's exact matrix shape
+    and size. A v2-methodology request (``bytefray-rules-2``) generates
+    ``len(standard_placements())`` (3) placements per (subject, opponent,
+    seed) instead. A v4-methodology request (``bytefray-rules-4-alpha2``)
+    generates exactly one placement per seed too, but that placement is
+    itself a function of the seed (``resolve_v4_seed_geometry``), and the
+    two orientation cells for one seed share that placement's resolved
+    geometry with occupants swapped rather than each keeping its own
+    role-anchored start (research report Sec H.1 items 1/4).
 
     ``specs``/``conditions_fingerprint``/``rules_compatibility_id``/
     ``arena_alignment_mode`` are optional and, when given, feed only
@@ -1540,6 +1750,7 @@ def build_matrix(
 
     resolved_rules_id = request.resolved_rules_compatibility_id
     resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+    resolved_is_v4 = is_ruleset_v4_methodology(resolved_rules_id)
 
     # v2.0.0-beta2 Phase 2: multi-entrant ("group") matrix generation is a
     # structurally different generation strategy (seed x layout x seat
@@ -1559,6 +1770,12 @@ def build_matrix(
     # it, which `MatchEntrant.python` silently wraps (`% arena_size`) --
     # collapsing two supposedly-separated starts onto the same cell and
     # measuring placement collision instead of the variable under test.
+    #
+    # v4.0.0-rc1 Phase 1: v4-seeded placement is NOT a pure function of
+    # arena size alone (it also depends on each cell's own seed -- research
+    # report Sec H.1 item 1), so it cannot be precomputed here the way the
+    # v2 standard placements are; it is instead resolved once per seed,
+    # inside the seed loop below, via `resolve_v4_seed_geometry`.
     placements: tuple[EvaluationPlacement | None, ...] = (
         standard_placements(request.resolved_arena_size) if resolved_is_v2 else (None,)
     )
@@ -1571,12 +1788,49 @@ def build_matrix(
             for seed_index, seed in enumerate(request.seeds):
                 condition_occurrence_index = occurrence_counts.get((opponent_id, seed), 0)
                 occurrence_counts[(opponent_id, seed)] = condition_occurrence_index + 1
-                for placement_index, placement in enumerate(placements):
+                # v4.0.0-rc1 Phase 1 (research report Sec H.1 items 1/4): one
+                # seeded placement sample per seed -- the Ruleset's own
+                # production placement seam, resolved once here and reused,
+                # unswapped, for both orientation cells of this seed (the
+                # orientation loop below swaps which *occupant* sits at each
+                # resolved seat, never draws a second, independent
+                # placement for the reverse orientation).
+                seed_placements: tuple[EvaluationPlacement | None, ...]
+                if resolved_is_v4:
+                    seat_a, seat_b = resolve_v4_seed_geometry(
+                        resolved_rules_id, request.resolved_arena_size, seed
+                    )
+                    seed_placements = (
+                        EvaluationPlacement(
+                            f"seeded-{seed}", subject_start=seat_a, opponent_start=seat_b
+                        ),
+                    )
+                else:
+                    seed_placements = placements
+                for placement_index, placement in enumerate(seed_placements):
                     placement_id = placement.placement_id if placement is not None else "fixed"
                     subject_start = placement.subject_start if placement is not None else 0
                     opponent_start = placement.opponent_start if placement is not None else 0
                     for orientation_index, orientation in enumerate(orientations):
                         ordinal += 1
+                        # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 4,
+                        # Sec G.3 "Option 3, paired"): under the v4-seeded
+                        # methodology, the resolved seat geometry is fixed
+                        # per seed and orientation decides which occupant
+                        # sits at which seat -- seat A always gets
+                        # `seed_placements[0]`'s first address, and swapping
+                        # orientation swaps who is standing there, not where
+                        # "seat A" is. Every other methodology keeps its
+                        # existing role-anchored behavior (the subject
+                        # starts at its own `subject_start` regardless of
+                        # which physical slot/scheduler order it executes
+                        # in, unaffected by this branch: `cell_subject_
+                        # start`/`cell_opponent_start` equal `subject_start`/
+                        # `opponent_start` unconditionally there).
+                        if resolved_is_v4 and orientation == ORIENTATION_OPPONENT_FIRST:
+                            cell_subject_start, cell_opponent_start = opponent_start, subject_start
+                        else:
+                            cell_subject_start, cell_opponent_start = subject_start, opponent_start
                         # `ordinal` is included so a repeated (role,
                         # subject_id, opponent_id, seed, placement,
                         # orientation) tuple -- explicitly preserved as
@@ -1637,7 +1891,7 @@ def build_matrix(
                             f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
                             f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}"
                             f"-{placement_id}-{orientation}"
-                            if resolved_is_v2
+                            if (resolved_is_v2 or resolved_is_v4)
                             else f"{ordinal:04d}-{role}-{_safe_path_segment(subject_id)}"
                             f"-vs-{_safe_path_segment(opponent_id)}-seed{seed}-{orientation}"
                         )
@@ -1661,8 +1915,8 @@ def build_matrix(
                             if placement is not None:
                                 fp_payload["placement"] = {
                                     "placement_id": placement.placement_id,
-                                    "subject_start": placement.subject_start,
-                                    "opponent_start": placement.opponent_start,
+                                    "subject_start": cell_subject_start,
+                                    "opponent_start": cell_opponent_start,
                                 }
                             condition_fingerprint = stable_id("evaluation-condition", fp_payload)
                         cells.append(
@@ -1682,8 +1936,8 @@ def build_matrix(
                                 orientation_index=orientation_index,
                                 rules_compatibility_id=resolved_rules_id,
                                 placement_id=placement_id,
-                                subject_start=subject_start,
-                                opponent_start=opponent_start,
+                                subject_start=cell_subject_start,
+                                opponent_start=cell_opponent_start,
                                 placement_index=placement_index,
                             )
                         )
@@ -2680,11 +2934,14 @@ class EvaluationService:
         evaluation_id = self._evaluation_id(request, planned_identities, conditions)
         resolved_rules_id = request.resolved_rules_compatibility_id
         resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+        resolved_is_v4 = is_ruleset_v4_methodology(resolved_rules_id)
         resolved_group = request.group and resolved_is_v2
         state_path = request.output_dir / "evaluation.json"
         prior = (
             self._load_state(
-                state_path, evaluation_id, resolved_schema_version(resolved_is_v2, resolved_group)
+                state_path,
+                evaluation_id,
+                resolved_schema_version(resolved_is_v2, resolved_group, resolved_is_v4),
             )
             if request.resume
             else {}
@@ -2704,7 +2961,7 @@ class EvaluationService:
             specs,
             conditions_fp,
             resolved_rules_id,
-            resolved_arena_alignment_mode(resolved_is_v2, resolved_group),
+            resolved_arena_alignment_mode(resolved_is_v2, resolved_group, resolved_is_v4),
         )
 
         created_at = prior.get("created_at") or _utc_now_iso()
@@ -2832,7 +3089,7 @@ class EvaluationService:
                         request.ticks,
                         request.data_root,
                         planned_identities,
-                        arena_size=request.arena_size,
+                        arena_size=request.resolved_arena_size,
                         instr_per_tick=request.instr_per_tick,
                         locality_reach=request.resolved_locality_reach,
                         kill_weight=request.kill_weight,
@@ -2877,7 +3134,7 @@ class EvaluationService:
             finished_at = None
         elif (
             not any_newly_executed
-            and prior.get("lifecycle_state") == "finished"
+            and prior.get("lifecycle_state") in TERMINAL_LIFECYCLE_STATES
             and isinstance(prior.get("finished_at"), str)
         ):
             finished_at = prior["finished_at"]
@@ -2895,7 +3152,7 @@ class EvaluationService:
             revision_plan=revision_plan,
             conditions=conditions,
             created_at=created_at,
-            lifecycle_state="aborted" if drift is not None else "finished",
+            lifecycle_state=_resolved_lifecycle_state(final_cells, drift),
             finished_at=finished_at,
             abort_reason="source_drift" if drift is not None else None,
             abort_detail=drift,
@@ -2956,7 +3213,7 @@ class EvaluationService:
                     request.ticks,
                     request.data_root,
                     planned_identities,
-                    request.arena_size,
+                    request.resolved_arena_size,
                     request.instr_per_tick,
                     request.resolved_locality_reach,
                     request.kill_weight,
@@ -3103,12 +3360,34 @@ class EvaluationService:
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V3_ALPHA1_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
+            BYTEFRAY_RULESET_V4_ALPHA2_ID,
         ):
             raise EvaluationConfigurationError(
                 f"Unsupported evaluation --ruleset {request.ruleset_id!r}; expected "
                 f"{BYTEFRAY_RULESET_ID!r}, {BYTEFRAY_RULESET_V2_ID!r}, "
-                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}, or "
-                f"{BYTEFRAY_RULESET_V4_ALPHA1_ID!r}."
+                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}, {BYTEFRAY_RULESET_V4_ALPHA1_ID!r}, or "
+                f"{BYTEFRAY_RULESET_V4_ALPHA2_ID!r}."
+            )
+
+        # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 3/Sec 6.2 of the
+        # governing task): arena 512 is a ratified *methodology* constant
+        # for the stable v4 evaluation path, not a casual per-run knob --
+        # the research found it the single largest lever on the resulting
+        # leaderboard (Sec G.1b), larger than the placement rule it was
+        # introduced to evaluate. A standard v4 evaluation must not be able
+        # to silently produce a non-standard-arena artifact that still
+        # claims the standard `ruleset_v4_seeded_placements` methodology;
+        # an incompatible explicit --arena-size fails closed here instead.
+        if (
+            request.is_v4_methodology
+            and request.arena_size is not None
+            and request.arena_size != STANDARD_V4_ARENA_SIZE
+        ):
+            raise EvaluationConfigurationError(
+                f"Evaluation --arena-size {request.arena_size} is incompatible with the "
+                f"stable v4 evaluation methodology, which is pinned to "
+                f"{STANDARD_V4_ARENA_SIZE} cells (research report Sec H.1 item 3); omit "
+                "--arena-size, or select a different --ruleset for a non-standard arena."
             )
 
         # v3 Phase 2: fail closed on a reach that would be silently
@@ -3153,17 +3432,19 @@ class EvaluationService:
         # Agent API version is part of the persisted and identity-bearing
         # evaluation conditions.  Rulesets v1-v3 are historical Agent API v1
         # methodologies; a later installation-wide API bump must not silently
-        # redefine their recipes.  Only the new v4 methodology uses the
-        # installation's current Agent API version.
+        # redefine their recipes.  Only the process-agent Rulesets (v4
+        # alpha1 and alpha2 -- PROCESS_RULESET_IDS, the same finite set
+        # match_service uses to decide which entrant controller to run) use
+        # the installation's current Agent API version.
         agent_api_version = (
             get_project_info().agent_api_version
-            if request.resolved_rules_compatibility_id == BYTEFRAY_RULESET_V4_ALPHA1_ID
+            if request.resolved_rules_compatibility_id in PROCESS_RULESET_IDS
             else 1
         )
         return effective_conditions_for(
             request.ticks,
             agent_api_version,
-            arena_size=request.arena_size,
+            arena_size=request.resolved_arena_size,
             instr_per_tick=request.instr_per_tick,
             kill_weight=request.kill_weight,
         )
@@ -3188,9 +3469,10 @@ class EvaluationService:
 
         resolved_rules_id = request.resolved_rules_compatibility_id
         resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+        resolved_is_v4 = is_ruleset_v4_methodology(resolved_rules_id)
         resolved_group = request.group and resolved_is_v2
         payload: dict[str, Any] = {
-            "identity_version": resolved_identity_version(resolved_is_v2, resolved_group),
+            "identity_version": resolved_identity_version(resolved_is_v2, resolved_group, resolved_is_v4),
             "candidate": identities[request.candidate_id],
             "baseline": (
                 identities[request.baseline_id] if request.baseline_id is not None else None
@@ -3213,9 +3495,12 @@ class EvaluationService:
             # v0.9 Phase 6 (Phase 5 spec Sec J.2/AA.4.2, sibling key, never
             # folded into "effective_conditions"): "fixed" for v0.9, a
             # second value for v2.0.0-beta2 Phase 1 1v1, a third for Phase
-            # 2 group mode (resolved_arena_alignment_mode) -- never
-            # collides across methodologies.
-            "arena_alignment_mode": resolved_arena_alignment_mode(resolved_is_v2, resolved_group),
+            # 2 group mode, a fourth for v4.0.0-rc1 Phase 1
+            # (resolved_arena_alignment_mode) -- never collides across
+            # methodologies.
+            "arena_alignment_mode": resolved_arena_alignment_mode(
+                resolved_is_v2, resolved_group, resolved_is_v4
+            ),
         }
         if resolved_group:
             # v2.0.0-beta2 Phase 2: multi-entrant identity. `orientation_
@@ -3249,6 +3534,25 @@ class EvaluationService:
                     }
                     for placement in standard_placements(request.resolved_arena_size)
                 ]
+            elif resolved_is_v4:
+                # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 7): the
+                # methodology's actual resolved *sample set* -- each seed's
+                # resolved seat geometry -- enters the hash directly, the
+                # exact same "placements" key the v2 branch above uses, so
+                # two evaluations naming different seed sets (or whose
+                # identical seed set resolves differently because arena
+                # size differs) can never collide on evaluation_id, and two
+                # evaluations at different sample counts (say seeds 1-8 vs
+                # 1-16) share a prefix rather than colliding wholesale.
+                v4_placements: list[dict[str, int]] = []
+                for seed in request.seeds:
+                    seat_a, seat_b = resolve_v4_seed_geometry(
+                        resolved_rules_id, request.resolved_arena_size, seed
+                    )
+                    v4_placements.append(
+                        {"seed": seed, "subject_start": seat_a, "opponent_start": seat_b}
+                    )
+                payload["placements"] = v4_placements
         return stable_id("evaluation-v2", payload)
 
     def _resolve_revision_results(
@@ -3374,7 +3678,7 @@ class EvaluationService:
                 cell.rules_compatibility_id,
                 cell.subject_start,
                 cell.opponent_start,
-                arena_size=request.arena_size,
+                arena_size=request.resolved_arena_size,
                 instr_per_tick=request.instr_per_tick,
                 locality_reach=request.resolved_locality_reach,
                 kill_weight=request.kill_weight,
@@ -3867,6 +4171,7 @@ class EvaluationService:
         )
         resolved_rules_id = request.resolved_rules_compatibility_id
         resolved_is_v2 = is_ruleset_v2_methodology(resolved_rules_id)
+        resolved_is_v4 = is_ruleset_v4_methodology(resolved_rules_id)
         resolved_group = request.group and resolved_is_v2
         write_json_atomic(
             path,
@@ -3880,11 +4185,13 @@ class EvaluationService:
                 # bytefray-rules-2 1v1 request writes SCHEMA_VERSION_V2/
                 # IDENTITY_VERSION_V2 (5, Phase 1); a --group request on top
                 # of that writes SCHEMA_VERSION_V2_GROUP/
-                # IDENTITY_VERSION_V2_GROUP (6, Phase 2) -- each a brand-new
-                # artifact shape with no historical instance to stay
-                # compatible with.
-                "schema_version": resolved_schema_version(resolved_is_v2, resolved_group),
-                "identity_version": resolved_identity_version(resolved_is_v2, resolved_group),
+                # IDENTITY_VERSION_V2_GROUP (6, Phase 2); a --ruleset
+                # bytefray-rules-4-alpha2 request writes SCHEMA_VERSION_V4/
+                # IDENTITY_VERSION_V4 (7, v4.0.0-rc1 Phase 1) -- each a
+                # brand-new artifact shape with no historical instance to
+                # stay compatible with.
+                "schema_version": resolved_schema_version(resolved_is_v2, resolved_group, resolved_is_v4),
+                "identity_version": resolved_identity_version(resolved_is_v2, resolved_group, resolved_is_v4),
                 "evaluation_id": evaluation_id,
                 "candidate_id": request.candidate_id,
                 "baseline_id": request.baseline_id,
@@ -3904,7 +4211,9 @@ class EvaluationService:
                 # Sec AA.3/AA.4) -- evaluation-wide methodology, never
                 # folded into effective_conditions.
                 "orientation_mode": request.orientation_mode,
-                "arena_alignment_mode": resolved_arena_alignment_mode(resolved_is_v2, resolved_group),
+                "arena_alignment_mode": resolved_arena_alignment_mode(
+                    resolved_is_v2, resolved_group, resolved_is_v4
+                ),
                 # v2.0.0-beta2 Phase 2: additive top-level disclosure of
                 # multi-entrant methodology -- never identity-affecting on
                 # its own (the resolved layout set already is, via
@@ -3932,7 +4241,22 @@ class EvaluationService:
                 "cells": [_cell_to_dict(cell, path.parent) for cell in cells],
                 "aggregates": [asdict(row) for row in aggregates],
                 "comparison": [asdict(row) for row in comparison],
-                "complete": len(cells) >= len(matrix),
+                # F.6 remediation (docs task Sec 4): "every scheduled cell
+                # has been attempted" and "the evaluation succeeded" are
+                # different claims. `complete` previously conflated them --
+                # `len(cells) >= len(matrix)` is true the instant scheduling
+                # is exhausted, regardless of whether any cell actually
+                # executed successfully, so an evaluation whose every cell
+                # failed (an Agent API v2 roster resolved to an incompatible
+                # Ruleset, for example) was persisted as `complete: true`.
+                # `complete` now means what its name says: scheduling
+                # exhausted *and* every persisted cell executed
+                # successfully, i.e. exactly the caller-supplied
+                # `lifecycle_state` this checkpoint was told to write is
+                # `LIFECYCLE_STATE_FINISHED` (never true for `"running"`,
+                # `LIFECYCLE_STATE_FINISHED_WITH_FAILURES`, or
+                # `LIFECYCLE_STATE_ABORTED`).
+                "complete": lifecycle_state == LIFECYCLE_STATE_FINISHED,
             },
         )
 
@@ -3963,10 +4287,15 @@ def read_evaluation(path: Path) -> dict[str, Any]:
     # artifact (unlike _load_state, which already knows this run's own
     # resolved methodology) cannot know in advance whether it is a v1
     # (SCHEMA_VERSION), v2 1v1 (SCHEMA_VERSION_V2), or v2 group
-    # (SCHEMA_VERSION_V2_GROUP) artifact -- all three are equally "this
-    # module's own current schema," just under different resolved
-    # methodologies.
-    _supported_versions = (SCHEMA_VERSION, SCHEMA_VERSION_V2, SCHEMA_VERSION_V2_GROUP)
+    # (SCHEMA_VERSION_V2_GROUP), or v4-seeded (SCHEMA_VERSION_V4) artifact
+    # -- all four are equally "this module's own current schema," just
+    # under different resolved methodologies.
+    _supported_versions = (
+        SCHEMA_VERSION,
+        SCHEMA_VERSION_V2,
+        SCHEMA_VERSION_V2_GROUP,
+        SCHEMA_VERSION_V4,
+    )
     if data.get("schema_version") not in _supported_versions:
         raise EvaluationConfigurationError(
             f"{path}: unsupported schema version {data.get('schema_version')!r} "
@@ -4022,16 +4351,26 @@ def _parser() -> argparse.ArgumentParser:
             BYTEFRAY_RULESET_ID,
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
+            BYTEFRAY_RULESET_V4_ALPHA2_ID,
         ],
         default=None,
         help=(
-            f"gameplay Ruleset identity. If omitted (and no --preset supplies one), "
-            f"defaults to {BYTEFRAY_RULESET_V2_ID} -- evaluation entrants are always "
-            f"Python. {BYTEFRAY_RULESET_V2_ID} runs the balanced Ruleset-v2 1v1 "
-            "methodology: standard placement set, standard seed set default, and "
-            f"capture/core evidence. {BYTEFRAY_RULESET_ID} keeps the historical v1 "
-            "evaluation methodology. Ruleset v4 alpha1 runs Agent API v2 process "
-            "entrants through the same production match service. See "
+            "gameplay Ruleset identity. If omitted (and no --preset supplies one), "
+            "resolves automatically from the candidate/baseline/opponent roster's "
+            f"declared Agent API version: an Agent API v1 roster resolves to "
+            f"{BYTEFRAY_RULESET_V2_ID}; an Agent API v2 roster resolves to "
+            f"{BYTEFRAY_RULESET_V4_ALPHA2_ID} (the stable v4 evaluation methodology). "
+            f"{BYTEFRAY_RULESET_V2_ID} runs the balanced Ruleset-v2 1v1 methodology: "
+            "standard placement set, standard seed set default, and capture/core "
+            f"evidence. {BYTEFRAY_RULESET_ID} keeps the historical v1 evaluation "
+            f"methodology. {BYTEFRAY_RULESET_V4_ALPHA2_ID} runs Agent API v2 process "
+            "entrants through the same production match service under the stable v4 "
+            "seeded-placement methodology: arena pinned to "
+            f"{STANDARD_V4_ARENA_SIZE}, {len(STANDARD_V4_SEEDS)} deterministic "
+            "placement samples by default, both orientations paired over the same "
+            "seat-bound geometry. Ruleset v4 alpha1 keeps its historical v2-style "
+            "fixed-placement evaluation methodology unchanged. See "
+            "docs/research/v4/V4_RC1_PHASE1_EVALUATION_METHODOLOGY.md and "
             "docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
         ),
     )
@@ -4812,30 +5151,6 @@ def main(argv: list[str] | None = None) -> int:
     if baseline_id is None and preset is not None:
         baseline_id = preset.baseline_id
 
-    # v2.0.0-beta2 Phase 1: resolved before seeds -- the standard v2 seed
-    # default (below) depends on whether this evaluation is v1 or v2
-    # methodology. Same three-tier resolution as every other option
-    # (explicit CLI > --preset > ordinary default).
-    ruleset_id = args.ruleset
-    if ruleset_id is None and preset is not None:
-        ruleset_id = preset.ruleset_id
-    if ruleset_id is None:
-        # RC1 default-Ruleset-defect fix: evaluation entrants are always
-        # Python (EvaluationService._validate requires it for candidate,
-        # baseline, and every opponent), so an "ordinary default" left by
-        # both CLI and --preset now resolves to current Python gameplay --
-        # the same convergence `bytefray run`/`bytefray agents test` get --
-        # instead of silently inheriting the historical v1 methodology.
-        # resolve_evaluation_ruleset_id's own `None` -> v1 default is
-        # untouched for direct EvaluationRequest/EvaluationService library
-        # callers that never go through this CLI. This also means an
-        # omitted --ruleset with --group now satisfies --group's existing
-        # v2-methodology requirement instead of failing closed on it --
-        # pairwise and group no longer diverge merely because one passed
-        # an explicit Ruleset and the other inherited a stale default.
-        ruleset_id = resolve_omitted_ruleset_id(None, {"python"})
-    resolved_is_v2 = is_ruleset_v2_methodology(resolve_evaluation_ruleset_id(ruleset_id))
-
     try:
         if args.group and (args.single_orientation or args.both_orientations):
             raise EvaluationConfigurationError(
@@ -4852,12 +5167,60 @@ def main(argv: list[str] | None = None) -> int:
                 "in the --preset)."
             )
 
+        # v2.0.0-beta2 Phase 1 / v4.0.0-rc1 Phase 1 (F.6 remediation):
+        # resolved before seeds -- the standard v2/v4 seed default (below)
+        # depends on which methodology this evaluation resolves to. Same
+        # three-tier resolution as every other option (explicit CLI >
+        # --preset > ordinary default). Moved after opponent_ids above
+        # (F.6): a metadata-aware omitted-Ruleset resolution needs the
+        # whole roster's real declared Agent API version, not just
+        # candidate/baseline, so opponents must already be known here.
+        ruleset_id = args.ruleset
+        if ruleset_id is None and preset is not None:
+            ruleset_id = preset.ruleset_id
+        if ruleset_id is None:
+            # F.6 fix (docs/research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md
+            # Sec F.6): this used to call the kind-only
+            # `resolve_omitted_ruleset_id(None, {"python"})`, hardcoding
+            # "python" runtime kind with no Agent API version -- which
+            # always resolved to bytefray-rules-2 regardless of whether the
+            # actual roster declared Agent API v1 or v2, silently
+            # producing an evaluation in which every cell failed
+            # `ruleset_agent_unsupported`. `run`/`agents test`/`tournament`
+            # were migrated to the metadata-aware
+            # `resolve_omitted_ruleset_for_agents` for exactly this reason
+            # when it was introduced; `agents evaluate` was never migrated
+            # with its siblings. Resolving real roster metadata here (the
+            # same Python-only constraint `_validate` enforces regardless
+            # of Ruleset) makes an Agent API v1 roster keep resolving to
+            # bytefray-rules-2 unchanged, and makes an Agent API v2 roster
+            # resolve to bytefray-rules-4-alpha2 -- the stable v4
+            # evaluation methodology -- instead of an artifact whose every
+            # cell fails. This also means an omitted --ruleset with
+            # --group now satisfies --group's existing v2-methodology
+            # requirement instead of failing closed on it -- pairwise and
+            # group no longer diverge merely because one passed an
+            # explicit Ruleset and the other inherited a stale default.
+            root = get_data_root()
+            roster_ids = [candidate_id, *((baseline_id,) if baseline_id is not None else ()), *opponent_ids]
+            roster_specs = [_resolve_python_agent(root, agent_id) for agent_id in roster_ids]
+            ruleset_id = resolve_omitted_ruleset_for_agents(None, roster_specs)
+        resolved_is_v2 = is_ruleset_v2_methodology(resolve_evaluation_ruleset_id(ruleset_id))
+        resolved_is_v4 = is_ruleset_v4_methodology(resolve_evaluation_ruleset_id(ruleset_id))
+
         if args.seeds is not None or args.seed_range is not None:
             seeds = _resolve_seeds(args)
         elif preset is not None and preset.seeds is not None:
             seeds = preset.seeds
         elif preset is not None and preset.seed_range is not None:
             seeds = tuple(range(preset.seed_range[0], preset.seed_range[1] + 1))
+        elif resolved_is_v4:
+            # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 2): the
+            # stable v4 methodology's own standard sample set -- an
+            # explicit --seeds/--seed-range or --preset seed selection
+            # always overrides this (see the branches above, checked
+            # first).
+            seeds = STANDARD_V4_SEEDS
         elif resolved_is_v2:
             # Phase 1D: permanent-v2's standard seed methodology -- an
             # explicit --seeds/--seed-range or --preset seed selection
@@ -4866,7 +5229,7 @@ def main(argv: list[str] | None = None) -> int:
             seeds = STANDARD_V2_SEEDS
         else:
             seeds = (Config().seed,)
-    except EvaluationConfigurationError as exc:
+    except (EvaluationConfigurationError, NoCompatibleRulesetError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

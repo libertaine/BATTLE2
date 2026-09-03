@@ -230,7 +230,12 @@ def test_worker_crash_marks_cell_failed_and_others_continue_without_hanging(tmp_
     assert by_opponent["opp_ok_2"]["status"] == "completed"
     # Never dropped silently -- the failed cell is still recorded.
     assert len(data["cells"]) == 3
-    assert data["lifecycle_state"] == "finished"
+    # v4.0.0-rc1 Phase 1 (F.6 remediation): the scheduler finished
+    # attempting every cell, but not every cell succeeded -- this must not
+    # be persisted as the bare "finished" a fully successful evaluation
+    # gets (see agent_evaluation._resolved_lifecycle_state).
+    assert data["lifecycle_state"] == "finished_with_failures"
+    assert data["complete"] is False
 
 
 # ---------------------------------------------------------------------------

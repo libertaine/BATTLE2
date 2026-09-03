@@ -7,9 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from battle_engine.agent_evaluation import (
+    IDENTITY_VERSION_V4,
+    LIFECYCLE_STATE_FINISHED_WITH_FAILURES,
     SCHEMA_NAME,
     all_subject_aggregates,
     compare_candidate_baseline,
+    resolve_v4_seed_geometry,
     standard_layouts,
     standard_placements,
 )
@@ -67,9 +70,20 @@ from .models import (
 # for the identical reason as v4/v5 above. Only ever actually written by a
 # multi-entrant ("group") evaluation; a 1v1 v2 evaluation keeps writing
 # SCHEMA_VERSION_V2 (5), never SCHEMA_VERSION_V2_GROUP (6).
-SUPPORTED_V2_VERSIONS = (2, 3, 4, 5, 6)
-_ORIENTATION_AWARE_VERSIONS = (4, 5, 6)
-_PLACEMENT_AWARE_VERSIONS = (5, 6)
+# v7 (v4.0.0-rc1 Phase 1, docs/research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md
+# Sec H) added the stable v4 seeded-placement evaluation methodology.
+# Wire-shape-additive over v6 exactly like v3/v4/v5/v6 before it -- no new
+# per-cell field is introduced (a v4-seeded cell reuses "placement_id"/
+# "subject_start"/"opponent_start", the same three fields v5 introduced;
+# only their *meaning* changes, from "which of 3 standard placements" to
+# "which seed-derived sample" -- see AdaptedCell.placement's own docstring),
+# so it joins this same adapter and the same orientation/placement-aware
+# version tuples below rather than a new module or new tuples. Never
+# group-aware: v4-seeded group evaluation is out of Phase 1 scope, and
+# `EvaluationService._validate` rejects the combination outright.
+SUPPORTED_V2_VERSIONS = (2, 3, 4, 5, 6, 7)
+_ORIENTATION_AWARE_VERSIONS = (4, 5, 6, 7)
+_PLACEMENT_AWARE_VERSIONS = (5, 6, 7)
 _GROUP_AWARE_VERSIONS = (6,)
 
 
@@ -96,6 +110,31 @@ def _recomputed_group_layouts(entrant_count: int) -> list[dict[str, Any]]:
         for layout in standard_layouts(entrant_count)
     ]
 
+
+def _recomputed_v4_placements(
+    rules_id: str, arena_size: int, seeds: list[Any]
+) -> list[dict[str, Any]]:
+    """Mirrors ``EvaluationService._evaluation_id``'s own v7 "placements"
+    payload construction exactly, for the self-consistency rehash below.
+
+    Unlike ``_recomputed_v1v1_placements`` (whose v2 standard placements are
+    a pure function of arena size alone, and which this artifact's own
+    ``effective_conditions.arena_size`` may differ from
+    ``Config().arena_size``'s default), the v4-seeded methodology's
+    placements depend on this artifact's own recorded arena size *and* seed
+    set -- both taken from the artifact under verification, never from a
+    default, so this rehash is correct for a v4 evaluation run at any
+    (validly pinned) arena size.
+    """
+
+    placements: list[dict[str, Any]] = []
+    for seed in seeds:
+        if not isinstance(seed, int) or isinstance(seed, bool):
+            continue
+        seat_a, seat_b = resolve_v4_seed_geometry(rules_id, arena_size, seed)
+        placements.append({"seed": seed, "subject_start": seat_a, "opponent_start": seat_b})
+    return placements
+
 # A cell that lacks any of these, or has the wrong type, cannot even be
 # safely represented as an `EvaluationCell`/`AdaptedCell` -- H1: this must
 # become a typed `ArtifactReadError` (the whole artifact reported
@@ -103,7 +142,19 @@ def _recomputed_group_layouts(entrant_count: int) -> list[dict[str, Any]]:
 # escaping from deep inside dataclass construction.
 _REQUIRED_CELL_STRING_FIELDS = ("schedule_id", "subject_role", "subject_id", "opponent_id")
 _VALID_SUBJECT_ROLES = ("candidate", "baseline")
-_VALID_LIFECYCLE_STATES = ("running", "finished", "aborted")
+# v4.0.0-rc1 Phase 1 (F.6 remediation): "running"/"finished"/"aborted" plus
+# the new LIFECYCLE_STATE_FINISHED_WITH_FAILURES -- an evaluation whose
+# matrix finished scheduling but which has at least one failed/corrupted
+# cell now persists this distinct, honest state instead of the bare
+# "finished" a fully successful evaluation gets (agent_evaluation.
+# _resolved_lifecycle_state is the write-side source of truth this mirrors).
+_VALID_LIFECYCLE_STATES = ("running", "finished", LIFECYCLE_STATE_FINISHED_WITH_FAILURES, "aborted")
+# Which lifecycle states mean "the scheduler is done with this matrix" --
+# both are eligible for the per-cell failed/corrupted/init-failure health
+# scan below; only their historical distinction (was every cell actually
+# successful) differs, and that distinction is exactly what the scan itself
+# already computes from real cell statuses.
+_SCHEDULING_FINISHED_STATES = ("finished", LIFECYCLE_STATE_FINISHED_WITH_FAILURES)
 
 
 def _recorded_or_unknown(
@@ -429,7 +480,7 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
     if lifecycle_state_raw == "aborted" and data.get("abort_reason") == "source_drift":
         codes.append(HealthCode.SOURCE_DRIFT_ABORTED)
         detail.append(str(data.get("abort_detail")))
-    elif lifecycle_state_raw != "finished":
+    elif lifecycle_state_raw not in _SCHEDULING_FINISHED_STATES:
         codes.append(HealthCode.UNFINISHED)
     else:
         failed = sum(1 for c in cells if c.status == "failed")
@@ -450,13 +501,14 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
 
     matrix_size = data.get("matrix_size")
     if (
-        lifecycle_state_raw == "finished"
+        lifecycle_state_raw in _SCHEDULING_FINISHED_STATES
         and isinstance(matrix_size, int)
         and len(cells) < matrix_size
     ):
         codes.append(HealthCode.FINISHED_MATRIX_SHORT)
         detail.append(
-            f"lifecycle_state is 'finished' but only {len(cells)}/{matrix_size} cells are recorded"
+            f"lifecycle_state is {lifecycle_state_raw!r} but only {len(cells)}/{matrix_size} "
+            "cells are recorded"
         )
 
     if len(schedule_ids) != len(set(schedule_ids)):
@@ -652,6 +704,17 @@ def adapt_v2_data(data: dict[str, Any], path: Path) -> EvaluationSummary:
             if isinstance(roster_agent_ids, list):
                 recomputed_payload["group"] = True
                 recomputed_payload["layouts"] = _recomputed_group_layouts(len(roster_agent_ids))
+        elif identity_version == IDENTITY_VERSION_V4:
+            # v4.0.0-rc1 Phase 1: the v4-seeded methodology's own "placements"
+            # recipe (research report Sec H.1 item 7) -- must be checked
+            # before the `>= 5` fallback below, since 7 >= 5 would otherwise
+            # match it and rehash with the wrong (v2 standard) placement
+            # formula.
+            arena_size = effective_conditions.get("arena_size")
+            if isinstance(arena_size, int) and not isinstance(arena_size, bool):
+                recomputed_payload["placements"] = _recomputed_v4_placements(
+                    rules_id, arena_size, seeds
+                )
         elif identity_version >= 5:
             recomputed_payload["placements"] = _recomputed_v1v1_placements()
         recomputed_id = stable_id("evaluation-v2", recomputed_payload)
