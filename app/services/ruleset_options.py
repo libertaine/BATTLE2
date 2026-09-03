@@ -43,18 +43,26 @@ RULESET_V1_OPTION = DesignerRulesetOption(
 # not removed from the product, just from the surface whose whole promise is
 # "the gameplay you get if you do not think about it".
 SIMPLE_RULESET_OPTIONS = (RULESET_V2_OPTION, RULESET_V4_ALPHA2_OPTION)
-# Evaluation is the one surface that must NOT offer v4 alpha2. `agents
-# evaluate` deliberately does not accept it: evaluation's placement
-# conditions are an explicit, disclosed methodology axis, and running them
-# under alpha2's seed-derived placement would produce artifacts labelled
-# alpha2 that actually ran alpha1's fixed opposite placement. The engine
-# rejects the request, so offering it here would be exactly the M1 defect
-# this module exists to prevent -- a Designer surface presenting a Ruleset
-# the engine will then refuse. Kept as its own explicit tuple rather than a
-# filter over DESIGNER_RULESET_OPTIONS so the exclusion is visible at the
-# point of definition; see docs/V4_ALPHA2_DESIGN.md's placement section.
+# v4.0.0-rc1 Phase 1: evaluation now offers v4 alpha2, using the stable
+# `ruleset_v4_seeded_placements` evaluation methodology (arena pinned to
+# 512, 8 deterministic placement samples, both orientations paired over the
+# same seat-bound geometry -- see docs/research/v4/
+# V4_RC1_PHASE1_EVALUATION_METHODOLOGY.md). Until this phase, `agents
+# evaluate` rejected alpha2 outright: evaluation's placement conditions are
+# an explicit, disclosed methodology axis, and running alpha2 under the
+# historical fixed-placement methodology would have produced an artifact
+# labelled alpha2 that actually ran alpha1's fixed placement -- offering it
+# here would have been exactly the M1 defect this module exists to prevent.
+# alpha2 is listed *before* alpha1 (mirroring `battle_engine.ruleset_
+# policy.OMITTED_RULESET_CANDIDATES`'s own product-preference order): an
+# Agent API v2 selection with no prior Ruleset choice lands on alpha2, the
+# current stable v4 evaluation methodology, with historical alpha1 one
+# deliberate click away for reproducing an earlier alpha1 evaluation. Kept
+# as its own explicit tuple rather than a filter over DESIGNER_RULESET_
+# OPTIONS so the exact offered set is visible at the point of definition.
 EVALUATION_RULESET_OPTIONS = (
     RULESET_V2_OPTION,
+    RULESET_V4_ALPHA2_OPTION,
     RULESET_V4_ALPHA1_OPTION,
     RULESET_V1_OPTION,
 )

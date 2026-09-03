@@ -326,10 +326,11 @@ def _evaluation_dialog(tmp_path, default_candidate, with_metadata=True):
     ("candidate", "expected_offered"),
     [
         ("legacy", {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_ID}),
-        # Only alpha1: `agents evaluate` does not accept alpha2, so offering
-        # it here would present a Ruleset the engine then rejects -- exactly
-        # the defect this module's compatibility filtering exists to prevent.
-        ("proc", {BYTEFRAY_RULESET_V4_ALPHA1_ID}),
+        # v4.0.0-rc1 Phase 1: both v4 alphas now, since `agents evaluate`
+        # accepts alpha2 under the stable v4 seeded-placement methodology --
+        # see test_evaluation_defaults_to_stable_v4_for_api_v2_roster below
+        # for which one is selected by default.
+        ("proc", BOTH_V4_ALPHAS),
     ],
 )
 def test_evaluation_offers_only_rulesets_the_candidate_can_run(
@@ -346,6 +347,22 @@ def test_evaluation_offers_only_rulesets_the_candidate_can_run(
 
 
 @pytest.mark.gui
+def test_evaluation_defaults_to_stable_v4_for_api_v2_roster(tmp_path):
+    """An Agent API v2 candidate defaults to alpha2, the current stable v4
+    evaluation methodology, not alpha1 -- mirrors the engine's own
+    OMITTED_RULESET_CANDIDATES product-preference order (v4.0.0-rc1
+    Phase 1). Alpha1 remains selectable (see the BOTH_V4_ALPHAS offered-set
+    test above) for reproducing an earlier alpha1 evaluation."""
+
+    _make_app()
+    dialog = _evaluation_dialog(tmp_path, "proc")
+    try:
+        assert dialog.pairwise_ruleset_id() == BYTEFRAY_RULESET_V4_ALPHA2_ID
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.gui
 def test_evaluation_evaluates_compatibility_across_the_whole_roster(tmp_path):
     """Not just the candidate: an incompatible opponent narrows the choices
     exactly as an incompatible candidate does."""
@@ -355,10 +372,7 @@ def test_evaluation_evaluates_compatibility_across_the_whole_roster(tmp_path):
     _make_app()
     dialog = _evaluation_dialog(tmp_path, "proc")
     try:
-        assert _offered(dialog.pairwiseRulesetCombo) == {BYTEFRAY_RULESET_V4_ALPHA1_ID}
-        assert BYTEFRAY_RULESET_V4_ALPHA2_ID not in _offered(
-            dialog.pairwiseRulesetCombo
-        )
+        assert _offered(dialog.pairwiseRulesetCombo) == BOTH_V4_ALPHAS
         for index in range(dialog.opponentsList.count()):
             item = dialog.opponentsList.item(index)
             if item.data(Qt.UserRole) == "legacy":
