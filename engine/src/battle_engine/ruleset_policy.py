@@ -623,7 +623,11 @@ def resolve_omitted_ruleset_for_agents(
     selected entrant's runtime kind **and** Agent API version?" -- through
     the same :func:`agent_supported_by_ruleset` predicate
     ``NativeMatchService`` and Agent Designer use. That is what lets an
-    Agent API v2 roster reach ``bytefray-rules-4-alpha1`` automatically
+    Agent API v2 roster reach ``bytefray-rules-4`` (the permanent stable
+    identity, as of ``v4.0.0-rc1`` Phase 2 -- earlier product history saw
+    this same seam resolve to ``bytefray-rules-4-alpha1`` and then
+    ``bytefray-rules-4-alpha2`` in turn, entirely by walking
+    :data:`OMITTED_RULESET_CANDIDATES`, never by a change here) automatically
     while an Agent API v1 roster keeps resolving to ``bytefray-rules-2``,
     with neither spelling an internal Ruleset identity by hand.
 

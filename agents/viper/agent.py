@@ -73,9 +73,18 @@ opponent instead, e.g.::
     bytefray agents validate viper
     bytefray agents test viper --opponent v4_claimer --ruleset bytefray-rules-4-alpha1
 
-(``--ruleset`` must be explicit: an omitted ``--ruleset`` resolves to the
-permanent ``bytefray-rules-2`` for an all-Python roster, which is the v1
-Ruleset this version no longer targets.)
+(``--ruleset`` must be explicit here to reach alpha1 specifically: an
+omitted ``--ruleset`` for this all-Agent-API-v2 roster resolves to the
+permanent ``bytefray-rules-4`` instead (``v4.0.0-rc1`` Phase 2) -- gameplay-
+identical to alpha2, not alpha1, so a bare command reaches different
+seed-derived placement and round-robin process selection than the fixed
+evenly-spaced/priority-order semantics this design's own commentary above
+assumes. Viper's own target-acquisition logic makes no placement
+assumption of its own -- it acquires targets from
+``visible_enemy_anchor_addresses``, exactly like the alpha2-adapted
+``hydra_alpha2``/``nemesis_alpha2`` -- so nothing here would actually break
+under stable v4 or alpha2; the explicit alpha1 selection is this agent's
+own documented historical showcase choice, not a functional requirement.)
 
 Not a claim of optimal strategy: permanently committing to the first
 sighted address means Viper cannot recover from ever mis-timing that first

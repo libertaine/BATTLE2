@@ -1034,10 +1034,11 @@ def main(argv: list[str] | None = None) -> int:
     # RC1 default-Ruleset-defect fix, made Agent-API-aware: `agents test`
     # entrants are always Python -- _resolve_python_entrant rejects anything
     # else -- but "Python" alone no longer identifies a Ruleset, since
-    # bytefray-rules-2 and bytefray-rules-4-alpha1 are both Python-only and
-    # differ by Agent API version. The tested agent's own declared metadata
-    # therefore selects the Ruleset, so an Agent API v2 agent reaches v4
-    # alpha1 without its author naming an internal Ruleset identity.
+    # bytefray-rules-2 and the bytefray-rules-4 family are both Python-only
+    # and differ by Agent API version. The tested agent's own declared
+    # metadata therefore selects the Ruleset, so an Agent API v2 agent
+    # reaches the stable bytefray-rules-4 (v4.0.0-rc1 Phase 2) without its
+    # author naming an internal Ruleset identity.
     #
     # The default reference opponent is deliberately not part of this
     # roster: _reference_opponent_spec already supplies whichever Agent API

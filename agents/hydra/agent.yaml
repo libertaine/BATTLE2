@@ -1,6 +1,6 @@
 name: hydra
 display: Hydra
-description: Competitive four-process API v2 agent with disruption, siege, core defense, and mobile expansion.
+description: Competitive four-process API v2 agent with disruption, siege, core defense, and mobile expansion. Its opposite-core fallback heuristic targets alpha1's fixed evenly-spaced placement; see hydra_alpha2 for the seeded-placement-compatible derivative used under bytefray-rules-4/-alpha2.
 kind: python
 api_version: 2
 entrypoint: agent.py:create_agent

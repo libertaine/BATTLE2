@@ -5218,9 +5218,12 @@ def main(argv: list[str] | None = None) -> int:
             # same Python-only constraint `_validate` enforces regardless
             # of Ruleset) makes an Agent API v1 roster keep resolving to
             # bytefray-rules-2 unchanged, and makes an Agent API v2 roster
-            # resolve to bytefray-rules-4-alpha2 -- the stable v4
-            # evaluation methodology -- instead of an artifact whose every
-            # cell fails. This also means an omitted --ruleset with
+            # resolve to the v4-methodology evaluation contract -- alpha2
+            # at F.6's own introduction, and (v4.0.0-rc1 Phase 2) the
+            # permanent bytefray-rules-4 identity today, since both share
+            # `OMITTED_RULESET_CANDIDATES`'s one product-preference table --
+            # instead of an artifact whose every cell fails. This also
+            # means an omitted --ruleset with
             # --group now satisfies --group's existing v2-methodology
             # requirement instead of failing closed on it -- pairwise and
             # group no longer diverge merely because one passed an

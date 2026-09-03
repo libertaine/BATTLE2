@@ -1,7 +1,7 @@
 {
   "name": "Nemesis",
   "display": "Nemesis",
-  "description": "Competitive three-process API v2 counter-agent with disruption, siege, and core defense.",
+  "description": "Competitive three-process API v2 counter-agent with disruption, siege, and core defense. Targets alpha1's fixed evenly-spaced opposite-core placement; see nemesis_alpha2 for the seeded-placement-compatible derivative used under bytefray-rules-4/-alpha2.",
   "kind": "python",
   "api_version": 2,
   "entrypoint": "agent.py:create_agent",

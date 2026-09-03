@@ -129,15 +129,20 @@ abbreviated.
   see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)'s "v4.0.0-alpha1
   compatibility boundary" for exactly what stays frozen (API v1, Ruleset
   v1/v2, schema-3 replays) alongside what v4 alpha adds.
-- **Two v4 Rulesets now exist.** `bytefray-rules-4-alpha2` differs from
+- **Three v4 Rulesets now exist.** `bytefray-rules-4-alpha2` differs from
   alpha1 in exactly two gameplay semantics — seed-derived core placement and
   round-robin intra-entrant process selection — on the same Agent API v2 and
-  the same replay schema 4. Alpha1's semantics are **frozen**: an alpha1
-  fixture, golden, or deterministic vector that starts failing is an
-  implementation defect, never something to re-bless. Alpha2 is what an
-  omitted `--ruleset` resolves to for an Agent API v2 roster; alpha1 stays
-  explicitly selectable everywhere. See
-  [docs/V4_ALPHA2_DESIGN.md](docs/V4_ALPHA2_DESIGN.md).
+  the same replay schema 4. Both alphas' semantics are **frozen**: an alpha1
+  or alpha2 fixture, golden, or deterministic vector that starts failing is
+  an implementation defect, never something to re-bless. As of `v4.0.0-rc1`
+  Phase 2, the permanent `bytefray-rules-4` identity is gameplay-identical to
+  alpha2 (never aliased to it — a fully distinct dispatch/hash/persistence
+  identity, proven equivalent by
+  `engine/tests/test_v4_stable_ruleset_equivalence.py`) and is what an
+  omitted `--ruleset` now resolves to for an Agent API v2 roster; both alphas
+  stay explicitly selectable everywhere. See
+  [docs/V4_ALPHA2_DESIGN.md](docs/V4_ALPHA2_DESIGN.md) and
+  [docs/RULES_V4.md](docs/RULES_V4.md).
 - A Ruleset's gameplay semantics belong on its
   `RulesetPolicy` (`core_placement`, `process_selection`, the scheduler
   fields), not on `MatchRequest`. A per-match override field that only
