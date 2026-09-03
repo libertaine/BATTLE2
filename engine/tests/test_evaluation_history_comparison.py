@@ -831,3 +831,142 @@ def test_comparison_row_ordering_is_deterministic():
     result_a = align(left, right)
     result_b = align(left, right)
     assert [row.to_json() for row in result_a.rows] == [row.to_json() for row in result_b.rows]
+
+
+# ---------------------------------------------------------------------------
+# v4.0.0-rc1 Phase 1: the stable v4 seeded-placement methodology
+# ---------------------------------------------------------------------------
+#
+# The research report's own conclusion (Sec H.2 item 8) is that comparison.py
+# needs no code change: `_condition_key` already includes `arena_alignment_
+# id`/`rules_id`/`placement.value`, so a new distinct value for any of them
+# already participates correctly in the existing tuple-equality alignment key
+# with zero special-casing. These tests are the evidence for that claim,
+# following this file's own existing hand-built-fixture convention (align()
+# is a pure function over EvaluationSummary; see the module docstring).
+
+V4_ALPHA2_RULES_ID = "bytefray-rules-4-alpha2"
+V4_ALPHA1_RULES_ID = "bytefray-rules-4-alpha1"
+V4_ARENA_ALIGNMENT_MODE = "ruleset_v4_seeded_placements"
+V2_ARENA_ALIGNMENT_MODE = "ruleset_v2_standard_placements"
+
+
+def test_two_v4_seeded_evaluations_at_identical_conditions_are_comparable():
+    left = _summary(
+        rules_id=V4_ALPHA2_RULES_ID,
+        arena_alignment_mode=V4_ARENA_ALIGNMENT_MODE,
+        cells=(_cell(outcome="win", placement="seeded-3"),),
+    )
+    right = _summary(
+        rules_id=V4_ALPHA2_RULES_ID,
+        arena_alignment_mode=V4_ARENA_ALIGNMENT_MODE,
+        cells=(_cell(outcome="loss", placement="seeded-3"),),
+    )
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 1
+    assert result.rows[0].verdict == "regressed"
+    assert not result.unmatched_left
+    assert not result.unmatched_right
+
+
+def test_v4_seeded_never_aligns_with_v2_standard_at_the_same_seed_and_orientation():
+    """Different arena_alignment_mode alone must refuse alignment, even when
+    every other axis nominally overlaps (same seed, same orientation, same
+    rules_compatibility_id would not even be true here, but arena_alignment_
+    mode is checked independently and must fail closed on its own)."""
+
+    left = _summary(
+        rules_id=V4_ALPHA2_RULES_ID,
+        arena_alignment_mode=V4_ARENA_ALIGNMENT_MODE,
+        cells=(_cell(outcome="win", seed=3, placement="seeded-3"),),
+    )
+    right = _summary(
+        rules_id=V4_ALPHA2_RULES_ID,
+        arena_alignment_mode=V2_ARENA_ALIGNMENT_MODE,
+        cells=(_cell(outcome="win", seed=3, placement="opposed"),),
+    )
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 0
+    assert not result.rows
+    # Same opponent_id/seed on both sides, so this is classified as a
+    # changed-condition pair (not an unmatched cell) -- either way, no
+    # ordinary verdict is ever produced for it.
+    assert len(result.changed_condition) == 1
+    assert not result.unmatched_left
+    assert not result.unmatched_right
+
+
+def test_v4_alpha2_never_aligns_with_v4_alpha1():
+    """Different Ruleset identity (and, in practice, different
+    arena_alignment_mode alongside it -- alpha1 keeps the historical
+    fixed-placement v2 methodology) must refuse alignment."""
+
+    left = _summary(
+        rules_id=V4_ALPHA2_RULES_ID,
+        arena_alignment_mode=V4_ARENA_ALIGNMENT_MODE,
+        cells=(_cell(outcome="win", seed=1, placement="seeded-1"),),
+    )
+    right = _summary(
+        rules_id=V4_ALPHA1_RULES_ID,
+        arena_alignment_mode=V2_ARENA_ALIGNMENT_MODE,
+        cells=(_cell(outcome="win", seed=1, placement="opposed"),),
+    )
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 0
+    assert not result.rows
+    assert len(result.changed_condition) == 1
+    assert not result.unmatched_left
+    assert not result.unmatched_right
+
+
+def test_v4_seeded_evaluations_at_different_sample_counts_align_on_shared_prefix_only():
+    """Two v4 evaluations run at different --seeds counts (say 1-8 vs 1-4)
+    must align on the seeds they share and report the remainder as
+    unmatched -- never pooled, and never a reason to refuse the shared
+    prefix either (research report Sec H.1 item 8)."""
+
+    left = _summary(
+        rules_id=V4_ALPHA2_RULES_ID,
+        arena_alignment_mode=V4_ARENA_ALIGNMENT_MODE,
+        cells=tuple(
+            _cell(outcome="win", seed=seed, placement=f"seeded-{seed}")
+            for seed in (1, 2, 3, 4, 5, 6, 7, 8)
+        ),
+    )
+    right = _summary(
+        rules_id=V4_ALPHA2_RULES_ID,
+        arena_alignment_mode=V4_ARENA_ALIGNMENT_MODE,
+        cells=tuple(
+            _cell(outcome="win", seed=seed, placement=f"seeded-{seed}") for seed in (1, 2, 3, 4)
+        ),
+    )
+    result = align(left, right)
+    assert result.denominators.directly_comparable == 4
+    assert len(result.rows) == 4
+    assert {row.seed for row in result.rows} == {1, 2, 3, 4}
+    assert len(result.unmatched_left) == 4
+    assert {cell.seed for cell in result.unmatched_left} == {5, 6, 7, 8}
+    assert not result.unmatched_right
+
+
+def test_historical_v2_evaluation_is_never_reinterpreted_as_v4_seeded():
+    """A pre-existing schema-5 (v2 standard placement) evaluation keeps its
+    exact historical arena_alignment_mode/placement labels -- comparison
+    reads them as recorded, never relabeled toward the newer v4 spelling
+    merely because both are, loosely speaking, "placement methodologies"."""
+
+    historical = _summary(
+        rules_id="bytefray-rules-2",
+        arena_alignment_mode=V2_ARENA_ALIGNMENT_MODE,
+        cells=(_cell(outcome="win", placement="opposed"),),
+    )
+    fresh_v4 = _summary(
+        rules_id=V4_ALPHA2_RULES_ID,
+        arena_alignment_mode=V4_ARENA_ALIGNMENT_MODE,
+        cells=(_cell(outcome="win", placement="seeded-1"),),
+    )
+    assert historical.arena_alignment_mode.value == V2_ARENA_ALIGNMENT_MODE
+    assert historical.cells[0].placement.value == "opposed"
+    result = align(historical, fresh_v4)
+    assert result.denominators.directly_comparable == 0
+    assert len(result.changed_condition) == 1
