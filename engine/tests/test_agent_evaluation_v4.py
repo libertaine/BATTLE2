@@ -369,6 +369,42 @@ def test_resume_never_converts_historical_failed_cells_into_success(tmp_path: Pa
     assert resumed_data["finished_at"] == first_data["finished_at"]
 
 
+def test_resume_of_a_successful_v4_evaluation_reconstructs_cleanly(tmp_path: Path):
+    """A regression test for a bug found and fixed during this phase:
+    EvaluationService._resolve_from_state's resumed-cell verification
+    (_expected_cell_match_id) previously read request.arena_size (None
+    when omitted) instead of request.resolved_arena_size, so resuming an
+    identical v4 evaluation re-derived the expected match id assuming
+    arena 4096 while the original cells actually ran at the pinned 512 --
+    every resumed cell was spuriously flagged "corrupted"/
+    "resumed_result_mismatch" instead of being cleanly resolved from
+    state. This test resumes a *successfully completed* v4 evaluation
+    (unlike the all-failed-cells test above, whose "failed" cells return
+    early in _resolve_from_state and never reach that code path at all)."""
+
+    _write_api_v2_agent(tmp_path, "candidate")
+    _write_api_v2_agent(tmp_path, "opponent")
+    request = _v4_request(tmp_path, seeds=(1, 2, 3, 4))
+    first = EvaluationService().run(request)
+    assert all(cell.status == "completed" for cell in first.cells)
+
+    resumed = EvaluationService().run(request)
+    assert all(cell.status == "completed" for cell in resumed.cells)
+    assert not any(cell.status == "corrupted" for cell in resumed.cells)
+
+    resumed_data = json.loads(resumed.state_path.read_text(encoding="utf-8"))
+    assert resumed_data["lifecycle_state"] == LIFECYCLE_STATE_FINISHED
+    assert resumed_data["complete"] is True
+
+    first_by_schedule = {c.schedule_id: c for c in first.cells}
+    for cell in resumed.cells:
+        original = first_by_schedule[cell.schedule_id]
+        assert cell.match_id == original.match_id
+        assert cell.result_id == original.result_id
+        assert cell.subject_start == original.subject_start
+        assert cell.opponent_start == original.opponent_start
+
+
 def test_cli_exit_code_reflects_real_cell_outcome(tmp_path: Path, monkeypatch, capsys):
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     _write_api_v2_agent(tmp_path, "candidate")
