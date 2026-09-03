@@ -43,6 +43,7 @@ from battle_engine.agent_evaluation import main as evaluate_main
 from battle_engine.evaluation_history.discovery import adapt_any
 from battle_engine.evaluation_history.models import FieldConfidence
 from battle_engine.evaluation_history.verification import verify_summary
+from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
@@ -749,3 +750,110 @@ def test_is_ruleset_v4_methodology_is_exactly_alpha2_and_stable_v4():
 
 def test_identity_and_schema_version_constants_are_both_seven():
     assert IDENTITY_VERSION_V4 == SCHEMA_VERSION_V4 == 7
+
+
+# ---------------------------------------------------------------------------
+# v4.0.0-rc1 Phase 3: rendered evaluation-summary alignment defect
+#
+# Phase 2 found that the human-readable console summary (printed both before
+# a run, by ``_print_matrix``/``--dry-run``, and after one completes, by
+# ``_print_result``) always reported "Arena alignment: fixed" for a
+# v4-methodology Ruleset, even though the persisted ``evaluation.json``
+# correctly recorded ``arena_alignment_mode: "ruleset_v4_seeded_placements"``.
+# Root cause: three call sites passed only
+# ``resolved_arena_alignment_mode(request.is_v2_methodology, request.group)``,
+# omitting the function's third parameter (``is_v4_methodology``, defaulting
+# to ``False``), unlike the real matrix-building call site that already
+# threaded it through correctly -- so only the rendered text disagreed with
+# the artifact, never the artifact itself. These tests exercise the real CLI
+# entry point (``evaluate_main``) against a real, non-``--quiet`` run and
+# read back both the captured console text and the persisted artifact, so a
+# regression here is caught as a disagreement between what a user reads and
+# what was actually recorded -- not merely a change to
+# ``resolved_arena_alignment_mode``'s own return value.
+# ---------------------------------------------------------------------------
+
+
+def _run_and_capture_console(
+    tmp_path: Path, monkeypatch, capsys, *, ruleset_id: str, output_name: str
+) -> tuple[str, dict]:
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    exit_code = evaluate_main(
+        [
+            "candidate",
+            "--opponents",
+            "opponent",
+            "--ruleset",
+            ruleset_id,
+            "--seeds",
+            "1",
+            "--ticks",
+            "5",
+            "--output",
+            str(tmp_path / output_name),
+        ]
+    )
+    assert exit_code == 0
+    console_out = capsys.readouterr().out
+    data = json.loads((tmp_path / output_name / "evaluation.json").read_text(encoding="utf-8"))
+    return console_out, data
+
+
+def test_rendered_summary_reports_v4_seeded_placements_for_stable_v4(
+    tmp_path: Path, monkeypatch, capsys
+):
+    _write_api_v2_agent(tmp_path, "candidate")
+    _write_api_v2_agent(tmp_path, "opponent")
+    console_out, data = _run_and_capture_console(
+        tmp_path, monkeypatch, capsys, ruleset_id=BYTEFRAY_RULESET_V4_ID, output_name="out"
+    )
+
+    assert data["arena_alignment_mode"] == "ruleset_v4_seeded_placements"
+    assert "Arena alignment: ruleset_v4_seeded_placements" in console_out
+    assert "Arena alignment: fixed" not in console_out
+
+
+def test_rendered_summary_reports_v4_seeded_placements_for_alpha2(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """Alpha2 shares the defect and the fix -- the console summary is a
+    property of the resolved methodology, not of which of the two
+    v4-methodology identities is executing."""
+
+    _write_api_v2_agent(tmp_path, "candidate")
+    _write_api_v2_agent(tmp_path, "opponent")
+    console_out, data = _run_and_capture_console(
+        tmp_path, monkeypatch, capsys, ruleset_id=BYTEFRAY_RULESET_V4_ALPHA2_ID, output_name="out"
+    )
+
+    assert data["arena_alignment_mode"] == "ruleset_v4_seeded_placements"
+    assert "Arena alignment: ruleset_v4_seeded_placements" in console_out
+    assert "Arena alignment: fixed" not in console_out
+
+
+def test_rendered_summary_for_historical_v1_and_v2_is_unaffected(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """The fix threads a third argument through three call sites shared by
+    every Ruleset's summary rendering -- confirm it changed nothing for the
+    two identities that do not use the v4 methodology. Ruleset v1 keeps its
+    own historical "fixed" label; Ruleset v2 keeps its own distinct
+    "ruleset_v2_standard_placements" label (v2.0.0-beta2 Phase 1) -- neither
+    was ever "fixed" for v2, so this does not assert that both report the
+    same text, only that each still reports its own correct, pre-existing
+    one and that it still agrees with the persisted artifact."""
+
+    _write_api_v1_agent(tmp_path, "candidate")
+    _write_api_v1_agent(tmp_path, "opponent")
+
+    v1_console, v1_data = _run_and_capture_console(
+        tmp_path, monkeypatch, capsys, ruleset_id=BYTEFRAY_RULESET_ID, output_name="out-v1"
+    )
+    assert v1_data["arena_alignment_mode"] == "fixed"
+    assert "Arena alignment: fixed" in v1_console
+
+    v2_console, v2_data = _run_and_capture_console(
+        tmp_path, monkeypatch, capsys, ruleset_id=BYTEFRAY_RULESET_V2_ID, output_name="out-v2"
+    )
+    assert v2_data["arena_alignment_mode"] == "ruleset_v2_standard_placements"
+    assert "Arena alignment: ruleset_v2_standard_placements" in v2_console
