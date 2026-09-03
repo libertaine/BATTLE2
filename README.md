@@ -238,6 +238,16 @@ and historical v1–v3 execution/artifact compatibility is retained. The prior
 [v4.0.0-alpha3](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
 release remains published for reference.
 
+`v4.0.0-rc1`, the first v4.0 **release candidate**, is prepared and
+undergoing packaged-artifact qualification; it is not yet published. RC1
+combines the RC-path's three implementation/audit phases — stable
+`bytefray-rules-4` (equivalent to alpha2, release-blocking-tested), the
+seeded-placement evaluation methodology (schema 7), and a product-coherence
+audit — into one stable v4 contract, with no new gameplay, mechanic, API,
+or schema change over what alpha4 above already ships. See
+[CHANGELOG.md](CHANGELOG.md#400-rc1---2026-09-03) for the full release
+notes.
+
 | Package | Download | Notes |
 |---|---|---|
 | Windows installer | [Bytefray-Setup-4.0.0-alpha4.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha4/Bytefray-Setup-4.0.0-alpha4.exe) | Administrative AMD64/x64 installation; unsigned, see [Installation](INSTALL.md) |
