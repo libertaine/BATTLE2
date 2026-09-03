@@ -2,6 +2,65 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [Unreleased]
+
+### v4.0.0-rc1 Phase 1: Stable Evaluation Methodology and Evaluation Integrity
+
+RC-path development on `v4-rc1-development`, not yet released. Implements
+the two conclusions of the accepted pre-RC research
+(`docs/research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md`): no gameplay
+alpha5 is needed for 4.0 (current `bytefray-rules-4-alpha2` semantics are
+accepted as-is; see that report for the full reach/spatial finding), and a
+stable v4 evaluation methodology is implemented and qualified against
+alpha2 ahead of the permanent `bytefray-rules-4` identity. See
+`docs/research/v4/V4_RC1_PHASE1_EVALUATION_METHODOLOGY.md` for the full
+implementation report.
+
+* **`agents evaluate` now supports `bytefray-rules-4-alpha2`.** A new,
+  additive evaluation methodology (schema/identity version 7,
+  `arena_alignment_mode: "ruleset_v4_seeded_placements"`): placement
+  resolved through the production `placement.resolve_direct_match_starts`
+  seam (no second, evaluation-only placement algorithm), arena pinned to
+  512 cells, 8 deterministic placement samples by default, both
+  orientations paired over the same seat-bound geometry per seed. An
+  explicit `--arena-size` that disagrees with the pin is rejected rather
+  than silently mislabeling the methodology. `bytefray-rules-4-alpha1`
+  keeps its existing, historical fixed-placement evaluation methodology
+  unchanged.
+* **Fixed: `agents evaluate` on an Agent API v2 roster with omitted
+  `--ruleset` no longer writes a false-success artifact (F.6).** Root
+  cause: the omitted-Ruleset resolver used a kind-only compatibility check
+  that always resolved to `bytefray-rules-2`, which does not support Agent
+  API v2 — every cell failed `ruleset_agent_unsupported`. Now resolves
+  from real roster metadata (the same resolver `run`/`agents test`/
+  `tournament` already use): an Agent API v1 roster still resolves to
+  `bytefray-rules-2` unchanged; an Agent API v2 roster resolves to the new
+  stable v4 evaluation methodology above.
+* **Fixed: an evaluation-state integrity gap, generalized beyond the
+  defect above.** An evaluation's persisted `lifecycle_state`/`complete`
+  fields previously reflected only whether the scheduler finished
+  *attempting* every cell, never whether any cell actually *succeeded* —
+  applying to every methodology, not only the API-v2 case that surfaced
+  it. A new `lifecycle_state` value, `"finished_with_failures"`, is
+  written instead of `"finished"` whenever at least one cell failed or
+  was corrupted; `complete` now means exactly `lifecycle_state ==
+  "finished"`. Historical artifacts are not rewritten; `evaluation_
+  history`'s existing health-code derivation now also recognizes the new
+  state.
+* **Agent Designer** offers the stable v4 methodology in the Evaluation
+  dialog's Ruleset selector, defaulting an Agent API v2 roster to it.
+* **Deep verification** (`evaluations show/compare --verify`) now checks
+  that a v4-seeded cell's recorded placement reconstructs exactly from its
+  seed via the production placement seam, failing closed on a tampered
+  artifact.
+* **Unchanged.** Gameplay semantics (`bytefray-rules-4-alpha1`,
+  `bytefray-rules-4-alpha2`), Agent API v2, replay schema 4, and every
+  historical evaluation methodology (v1, Ruleset-v2 1v1, Ruleset-v2 group)
+  are frozen. `evaluation_history.comparison` required no code change — the
+  existing alignment key already fails closed across methodologies.
+  `bytefray-rules-4` (the permanent stable Ruleset identity) is **not**
+  introduced by this phase.
+
 ## [4.0.0-alpha4] - 2026-09-03
 
 ### Designer Spectator Trace Integration

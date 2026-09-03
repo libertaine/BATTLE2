@@ -377,6 +377,95 @@ entrants are authoritative. Removing or generalizing the sentinels is
 deferred to a future identity/schema version because they are currently
 identity-bearing.
 
+## Stable v4 seeded-placement evaluation methodology (v4.0.0-rc1 Phase 1)
+
+`agents evaluate --ruleset bytefray-rules-4-alpha2` now runs a fourth,
+additive evaluation methodology rather than being rejected outright.
+Implements docs/research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md's
+accepted Sec H specification, on the maintainer-accepted evidence that
+alpha2's whole gameplay change *is* seed-derived placement, so evaluating
+it under the historical fixed-placement methodology would produce an
+artifact labelled alpha2 that actually ran alpha1's fixed opposed
+placement — see docs/research/v4/V4_RC1_PHASE1_EVALUATION_METHODOLOGY.md
+for the full implementation report.
+
+- **Placement.** No new placement algorithm. Evaluation stops imposing
+  explicit starts for this methodology and instead resolves each cell's
+  placement through the same production `placement.
+  resolve_direct_match_starts` seam `bytefray run` already uses
+  (`agent_evaluation.resolve_v4_seed_geometry`), so a cell's placement is a
+  pure function of `(arena_size, cell.seed)` and is automatically bound to
+  the physical seat.
+- **Sample count.** 8 deterministic placement samples by default
+  (`STANDARD_V4_SEEDS = (1..8)`), mirroring `STANDARD_V2_SEEDS`'s own
+  "default only when no explicit --seeds/--seed-range/preset is given"
+  precedent. An explicit seed selection always overrides it.
+- **Arena.** Pinned to `STANDARD_V4_ARENA_SIZE` (512) — a **ratified
+  methodology constant**, not inherited from `Config().arena_size` (4096)
+  the way every other methodology's omitted `--arena-size` still resolves.
+  An explicit `--arena-size` that disagrees with the pin is rejected
+  (`EvaluationConfigurationError`) rather than silently producing an
+  artifact that still claims the standard methodology at a non-standard
+  arena.
+- **Orientation.** Both orientations, paired over the *same* resolved seat
+  geometry per seed — the physical always-first-acting seat always gets
+  the geometry's first resolved address, and orientation decides which
+  role (candidate/baseline vs. opponent) occupies it. Never an
+  independently-drawn placement for the reverse orientation.
+- **Identity/schema.** A third, additive identity/schema recipe,
+  `SCHEMA_VERSION_V4`/`IDENTITY_VERSION_V4` (7) — as with Phase 1's version
+  5 and Phase 2's version 6, there is no historical `bytefray-rules-4-
+  alpha2` evaluation artifact to preserve compatibility with, since
+  evaluation rejected this Ruleset entirely before this phase. A new
+  top-level `arena_alignment_mode` value, `"ruleset_v4_seeded_placements"`,
+  sibling to `"fixed"`/`"ruleset_v2_standard_placements"`/`"ruleset_v2_
+  group_standard_layouts"` — never reused, never collides.
+- **Comparison.** No change to `evaluation_history.comparison`.
+  `_condition_key` already includes `arena_alignment_id`/`rules_id`/
+  `placement.value`, so a v4-seeded cell can never align with a cell from
+  any other methodology, and two v4-seeded evaluations at different sample
+  counts (say seeds 1–8 vs. 1–16) align on their shared prefix only.
+- **`bytefray-rules-4-alpha1` is unaffected.** Alpha1 evaluation keeps its
+  existing, historical v2-methodology behavior (`SCHEMA_VERSION_V2`/
+  `IDENTITY_VERSION_V2` = 5, the three standard fixed placements) exactly
+  as it has always had it — only alpha2, whose defining gameplay change
+  the fixed methodology could not honestly evaluate, gets the new
+  methodology.
+- **Not introduced by this phase.** `bytefray-rules-4` (the permanent
+  stable Ruleset identity) does not exist yet; this methodology is
+  qualified against `bytefray-rules-4-alpha2` specifically, ahead of that
+  promotion, so the evaluation contract is proven before the gameplay
+  contract's permanent identity is assigned.
+
+### F.6: evaluation-state integrity (write-side, all methodologies)
+
+Independent of the methodology work above, and applying uniformly to
+*every* evaluation methodology (v1/v2/v2-group/v4): an evaluation's
+persisted top-level `lifecycle_state`/`complete` fields previously
+reflected only whether the scheduler finished *attempting* every cell,
+never whether any cell actually *succeeded* — so an evaluation whose every
+cell failed (for example, `agents evaluate` on an Agent API v2 roster
+resolving to an incompatible Ruleset, the defect that motivated this fix)
+was still persisted as the bare `"finished"`/`"complete": true` a fully
+successful evaluation gets.
+
+`lifecycle_state` gains one new value, `"finished_with_failures"`, sibling
+to the existing `"running"`/`"finished"`/`"aborted"`: written instead of
+`"finished"` whenever the matrix finished scheduling but at least one
+persisted cell's `status` is `"failed"` or `"corrupted"`. `complete` is now
+defined as exactly `lifecycle_state == "finished"`. This is a **write-side
+correctness fix, not a schema change** — no new JSON key, no identity-hash
+payload change, and no historical artifact is reinterpreted; a pre-fix
+artifact that already (incorrectly) says `"finished"` with failed cells
+keeps reading exactly as it always has, including through
+`evaluation_history`'s existing `HealthCode.FINISHED_WITH_FAILED_CELLS`/
+`FINISHED_WITH_CORRUPTED_CELLS` derivation (now also recognizing the new
+lifecycle state as equally "the scheduler is done" for that same
+per-cell-status scan). A resumed evaluation that reconstructs historical
+failed cells without re-executing anything reports the same truthful state
+— never converts historical failure into a successful aggregate merely
+because no new work was scheduled.
+
 ## Historical alias: evaluation-rules-1 ↔ bytefray-rules-1
 
 `bytefray.evaluation`'s `EVALUATION_RULES_COMPATIBILITY_ID` (wire field
