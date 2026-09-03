@@ -1,9 +1,15 @@
 # Bytefray Agent API v2
 
-Agent API v2 is the Python programming contract for
-`bytefray-rules-4-alpha1`. It is an alpha contract and is intentionally
+Agent API v2 is the stable Python programming contract for Bytefray 4.x
+(`v4.0.0-rc1` Phase 2), used by the permanent `bytefray-rules-4` identity and,
+unchanged, by both v4 prerelease identities that preceded it,
+`bytefray-rules-4-alpha1` and `bytefray-rules-4-alpha2`. It is intentionally
 separate from [Agent API v1](AGENT_API_V1.md), which remains the contract for
-Ruleset v1/v2 Python entrants. A manifest selects v2 explicitly:
+Ruleset v1/v2 Python entrants. This document describes the frozen contract
+itself; no field, action kind, or semantic below changed at promotion --
+see [COMPATIBILITY.md](COMPATIBILITY.md)'s "Ruleset v4" section for what the
+promotion actually changed (Ruleset identity and default resolution, not
+this contract). A manifest selects v2 explicitly:
 
 ```yaml
 kind: python
@@ -39,7 +45,8 @@ declarations fail the match without publishing a replay or result.
 - The roster is fixed for the match. API v2 has no spawn, retirement, or
   destruction operation.
 
-Ruleset v4 alpha1 fixes the entrant action budget at `Q=8`. Shares are
+Every v4 Ruleset identity (stable, alpha1, alpha2) fixes the entrant action
+budget at `Q=8`. Shares are
 converted to integer per-tick allocations by deterministic largest remainder;
 stable process ID breaks equal-remainder ties. When disruption makes a process
 ineligible, its share is redistributed among eligible positive-share
@@ -102,9 +109,12 @@ attack, recovery, or disruption action.
 
 ## Artifacts and compatibility
 
-Ruleset-v4 production matches write `battle2.replay` schema 4 with process
-state on tick and terminal records. Ruleset-v1/v2 matches continue using Agent
-API v1 and replay schema 3. Historical identities and bytes are not upgraded
-or reinterpreted as v4. See [COMPATIBILITY.md](COMPATIBILITY.md),
-[REPLAY_SCHEMA.md](REPLAY_SCHEMA.md), and the
-[v4 alpha design](V4_ALPHA1_DESIGN.md).
+Ruleset-v4 production matches -- stable `bytefray-rules-4` and both prerelease
+alphas alike -- write `battle2.replay` schema 4 with process state on tick and
+terminal records. Ruleset-v1/v2 matches continue using Agent API v1 and
+replay schema 3. Historical identities and bytes are not upgraded or
+reinterpreted as v4. See [COMPATIBILITY.md](COMPATIBILITY.md),
+[REPLAY_SCHEMA.md](REPLAY_SCHEMA.md), and the gameplay contracts:
+[stable Ruleset v4](RULES_V4.md), [v4 alpha2 design](V4_ALPHA2_DESIGN.md)
+(the frozen delta this stable contract's placement/process-selection
+semantics were promoted from), and [v4 alpha1 design](V4_ALPHA1_DESIGN.md).

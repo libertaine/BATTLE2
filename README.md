@@ -44,45 +44,51 @@ Bytefray is both a game and a deterministic experimentation platform:
 4. **Feedback**: As this is an alpha release, please open an issue to share
    feedback on the spatial gameplay and the new spectator experience.
 
-## Bytefray v4 alpha
+## Bytefray v4
 
-Ruleset `bytefray-rules-4-alpha1` is the production alpha endpoint of the
-completed R0-R6 research program. Its fixed mechanics are documented in the
-[v4 alpha1 design](docs/V4_ALPHA1_DESIGN.md): a fixed pre-tick process roster,
-co-located initial anchors, total entrant quota `Q=8`, deterministic `K=2`
-rotating scheduling, bounded local reach, movement, `D=1` temporary anchor
-disruption with fair redistribution, current-only local detection, and the
-minimal Agent API v2 observation contract.
+`bytefray-rules-4` is the **permanent, stable v4 gameplay Ruleset**,
+promoted on the RC path from `bytefray-rules-4-alpha2` unchanged: same
+Agent API v2, same replay schema 4, same fixed entrant quota `Q=8`,
+deterministic `K=2` rotating scheduling, seed-derived core placement under
+a minimum separation, round-robin intra-entrant process selection, `D=1`
+temporary anchor disruption with fair redistribution, current-only local
+detection, and the minimal Agent API v2 observation contract. See
+[the stable Ruleset v4 reference](docs/RULES_V4.md) for the full contract.
 
-`bytefray-rules-4-alpha2` is the **current v4 gameplay Ruleset**. It keeps
-Agent API v2, replay schema 4, and every mechanic above, and changes exactly
-two things that a controlled gameplay study identified as accidental rather
-than designed:
+Two prerelease identities precede it and remain fully supported,
+explicitly selectable, and behaviorally frozen for reproducing historical
+matches:
 
-- **Core placement is derived from the match seed**, under a minimum
-  separation, instead of a fixed evenly-spread seat layout. An opponent's core
-  can no longer be computed as `own_core_base + arena_size / 2` without
-  observing anything — it has to be found.
-- **An entrant's own processes take action slots in rotation** instead of by
-  declared-list priority, so declaration order stops acting as an
-  undocumented priority ranking separate from each process's declared share.
+- **`bytefray-rules-4-alpha1`**, the production alpha endpoint of the
+  completed R0-R6 research program — documented in the
+  [v4 alpha1 design](docs/V4_ALPHA1_DESIGN.md).
+- **`bytefray-rules-4-alpha2`**, which changed exactly two things from
+  alpha1 (seed-derived core placement instead of a fixed evenly-spread
+  seat layout, and round-robin instead of declared-list-priority process
+  selection) — documented in the
+  [v4 alpha2 gameplay contract](docs/V4_ALPHA2_DESIGN.md), with the
+  evidence behind both changes in
+  [the Phase 4 study](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md), and the
+  evidence that no further gameplay alpha was needed in
+  [the pre-RC research report](docs/research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md).
 
-Alpha1 remains fully supported and explicitly selectable for reproducing
-historical matches. See the [v4 alpha2 gameplay contract](docs/V4_ALPHA2_DESIGN.md)
-for the full delta and [the Phase 4 study](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
-for the evidence behind it.
+`bytefray-rules-4`'s equivalence to alpha2 is proven by a release-blocking
+test corpus (`engine/tests/test_v4_stable_ruleset_equivalence.py`), not
+merely declared — identical inputs under both identities produce
+identical replay content, differing only in the Ruleset-identity-bearing
+fields every persisted artifact already carries.
 
-The `v4.0.0-alpha4` product release does **not** introduce a third gameplay
-Ruleset. It adds the trace-backed spectator presentation suite on top of the
-unchanged alpha1/alpha2 Rulesets, Agent API v2, and replay schema 4. Broadcast
-replay remains the default and works without a trace.
-
-The reports under [`docs/research/v4/`](docs/research/v4/) remain the evidence
-and decision history behind the alpha. They are not alternate runtime
-semantics: user-invocable CLI, Designer test/evaluation, tournament, installed
-wheel, and frozen-executable matches all dispatch through the same canonical
-v4 process runtime. Ruleset v1/v2, Agent API v1, VM/blob execution, and
-historical artifacts are retained rather than reinterpreted as v4.
+An omitted `--ruleset` for an Agent API v2 roster now resolves to
+`bytefray-rules-4` across every product surface (CLI `run`/`agents test`/
+`agents evaluate`/`tournament`, and Agent Designer); both alphas remain
+one explicit `--ruleset` away. The reports under
+[`docs/research/v4/`](docs/research/v4/) remain the evidence and decision
+history behind all three identities. They are not alternate runtime
+semantics: user-invocable CLI, Designer test/evaluation, tournament,
+installed wheel, and frozen-executable matches all dispatch through the
+same canonical v4 process runtime. Ruleset v1/v2, Agent API v1, VM/blob
+execution, and historical artifacts are retained rather than reinterpreted
+as v4.
 
 ## How the game works
 
@@ -97,12 +103,14 @@ entrant. An entrant is eliminated when it loses ownership of every cell in
 its core, allowing decisive captures instead of relying only on territory
 scores at the tick limit. Ruleset v2 supports Python entrants only.
 
-**Ruleset v4 alpha1 and alpha2** use Agent API v2 and add fixed spatial
-processes whose anchors move independently. `READ` and `WRITE` use absolute
-arena addresses; `MOVE` uses a signed delta from the acting process anchor.
-All three consume the same per-entrant `Q=8` action budget. Alpha2 is the
-current v4 gameplay Ruleset and differs from alpha1 only in seed-derived core
-placement and round-robin process selection.
+**Ruleset v4** (stable `bytefray-rules-4`, and its two prerelease alphas) uses
+Agent API v2 and adds fixed spatial processes whose anchors move
+independently. `READ` and `WRITE` use absolute arena addresses; `MOVE` uses a
+signed delta from the acting process anchor. All three v4 identities consume
+the same per-entrant `Q=8` action budget. The stable identity and alpha2
+place cores from the match seed and select processes in rotation; alpha1
+instead uses a fixed evenly-spread seat layout and declared-list-priority
+selection.
 
 The engine and evaluation model support multiple entrants. Quick Match in the
 Designer remains intentionally two-entrant; **Group Evaluation** is the
@@ -332,30 +340,36 @@ See [Writing Agents](docs/AGENT_AUTHORING.md), the
 
 | Ruleset | Designer role | Runtime compatibility |
 |---|---|---|
-| `bytefray-rules-4-alpha2` | Current v4 gameplay Ruleset for spatial process matches | Agent API v2 Python entrants only |
-| `bytefray-rules-4-alpha1` | Historical alpha preview, for reproducing earlier v4 alpha matches | Agent API v2 Python entrants only |
+| `bytefray-rules-4` | Current, permanent v4 gameplay Ruleset for spatial process matches | Agent API v2 Python entrants only |
+| `bytefray-rules-4-alpha2` | Historical prerelease, for reproducing earlier alpha2 matches | Agent API v2 Python entrants only |
+| `bytefray-rules-4-alpha1` | Historical prerelease, for reproducing earlier alpha1 matches | Agent API v2 Python entrants only |
 | `bytefray-rules-2` | Current/recommended for compatible Python direct matches | Python entrants only |
 | `bytefray-rules-1` | Compatibility: historical reproduction, and the only ruleset that runs VM/blob entrants | VM/blob and Python native matches |
 
 Agent API v1 Python agents run under Ruleset v1 or v2. Agent API v2 Python
-agents run under either v4 alpha; omitting `--ruleset` selects alpha2, the
-current v4 gameplay Ruleset. VM/blob agents run under Ruleset v1 only. Redcode/pMARS is
-separate from all four — see below.
+agents run under any of the three v4 identities; omitting `--ruleset` selects
+`bytefray-rules-4`, the current, permanent v4 gameplay Ruleset. VM/blob agents
+run under Ruleset v1 only. Redcode/pMARS is separate from all five — see
+below.
 
 Agent Designer passes its selection explicitly everywhere, including the
 Agent Development tab's development tests and pairwise evaluation, both of
-which default to Ruleset v2 as of `v3.0.0-alpha2`. The CLI (`bytefray run`,
-`agents test`, `agents evaluate`, `tournament`) resolves an omitted
-`--ruleset` the same way: Python-only matches default to Ruleset v2 and
-VM/blob-only matches default to Ruleset v1, so an ordinary Python match
-gets the same current gameplay through either front end. A mixed
-Python/VM request without an explicit `--ruleset` keeps the historical
-Ruleset v1 default. Ruleset v2 is a permanent, stable gameplay identity as
-of `v2.0.0`. Historical alpha identities remain readable/executable for
-artifact compatibility but are not normal product choices.
+which default to Ruleset v2 (for an Agent API v1 roster) or `bytefray-rules-4`
+(for an Agent API v2 roster) as of `v4.0.0-rc1` Phase 2. The CLI (`bytefray
+run`, `agents test`, `agents evaluate`, `tournament`) resolves an omitted
+`--ruleset` the same way: Agent API v1 Python-only matches default to Ruleset
+v2, Agent API v2 Python-only matches default to `bytefray-rules-4`, and
+VM/blob-only matches default to Ruleset v1, so an ordinary match gets the
+same current gameplay through either front end. A mixed Python/VM request
+without an explicit `--ruleset` keeps the historical Ruleset v1 default.
+Ruleset v2 is a permanent, stable gameplay identity as of `v2.0.0`;
+`bytefray-rules-4` is a permanent, stable gameplay identity as of
+`v4.0.0-rc1` Phase 2. Historical alpha identities remain readable/executable
+for artifact compatibility but are not normal product choices.
 
 Detailed references:
 
+- [Ruleset v4 (stable)](docs/RULES_V4.md)
 - [Ruleset v4 alpha2 gameplay contract](docs/V4_ALPHA2_DESIGN.md)
 - [Ruleset v4 alpha1 design](docs/V4_ALPHA1_DESIGN.md)
 - [Ruleset v2](docs/RULES_V2.md)
@@ -396,7 +410,7 @@ bytefray run --mode redcode94 --red-a path/to/A.red --red-b path/to/B.red
 ```
 
 Redcode/pMARS matches run in an external pMARS process and do not use a
-Bytefray ruleset — not Ruleset v1, v2, or either v4 alpha. They produce a normalized
+Bytefray ruleset — not Ruleset v1, v2, or any v4 identity. They produce a normalized
 summary rather than a native Bytefray replay. See
 [RULES.md](docs/RULES.md)'s "Redcode/pMARS — not Ruleset v1".
 

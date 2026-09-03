@@ -105,6 +105,16 @@ alpha1's fixed opposite placement. The existing fail-closed `--ruleset` guard
 rejects alpha2 with a clear message; adopting it there needs a methodology
 decision this Ruleset change does not supply.
 
+> **Superseded by later RC-path phases.** The two paragraphs above described
+> `v4.0.0-alpha2`'s own release behavior; left in place, unedited, as the
+> accurate record of what shipped then. Since then: `v4.0.0-rc1` Phase 1
+> supplied the missing methodology decision, and `agents evaluate` now
+> accepts alpha2 (see "Stable v4 seeded-placement evaluation methodology"
+> below). `v4.0.0-rc1` Phase 2 promoted the permanent `bytefray-rules-4`
+> identity (see "Ruleset v4" below); an omitted `--ruleset` for an Agent
+> API v2 roster now resolves to the stable identity, not alpha2 -- alpha2
+> (and alpha1) remain explicitly selectable and behaviorally unchanged.
+
 ## Separate compatibility axes
 
 These axes are independent and must not be conflated — a change to one
@@ -241,13 +251,98 @@ manifest runtime kind and Agent API version together; `NativeMatchService`
 applies the same policy before runtime dispatch, so a stale or programmatically
 constructed v2/API-v2 or v4/API-v1 request fails before agent code executes.
 Agent Designer's Simple Quick Match projects this boundary into the catalog:
-it offers current gameplay only -- Ruleset v2 and v4 alpha2 -- and shows only
-agents compatible with the selected Ruleset. Historical Ruleset v1, v4 alpha1,
-and VM/blob selection remain available through Advanced workflows, while Agent
-Development continues to receive the complete discovered catalog. The two v4
-alphas are distinguished by label ("current" and "historical") because they are
-identical on every other axis a selector could show: both are Python-only and
-both require Agent API v2.
+as of `v4.0.0-rc1` Phase 2 it offers current gameplay only -- Ruleset v2 and
+the permanent `bytefray-rules-4` identity (see "Ruleset v4" immediately
+below) -- and shows only agents compatible with the selected Ruleset.
+Historical Ruleset v1, v4 alpha1, v4 alpha2, and VM/blob selection remain
+available through Advanced workflows, while Agent Development continues to
+receive the complete discovered catalog. All three v4 identities are
+distinguished by label ("current" and, for each alpha, "historical") because
+they are identical on every other axis a selector could show: all three are
+Python-only and all three require Agent API v2.
+
+## Ruleset v4
+
+`v4.0.0-rc1` Phase 2 introduces a third v4 Ruleset identity, permanent and
+stable:
+
+```python
+BYTEFRAY_RULESET_V4_ID = "bytefray-rules-4"
+```
+
+defined in `battle_engine.rules` alongside its two alpha siblings and
+resolved through the same fail-closed `resolve_ruleset_policy` seam as every
+other identity. See [RULES_V4.md](RULES_V4.md) for the full Ruleset v4
+gameplay contract and
+[docs/research/v4/V4_RC1_PHASE2_STABLE_CONTRACT_PROMOTION.md](research/v4/V4_RC1_PHASE2_STABLE_CONTRACT_PROMOTION.md)
+for the promotion evidence.
+
+- **Status: permanent, stable semantic identity** as of `v4.0.0-rc1` Phase 2,
+  promoted unchanged from the pre-RC research program's evidence-backed
+  result (no further gameplay alpha found necessary; see
+  [V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md](research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md)).
+  Like Ruleset v1/v2's contracts, it is not expected to change without new
+  evidence and a deliberate, separately-versioned decision to revise it.
+- **Gameplay-identical to `bytefray-rules-4-alpha2`, field for field.** Its
+  `RulesetPolicy` (`supported_runtime_kinds`, `supported_python_api_versions`,
+  `scheduler_mode`/`scheduler_chunk_size`/`scheduler_rotate_start`,
+  `core_placement`, `process_selection`) is copied verbatim from alpha2's,
+  not re-derived -- one semantic implementation
+  (`battle_engine.scheduler.run_chunked_quota`, `battle_engine.
+  process_runtime.ProcessMatchController`, and `python_runtime`'s seeded
+  placement, all gated on those policy field values, never on the specific
+  `ruleset_id` string) exposed under two compatibility identities. Proven
+  by a release-blocking equivalence corpus, not merely asserted --
+  `engine/tests/test_v4_stable_ruleset_equivalence.py` runs identical
+  `MatchRequest`s under both identities across arena sizes, seeds, entrant
+  counts, and real adapted-Alpha2/bundled-starter agents, and diffs the full
+  replay content; every field compares equal except the four
+  identity-bearing ones (`match_id`/`result_id`/`replay_id`/`ruleset_id`),
+  which are asserted to legitimately differ.
+- **Agent API version is unaffected.** Ruleset v4 is a gameplay-semantics
+  identity; manifest `api_version: 2` remains the supported Python
+  programming contract for all three v4 identities. Agent API v2 itself is
+  now documented as the stable 4.x programming contract (see
+  [AGENT_API_V2.md](AGENT_API_V2.md)), not merely an alpha-scoped one --
+  no field, action kind, or semantic changed to make that declaration true.
+- **Runtime support: Python-only, Agent API v2 only** -- identical to both
+  alphas (`supported_runtime_kinds == frozenset({"python"})`,
+  `supported_python_api_versions == frozenset({2})`). A VM/blob or Agent
+  API v1 entrant is rejected (`RulesetRuntimeUnsupportedError`/
+  `RulesetAgentUnsupportedError`) before any entrant executes, exactly as
+  for both alphas.
+- **Artifacts record the exact Ruleset and use replay schema 4**, exactly
+  like both v4 alphas -- see "Persisted Ruleset identity on native
+  result/replay artifacts" above, and
+  [REPLAY_SCHEMA.md](REPLAY_SCHEMA.md), now documented as the stable v4
+  replay contract rather than an alpha1-scoped one.
+- **Alpha Ruleset artifacts remain distinct historical experiment
+  identities.** `bytefray-rules-4-alpha1` and `bytefray-rules-4-alpha2` are
+  **not** aliased to `bytefray-rules-4` in either direction --
+  `rules._RULESET_ALIASES` gains no entry for any of the three. The three
+  identities dispatch, hash into `canonical_match_id`, and persist
+  separately, so no historical alpha artifact can ever be silently
+  reinterpreted as a permanent Ruleset-v4 artifact, and evaluation
+  comparison/resume both continue to fail closed across any pair of them.
+  Alpha1 and alpha2 each keep their exact frozen semantics, stay
+  registered and explicitly selectable everywhere a Ruleset can be named,
+  and are still what every persisted alpha1/alpha2 artifact resolves to.
+- **Default-resolution convergence.** An omitted `--ruleset` for an Agent
+  API v2 roster now resolves to `bytefray-rules-4` (previously alpha2,
+  previously alpha1) across every product entry point that resolves an
+  omitted Ruleset through `battle_engine.ruleset_policy.
+  OMITTED_RULESET_CANDIDATES` -- `bytefray run`, `agents test`, `agents
+  evaluate` (as of `v4.0.0-rc1` Phase 1's F.6 fix), and `tournament` all
+  converge automatically from this one table. An Agent API v1 roster still
+  resolves to `bytefray-rules-2`, and a VM/blob roster still resolves to
+  Ruleset v1, both unchanged.
+- **Stable v4 evaluation.** `agents evaluate` on an Agent API v2 roster now
+  runs schema-7 `ruleset_v4_seeded_placements` evaluation (`v4.0.0-rc1`
+  Phase 1's methodology, unmodified) under `bytefray-rules-4` by default;
+  explicit `--ruleset bytefray-rules-4-alpha2` remains fully supported and
+  runs the identical methodology under its own honest identity. Explicit
+  `--ruleset bytefray-rules-4-alpha1` remains its own historical
+  fixed-placement methodology, unaffected.
 
 ## Ruleset-v2 1v1 evaluation methodology (v2.0.0-beta2 Phase 1)
 
@@ -611,11 +706,11 @@ gameplay Ruleset produced one native match:
 
 | Artifact | Version/era | Rules identity behavior |
 | --- | --- | --- |
-| `result.json` | current native (VM or Python) | exact recorded Ruleset identity (`bytefray-rules-1`, `bytefray-rules-2`, or `bytefray-rules-4-alpha1`) |
+| `result.json` | current native (VM or Python) | exact recorded Ruleset identity (`bytefray-rules-1`, `bytefray-rules-2`, `bytefray-rules-4-alpha1`, `bytefray-rules-4-alpha2`, or `bytefray-rules-4`) |
 | `result.json` | legacy native, `battle2.result` v1, missing field | `recovered` `bytefray-rules-1` (proven stable since v0.3.0) |
 | `result.json` | `redcode94`/pMARS | `not_applicable` |
 | `replay.jsonl` header | current Ruleset-v1/v2 native, schema v3 | exact recorded Ruleset identity |
-| `replay.jsonl` header | current Ruleset-v4 native, schema v4 | recorded `bytefray-rules-4-alpha1`; process state required in production output |
+| `replay.jsonl` header | current Ruleset-v4 native, schema v4 | recorded `bytefray-rules-4-alpha1`, `bytefray-rules-4-alpha2`, or (as of `v4.0.0-rc1` Phase 2) `bytefray-rules-4`; process state required in production output |
 | `replay.jsonl` header | legacy schema v3, missing field | `recovered` `bytefray-rules-1` (v3 never existed before v0.3.0) |
 | `replay.jsonl` header | genuine schema v2 (v0.2.0-era canonical, or adapted v0.1) | `unknown` (predates the proven-stable window) |
 | `evaluation.json` | current | exact recorded `rules_compatibility_id`; treated as canonical |

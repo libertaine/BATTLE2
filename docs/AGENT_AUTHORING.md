@@ -10,7 +10,7 @@ separate pMARS backend. Mixed Python/VM matches are not yet supported.
 |---|---|
 | Built-in | Assembled into mutable native VM bytecode. |
 | Blob | Loaded directly as native VM bytecode. |
-| Python | Loaded through Agent API v1 (Ruleset v1/v2) or Agent API v2 (Ruleset v4 alpha1) and run against another compatible Python agent. |
+| Python | Loaded through Agent API v1 (Ruleset v1/v2) or Agent API v2 (Ruleset v4) and run against another compatible Python agent. |
 | Redcode | Passed to the separate pMARS backend. |
 
 User agents live under the configured writable data root in
@@ -126,8 +126,11 @@ action contract the generated files satisfy.
 The scaffold command currently creates Agent API v1 examples. To author a v4
 agent, start from one of the packaged `v4_*` agents, set `api_version: 2`, and
 implement `reset(context)`, `declare_processes()`, and `act(observation)` as
-specified in [AGENT_API_V2.md](AGENT_API_V2.md). Run it with an explicit
-`--ruleset bytefray-rules-4-alpha1`; API-v1 and API-v2 entrants cannot be
+specified in [AGENT_API_V2.md](AGENT_API_V2.md). Omitting `--ruleset` resolves
+automatically to `bytefray-rules-4`, the stable v4 gameplay contract, from
+your agent's own declared `api_version: 2`; pass an explicit
+`--ruleset bytefray-rules-4-alpha1` or `bytefray-rules-4-alpha2` only to
+reproduce an earlier prerelease match. API-v1 and API-v2 entrants cannot be
 mixed in one match.
 
 ## Learning from the bundled agents

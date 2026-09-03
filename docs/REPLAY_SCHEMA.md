@@ -2,9 +2,12 @@
 
 ## Canonical writer
 
-Native Ruleset-v1/v2 matches use `battle2.replay` schema version 3. Ruleset
-`bytefray-rules-4-alpha1` matches use schema version 4 so process state is
-present without changing the historical v3 wire shape. One authoritative
+Native Ruleset-v1/v2 matches use `battle2.replay` schema version 3. Every v4
+Ruleset identity -- the stable `bytefray-rules-4` (`v4.0.0-rc1` Phase 2) and
+both prerelease alphas, `bytefray-rules-4-alpha1`/`-alpha2` -- uses schema
+version 4 so process state is present without changing the historical v3
+wire shape; the schema did not bump at promotion, since nothing about its
+wire shape changed. One authoritative
 finalization path (`match_service._finalize_native_artifacts`) converts VM and
 Python runtime events into typed header, tick, and terminal result records --
 the same `battle_engine.replay.ReplayHeader` / `TickSnapshot` / `MatchResult`
@@ -53,7 +56,10 @@ version rather than repeat this reasoning. Schema 4 below follows that rule.
 
 ### Schema 4 process state
 
-Schema 4 is selected only for Ruleset-v4 production matches. Every tick and
+Schema 4 is selected only for Ruleset-v4 production matches (stable
+`bytefray-rules-4` and both prerelease alphas alike -- selection is driven
+by the resolved Ruleset's process-agent policy, not by which of the three
+identities specifically). Every tick and
 terminal result record contains a `processes` array. Each entry contains:
 
 - `process_id`: the entrant-local stable ID declared before tick 0;

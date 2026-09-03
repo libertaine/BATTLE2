@@ -61,6 +61,56 @@ implementation report.
   `bytefray-rules-4` (the permanent stable Ruleset identity) is **not**
   introduced by this phase.
 
+### v4.0.0-rc1 Phase 2: Stable Ruleset/API Promotion and Default Convergence
+
+RC-path development on `v4-rc1-development`, not yet released. Converts
+Phase 1's already-qualified v4 prerelease contracts into their permanent
+stable Bytefray 4.0 identities. See
+`docs/research/v4/V4_RC1_PHASE2_STABLE_CONTRACT_PROMOTION.md` for the full
+implementation report.
+
+* **New permanent Ruleset identity `bytefray-rules-4`.** Gameplay-identical
+  to `bytefray-rules-4-alpha2`, field for field (its `RulesetPolicy` is
+  copied verbatim, not re-derived) — proven, not merely declared, by a
+  release-blocking equivalence corpus
+  (`engine/tests/test_v4_stable_ruleset_equivalence.py`) running identical
+  matches under both identities across arena sizes, seeds, entrant counts,
+  and real agents (including `hydra_alpha2`/`nemesis_alpha2` and the
+  bundled `v4_*` starters) and diffing full replay content. Registered
+  alongside — never aliased to or from — `bytefray-rules-4-alpha1`/`-alpha2`,
+  which remain fully supported, explicitly selectable, and behaviorally
+  frozen for reproducing historical matches.
+* **Default-resolution convergence.** An omitted `--ruleset` for an Agent
+  API v2 roster now resolves to `bytefray-rules-4` (previously alpha2)
+  across every product surface that resolves an omitted Ruleset through the
+  one centralized `ruleset_policy.OMITTED_RULESET_CANDIDATES` table:
+  `bytefray run`, `agents test`, `agents evaluate`, `tournament`, and Agent
+  Designer all converge automatically from this one change. An Agent API v1
+  roster still resolves to `bytefray-rules-2`, unaffected.
+* **`agents evaluate` on an Agent API v2 roster now runs the stable v4
+  schema-7 methodology under `bytefray-rules-4` by default**, unchanged
+  from Phase 1 (arena 512, 8 deterministic placement samples, paired
+  orientations). Explicit `--ruleset bytefray-rules-4-alpha2` remains fully
+  supported and honestly self-attributed under its own identity.
+* **Agent Designer:** Simple now presents `bytefray-rules-4` as current
+  Agent-API-v2 gameplay (replacing alpha2 there); Advanced/Development/
+  Evaluation keep both alphas as explicit historical-reproduction choices.
+* **Agent API v2 formally declared the stable programming contract** for
+  Bytefray 4.x (`docs/AGENT_API_V2.md`) — no field, action kind, or
+  semantic changed. **Replay schema 4 formally declared the stable v4
+  replay contract** (`docs/REPLAY_SCHEMA.md`) — no schema bump, no wire-shape
+  change; historical schema-4 replays remain readable exactly as before.
+* **New `docs/RULES_V4.md`**, the authoritative stable-v4 gameplay
+  reference, mirroring `docs/RULES_V2.md`'s established format. Historical
+  `V4_ALPHA1_DESIGN.md`/`V4_ALPHA2_DESIGN.md` remain unedited.
+* **Unchanged.** Every Alpha2 gameplay mechanic (placement, process
+  selection, disruption, quota allocation/redistribution, scoring,
+  termination), Agent API v2's wire contract, and replay schema 4's wire
+  shape. Historical Alpha1/Alpha2 canonical identities and placement
+  vectors are pinned and verified unchanged
+  (`engine/tests/test_v4_historical_immutability.py`). No historical
+  artifact is rewritten.
+
 ## [4.0.0-alpha4] - 2026-09-03
 
 ### Designer Spectator Trace Integration
