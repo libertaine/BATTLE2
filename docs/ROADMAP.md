@@ -1170,6 +1170,18 @@ presentation pipeline across the replay viewer and CLI:
   generation (independent research built on top of the qualified spectator
   foundation).
 
+### v4.0.0-alpha4 — Designer Spectator Integration
+
+Focused distribution follow-up to alpha3. The published alpha3 assets were
+built before the Designer wiring landed, so Simple/Advanced v4 matches did
+not yet produce the trace that Perspective Cam, Spectator Director, and
+Fight Night depend on. Alpha4 corrects that: v4 matches launched from the
+Designer's Simple or Advanced tabs now automatically record a sibling
+`trace.jsonl`, and `bytefray run --trace PATH` is available for explicit CLI
+recording. No gameplay Ruleset, Agent API, replay schema, or trace schema
+identity changed; historical Ruleset v1/v2 Designer matches remain
+replay-only.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:

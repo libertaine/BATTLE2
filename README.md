@@ -4,7 +4,7 @@
   <img src="assets/branding/bytefray-logo-horizontal.png" alt="Bytefray logo" width="420">
 </p>
 
-> **Note: Bytefray is currently in v4.0.0-alpha3.** This alpha release introduces the spatial multi-process model and the new spectator presentation suite (Perspective Cam, Spectator Director, Fight Night). We welcome gameplay and viewer feedback!
+> **Note: Bytefray is currently in v4.0.0-alpha4.** This alpha release introduces the spatial multi-process model and the new spectator presentation suite (Perspective Cam, Spectator Director, Fight Night), now wired into the Designer's Simple/Advanced match workflow. We welcome gameplay and viewer feedback!
 
 **Bytefray** is a deterministic programmable-agent combat simulator in which
 agents compete over a shared circular memory arena. The v4 alpha adds a
@@ -16,11 +16,11 @@ available for compatibility.
 Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible
 evaluation and tournament tools, and a complete command-line workflow.
 
-[![GitHub prerelease](https://img.shields.io/github/v/release/libertaine/Bytefray?include_prereleases&label=alpha%20release)](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
+[![GitHub prerelease](https://img.shields.io/github/v/release/libertaine/Bytefray?include_prereleases&label=alpha%20release)](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha4)
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Current pre-release:** [Bytefray v4.0.0-alpha3](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
+**Current pre-release:** [Bytefray v4.0.0-alpha4](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha4)
 — see [Downloads](#downloads) below. Earlier [v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 remains the current stable release for users who do not want alpha gameplay or
 Agent API changes.
@@ -72,7 +72,7 @@ historical matches. See the [v4 alpha2 gameplay contract](docs/V4_ALPHA2_DESIGN.
 for the full delta and [the Phase 4 study](docs/V4_ALPHA2_PHASE4_GAMEPLAY_STUDY.md)
 for the evidence behind it.
 
-The `v4.0.0-alpha3` product release does **not** introduce a third gameplay
+The `v4.0.0-alpha4` product release does **not** introduce a third gameplay
 Ruleset. It adds the trace-backed spectator presentation suite on top of the
 unchanged alpha1/alpha2 Rulesets, Agent API v2, and replay schema 4. Broadcast
 replay remains the default and works without a trace.
@@ -220,20 +220,23 @@ environment variables, see [Installation](INSTALL.md).
 
 ## Downloads
 
-**Current pre-release:** [Bytefray v4.0.0-alpha3](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
-— adds Perspective Cam, deterministic Director pacing, perspective-safe HUD
-gating, and Fight Night presentation. Gameplay remains on unchanged Rulesets
-`bytefray-rules-4-alpha1` and `bytefray-rules-4-alpha2`; Agent API v2 and replay
-schema 4 are unchanged, and historical v1–v3 execution/artifact compatibility
-is retained.
+**Current pre-release:** [Bytefray v4.0.0-alpha4](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha4)
+— a focused Designer integration follow-up to alpha3: Simple/Advanced v4
+matches now automatically record the spectator trace used by Perspective Cam,
+deterministic Director pacing, perspective-safe HUD gating, and Fight Night
+presentation. Gameplay remains on unchanged Rulesets `bytefray-rules-4-alpha1`
+and `bytefray-rules-4-alpha2`; Agent API v2 and replay schema 4 are unchanged,
+and historical v1–v3 execution/artifact compatibility is retained. The prior
+[v4.0.0-alpha3](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-alpha3)
+release remains published for reference.
 
 | Package | Download | Notes |
 |---|---|---|
-| Windows installer | [Bytefray-Setup-4.0.0-alpha3.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/Bytefray-Setup-4.0.0-alpha3.exe) | Administrative AMD64/x64 installation; unsigned, see [Installation](INSTALL.md) |
-| Portable Windows applications | [bytefray-4.0.0-alpha3-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0-alpha3-windows.zip) | AMD64 onedir applications for the Bytefray CLI, Agent Designer, and Replay Viewer workflows |
-| Python wheel | [bytefray-4.0.0a3-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0a3-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
-| Source archive | [bytefray-4.0.0a3.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/bytefray-4.0.0a3.tar.gz) | Python/source workflows |
-| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha3/SHA256SUMS.txt) | SHA-256 values for all published alpha3 assets |
+| Windows installer | [Bytefray-Setup-4.0.0-alpha4.exe](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha4/Bytefray-Setup-4.0.0-alpha4.exe) | Administrative AMD64/x64 installation; unsigned, see [Installation](INSTALL.md) |
+| Portable Windows applications | [bytefray-4.0.0-alpha4-windows.zip](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha4/bytefray-4.0.0-alpha4-windows.zip) | AMD64 onedir applications for the Bytefray CLI, Agent Designer, and Replay Viewer workflows |
+| Python wheel | [bytefray-4.0.0a4-py3-none-any.whl](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha4/bytefray-4.0.0a4-py3-none-any.whl) | Pure Python 3.10–3.13 package; no pMARS binary |
+| Source archive | [bytefray-4.0.0a4.tar.gz](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha4/bytefray-4.0.0a4.tar.gz) | Python/source workflows |
+| Checksums | [SHA256SUMS.txt](https://github.com/libertaine/Bytefray/releases/download/v4.0.0-alpha4/SHA256SUMS.txt) | SHA-256 values for all published alpha4 assets |
 
 **Current stable release:** [Bytefray v3.0.0](https://github.com/libertaine/Bytefray/releases/tag/v3.0.0)
 remains available for users who do not want alpha gameplay/API changes.
@@ -457,11 +460,12 @@ read-only agent-source inspection, refreshed onboarding, and current product
 screenshots.
 
 Bytefray v3.0.0 remains the stable product on top of Ruleset v2. Bytefray
-v4.0.0-alpha3 is the current pre-release and adds the qualified spectator
-intelligence suite (Perspective Cam, Spectator Director, Fight Night) on top
-of the spatial multi-process model. The alpha identity is intentionally
-provisional; historical identities and wire formats remain distinct and
-readable.
+v4.0.0-alpha4 is the current pre-release: a Designer-integration follow-up
+that makes alpha3's qualified spectator intelligence suite (Perspective Cam,
+Spectator Director, Fight Night) available through the normal Simple/Advanced
+Designer workflow, on top of the spatial multi-process model. The alpha
+identity is intentionally provisional; historical identities and wire formats
+remain distinct and readable.
 
 The earlier BATTLE2 name and migration history are preserved in
 [Project History](docs/PROJECT_HISTORY.md); all current product commands,

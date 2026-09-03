@@ -2,6 +2,32 @@
 
 This changelog records notable user- and developer-visible changes to Bytefray.
 
+## [4.0.0-alpha4] - 2026-09-03
+
+### Designer Spectator Trace Integration
+
+This is a focused distribution follow-up to alpha3, not a new gameplay
+release. Alpha3's published assets were built before the Designer wiring
+below landed, so Simple/Advanced v4 matches did not yet produce the trace
+that Perspective Cam, Spectator Director, and Fight Night depend on. Alpha4
+corrects that without changing any gameplay, API, or schema identity.
+
+* **Simple/Advanced v4 matches now record a spectator trace automatically.**
+  The Agent Designer requests `--trace` alongside `--replay` for
+  `bytefray-rules-4-alpha1`/`bytefray-rules-4-alpha2` matches, writing a
+  sibling `trace.jsonl` next to `replay.jsonl` in the match's run directory.
+  Ruleset v1/v2 Designer matches are unchanged and stay replay-only. **Open
+  Replay** now has Perspective Cam, Spectator Director, and Fight Night
+  available immediately after a Designer match, with no new UI control.
+* **`bytefray run --trace PATH`.** The CLI now accepts an explicit opt-in
+  trace path, propagated through the existing `MatchRequest.trace_path`.
+  Omitting the flag preserves current behavior exactly; canonical
+  match/result identity is unaffected either way.
+* **Unchanged.** `bytefray-rules-4-alpha1`, `bytefray-rules-4-alpha2`, Agent
+  API v2, replay schema 4, the trace schema, scheduler, placement, scoring,
+  and historical Ruleset v1/v2 replay-only behavior are all frozen. Tracing
+  remains observational and never alters canonical simulation identity.
+
 ## [4.0.0-alpha3] - 2026-09-02
 
 ### Spectator Intelligence, Perspective Cam, and Fight Night
