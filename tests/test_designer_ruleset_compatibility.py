@@ -26,11 +26,14 @@ BYTEFRAY_RULESET_ID = "bytefray-rules-1"
 BYTEFRAY_RULESET_V2_ID = "bytefray-rules-2"
 BYTEFRAY_RULESET_V4_ALPHA1_ID = "bytefray-rules-4-alpha1"
 BYTEFRAY_RULESET_V4_ALPHA2_ID = "bytefray-rules-4-alpha2"
-#: Both v4 alphas accept the identical roster -- Python-only, Agent API
-#: v2 -- so every surface that offers one on compatibility grounds must
-#: offer both. Which of them a surface *prefers* is the product decision
-#: each test below pins separately.
-BOTH_V4_ALPHAS = {BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID}
+BYTEFRAY_RULESET_V4_ID = "bytefray-rules-4"
+#: All three v4 identities accept the identical roster -- Python-only,
+#: Agent API v2 -- so every surface that offers one on compatibility
+#: grounds must offer all three (v4.0.0-rc1 Phase 2 added the permanent
+#: stable identity alongside the two prerelease alphas). Which of them a
+#: surface *prefers* is the product decision each test below pins
+#: separately.
+ALL_V4_IDENTITIES = {BYTEFRAY_RULESET_V4_ID, BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID}
 
 
 def _make_app():
@@ -71,7 +74,7 @@ def _offered(combo) -> set[str]:
     ("api_version", "expected_offered"),
     [
         (1, {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_ID}),
-        (2, BOTH_V4_ALPHAS),
+        (2, ALL_V4_IDENTITIES),
     ],
 )
 def test_advanced_offers_only_rulesets_the_selected_agents_can_run(
@@ -108,11 +111,12 @@ def test_advanced_keeps_a_compatible_selection_and_repairs_an_incompatible_one(t
         # it is replaced by the deterministic first compatible option, never
         # left on an incompatible one.
         panel.setAgents([_row("proc", "python", 2), _row("proc2", "python", 2)])
-        # The deterministic first compatible option, which is the current v4
-        # Ruleset -- not merely "a v4 Ruleset". Advanced still offers alpha1
-        # beside it for reproducing historical alpha1 matches.
-        assert panel.ruleset.currentData() == BYTEFRAY_RULESET_V4_ALPHA2_ID
-        assert _offered(panel.ruleset) == BOTH_V4_ALPHAS
+        # The deterministic first compatible option, which is the current,
+        # permanent v4 Ruleset -- not merely "a v4 Ruleset". Advanced still
+        # offers alpha2/alpha1 beside it for reproducing historical
+        # prerelease matches.
+        assert panel.ruleset.currentData() == BYTEFRAY_RULESET_V4_ID
+        assert _offered(panel.ruleset) == ALL_V4_IDENTITIES
     finally:
         panel.deleteLater()
 
@@ -167,7 +171,7 @@ def test_advanced_vm_selection_keeps_its_existing_ruleset_v1_behavior(tmp_path):
     ("ruleset_id", "expected_agents"),
     [
         (BYTEFRAY_RULESET_V2_ID, ["legacy"]),
-        (BYTEFRAY_RULESET_V4_ALPHA2_ID, ["proc"]),
+        (BYTEFRAY_RULESET_V4_ID, ["proc"]),
     ],
 )
 def test_simple_still_filters_agents_by_the_selected_ruleset(
@@ -191,10 +195,11 @@ def test_simple_still_filters_agents_by_the_selected_ruleset(
 
 
 @pytest.mark.gui
-def test_simple_offers_current_gameplay_only_and_not_the_historical_v4_alpha():
+def test_simple_offers_current_gameplay_only_and_not_the_historical_v4_alphas():
     """Simple's policy since v3.0.0-alpha2 is one current Ruleset per Agent
-    API generation. v4 alpha1 therefore leaves Simple once alpha2 exists --
-    it is not removed from the product, only from the surface whose whole
+    API generation. v4.0.0-rc1 Phase 2: the permanent stable identity now
+    occupies that slot, and neither v4 alpha is offered here -- they are
+    not removed from the product, only from the surface whose whole
     promise is the gameplay you get without thinking about it."""
 
     _make_app()
@@ -203,7 +208,8 @@ def test_simple_offers_current_gameplay_only_and_not_the_historical_v4_alpha():
     panel = SimplePanel(catalog=None)
     try:
         offered = _offered(panel.ruleset)
-        assert BYTEFRAY_RULESET_V4_ALPHA2_ID in offered
+        assert BYTEFRAY_RULESET_V4_ID in offered
+        assert BYTEFRAY_RULESET_V4_ALPHA2_ID not in offered
         assert BYTEFRAY_RULESET_V4_ALPHA1_ID not in offered
     finally:
         panel.deleteLater()
@@ -219,7 +225,7 @@ def test_simple_offers_current_gameplay_only_and_not_the_historical_v4_alpha():
     ("api_version", "expected_offered"),
     [
         (1, {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_ID}),
-        (2, BOTH_V4_ALPHAS),
+        (2, ALL_V4_IDENTITIES),
     ],
 )
 def test_development_offers_only_rulesets_the_selected_agent_can_run(
@@ -268,8 +274,8 @@ def test_development_reapplies_compatibility_when_the_selection_changes():
         assert panel.selected_ruleset_id() == BYTEFRAY_RULESET_V2_ID
 
         panel.selectAgent("proc")
-        assert panel.selected_ruleset_id() == BYTEFRAY_RULESET_V4_ALPHA2_ID
-        assert _offered(panel.rulesetCombo) == BOTH_V4_ALPHAS
+        assert panel.selected_ruleset_id() == BYTEFRAY_RULESET_V4_ID
+        assert _offered(panel.rulesetCombo) == ALL_V4_IDENTITIES
     finally:
         panel.deleteLater()
 
@@ -326,11 +332,12 @@ def _evaluation_dialog(tmp_path, default_candidate, with_metadata=True):
     ("candidate", "expected_offered"),
     [
         ("legacy", {BYTEFRAY_RULESET_V2_ID, BYTEFRAY_RULESET_ID}),
-        # v4.0.0-rc1 Phase 1: both v4 alphas now, since `agents evaluate`
-        # accepts alpha2 under the stable v4 seeded-placement methodology --
-        # see test_evaluation_defaults_to_stable_v4_for_api_v2_roster below
-        # for which one is selected by default.
-        ("proc", BOTH_V4_ALPHAS),
+        # v4.0.0-rc1 Phase 2: all three v4 identities now, since `agents
+        # evaluate` accepts alpha2/the stable identity under the stable v4
+        # seeded-placement methodology, and alpha1 under its own historical
+        # one -- see test_evaluation_defaults_to_stable_v4_for_api_v2_roster
+        # below for which one is selected by default.
+        ("proc", ALL_V4_IDENTITIES),
     ],
 )
 def test_evaluation_offers_only_rulesets_the_candidate_can_run(
@@ -348,16 +355,17 @@ def test_evaluation_offers_only_rulesets_the_candidate_can_run(
 
 @pytest.mark.gui
 def test_evaluation_defaults_to_stable_v4_for_api_v2_roster(tmp_path):
-    """An Agent API v2 candidate defaults to alpha2, the current stable v4
-    evaluation methodology, not alpha1 -- mirrors the engine's own
+    """An Agent API v2 candidate defaults to the permanent stable v4
+    identity, not either prerelease alpha -- mirrors the engine's own
     OMITTED_RULESET_CANDIDATES product-preference order (v4.0.0-rc1
-    Phase 1). Alpha1 remains selectable (see the BOTH_V4_ALPHAS offered-set
-    test above) for reproducing an earlier alpha1 evaluation."""
+    Phase 2). alpha2/alpha1 remain selectable (see the ALL_V4_IDENTITIES
+    offered-set test above) for reproducing an earlier prerelease
+    evaluation."""
 
     _make_app()
     dialog = _evaluation_dialog(tmp_path, "proc")
     try:
-        assert dialog.pairwise_ruleset_id() == BYTEFRAY_RULESET_V4_ALPHA2_ID
+        assert dialog.pairwise_ruleset_id() == BYTEFRAY_RULESET_V4_ID
     finally:
         dialog.deleteLater()
 
@@ -372,7 +380,7 @@ def test_evaluation_evaluates_compatibility_across_the_whole_roster(tmp_path):
     _make_app()
     dialog = _evaluation_dialog(tmp_path, "proc")
     try:
-        assert _offered(dialog.pairwiseRulesetCombo) == BOTH_V4_ALPHAS
+        assert _offered(dialog.pairwiseRulesetCombo) == ALL_V4_IDENTITIES
         for index in range(dialog.opponentsList.count()):
             item = dialog.opponentsList.item(index)
             if item.data(Qt.UserRole) == "legacy":

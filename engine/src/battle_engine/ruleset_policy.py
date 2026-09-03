@@ -37,6 +37,7 @@ from battle_engine.rules import (
     BYTEFRAY_RULESET_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
 )
 from battle_engine.scheduler import StateT, run_chunked_quota
 
@@ -410,6 +411,34 @@ RULESET_V4_ALPHA2 = RulesetPolicy(
 )
 
 
+# v4.0.0-rc1 Phase 2: the permanent stable identity (see
+# docs/research/v4/V4_RC1_PHASE2_STABLE_CONTRACT_PROMOTION.md and
+# BYTEFRAY_RULESET_V4_ID's own docstring in rules.py for the promotion
+# rationale). Every field below is deliberately copied verbatim from
+# RULESET_V4_ALPHA2 immediately above -- not re-derived, not
+# reimplemented -- so the two can never independently drift: this is one
+# semantic implementation (battle_engine.scheduler.run_chunked_quota,
+# battle_engine.python_runtime's seeded placement/round-robin process
+# selection, all gated on `core_placement`/`process_selection`/
+# `scheduler_*`, never on `ruleset_id` itself) exposed under two
+# compatibility identities, exactly the shape
+# ``RULESET_V2_ALPHA11``/``RULESET_V2`` already established for the
+# alpha11 -> permanent-v2 promotion. A release-blocking equivalence test
+# (test_v4_stable_ruleset_equivalence.py) asserts every field of this
+# policy equals RULESET_V4_ALPHA2's, field by field, so this comment's
+# claim is verified, not merely documented.
+RULESET_V4 = RulesetPolicy(
+    ruleset_id=BYTEFRAY_RULESET_V4_ID,
+    supported_runtime_kinds=frozenset({"python"}),
+    supported_python_api_versions=frozenset({2}),
+    scheduler_mode="chunked",
+    scheduler_chunk_size=2,
+    scheduler_rotate_start=True,
+    core_placement="seeded",
+    process_selection="round_robin",
+)
+
+
 # Which Ruleset identities execute on the Agent API v2 process runtime
 # (``battle_engine.process_runtime.ProcessMatchController``) rather than the
 # Agent API v1 ``PythonEntrantController``. A finite, explicit set for the
@@ -418,7 +447,7 @@ RULESET_V4_ALPHA2 = RulesetPolicy(
 # never means hunting down scattered ``== BYTEFRAY_RULESET_V4_ALPHA1_ID``
 # comparisons.
 PROCESS_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID}
+    {BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID, BYTEFRAY_RULESET_V4_ID}
 )
 
 
@@ -459,6 +488,7 @@ _RULESET_POLICIES: Mapping[str, RulesetPolicy] = {
     RULESET_V3_ALPHA1.ruleset_id: RULESET_V3_ALPHA1,
     RULESET_V4_ALPHA1.ruleset_id: RULESET_V4_ALPHA1,
     RULESET_V4_ALPHA2.ruleset_id: RULESET_V4_ALPHA2,
+    RULESET_V4.ruleset_id: RULESET_V4,
 }
 
 
@@ -555,23 +585,26 @@ class NoCompatibleRulesetError(ValueError):
 # experimental identity (``bytefray-rules-2-alpha1``/``-alpha11``/
 # ``bytefray-rules-3-alpha1``) that a user did not ask for by name. Order is
 # the product preference -- current Python gameplay first, then the
-# process-agent preview, then the historical compatibility identity that is
+# process-agent contract, then the historical compatibility identity that is
 # the only one executing VM/blob entrants.
 #
-# v4 alpha2 replaces v4 alpha1 in the process-agent preview slot rather than
-# being appended after it. Both v4 alphas accept exactly the same rosters
-# (Python-only, Agent API v2), so a candidate walk that reached alpha1 first
-# would make alpha2 unreachable, and one that listed alpha1 after alpha2
-# would list an entry no roster can ever select. The prerelease intent this
-# tuple encodes is "an omitted Ruleset gets the *newest intended* v4
-# development semantics" -- exactly what put alpha1 here when it was the
-# newest. alpha1 is not hidden by this: it stays fully registered in
+# v4.0.0-rc1 Phase 2: the permanent stable identity now occupies the
+# process-agent slot, replacing alpha2 there exactly as alpha2 replaced
+# alpha1 before it (see the superseded comment this one replaces, preserved
+# in git history). Every v4 identity accepts exactly the same rosters
+# (Python-only, Agent API v2), so a candidate walk that reached an older one
+# first would make the newer one unreachable, and one that listed an older
+# identity after a newer one would list an entry no roster could ever
+# select automatically. The product intent this tuple has always encoded is
+# "an omitted Ruleset gets the *current* v4 gameplay contract" -- prerelease
+# during alpha1/alpha2, permanent now that a stable identity exists. Neither
+# alpha1 nor alpha2 is hidden by this: both stay fully registered in
 # ``_RULESET_POLICIES``, explicitly selectable by name from every CLI and
-# Designer surface, and is still what every persisted alpha1 artifact
-# resolves to -- see docs/COMPATIBILITY.md's v4 alpha section.
+# Designer surface, and are still what every persisted alpha1/alpha2
+# artifact resolves to -- see docs/COMPATIBILITY.md's v4 identity section.
 OMITTED_RULESET_CANDIDATES: tuple[str, ...] = (
     BYTEFRAY_RULESET_V2_ID,
-    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
     BYTEFRAY_RULESET_ID,
 )
 
@@ -733,6 +766,7 @@ __all__ = [
     "BYTEFRAY_RULESET_V3_ALPHA1_ID",
     "BYTEFRAY_RULESET_V4_ALPHA1_ID",
     "BYTEFRAY_RULESET_V4_ALPHA2_ID",
+    "BYTEFRAY_RULESET_V4_ID",
     "OMITTED_RULESET_CANDIDATES",
     "PROCESS_RULESET_IDS",
     "RULESET_V1",
@@ -740,6 +774,7 @@ __all__ = [
     "RULESET_V2_ALPHA1",
     "RULESET_V2_ALPHA11",
     "RULESET_V3_ALPHA1",
+    "RULESET_V4",
     "RULESET_V4_ALPHA1",
     "RULESET_V4_ALPHA2",
     "NoCompatibleRulesetError",

@@ -17,6 +17,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
     resolve_omitted_ruleset_for_agents,
 )
 from battle_engine.starters import describe_bootstrap_errors, ensure_starter_agents
@@ -61,18 +62,24 @@ def _parser() -> argparse.ArgumentParser:
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
             BYTEFRAY_RULESET_V4_ALPHA2_ID,
+            BYTEFRAY_RULESET_V4_ID,
         ],
         default=None,
         help=(
             "gameplay Ruleset identity. If omitted, Agent API v1 Python-only "
             f"rosters use {BYTEFRAY_RULESET_V2_ID}, Agent API v2 Python-only "
-            f"rosters use {BYTEFRAY_RULESET_V4_ALPHA2_ID}, and VM/blob-only "
+            f"rosters use {BYTEFRAY_RULESET_V4_ID}, and VM/blob-only "
             f"rosters use {BYTEFRAY_RULESET_ID}; a mixed Python/VM roster "
             f"without an explicit choice uses {BYTEFRAY_RULESET_ID}. "
-            f"{BYTEFRAY_RULESET_V2_ID} and both v4 alphas support Python "
-            "entrants only; v4 requires Agent API v2. v4 alpha2 is the current v4 prerelease gameplay and is what an omitted Ruleset selects for an Agent API v2 roster; v4 alpha1 remains selectable by name to reproduce historical alpha1 matches. Under v4 "
-            "alpha2 each scheduled pairing is placed from its own derived "
-            "match seed rather than from the roster-wide seat spacing. "
+            f"{BYTEFRAY_RULESET_V2_ID}, {BYTEFRAY_RULESET_V4_ID}, and both v4 "
+            "alphas support Python entrants only; every v4 identity requires "
+            f"Agent API v2. {BYTEFRAY_RULESET_V4_ID} is the current, "
+            "permanent v4 gameplay contract and is what an omitted Ruleset "
+            "selects for an Agent API v2 roster; v4 alpha1/alpha2 remain "
+            f"selectable by name to reproduce historical prerelease matches. "
+            f"Under {BYTEFRAY_RULESET_V4_ID} (as under both v4 alphas) each "
+            "scheduled pairing is placed from its own derived match seed "
+            "rather than from the roster-wide seat spacing. "
             "Affects gameplay semantics and is recorded in each match's "
             "result/replay artifacts."
         ),

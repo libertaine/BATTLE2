@@ -60,6 +60,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
     PROCESS_RULESET_IDS,
     RulesetPolicy,
     resolve_ruleset_policy,
@@ -377,6 +378,13 @@ _CORE_PLACEMENT_GUARDED_RULESET_IDS: frozenset[str] = frozenset(
         # that entirely, and this remains the one check every caller passes
         # -- including direct ``MatchRequest`` construction.
         BYTEFRAY_RULESET_V4_ALPHA2_ID,
+        # v4.0.0-rc1 Phase 2: the permanent stable identity inherits this
+        # guard for the identical reason alpha2 does -- it shares alpha2's
+        # exact seeded-placement gameplay, and a behavioral divergence here
+        # (silently allowing overlapping cores under the stable identity but
+        # not under alpha2) would be exactly the kind of gameplay difference
+        # the promotion must not introduce.
+        BYTEFRAY_RULESET_V4_ID,
     }
 )
 

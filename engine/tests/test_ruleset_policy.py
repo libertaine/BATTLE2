@@ -19,6 +19,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
     OMITTED_RULESET_CANDIDATES,
     RULESET_V1,
     RULESET_V2,
@@ -247,12 +248,13 @@ _VM = {"agent_id": "runner", "kind": "builtin", "api_version": None}
         ([_python(1, "a"), _python(1, "b")], BYTEFRAY_RULESET_V2_ID),
         # Agent API v2 reaches the process-agent Ruleset without the author
         # ever naming it -- the H1 defect this resolution exists to fix. The
-        # identity it reaches is the *newest intended* v4 development
-        # Ruleset, which is alpha2 from v4.0.0-alpha2 onward; alpha1 stays
-        # explicitly selectable (asserted directly below) but is no longer
-        # what an omitted Ruleset lands on.
-        ([_python(2)], BYTEFRAY_RULESET_V4_ALPHA2_ID),
-        ([_python(2, "a"), _python(2, "b")], BYTEFRAY_RULESET_V4_ALPHA2_ID),
+        # identity it reaches is the *current* v4 gameplay contract: the
+        # permanent stable identity as of v4.0.0-rc1 Phase 2 (alpha2 from
+        # v4.0.0-alpha2 through Phase 1); both alphas stay explicitly
+        # selectable (asserted directly below) but are no longer what an
+        # omitted Ruleset lands on.
+        ([_python(2)], BYTEFRAY_RULESET_V4_ID),
+        ([_python(2, "a"), _python(2, "b")], BYTEFRAY_RULESET_V4_ID),
         # VM/blob composition keeps resolving to the only Ruleset that runs it.
         ([_VM], BYTEFRAY_RULESET_ID),
         ([_VM, _VM], BYTEFRAY_RULESET_ID),
@@ -326,7 +328,7 @@ def test_automatic_resolution_never_selects_an_experimental_identity() -> None:
 
     assert OMITTED_RULESET_CANDIDATES == (
         BYTEFRAY_RULESET_V2_ID,
-        BYTEFRAY_RULESET_V4_ALPHA2_ID,
+        BYTEFRAY_RULESET_V4_ID,
         BYTEFRAY_RULESET_ID,
     )
     assert all("alpha" not in candidate for candidate in OMITTED_RULESET_CANDIDATES[:1])
@@ -343,22 +345,29 @@ def test_automatic_resolution_never_selects_an_experimental_identity() -> None:
     )
 
 
-def test_v4_alpha1_remains_explicitly_selectable_after_alpha2_takes_the_default() -> None:
-    """Alpha2 becoming the automatic v4 choice must not retire alpha1.
+def test_v4_alphas_remain_explicitly_selectable_after_stable_v4_takes_the_default() -> None:
+    """The permanent stable identity becoming the automatic v4 choice
+    (v4.0.0-rc1 Phase 2) must not retire either alpha.
 
-    Automatic resolution moving to alpha2 is a *default* change, not a
-    compatibility removal: every historical alpha1 match must stay
-    reproducible by naming alpha1 explicitly, and alpha1's policy must keep
-    executing with its own frozen semantics rather than resolving to alpha2.
+    Automatic resolution moving to the stable identity is a *default*
+    change, not a compatibility removal: every historical alpha1/alpha2
+    match must stay reproducible by naming the alpha explicitly, and each
+    alpha's policy must keep executing with its own frozen semantics rather
+    than resolving to the stable identity or to each other.
     """
 
     assert (
         resolve_omitted_ruleset_for_agents(BYTEFRAY_RULESET_V4_ALPHA1_ID, [_python(2)])
         == BYTEFRAY_RULESET_V4_ALPHA1_ID
     )
+    assert (
+        resolve_omitted_ruleset_for_agents(BYTEFRAY_RULESET_V4_ALPHA2_ID, [_python(2)])
+        == BYTEFRAY_RULESET_V4_ALPHA2_ID
+    )
     alpha1 = resolve_ruleset_policy(BYTEFRAY_RULESET_V4_ALPHA1_ID)
     alpha2 = resolve_ruleset_policy(BYTEFRAY_RULESET_V4_ALPHA2_ID)
-    assert alpha1.ruleset_id != alpha2.ruleset_id
+    stable = resolve_ruleset_policy(BYTEFRAY_RULESET_V4_ID)
+    assert alpha1.ruleset_id != alpha2.ruleset_id != stable.ruleset_id != alpha1.ruleset_id
     assert (alpha1.core_placement, alpha1.process_selection) == (
         "seat_spread",
         "priority",
@@ -367,8 +376,17 @@ def test_v4_alpha1_remains_explicitly_selectable_after_alpha2_takes_the_default(
         "seeded",
         "round_robin",
     )
-    # Everything else about the two policies is deliberately identical.
+    # Everything else about the two alpha policies is deliberately identical.
     assert alpha1.supported_runtime_kinds == alpha2.supported_runtime_kinds
+    # The stable identity is the promotion of alpha2, field for field -- see
+    # test_v4_stable_ruleset_equivalence.py for the release-blocking
+    # equivalence assertion this only previews.
+    assert (stable.core_placement, stable.process_selection) == (
+        "seeded",
+        "round_robin",
+    )
+    assert stable.supported_runtime_kinds == alpha2.supported_runtime_kinds
+    assert stable.supported_python_api_versions == alpha2.supported_python_api_versions
     assert (
         alpha1.supported_python_api_versions == alpha2.supported_python_api_versions
     )

@@ -31,6 +31,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
     NoCompatibleRulesetError,
     resolve_omitted_ruleset_for_agents,
 )
@@ -230,16 +231,21 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
             BYTEFRAY_RULESET_V4_ALPHA2_ID,
+            BYTEFRAY_RULESET_V4_ID,
         ],
         default=None,
         help=(
             "gameplay Ruleset identity. If omitted, Agent API v1 Python-only "
             f"matches use {BYTEFRAY_RULESET_V2_ID}, Agent API v2 Python-only "
-            f"matches use {BYTEFRAY_RULESET_V4_ALPHA2_ID}, and VM/blob matches "
+            f"matches use {BYTEFRAY_RULESET_V4_ID}, and VM/blob matches "
             f"use {BYTEFRAY_RULESET_ID}; a mixed Python/VM match without an "
             f"explicit choice uses {BYTEFRAY_RULESET_ID}. "
-            f"{BYTEFRAY_RULESET_V2_ID} and both v4 alphas support Python "
-            "entrants only; v4 requires Agent API v2. v4 alpha2 is the current v4 prerelease gameplay and is what an omitted Ruleset selects for an Agent API v2 roster; v4 alpha1 remains selectable by name to reproduce historical alpha1 matches. Affects "
+            f"{BYTEFRAY_RULESET_V2_ID}, {BYTEFRAY_RULESET_V4_ID}, and both v4 "
+            "alphas support Python entrants only; every v4 identity requires "
+            f"Agent API v2. {BYTEFRAY_RULESET_V4_ID} is the current, permanent "
+            "v4 gameplay contract and is what an omitted Ruleset selects for "
+            "an Agent API v2 roster; v4 alpha1/alpha2 remain selectable by "
+            "name to reproduce historical prerelease matches. Affects "
             "gameplay semantics and is recorded in the match's result/replay "
             "artifacts."
         ),

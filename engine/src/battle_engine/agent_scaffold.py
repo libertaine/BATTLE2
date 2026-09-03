@@ -191,7 +191,9 @@ def create_agent(
     defaults to :data:`DEFAULT_API_VERSION` (v1), so every caller that omits
     it -- including Agent Designer's New Agent dialog -- also gets
     byte-identical output to before. Pass ``2`` for a process agent that
-    runs under ``bytefray-rules-4-alpha1``.
+    runs under the stable ``bytefray-rules-4`` (v4.0.0-rc1 Phase 2) by
+    default, or explicitly under ``bytefray-rules-4-alpha1``/``-alpha2`` to
+    reproduce a historical prerelease match.
     """
     validate_agent_id(agent_id)
     validate_api_version(api_version)
@@ -256,7 +258,7 @@ def _parser() -> argparse.ArgumentParser:
             f"Agent API generation to scaffold (default: {DEFAULT_API_VERSION}). "
             "1 is the historical single-actor API and runs under "
             "bytefray-rules-2; 2 is the process API (reset, declare_processes, "
-            "act) and runs under bytefray-rules-4-alpha1. The Ruleset is "
+            "act) and runs under the stable bytefray-rules-4. The Ruleset is "
             "selected automatically from the created agent's manifest."
         ),
     )

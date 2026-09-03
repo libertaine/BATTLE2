@@ -147,12 +147,29 @@ def _placement_draw(
     its standard: identical bytes in, identical bytes out, on every platform
     and every supported Python.
 
-    The payload is domain-separated by the Ruleset identity so no other
-    seed-derived quantity in the engine (``derive_agent_seed``, the VM's own
-    seeding) can ever collide with it, and includes every input that changes
-    the layout -- arena size, seat count, and the effective separation -- so
-    two matches differing in any of them draw independent streams rather
-    than sharing a prefix.
+    The payload is domain-separated by a fixed ``"bytefray-rules-4-alpha2:
+    placement:"`` namespace label so no other seed-derived quantity in the
+    engine (``derive_agent_seed``, the VM's own seeding) can ever collide
+    with it, and includes every input that changes the layout -- arena
+    size, seat count, and the effective separation -- so two matches
+    differing in any of them draw independent streams rather than sharing a
+    prefix.
+
+    v4.0.0-rc1 Phase 2: this namespace label is a fixed constant, not the
+    *currently executing* Ruleset's own id -- it was never parameterized by
+    a ``ruleset_id`` argument, and deliberately keeps its original alpha2
+    spelling forever, unrenamed, now that the permanent stable identity
+    (``bytefray-rules-4``) also selects ``core_placement="seeded"`` and
+    reaches this exact function. Renaming it to track whichever Ruleset id
+    triggered the call would silently change *every* seeded placement draw
+    for identical ``(seed, arena_size, entrant_count)`` inputs the moment a
+    caller's Ruleset id differed -- exactly the "resolved starting
+    positions" identity the stable-v4 promotion must keep byte-identical to
+    alpha2 (docs/research/v4/V4_RC1_PHASE2_STABLE_CONTRACT_PROMOTION.md
+    Sec D). Its only job is domain separation from the engine's other
+    seed-derived streams, and it already accomplishes that with a fixed
+    string. See ``resolve_direct_match_starts``'s own docstring for the
+    full "which Rulesets reach this function" list.
 
     ``% arena_size`` over a 64-bit draw carries a modulo bias below
     ``arena_size / 2**64``; for any arena this engine supports that is on the
@@ -285,14 +302,20 @@ def resolve_direct_match_starts(
     failure for the caller (``NativeMatchService.run``'s overlap guard) to
     reject, not something this function silently repairs.
 
-    The v4 alpha2 identity (``bytefray-rules-4-alpha2``): every omitted start
-    resolves instead to :func:`seeded_seat_starts`'s seed-derived,
-    minimum-separated layout, which is alpha2's defining gameplay change.
-    ``seed`` is therefore **required** for that Ruleset and raises
-    ``ValueError`` if omitted -- silently substituting a default seed would
-    make every such match share one layout, which is precisely the
-    predictability alpha2 exists to remove. It is ignored for every other
-    Ruleset, so no existing caller's behavior changes by not passing it.
+    The v4 alpha2 identity (``bytefray-rules-4-alpha2``) and, since
+    v4.0.0-rc1 Phase 2, its permanent stable promotion (``bytefray-rules-4``):
+    every omitted start resolves instead to :func:`seeded_seat_starts`'s
+    seed-derived, minimum-separated layout, which is alpha2's defining
+    gameplay change, carried into the stable identity unmodified. ``seed``
+    is therefore **required** for either Ruleset and raises ``ValueError``
+    if omitted -- silently substituting a default seed would make every
+    such match share one layout, which is precisely the predictability
+    alpha2 exists to remove. It is ignored for every other Ruleset, so no
+    existing caller's behavior changes by not passing it. Both identities
+    resolve to byte-identical addresses for identical ``(seed, arena_size,
+    entrant_count)`` inputs -- :func:`_placement_draw`'s domain-separation
+    payload is a fixed constant, never the specific Ruleset id, precisely
+    so this equivalence holds without a second placement implementation.
 
     Which Ruleset gets which layout is read from the Ruleset's own
     :attr:`~battle_engine.ruleset_policy.RulesetPolicy.core_placement`

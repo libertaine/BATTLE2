@@ -164,8 +164,9 @@ def test_cli_omitted_ruleset_resolves_current_v4_for_a_scaffolded_api_v2_agent(
     """H1 end-to-end: `agents create --api-version 2` then `agents test`
     with no --ruleset must run a real v4 process match, with no manifest
     hand-editing and without the author naming an internal Ruleset identity
-    anywhere. The identity it lands on is the current v4 prerelease
-    (alpha2 from v4.0.0-alpha2 onward), not whichever v4 alpha happened to
+    anywhere. The identity it lands on is the current v4 gameplay contract
+    (the permanent stable identity as of v4.0.0-rc1 Phase 2; alpha2 from
+    v4.0.0-alpha2 through Phase 1), not whichever v4 identity happened to
     be newest when this test was written."""
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     scaffold_create_agent(
@@ -176,7 +177,8 @@ def test_cli_omitted_ruleset_resolves_current_v4_for_a_scaffolded_api_v2_agent(
     captured = capsys.readouterr()
 
     assert exit_code == 0, captured.err
-    assert "ruleset: bytefray-rules-4-alpha2" in captured.out
+    assert "ruleset: bytefray-rules-4" in captured.out
+    assert "ruleset: bytefray-rules-4-alpha" not in captured.out
     assert "Traceback" not in captured.err
 
 

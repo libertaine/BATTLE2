@@ -45,6 +45,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
 )
 
 from app.services.agent_catalog import AgentRow
@@ -123,13 +124,14 @@ def match_artifact_paths(replay_path: Path) -> tuple[Path, Path]:
 
 
 # Ruleset identities for which a normal Designer match automatically
-# records the Alpha3 spectator trace alongside its replay -- v4 alpha1/
-# alpha2 today. v1 and v2 deliberately keep their existing artifact set
-# unchanged: a normal v4 Designer match should automatically be
+# records the Alpha3 spectator trace alongside its replay -- every v4
+# identity (alpha1, alpha2, and the permanent stable identity as of
+# v4.0.0-rc1 Phase 2). v1 and v2 deliberately keep their existing artifact
+# set unchanged: a normal v4 Designer match should automatically be
 # spectator-capable, without a new opt-in control (Alpha3 follow-up
 # Phase 2).
 DESIGNER_AUTO_TRACE_RULESET_IDS: frozenset[str] = frozenset(
-    {BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID}
+    {BYTEFRAY_RULESET_V4_ALPHA1_ID, BYTEFRAY_RULESET_V4_ALPHA2_ID, BYTEFRAY_RULESET_V4_ID}
 )
 
 

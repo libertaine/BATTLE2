@@ -142,9 +142,10 @@ def test_run_omitted_ruleset_resolves_current_v4_for_api_v2_agents(tmp_path, mon
     error the user had no obvious way to fix but to learn an internal
     Ruleset identity and pass it by hand.
 
-    The identity it reaches is the *current* v4 prerelease, which is alpha2
-    from v4.0.0-alpha2 onward -- see the explicit-alpha1 test below for the
-    other half of that contract."""
+    The identity it reaches is the *current* v4 gameplay contract: the
+    permanent stable identity as of v4.0.0-rc1 Phase 2 (alpha2 from
+    v4.0.0-alpha2 through Phase 1) -- see the explicit-alpha1 test below
+    for the other half of that contract."""
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     _scaffold(tmp_path, "v2_alpha", api_version=2)
     _scaffold(tmp_path, "v2_beta", api_version=2)
@@ -158,9 +159,9 @@ def test_run_omitted_ruleset_resolves_current_v4_for_api_v2_agents(tmp_path, mon
     )
     assert result.returncode == 0, result.stderr
     canonical = json.loads((replay.parent / "result.json").read_text())
-    assert canonical["ruleset_id"] == "bytefray-rules-4-alpha2"
+    assert canonical["ruleset_id"] == "bytefray-rules-4"
     header = json.loads(replay.read_text().splitlines()[0])
-    assert header["ruleset_id"] == "bytefray-rules-4-alpha2"
+    assert header["ruleset_id"] == "bytefray-rules-4"
 
 
 def test_run_explicit_v4_alpha1_remains_reproducible(tmp_path, monkeypatch):

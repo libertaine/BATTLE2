@@ -1,4 +1,4 @@
-"""Stable v4 evaluation methodology (v4.0.0-rc1 Phase 1).
+"""Stable v4 evaluation methodology (v4.0.0-rc1 Phase 1, updated for Phase 2).
 
 Covers docs/research/v4/V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md's accepted
 Sec H specification -- schema 7, arena pinned to 512, 8 deterministic
@@ -47,6 +47,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
 )
 
 API_V2_SOURCE = """
@@ -508,7 +509,10 @@ def test_omitted_ruleset_with_api_v2_roster_resolves_to_stable_v4(tmp_path: Path
     )
     assert exit_code == 0
     data = json.loads((tmp_path / "out" / "evaluation.json").read_text(encoding="utf-8"))
-    assert data["rules_compatibility_id"] == BYTEFRAY_RULESET_V4_ALPHA2_ID
+    # v4.0.0-rc1 Phase 2: the omitted-Ruleset default for an Agent API v2
+    # roster is now the permanent stable identity, not alpha2 -- see
+    # ruleset_policy.OMITTED_RULESET_CANDIDATES.
+    assert data["rules_compatibility_id"] == BYTEFRAY_RULESET_V4_ID
     assert data["arena_alignment_mode"] == "ruleset_v4_seeded_placements"
     assert data["schema_version"] == SCHEMA_VERSION_V4 == 7
     assert data["lifecycle_state"] == LIFECYCLE_STATE_FINISHED
@@ -517,9 +521,45 @@ def test_omitted_ruleset_with_api_v2_roster_resolves_to_stable_v4(tmp_path: Path
     assert not any(cell.get("error_code") == "ruleset_agent_unsupported" for cell in data["cells"])
 
 
-def test_explicit_alpha2_ruleset_uses_the_same_methodology_as_the_omitted_default(
+def test_explicit_stable_v4_ruleset_matches_the_omitted_default(tmp_path: Path, monkeypatch):
+    """Explicit --ruleset bytefray-rules-4 must resolve to exactly the same
+    methodology the omitted default now reaches."""
+
+    monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
+    _write_api_v2_agent(tmp_path, "candidate")
+    _write_api_v2_agent(tmp_path, "opponent")
+    exit_code = evaluate_main(
+        [
+            "candidate",
+            "--opponents",
+            "opponent",
+            "--ruleset",
+            BYTEFRAY_RULESET_V4_ID,
+            "--seeds",
+            "1",
+            "--ticks",
+            "5",
+            "--output",
+            str(tmp_path / "out"),
+            "--quiet",
+        ]
+    )
+    assert exit_code == 0
+    data = json.loads((tmp_path / "out" / "evaluation.json").read_text(encoding="utf-8"))
+    assert data["rules_compatibility_id"] == BYTEFRAY_RULESET_V4_ID
+    assert data["arena_alignment_mode"] == "ruleset_v4_seeded_placements"
+    assert data["schema_version"] == SCHEMA_VERSION_V4 == 7
+
+
+def test_explicit_alpha2_ruleset_uses_the_stable_v4_methodology_under_its_own_identity(
     tmp_path: Path, monkeypatch
 ):
+    """alpha2 keeps the schema-7 v4-seeded methodology it was qualified
+    under in Phase 1 -- Phase 2's promotion changes which Ruleset an
+    *omitted* selection reaches, never alpha2's own explicit behavior, and
+    an alpha2 artifact stays honestly self-attributed as alpha2, never
+    silently rewritten to the stable identity."""
+
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path))
     _write_api_v2_agent(tmp_path, "candidate")
     _write_api_v2_agent(tmp_path, "opponent")
@@ -543,6 +583,7 @@ def test_explicit_alpha2_ruleset_uses_the_same_methodology_as_the_omitted_defaul
     data = json.loads((tmp_path / "out" / "evaluation.json").read_text(encoding="utf-8"))
     assert data["rules_compatibility_id"] == BYTEFRAY_RULESET_V4_ALPHA2_ID
     assert data["arena_alignment_mode"] == "ruleset_v4_seeded_placements"
+    assert data["schema_version"] == SCHEMA_VERSION_V4 == 7
 
 
 def test_explicit_alpha1_ruleset_keeps_its_historical_fixed_placement_methodology(
@@ -696,8 +737,12 @@ def test_read_evaluation_accepts_schema_7_and_rejects_unknown_versions(tmp_path:
 # ---------------------------------------------------------------------------
 
 
-def test_is_ruleset_v4_methodology_is_exactly_alpha2():
+def test_is_ruleset_v4_methodology_is_exactly_alpha2_and_stable_v4():
+    """v4.0.0-rc1 Phase 2: the permanent stable identity joins alpha2 in
+    selecting the v4-seeded methodology; alpha1 still does not."""
+
     assert is_ruleset_v4_methodology(BYTEFRAY_RULESET_V4_ALPHA2_ID) is True
+    assert is_ruleset_v4_methodology(BYTEFRAY_RULESET_V4_ID) is True
     assert is_ruleset_v4_methodology(BYTEFRAY_RULESET_V4_ALPHA1_ID) is False
     assert is_ruleset_v4_methodology(BYTEFRAY_RULESET_V2_ID) is False
 

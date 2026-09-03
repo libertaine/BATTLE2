@@ -70,6 +70,30 @@ BYTEFRAY_RULESET_V4_ALPHA1_ID = "bytefray-rules-4-alpha1"
 # compatibility promise (docs/RULES.md's bump policy).
 BYTEFRAY_RULESET_V4_ALPHA2_ID = "bytefray-rules-4-alpha2"
 
+# v4.0.0-rc1 Phase 2's permanent stable identity (see
+# docs/research/v4/V4_RC1_PHASE2_STABLE_CONTRACT_PROMOTION.md). Promotes
+# alpha2's evidence-backed gameplay semantics -- seed-derived entrant core
+# placement, round-robin intra-entrant process selection, and everything
+# alpha2 left unchanged from alpha1 (Q=8, core size 8, free/uncosted reach,
+# K=2 rotating scheduling, existing MOVE/READ/WRITE/observation/disruption/
+# quota/scoring/termination semantics) -- into Bytefray 4.0's durable
+# compatibility contract, on the pre-RC research finding that no further
+# gameplay alpha is warranted (docs/research/v4/
+# V4_PRE_RC_GAMEPLAY_EVALUATION_RESEARCH.md).
+#
+# A *separate* identity, never a mutation or alias of
+# ``bytefray-rules-4-alpha2``: alpha2 stays executable with byte-identical
+# historical semantics and its own persisted artifacts remain honestly
+# alpha2-attributed forever, following the exact precedent
+# ``bytefray-rules-2-alpha11`` -> ``bytefray-rules-2`` already set (see that
+# promotion's comment above and ``docs/V2_0_ALPHA11_RULESET_V2_CANDIDATE_
+# RESOLUTION.md`` Sec 25-26) -- promoting a prerelease identity's semantics
+# has never meant reusing its identity string in this project. The only
+# *intended* difference between ``bytefray-rules-4-alpha2`` and
+# ``bytefray-rules-4`` is compatibility identity; any gameplay-observable
+# difference is a defect, not a feature of the promotion.
+BYTEFRAY_RULESET_V4_ID = "bytefray-rules-4"
+
 
 # v0.10 Phase 4: a finite, explicit historical-alias table -- deliberately
 # not a generic "normalize any evaluation-rules-N-shaped string" function.
@@ -134,6 +158,7 @@ __all__ = [
     "BYTEFRAY_RULESET_ID",
     "BYTEFRAY_RULESET_V4_ALPHA1_ID",
     "BYTEFRAY_RULESET_V4_ALPHA2_ID",
+    "BYTEFRAY_RULESET_V4_ID",
     "RulesetConfidence",
     "RulesetProvenance",
     "normalize_ruleset_id",

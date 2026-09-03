@@ -96,6 +96,7 @@ from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V3_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
     BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
     PROCESS_RULESET_IDS,
     NoCompatibleRulesetError,
     resolve_omitted_ruleset_for_agents,
@@ -640,16 +641,27 @@ def is_ruleset_v2_methodology(rules_compatibility_id: str) -> bool:
 
 
 #: Which resolved rules-compatibility ids select the stable v4 seeded-
-#: placement evaluation methodology (research report Sec H). Finite and
-#: explicit, mirroring `_V2_METHODOLOGY_RULESET_IDS` exactly. Deliberately
-#: disjoint from that set -- a Ruleset id selects at most one evaluation
+#: placement evaluation methodology (research report Sec H; promoted to the
+#: permanent identity in v4.0.0-rc1 Phase 2, docs/research/v4/
+#: V4_RC1_PHASE2_STABLE_CONTRACT_PROMOTION.md). Finite and explicit,
+#: mirroring `_V2_METHODOLOGY_RULESET_IDS` exactly. Deliberately disjoint
+#: from that set -- a Ruleset id selects at most one evaluation
 #: methodology, never both -- and deliberately excludes
 #: `BYTEFRAY_RULESET_V4_ALPHA1_ID`: alpha1 keeps its existing, historical
 #: v2-methodology evaluation behavior (fixed standard placements) exactly as
-#: it has always had it; only alpha2 -- whose defining gameplay change *is*
-#: seed-derived placement -- gets the new methodology that actually lets it
-#: place.
-_V4_METHODOLOGY_RULESET_IDS: frozenset[str] = frozenset({BYTEFRAY_RULESET_V4_ALPHA2_ID})
+#: it has always had it; only the identities whose defining gameplay change
+#: *is* seed-derived placement -- alpha2, and now its permanent promotion
+#: `BYTEFRAY_RULESET_V4_ID` -- get the methodology that actually lets them
+#: place. Phase 2 does not remove alpha2 from this set: an explicit
+#: `--ruleset bytefray-rules-4-alpha2` evaluation remains a fully supported,
+#: honestly-attributed historical-prerelease-methodology artifact (schema 7,
+#: `rules_compatibility_id: "bytefray-rules-4-alpha2"`) -- only the
+#: *omitted*-Ruleset default for an Agent API v2 roster changes, and that
+#: change lives entirely in `ruleset_policy.OMITTED_RULESET_CANDIDATES`, not
+#: here.
+_V4_METHODOLOGY_RULESET_IDS: frozenset[str] = frozenset(
+    {BYTEFRAY_RULESET_V4_ALPHA2_ID, BYTEFRAY_RULESET_V4_ID}
+)
 
 
 def is_ruleset_v4_methodology(rules_compatibility_id: str) -> bool:
@@ -706,7 +718,8 @@ def resolve_v4_seed_geometry(
     A thin, single-call wrapper around `placement.resolve_direct_match_starts`
     -- bit-for-bit the same seam `bytefray run`/`agent_test` use, called with
     both starts omitted so the Ruleset's own seeded placement (`placement.
-    seeded_seat_starts` for `bytefray-rules-4-alpha2`) resolves them --
+    seeded_seat_starts`, shared identically by `bytefray-rules-4-alpha2` and
+    its stable promotion `bytefray-rules-4`) resolves them --
     rather than a second, independently-maintained placement formula. Both
     `build_matrix` and `EvaluationService._evaluation_id` call this one
     function so the persisted schedule and the identity hash can never drift
@@ -3361,12 +3374,13 @@ class EvaluationService:
             BYTEFRAY_RULESET_V3_ALPHA1_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
             BYTEFRAY_RULESET_V4_ALPHA2_ID,
+            BYTEFRAY_RULESET_V4_ID,
         ):
             raise EvaluationConfigurationError(
                 f"Unsupported evaluation --ruleset {request.ruleset_id!r}; expected "
                 f"{BYTEFRAY_RULESET_ID!r}, {BYTEFRAY_RULESET_V2_ID!r}, "
-                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}, {BYTEFRAY_RULESET_V4_ALPHA1_ID!r}, or "
-                f"{BYTEFRAY_RULESET_V4_ALPHA2_ID!r}."
+                f"{BYTEFRAY_RULESET_V3_ALPHA1_ID!r}, {BYTEFRAY_RULESET_V4_ALPHA1_ID!r}, "
+                f"{BYTEFRAY_RULESET_V4_ALPHA2_ID!r}, or {BYTEFRAY_RULESET_V4_ID!r}."
             )
 
         # v4.0.0-rc1 Phase 1 (research report Sec H.1 item 3/Sec 6.2 of the
@@ -4352,6 +4366,7 @@ def _parser() -> argparse.ArgumentParser:
             BYTEFRAY_RULESET_V2_ID,
             BYTEFRAY_RULESET_V4_ALPHA1_ID,
             BYTEFRAY_RULESET_V4_ALPHA2_ID,
+            BYTEFRAY_RULESET_V4_ID,
         ],
         default=None,
         help=(
@@ -4359,18 +4374,21 @@ def _parser() -> argparse.ArgumentParser:
             "resolves automatically from the candidate/baseline/opponent roster's "
             f"declared Agent API version: an Agent API v1 roster resolves to "
             f"{BYTEFRAY_RULESET_V2_ID}; an Agent API v2 roster resolves to "
-            f"{BYTEFRAY_RULESET_V4_ALPHA2_ID} (the stable v4 evaluation methodology). "
+            f"{BYTEFRAY_RULESET_V4_ID} (the stable v4 evaluation methodology). "
             f"{BYTEFRAY_RULESET_V2_ID} runs the balanced Ruleset-v2 1v1 methodology: "
             "standard placement set, standard seed set default, and capture/core "
             f"evidence. {BYTEFRAY_RULESET_ID} keeps the historical v1 evaluation "
-            f"methodology. {BYTEFRAY_RULESET_V4_ALPHA2_ID} runs Agent API v2 process "
+            f"methodology. {BYTEFRAY_RULESET_V4_ID} runs Agent API v2 process "
             "entrants through the same production match service under the stable v4 "
             "seeded-placement methodology: arena pinned to "
             f"{STANDARD_V4_ARENA_SIZE}, {len(STANDARD_V4_SEEDS)} deterministic "
             "placement samples by default, both orientations paired over the same "
-            "seat-bound geometry. Ruleset v4 alpha1 keeps its historical v2-style "
+            f"seat-bound geometry. {BYTEFRAY_RULESET_V4_ALPHA2_ID} runs the identical "
+            "stable-v4 evaluation methodology under its own historical-prerelease "
+            f"identity. {BYTEFRAY_RULESET_V4_ALPHA1_ID} keeps its historical v2-style "
             "fixed-placement evaluation methodology unchanged. See "
-            "docs/research/v4/V4_RC1_PHASE1_EVALUATION_METHODOLOGY.md and "
+            "docs/research/v4/V4_RC1_PHASE2_STABLE_CONTRACT_PROMOTION.md, "
+            "docs/research/v4/V4_RC1_PHASE1_EVALUATION_METHODOLOGY.md, and "
             "docs/V2_0_BETA2_PHASE1_EVALUATION_METHODOLOGY.md."
         ),
     )
