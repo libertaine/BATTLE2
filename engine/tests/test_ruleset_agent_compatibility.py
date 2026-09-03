@@ -16,6 +16,8 @@ from battle_engine.rules import BYTEFRAY_RULESET_ID
 from battle_engine.ruleset_policy import (
     BYTEFRAY_RULESET_V2_ID,
     BYTEFRAY_RULESET_V4_ALPHA1_ID,
+    BYTEFRAY_RULESET_V4_ALPHA2_ID,
+    BYTEFRAY_RULESET_V4_ID,
     agent_supported_by_ruleset,
 )
 
@@ -35,6 +37,18 @@ from battle_engine.ruleset_policy import (
         ({"kind": "python", "api_version": 2}, BYTEFRAY_RULESET_V4_ALPHA1_ID, True),
         ({"kind": "python"}, BYTEFRAY_RULESET_V2_ID, False),
         ({"kind": "python", "api_version": True}, BYTEFRAY_RULESET_V2_ID, False),
+        # v4.0.0-rc1 Phase 2: the permanent stable identity (task Sec 10) --
+        # VM/blob + stable v4 rejected, API v1 + stable v4 rejected, API v2
+        # + stable v4 accepted, mirroring alpha1/alpha2's existing rows
+        # exactly (it shares their identical supported_runtime_kinds/
+        # supported_python_api_versions fields).
+        ({"kind": "blob"}, BYTEFRAY_RULESET_V4_ID, False),
+        ({"kind": "python", "api_version": 1}, BYTEFRAY_RULESET_V4_ID, False),
+        ({"kind": "python", "api_version": 2}, BYTEFRAY_RULESET_V4_ID, True),
+        # Alpha2 explicitly too, for completeness alongside alpha1 above.
+        ({"kind": "blob"}, BYTEFRAY_RULESET_V4_ALPHA2_ID, False),
+        ({"kind": "python", "api_version": 1}, BYTEFRAY_RULESET_V4_ALPHA2_ID, False),
+        ({"kind": "python", "api_version": 2}, BYTEFRAY_RULESET_V4_ALPHA2_ID, True),
     ],
 )
 def test_agent_supported_by_ruleset_uses_runtime_and_api_metadata(
@@ -51,6 +65,12 @@ def test_agent_supported_by_ruleset_uses_runtime_and_api_metadata(
         (BYTEFRAY_RULESET_V4_ALPHA1_ID, 1),
         (BYTEFRAY_RULESET_V4_ALPHA1_ID, None),
         (BYTEFRAY_RULESET_V2_ID, True),
+        # v4.0.0-rc1 Phase 2: a real NativeMatchService.run rejection under
+        # the stable identity too -- "API v1 + Ruleset v4 must fail
+        # clearly" (task Sec 10), proven at the actual execution boundary,
+        # not only through the predicate above.
+        (BYTEFRAY_RULESET_V4_ID, 1),
+        (BYTEFRAY_RULESET_V4_ID, None),
     ],
 )
 def test_native_match_service_rejects_api_mismatch_before_runtime(
