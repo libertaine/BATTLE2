@@ -20,6 +20,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
@@ -31,14 +32,21 @@ dependencies = [
 
 [project.optional-dependencies]
 replay = [
-  "pygame>=2.5",
+  # pygame-ce (a maintained, drop-in-namespace fork of classic Pygame) --
+  # still provides `import pygame`. Classic Pygame does not publish binary
+  # wheels for newer CPython on Linux (see docs/LINUX_INSTALL.md), which
+  # forces a source build against SDL2 development headers most installs
+  # don't have. 2.5.8 is the first pygame-ce version qualified against this
+  # renderer (RC2 pygame-ce/Python 3.14 migration); see docs/research/v4
+  # for the qualification record.
+  "pygame-ce>=2.5.8",
 ]
 designer = [
   "PySide6>=6.5",
 ]
 # Compatibility aggregate for the v0.1 documented extra.
 gui = [
-  "pygame>=2.5",
+  "pygame-ce>=2.5.8",
   "PySide6>=6.5",
 ]
 dev = [
