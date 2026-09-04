@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -24,6 +24,29 @@ jobs:
           app.services.engine_commands; forbidden = [name for name in sys.modules
           if name == 'PySide6' or name.startswith('PySide6.') or name == 'pygame'
           or name.startswith('pygame.')]; assert not forbidden, forbidden"
+      - name: Run core and headless tests
+        run: python -m pytest -q -m "not gui"
+
+  # Experimental, non-blocking early warning for the *next* CPython
+  # prerelease -- deliberately not part of the supported/tested matrix
+  # above (see AGENTS.md's "Supported environments"). pygame-ce publishes
+  # forward-looking wheels ahead of most other compiled dependencies (the
+  # RC2 pygame-ce migration exists precisely because classic Pygame did
+  # not have a Python 3.14 Linux wheel yet at the time), so this job gives
+  # advance notice of the same class of problem recurring for the next
+  # interpreter version rather than discovering it the way RC1 did.
+  test-linux-core-next-python:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.15-dev'
+          allow-prereleases: true
+      - run: python -m pip install -U pip
+      - name: Install core, replay, and test dependencies
+        run: python -m pip install -e ".[replay,dev]"
       - name: Run core and headless tests
         run: python -m pytest -q -m "not gui"
 

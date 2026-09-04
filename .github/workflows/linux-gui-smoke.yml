@@ -25,10 +25,18 @@ on:
 jobs:
   pygame-x11-smoke:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the package's floor; 3.14 is the RC2 pygame-ce migration's
+        # own regression target -- this is the exact scenario that surfaced
+        # the classic-Pygame/Python 3.14 Linux wheel gap during RC1 manual
+        # testing, so it stays covered here going forward.
+        python-version: ['3.10', '3.14']
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
-        with: { python-version: '3.10' }
+        with: { python-version: "${{ matrix.python-version }}" }
       - run: sudo apt-get update
       - name: Install virtual X server
         run: sudo apt-get install --no-install-recommends xvfb
