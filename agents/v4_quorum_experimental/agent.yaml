@@ -1,0 +1,9 @@
+{
+  "name": "v4_quorum_experimental",
+  "display": "V4 Quorum (Experimental)",
+  "description": "Six-process coordinated v4 boundary experiment with shared memory, adaptive defense, contact tracking, delayed READ feedback, and one global sensor.",
+  "kind": "python",
+  "api_version": 2,
+  "entrypoint": "agent.py:create_agent",
+  "version": "0.1.0"
+}
