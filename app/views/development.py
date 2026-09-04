@@ -40,12 +40,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTabWidget,
     QVBoxLayout,
@@ -212,6 +214,21 @@ class AgentDevelopmentPanel(QWidget):
 
         root = QVBoxLayout(self)
 
+        # The Agent Development workflow (Agent / Source / Validation /
+        # Development Test / Evaluation / Status) can exceed the available
+        # vertical space on a constrained display -- most visibly once a
+        # completed Development Test expands testStatusLabel to its full
+        # multi-line result. Everything below still needs to be reachable
+        # without shrinking, truncating, or hiding anything, so the whole
+        # workflow lives in `content`, scrolled by `scroll` rather than
+        # placed directly in `root`. `content_layout` carries zero margins
+        # so root's own (default) margins remain the only margin between
+        # the tab edge and the group boxes, matching the pre-scroll-area
+        # spacing exactly.
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+
         header = QGroupBox("Agent")
         header_row = QHBoxLayout(header)
         header_row.addWidget(QLabel("Agent"))
@@ -231,7 +248,7 @@ class AgentDevelopmentPanel(QWidget):
         header_row.addWidget(self.btnNewAgent)
         header_row.addWidget(self.btnOpenFolder)
         header_row.addWidget(self.btnExportAgent)
-        root.addWidget(header)
+        content_layout.addWidget(header)
 
         source = QGroupBox("Source")
         source_layout = QVBoxLayout(source)
@@ -265,14 +282,14 @@ class AgentDevelopmentPanel(QWidget):
         self.sourceTabs.addTab(self.manifestSource, "agent.yaml")
         self.sourceTabs.setMinimumHeight(180)
         source_layout.addWidget(self.sourceTabs)
-        root.addWidget(source)
+        content_layout.addWidget(source)
 
         validation = QGroupBox("Validation")
         validation_layout = QVBoxLayout(validation)
         self.btnValidate = QPushButton("Validate")
         self.btnValidate.setEnabled(False)
         validation_layout.addWidget(self.btnValidate)
-        root.addWidget(validation)
+        content_layout.addWidget(validation)
 
         test = QGroupBox("Development Test")
         test_layout = QVBoxLayout(test)
@@ -342,7 +359,7 @@ class AgentDevelopmentPanel(QWidget):
         self.btnInspectTrace.setEnabled(False)
         replay_row.addWidget(self.btnInspectTrace)
         test_layout.addLayout(replay_row)
-        root.addWidget(test)
+        content_layout.addWidget(test)
 
         evaluation = QGroupBox("Evaluation")
         evaluation_layout = QVBoxLayout(evaluation)
@@ -353,7 +370,7 @@ class AgentDevelopmentPanel(QWidget):
             "explicit opponents and seeds. See docs/AGENT_LAB.md."
         )
         evaluation_layout.addWidget(self.btnEvaluate)
-        root.addWidget(evaluation)
+        content_layout.addWidget(evaluation)
 
         status = QGroupBox("Status")
         status_layout = QVBoxLayout(status)
@@ -364,7 +381,15 @@ class AgentDevelopmentPanel(QWidget):
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
         status_layout.addWidget(self.statusLabel)
-        root.addWidget(status, 1)
+        content_layout.addWidget(status, 1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setWidget(content)
+        root.addWidget(scroll)
 
         self.btnRefresh.clicked.connect(self.refreshAgentsRequested.emit)
         self.btnNewAgent.clicked.connect(self.newAgentRequested.emit)
