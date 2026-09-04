@@ -187,6 +187,50 @@ def test_open_folder_disabled_with_no_agents():
 
 
 @pytest.mark.gui
+def test_agent_development_content_is_vertically_scrollable():
+    """RC1: the workflow content lives inside a QScrollArea so it stays
+    reachable when it doesn't fit the available vertical space (e.g. after
+    a completed Development Test expands testStatusLabel on a constrained
+    display), without truncating or hiding anything. Structural checks only
+    -- no pixel-level/platform-specific scrollbar assertions.
+    """
+    _make_app()
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QScrollArea
+
+    from app.views.development import AgentDevelopmentPanel
+
+    panel = AgentDevelopmentPanel()
+    try:
+        scroll_areas = panel.findChildren(QScrollArea)
+        assert len(scroll_areas) == 1
+        scroll = scroll_areas[0]
+        assert scroll.widgetResizable() is True
+        assert scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+
+        content = scroll.widget()
+        assert content is not None
+
+        # Every group's controls must still be reachable as descendants of
+        # the scroll area's content widget, in their existing logical
+        # order (Agent, Source, Validation, Development Test, Evaluation,
+        # Status) -- nothing was moved outside the scrollable area or
+        # dropped to make room.
+        for control in (
+            panel.agentCombo,
+            panel.sourceTabs,
+            panel.btnValidate,
+            panel.btnTest,
+            panel.testStatusLabel,
+            panel.btnEvaluate,
+            panel.statusLabel,
+        ):
+            assert content.isAncestorOf(control)
+    finally:
+        panel.deleteLater()
+
+
+@pytest.mark.gui
 def test_development_selection_and_state_invalidation_use_exact_agent_id(tmp_path):
     _make_app()
     from app.services.agent_catalog import AgentRow
