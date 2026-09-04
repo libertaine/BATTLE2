@@ -4,6 +4,13 @@ This changelog records notable user- and developer-visible changes to Bytefray.
 
 ## [Unreleased]
 
+* **New bundled Agent API v2 advanced example**: Added `v4_quorum`
+  ("V4 Quorum (Advanced Example)" in Designer), a six-process coordinated
+  entrant promoted from the `experiment/v4-quorum-agent` research branch.
+  Ships through the same starter-agent bootstrap path as the other `v4_*`
+  agents; unlike them it is explicitly advanced rather than a beginner
+  starting point, per its Designer display name and bundled `README.md`.
+
 ## [4.0.0-rc1] - 2026-09-03
 
 ### Bytefray v4.0 — release candidate 1

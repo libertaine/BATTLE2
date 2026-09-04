@@ -45,6 +45,7 @@ STARTER_AGENT_NAMES = (
     "v4_defender_scout",
     "v4_local_defender",
     "v4_scout",
+    "v4_quorum",
 )
 
 

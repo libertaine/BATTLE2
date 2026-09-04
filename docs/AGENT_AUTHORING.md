@@ -169,6 +169,13 @@ single-process claiming, concentrated attack, local defense, scouting, and a
 two-process defender/scout split. They use absolute arena addresses for
 `READ`/`WRITE` and signed relative deltas for `MOVE`.
 
+`v4_quorum` is a sixth, more advanced `v4_*` example -- its Designer display
+name says "Advanced Example" for exactly this reason. It coordinates six
+independently-moving processes sharing one entrant-wide quota, with shared
+contact memory and role-specific offense/defense behavior. It is not a
+starting point for a first agent; read the five above first, then see its
+bundled `README.md` for what to look for in a replay.
+
 Together they demonstrate patterns worth reusing directly: tracking a
 pending `READ`'s address so a later call can act on `Observation.last_read`
 correctly (every agent beyond Claimer needs this, and Raider shows the

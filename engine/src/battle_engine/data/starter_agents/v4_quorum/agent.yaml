@@ -1,0 +1,9 @@
+{
+  "name": "v4_quorum",
+  "display": "V4 Quorum (Advanced Example)",
+  "description": "Six-process coordinated Agent API v2 advanced example with shared memory, adaptive defense, contact tracking, and delayed READ feedback.",
+  "kind": "python",
+  "api_version": 2,
+  "entrypoint": "agent.py:create_agent",
+  "version": "1.0.0"
+}
