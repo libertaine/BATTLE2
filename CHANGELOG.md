@@ -4,6 +4,29 @@ This changelog records notable user- and developer-visible changes to Bytefray.
 
 ## [Unreleased]
 
+* **Replay/GUI dependency migrated from classic Pygame to pygame-ce**
+  (`replay`/`gui` extras now declare `pygame-ce>=2.5.8` instead of
+  `pygame>=2.5`). pygame-ce is a maintained, actively-released fork that
+  still installs under the standard `pygame` Python namespace, so
+  application and agent source continues to `import pygame` unchanged --
+  this is a distribution-dependency change, not an API migration. The
+  change fixes a real Linux install failure found during RC1 manual
+  testing on Ubuntu 26.04 (Python 3.14 default): classic Pygame had no
+  compatible Linux wheel for that interpreter, so pip fell back to a
+  source build that failed without `sdl2-config`/SDL2 development headers
+  installed. pygame-ce publishes CPython 3.14 (and 3.15) Linux wheels, so
+  a supported Python now installs `replay`/`gui` from a binary wheel
+  without requiring any local SDL toolchain. See
+  `docs/research/v4/V4_RC2_PYGAME_CE_PYTHON314_QUALIFICATION.md` for the
+  full compatibility qualification record.
+* **Python 3.14 qualified and added to supported/tested metadata.** Core,
+  Agent API v2 (including the Quorum advanced example), Designer, and the
+  Replay Viewer were all re-qualified under CPython 3.14 with pygame-ce;
+  CI's core matrix and the Linux pygame X11 smoke workflow now both
+  include 3.14 alongside the existing 3.10-3.13 coverage. A new,
+  explicitly non-blocking CI job tracks the next CPython prerelease ahead
+  of its stable release, since pygame-ce tends to publish forward-looking
+  wheels early.
 * **New bundled Agent API v2 advanced example**: Added `v4_quorum`
   ("V4 Quorum (Advanced Example)" in Designer), a six-process coordinated
   entrant promoted from the `experiment/v4-quorum-agent` research branch.

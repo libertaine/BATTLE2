@@ -1,6 +1,6 @@
 # Bytefray Linux wheel installation
 
-Bytefray supports Python 3.10 through 3.13. The Linux release artifact is a
+Bytefray supports Python 3.10 through 3.14. The Linux release artifact is a
 Python wheel; no PyInstaller, AppImage, Debian, or Flatpak artifact is currently
 provided. (See [README.md](../README.md#-downloads) for the current release;
 the exact wheel filename below tracks that latest tag as later versions ship.)
@@ -18,14 +18,23 @@ The core install supports native matches and headless replay. Optional desktop
 dependencies are separate:
 
 ```bash
-python -m pip install 'bytefray[replay]'    # Pygame replay viewer
+python -m pip install 'bytefray[replay]'    # pygame-ce replay viewer
 python -m pip install 'bytefray[designer]'  # PySide6 Agent Designer
 ```
 
-PySide6 and Pygame are not required for the core CLI. CI validates Pygame and
-Designer startup under X11/Xvfb. That is not full visible/input GUI validation,
-and native Wayland remains unvalidated, so the Linux wheel should still be
-treated as headless-first.
+PySide6 and pygame-ce are not required for the core CLI. Replay rendering
+uses [pygame-ce](https://pyga.me/), a maintained, actively-released fork of
+Pygame, through the standard `pygame` Python namespace -- application and
+agent code continues to `import pygame` unchanged. pygame-ce publishes
+binary wheels for current CPython releases (including 3.14) promptly, so a
+supported Python normally installs `replay`/`gui` without needing SDL2
+development headers or a local compiler; classic Pygame's Linux wheel
+coverage can lag a new CPython release, which forces pip to fall back to a
+source build that fails without `sdl2-config` and the SDL2 dev packages
+installed. CI validates pygame-ce and Designer startup under X11/Xvfb across
+the package's minimum and current-generation Python versions. That is not
+full visible/input GUI validation, and native Wayland remains unvalidated,
+so the Linux wheel should still be treated as headless-first.
 
 ## Writable data and starter agents
 

@@ -75,13 +75,14 @@ abbreviated.
 
 ## Supported environments
 
-- Runtime Python support is **3.10 through 3.13**; CI validates all four.
+- Runtime Python support is **3.10 through 3.14**; CI validates all five.
   Some legacy *release-build* tooling pins Python 3.11 for reproducible
   PyInstaller executables — that does not raise the package's runtime
   minimum.
 - Core install requires only PyYAML. GUI/dev functionality is opt-in via
-  extras: `replay` (Pygame), `designer` (PySide6), `dev`, `windows-build`;
-  `gui` is a compatibility aggregate of `replay`+`designer`.
+  extras: `replay` (pygame-ce, providing the `pygame` import namespace),
+  `designer` (PySide6), `dev`, `windows-build`; `gui` is a compatibility
+  aggregate of `replay`+`designer`.
 - The Linux wheel is **headless-first** — see
   [docs/LINUX_INSTALL.md](docs/LINUX_INSTALL.md). Windows is the primary GUI
   development target; see [docs/WINDOWS_DEV_NOTES.md](docs/WINDOWS_DEV_NOTES.md).
@@ -100,7 +101,7 @@ abbreviated.
   are deliberately excluded from the Python wheel. Any future binary
   distribution that bundles pMARS must preserve its GPLv2 licensing
   materials (see `third_party_licenses/`).
-- CI runs the headless suite on Python 3.10–3.13, validates the pure wheel,
+- CI runs the headless suite on Python 3.10–3.14, validates the pure wheel,
   and builds the four Windows executables. Optional workflows cover Linux
   X11/Xvfb GUI startup smoke and Ubuntu pMARS build/runtime — these are
   startup checks, not a substitute for manual interactive testing.

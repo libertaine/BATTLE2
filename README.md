@@ -17,7 +17,7 @@ Bytefray includes an Agent Designer, an interactive Replay Viewer, reproducible
 evaluation and tournament tools, and a complete command-line workflow.
 
 [![GitHub prerelease](https://img.shields.io/github/v/release/libertaine/Bytefray?include_prereleases&label=prerelease)](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-rc1)
-[![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-blue)](pyproject.toml)
+[![Python 3.10–3.14](https://img.shields.io/badge/Python-3.10%E2%80%933.14-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Current pre-release:** [Bytefray v4.0.0-rc1](https://github.com/libertaine/Bytefray/releases/tag/v4.0.0-rc1)
@@ -200,7 +200,7 @@ mismatched, replay viewing remains available in Broadcast mode.
 
 ## Quick Start
 
-Bytefray supports Python 3.10 through 3.13. From a source checkout:
+Bytefray supports Python 3.10 through 3.14. From a source checkout:
 
 ```bash
 git clone https://github.com/libertaine/Bytefray.git
@@ -208,7 +208,7 @@ cd Bytefray
 python -m venv .venv
 source .venv/bin/activate                 # Windows: .venv\Scripts\activate
 pip install -e .                         # core/headless
-pip install -e ".[replay]"              # add Pygame Replay Viewer
+pip install -e ".[replay]"              # add pygame-ce Replay Viewer
 pip install -e ".[designer]"            # add PySide6 Agent Designer
 # or: pip install -e ".[gui]"            # both GUI applications
 ```
@@ -453,9 +453,10 @@ See [pMARS build/runtime guidance](README.md) and
 
 ## Platforms and Packaging
 
-- Runtime support: Python 3.10–3.13
+- Runtime support: Python 3.10–3.14
 - Core dependency: PyYAML
-- Optional GUI dependencies: Pygame (`replay`) and PySide6 (`designer`)
+- Optional GUI dependencies: pygame-ce (`replay`, via the standard `pygame`
+  Python namespace) and PySide6 (`designer`)
 - Headless-first pure wheel for Linux and automation
 - Windows AMD64 installer and portable package with four onedir applications:
   `bytefray`, `bytefray-cli`, `bytefray-agent-designer`, and
