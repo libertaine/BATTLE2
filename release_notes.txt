@@ -1,4 +1,9 @@
-# Bytefray v4.0.0-alpha1
+# [Historical] Bytefray v4.0.0-alpha1 release notes
+
+# This file documents the v4.0.0-alpha1 release only and is NOT the current
+# release. See CHANGELOG.md and README.md's Downloads section for the
+# current release, and docs/releases/V4_0_0_ALPHA1_RELEASE_REPORT.md for the
+# full alpha1 qualification record.
 
 This is the first production alpha of the spatial multi-process game.
 

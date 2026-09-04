@@ -5,12 +5,12 @@
 Bytefray follows a single active release line — there are no older
 maintained major versions receiving separate fixes; security fixes are made
 against that line's current state. See [CHANGELOG.md](CHANGELOG.md) for
-release history. As of this writing, that line is in the `4.x` alpha
-prerelease series (`4.0.0-alpha1`) — an alpha, not yet a stable release; the
-most recent stable release was `3.0.0`. See
+release history. As of this writing, that line is in the `4.x` prerelease
+series, currently `4.0.0-rc1` — a release candidate, not yet a final stable
+release; the most recent stable release remains `3.0.0`. See
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for what the current line's
 Ruleset, Agent API, and schema contracts do and do not guarantee as stable
-while v4 remains in alpha.
+while v4.0 remains a release candidate.
 
 ## Reporting a vulnerability
 

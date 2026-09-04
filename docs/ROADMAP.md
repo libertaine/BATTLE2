@@ -1182,6 +1182,24 @@ recording. No gameplay Ruleset, Agent API, replay schema, or trace schema
 identity changed; historical Ruleset v1/v2 Designer matches remain
 replay-only.
 
+### v4.0.0-rc1 — Release Candidate
+
+**Status: published prerelease, current.** The first v4.0 release
+candidate, published September 4, 2026 — see
+[CHANGELOG.md](../CHANGELOG.md#400-rc1---2026-09-03) and the RC-path
+qualification reports under [docs/research/v4/](research/v4/). Promotes
+`bytefray-rules-4` to the permanent, stable v4 gameplay Ruleset (proven
+equivalent to `bytefray-rules-4-alpha2` by a release-blocking
+replay-equivalence corpus, not merely declared); an omitted `--ruleset` for
+an Agent API v2 roster now resolves to it by default across every product
+surface. Adds the seeded-placement evaluation methodology (schema 7,
+`ruleset_v4_seeded_placements`). No new gameplay mechanic, Agent API
+redesign, or replay schema bump over alpha4 — RC1 is packaging and
+distribution qualification of already-qualified source, independently
+qualified on both Windows and native-Wayland Linux. Historical
+`bytefray-rules-4-alpha1`/`-alpha2` remain unchanged and explicitly
+selectable.
+
 ## After v1.0
 
 Substantial work is intentionally kept out of the required v1.0 scope:
