@@ -1,0 +1,237 @@
+name: Linux Package (Ubuntu 24.04 release baseline)
+
+# RC2 Phase 2B: the official Linux frozen-release build baseline. Deliberately
+# pinned to ubuntu-24.04 (not ubuntu-latest) -- see
+# docs/research/v4/V4_RC2_LINUX_SELF_CONTAINED_PROTOTYPE.md section J for why
+# the prototype build (Ubuntu 26.04) is too new a glibc baseline to publish.
+# This workflow exercises the same tools/build_linux.sh a real release build
+# uses -- it does not reimplement a second, CI-only build path.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - v4-rc2-development
+    paths:
+      - ".github/workflows/linux-package.yml"
+      - "tools/build_linux.sh"
+      - "tools/bytefray.spec"
+      - "tools/bytefray_cli.spec"
+      - "tools/agent_designer.spec"
+      - "tools/replay_viewer.spec"
+      - "pyproject.toml"
+      - "engine/src/**"
+      - "client/src/**"
+      - "app/**"
+
+jobs:
+  linux-package:
+    name: Build & qualify Linux release baseline
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select build Python (3.14)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Record system/toolchain details
+        run: |
+          echo "== /etc/os-release =="
+          cat /etc/os-release
+          echo "== uname -a =="
+          uname -a
+          echo "== selected build python =="
+          command -v python
+          python --version
+          echo "== ldd --version =="
+          ldd --version | head -1
+
+      - name: Run canonical Linux build (tools/build_linux.sh)
+        env:
+          BYTEFRAY_LINUX_BUILD_VENV: .venv-ci-linux-build
+          BYTEFRAY_LINUX_BUILD_PYTHON: python
+        run: bash tools/build_linux.sh
+
+      - name: Record installed package versions
+        run: |
+          VENV_PY=.venv-ci-linux-build/bin/python
+          "$VENV_PY" --version
+          "$VENV_PY" -m pip show pyinstaller | grep -E "^(Name|Version):"
+          "$VENV_PY" -m pip show pygame-ce | grep -E "^(Name|Version):"
+          "$VENV_PY" -m pip show PySide6 | grep -E "^(Name|Version):"
+
+      - name: Confirm pygame-ce present, classic pygame absent
+        run: |
+          set -euo pipefail
+          VENV_PY=.venv-ci-linux-build/bin/python
+          "$VENV_PY" -m pip show pygame-ce
+          if "$VENV_PY" -m pip show pygame > /dev/null 2>&1; then
+            echo "::error::classic pygame is installed alongside pygame-ce"
+            exit 1
+          fi
+          echo "classic pygame absent: confirmed"
+
+      - name: Verify all four applications were built
+        run: |
+          set -euo pipefail
+          for name in bytefray bytefray-cli bytefray-agent-designer bytefray-replay-viewer; do
+            exe="dist/linux/${name}/${name}"
+            [[ -f "$exe" ]] || { echo "::error::missing $exe"; exit 1; }
+            [[ -x "$exe" ]] || { echo "::error::not executable $exe"; exit 1; }
+            size=$(stat -c%s "$exe")
+            echo "${name}: ${exe} (${size} bytes)"
+          done
+
+      - name: Native shared-library dependency gate
+        run: |
+          set -uo pipefail
+          fail=0
+          for name in bytefray bytefray-cli bytefray-agent-designer bytefray-replay-viewer; do
+            exe="dist/linux/${name}/${name}"
+            echo "== ${name} =="
+            file "$exe"
+            missing=$(ldd "$exe" 2>&1 | grep -i "not found" || true)
+            if [[ -n "$missing" ]]; then
+              echo "::error::unresolved shared libraries in ${exe}"
+              echo "$missing"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Frozen CLI smoke -- --version, agents listing, agents validate
+        run: |
+          set -euo pipefail
+          EXE="$(pwd)/dist/linux/bytefray/bytefray"
+          "$EXE" --version
+
+          ISO_ROOT="$(mktemp -d)"
+          BYTEFRAY_ROOT="$ISO_ROOT" "$EXE" agents
+          BYTEFRAY_ROOT="$ISO_ROOT" "$EXE" agents validate v4_quorum
+          rm -rf "$ISO_ROOT"
+
+      - name: Frozen CLI smoke -- agents create (isolated BYTEFRAY_ROOT)
+        run: |
+          set -euo pipefail
+          EXE="$(pwd)/dist/linux/bytefray/bytefray"
+          ISO_ROOT="$(mktemp -d)"
+          BYTEFRAY_ROOT="$ISO_ROOT" "$EXE" agents create smoke_agent
+          test -f "$ISO_ROOT/agents/smoke_agent/agent.yaml"
+          test -f "$ISO_ROOT/agents/smoke_agent/agent.py"
+          rm -rf "$ISO_ROOT"
+
+      - name: Fixed-seed v4 Quorum reference match + frozen replay smoke
+        run: |
+          set -euo pipefail
+          EXE="$(pwd)/dist/linux/bytefray/bytefray"
+          VIEWER="$(pwd)/dist/linux/bytefray-replay-viewer/bytefray-replay-viewer"
+          ISO_ROOT="$(mktemp -d)"
+          REPLAY_PATH="$ISO_ROOT/match.replay"
+
+          # Reference configuration qualified on Windows (Phase 1B) and the
+          # Ubuntu 26.04 prototype (see docs/research/v4/
+          # V4_RC2_WINDOWS_PYGAME_CE_PACKAGED_QUALIFICATION.md section J and
+          # V4_RC2_LINUX_SELF_CONTAINED_PROTOTYPE.md section G): winner=A,
+          # A=16.0, B=10.0, ticks=11, termination=last_agent_standing.
+          BYTEFRAY_ROOT="$ISO_ROOT" "$EXE" run \
+            --a-type v4_quorum --b-type v4_defender_scout --seed 42 \
+            --ticks 3000 --arena 512 --ruleset bytefray-rules-4 \
+            --replay "$REPLAY_PATH" --quiet
+
+          RESULT_JSON="$ISO_ROOT/result.json"
+          test -f "$RESULT_JSON" || { echo "::error::result.json not produced next to replay"; exit 1; }
+          cat "$RESULT_JSON"
+
+          python3 - "$RESULT_JSON" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          expected = {"winner": "A", "ticks": 11, "termination_reason": "last_agent_standing"}
+          for key, value in expected.items():
+              actual = data.get(key)
+              assert actual == value, f"{key}: expected {value!r}, got {actual!r}"
+          score = data.get("score", {})
+          assert score.get("A") == 16.0, f"A score mismatch: {score.get('A')!r}"
+          assert score.get("B") == 10.0, f"B score mismatch: {score.get('B')!r}"
+          print("Quorum reference match result matches the qualified reference exactly.")
+          PY
+
+          REPLAY_OUTPUT="$("$VIEWER" --replay "$REPLAY_PATH" --renderer headless --tick-delay 0)"
+          echo "$REPLAY_OUTPUT"
+          echo "$REPLAY_OUTPUT" | grep -q "RESULT winner=A" \
+            || { echo "::error::replay result did not reproduce the match result"; exit 1; }
+
+          rm -rf "$ISO_ROOT"
+
+      - name: Contamination check -- no runtime data under packaged trees
+        run: |
+          set -euo pipefail
+          fail=0
+          for name in bytefray bytefray-cli bytefray-agent-designer bytefray-replay-viewer; do
+            for sub in agents replays history logs; do
+              path="dist/linux/${name}/${sub}"
+              if [[ -e "$path" ]]; then
+                echo "::error::unexpected runtime data under $path"
+                fail=1
+              fi
+            done
+          done
+          exit $fail
+
+      - name: Package canonical RC2-development archive
+        id: package
+        run: |
+          set -euo pipefail
+          ARCHIVE_NAME="bytefray-4.0.0-rc2-dev-linux-x86_64.tar.gz"
+          mkdir -p dist/release
+          tar -C dist/linux -czf "dist/release/${ARCHIVE_NAME}" \
+            bytefray bytefray-cli bytefray-agent-designer bytefray-replay-viewer
+          SHA256=$(sha256sum "dist/release/${ARCHIVE_NAME}" | awk '{print $1}')
+          echo "$SHA256  ${ARCHIVE_NAME}" > "dist/release/${ARCHIVE_NAME}.sha256"
+          SIZE=$(stat -c%s "dist/release/${ARCHIVE_NAME}")
+          {
+            echo "archive_name=${ARCHIVE_NAME}"
+            echo "archive_size=${SIZE}"
+            echo "archive_sha256=${SHA256}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Archive: ${ARCHIVE_NAME} (${SIZE} bytes)"
+          echo "SHA256: ${SHA256}"
+
+      - name: Maximum GLIBC requirement
+        run: |
+          set -euo pipefail
+          {
+            echo "dist/linux/bytefray/bytefray"
+            for f in dist/linux/bytefray/_internal/*.so*; do echo "$f"; done
+          } | while read -r f; do
+            [[ -f "$f" ]] || continue
+            readelf -V "$f" 2>/dev/null | grep -oE 'GLIBC_[0-9]+\.[0-9]+' || true
+          done | sort -V -u > glibc-requirements.txt
+          cat glibc-requirements.txt
+          echo "Maximum GLIBC requirement: $(tail -1 glibc-requirements.txt)"
+
+      - name: Write qualification summary
+        if: always()
+        run: |
+          {
+            echo "### Linux release baseline qualification"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Source SHA | \`${{ github.sha }}\` |"
+            echo "| Runner | ubuntu-24.04 |"
+            echo "| Archive | \`${{ steps.package.outputs.archive_name }}\` |"
+            echo "| Archive size (bytes) | ${{ steps.package.outputs.archive_size }} |"
+            echo "| SHA256 | \`${{ steps.package.outputs.archive_sha256 }}\` |"
+            echo "| Max GLIBC | \`$(tail -1 glibc-requirements.txt)\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release archive artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: bytefray-linux-x86_64-rc2-dev
+          path: |
+            dist/release/${{ steps.package.outputs.archive_name }}
+            dist/release/${{ steps.package.outputs.archive_name }}.sha256
+            glibc-requirements.txt
+          if-no-files-found: error
