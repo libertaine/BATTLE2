@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
+import sys
 from PyInstaller.utils.hooks import collect_submodules
 
 project_root = os.path.abspath(".")
@@ -8,11 +9,15 @@ script_path = os.path.join(engine_src, "battle_engine", "cli.py")
 pmars_dir = os.path.join(project_root, "pmars", "windows")
 icon_path = os.path.join(project_root, "assets", "branding", "bytefray-icon.ico")
 starter_agents_dir = os.path.join(engine_src, "battle_engine", "data", "starter_agents")
-pmars_datas = [
-    (os.path.join(pmars_dir, "pmars.exe"), "pmars/windows"),
-    (os.path.join(pmars_dir, "COPYING"), "pmars/windows"),
-]
-datas = list(pmars_datas)
+# See tools/bytefray.spec for why pmars/windows is bundled only on Windows.
+datas = []
+if sys.platform == "win32" and os.path.isdir(pmars_dir):
+    datas.extend(
+        [
+            (os.path.join(pmars_dir, "pmars.exe"), "pmars/windows"),
+            (os.path.join(pmars_dir, "COPYING"), "pmars/windows"),
+        ]
+    )
 if os.path.isdir(starter_agents_dir):
     datas.append((starter_agents_dir, "battle_engine/data/starter_agents"))
 

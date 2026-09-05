@@ -60,6 +60,13 @@ windows-build = [
   "pyinstaller>=6.6",
   "pefile>=2023.2.7",
 ]
+# Linux build toolchain. Kept as a separate extra rather than folding into
+# windows-build: `pefile` parses Windows PE binaries only and has no role in
+# a Linux PyInstaller build, and windows-build's own name and audience
+# (tools/build_win.ps1) stay unchanged per RC2's packaging scope.
+linux-build = [
+  "pyinstaller>=6.6",
+]
 
 [project.scripts]
 bytefray              = "battle_engine.command:main"

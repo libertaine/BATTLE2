@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
+import sys
 from PyInstaller.utils.hooks import collect_submodules
 
 project_root = os.path.abspath(".")
@@ -14,11 +15,25 @@ agent_template_dir = os.path.join(engine_src, "battle_engine", "data", "agent_te
 agent_template_annotated_dir = os.path.join(
     engine_src, "battle_engine", "data", "agent_template_annotated"
 )
-pmars_datas = [
-    (os.path.join(pmars_dir, "pmars.exe"), "pmars/windows"),
-    (os.path.join(pmars_dir, "COPYING"), "pmars/windows"),
-]
-datas = list(pmars_datas)
+# pmars/windows only ships a Windows pmars.exe; battle_engine.pmars only ever
+# looks under a "pmars/windows" resource subdirectory when os.name == "nt"
+# (see _candidate_directories), so bundling it on other platforms would be
+# dead weight, not a working redcode94 backend. pMARS itself is unrelated to
+# Agent API v2 matches (the `run --mode redcode94` backend only); it is
+# deliberately not vendored for Linux (no redistributable Linux binary is
+# checked into this repo -- see tools/build_pmars_linux.sh and
+# .github/workflows/linux-pmars-build.yml, which build it from a
+# separately-downloaded, license-verified source archive and do not persist
+# the result). A Linux build's PMARS_CMD/PATH fallback (battle_engine/
+# pmars.py) still applies unchanged for a user who supplies their own binary.
+datas = []
+if sys.platform == "win32" and os.path.isdir(pmars_dir):
+    datas.extend(
+        [
+            (os.path.join(pmars_dir, "pmars.exe"), "pmars/windows"),
+            (os.path.join(pmars_dir, "COPYING"), "pmars/windows"),
+        ]
+    )
 if os.path.isdir(branding_dir):
     datas.append((branding_dir, "assets/branding"))
 if os.path.isdir(starter_agents_dir):
