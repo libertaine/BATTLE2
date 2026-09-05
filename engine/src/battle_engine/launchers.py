@@ -9,6 +9,15 @@ from pathlib import Path
 from battle_engine.paths import is_frozen_application, normalize_root
 
 
+def _packaged_executable_filename(name: str) -> str:
+    """Return the platform-appropriate filename PyInstaller gives ``name``.
+
+    A Windows onedir build's launcher is ``<name>.exe``; every other
+    platform's PyInstaller launcher (Linux, macOS) has no extension at all.
+    """
+    return f"{name}.exe" if sys.platform == "win32" else name
+
+
 def _current_executable() -> str:
     """Return the running interpreter's own path, without resolving symlinks.
 
@@ -28,7 +37,7 @@ def _current_executable() -> str:
 
 def _packaged_executable(name: str) -> Path:
     executable_dir = normalize_root(Path(sys.executable).parent)
-    filename = f"{name}.exe"
+    filename = _packaged_executable_filename(name)
     candidates = (
         executable_dir / filename,
         executable_dir.parent / name / filename,

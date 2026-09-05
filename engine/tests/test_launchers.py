@@ -9,6 +9,13 @@ from battle_engine import launchers
 from app.services import engine_commands
 from app.services.osutil import get_default_paths
 
+# PyInstaller's onedir launcher is "<name>.exe" only on Windows; every other
+# platform's launcher (this suite's own platform, normally Linux/macOS) has
+# no extension. Frozen-mode tests build expected filenames with this suffix
+# so they exercise the platform they actually run on rather than pinning
+# Windows-only behavior.
+_EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
+
 
 def _set_source(monkeypatch, executable: Path) -> None:
     monkeypatch.setattr(sys, "frozen", False, raising=False)
@@ -99,11 +106,33 @@ def test_source_tournament_uses_primary_dispatcher(monkeypatch, tmp_path):
     ]
 
 
+def test_packaged_executable_filename_has_no_extension_off_windows(monkeypatch):
+    """Regression test for a real, previously-shipped Linux packaging defect.
+
+    ``_packaged_executable`` used to append a literal ``.exe`` unconditionally,
+    so every frozen-mode subprocess relaunch this module builds (``agents
+    validate``/``agents test`` via ``agent_worker.py``, tournament resume,
+    Designer "Development Test"/replay launch) looked for a ``bytefray.exe``
+    that could never exist in a Linux onedir build (whose launcher is
+    ``bytefray``, no extension) -- confirmed end to end against a real frozen
+    ``dist/linux/bytefray`` build, which reproduced
+    ``FileNotFoundError: Packaged executable not found: bytefray.exe``. Pinned
+    independent of the platform this suite actually runs on, unlike the
+    frozen-mode tests below (which use ``_EXE_SUFFIX`` derived from the real
+    running platform and so only ever exercise one branch per CI run).
+    """
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert launchers._packaged_executable_filename("bytefray") == "bytefray"
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert launchers._packaged_executable_filename("bytefray") == "bytefray.exe"
+
+
 def test_frozen_commands_use_packaged_sibling_executables(monkeypatch, tmp_path):
     app_dir = tmp_path / "Bytefray Portable"
-    designer = app_dir / "bytefray-agent-designer.exe"
-    bytefray = app_dir / "bytefray.exe"
-    viewer = app_dir / "bytefray-replay-viewer.exe"
+    designer = app_dir / f"bytefray-agent-designer{_EXE_SUFFIX}"
+    bytefray = app_dir / f"bytefray{_EXE_SUFFIX}"
+    viewer = app_dir / f"bytefray-replay-viewer{_EXE_SUFFIX}"
     app_dir.mkdir()
     bytefray.touch()
     viewer.touch()
@@ -127,9 +156,9 @@ def test_frozen_commands_use_packaged_sibling_executables(monkeypatch, tmp_path)
 
 def test_frozen_commands_support_current_onedir_sibling_layout(monkeypatch, tmp_path):
     bin_dir = tmp_path / "Program Files" / "Bytefray" / "bin"
-    designer = bin_dir / "bytefray-agent-designer" / "bytefray-agent-designer.exe"
-    bytefray = bin_dir / "bytefray" / "bytefray.exe"
-    viewer = bin_dir / "bytefray-replay-viewer" / "bytefray-replay-viewer.exe"
+    designer = bin_dir / "bytefray-agent-designer" / f"bytefray-agent-designer{_EXE_SUFFIX}"
+    bytefray = bin_dir / "bytefray" / f"bytefray{_EXE_SUFFIX}"
+    viewer = bin_dir / "bytefray-replay-viewer" / f"bytefray-replay-viewer{_EXE_SUFFIX}"
     designer.parent.mkdir(parents=True)
     bytefray.parent.mkdir()
     viewer.parent.mkdir()
@@ -144,14 +173,17 @@ def test_frozen_commands_support_current_onedir_sibling_layout(monkeypatch, tmp_
 
 
 @pytest.mark.parametrize("builder, executable_name", [
-    (lambda: launchers.build_match_command([]), "bytefray.exe"),
-    (lambda: launchers.build_agents_command("validate", ["x"]), "bytefray.exe"),
-    (lambda: launchers.build_replay_command(Path("replay.jsonl")), "bytefray-replay-viewer.exe"),
+    (lambda: launchers.build_match_command([]), f"bytefray{_EXE_SUFFIX}"),
+    (lambda: launchers.build_agents_command("validate", ["x"]), f"bytefray{_EXE_SUFFIX}"),
+    (
+        lambda: launchers.build_replay_command(Path("replay.jsonl")),
+        f"bytefray-replay-viewer{_EXE_SUFFIX}",
+    ),
 ])
 def test_missing_packaged_executable_has_clear_error(
     monkeypatch, tmp_path, builder, executable_name
 ):
-    designer = tmp_path / "designer" / "bytefray-agent-designer.exe"
+    designer = tmp_path / "designer" / f"bytefray-agent-designer{_EXE_SUFFIX}"
     _set_frozen(monkeypatch, designer)
 
     with pytest.raises(FileNotFoundError, match=executable_name):
@@ -160,8 +192,8 @@ def test_missing_packaged_executable_has_clear_error(
 
 def test_data_root_does_not_redirect_executable_discovery(monkeypatch, tmp_path):
     app_dir = tmp_path / "Application Bin"
-    designer = app_dir / "bytefray-agent-designer.exe"
-    bytefray = app_dir / "bytefray.exe"
+    designer = app_dir / f"bytefray-agent-designer{_EXE_SUFFIX}"
+    bytefray = app_dir / f"bytefray{_EXE_SUFFIX}"
     app_dir.mkdir()
     bytefray.touch()
     monkeypatch.setenv("BYTEFRAY_ROOT", str(tmp_path / "Writable Data"))
