@@ -87,3 +87,31 @@ Select one console-only executable path without fixed arguments:
 PMARS_CMD=/absolute/path/to/pmars bytefray run --mode redcode94 \
   --red-a path/to/a.red --red-b path/to/b.red
 ```
+
+## Looking ahead: RC2 self-contained Linux distribution
+
+RC2 (not yet published; current downloads remain the RC1 wheel above) adds a
+second, self-contained distribution path alongside the Python package install
+described above. Once RC2 ships, Linux users will be able to choose either:
+
+- **Self-contained binary distribution.** Download and extract a Linux
+  tar.gz containing the frozen `bytefray`, `bytefray-cli`,
+  `bytefray-agent-designer`, and `bytefray-replay-viewer` applications, then
+  run them directly. No local Python interpreter, `pip`, or virtual
+  environment is required.
+- **Python package installation.** Advanced/development users can continue
+  installing the wheel or an editable source checkout on a supported Python
+  version, exactly as documented above.
+
+**Official release-build baseline.** The self-contained Linux artifact is
+built on **Ubuntu 24.04 LTS** (not a newer or arbitrary Ubuntu release);
+newer Ubuntu releases are qualified against the exact bytes that baseline
+produces, rather than being rebuilt on those newer releases. As actually
+measured on the Ubuntu 24.04 RC2-development baseline build, the frozen
+bundle's maximum required glibc symbol version is `GLIBC_2.38`, which
+post-dates Ubuntu 22.04 LTS (glibc 2.35) and Debian 12 "Bookworm" (glibc
+2.36). Neither of those, nor any other distribution, is claimed as supported
+unless it is actually tested and found compatible with this measured glibc
+requirement. See
+[`docs/research/v4/V4_RC2_LINUX_RELEASE_BASELINE_QUALIFICATION.md`](research/v4/V4_RC2_LINUX_RELEASE_BASELINE_QUALIFICATION.md)
+for the full qualification record.
