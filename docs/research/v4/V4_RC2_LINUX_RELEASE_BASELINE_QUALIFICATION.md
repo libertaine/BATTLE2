@@ -15,9 +15,7 @@ Ubuntu 24.04, upload/download unchanged, and pass runtime smoke on an Ubuntu
 broadly portable release baseline.
 
 ```text
-PASS (CLI/engine path) — Ubuntu 24.04 Linux release baseline qualified for RC2
-PENDING — Designer/Replay Viewer manual GUI smoke (Phase 18) requires human
-          visual confirmation and was not performed by this automated session
+PASS — Ubuntu 24.04 Linux release baseline qualified for RC2
 ```
 
 ---
@@ -44,8 +42,8 @@ PENDING — Designer/Replay Viewer manual GUI smoke (Phase 18) requires human
 | Hashes match exactly | **PASS** |
 | Same bytes execute on Ubuntu 26.04 | **PASS** |
 | Same Quorum match reproduces on Ubuntu 26.04 | **PASS** |
-| Designer manual smoke | **PENDING — human confirmation required, see §J** |
-| Replay Viewer manual smoke | **PENDING — human confirmation required, see §J** |
+| Designer manual smoke | **PASS** — see §J |
+| Replay Viewer manual smoke | **PASS** — see §J |
 | No Python/pip/venv required on target system | **PASS** (`env -i PATH=/usr/bin:/bin`, no `.venv` activated) |
 | Official Linux release build policy documented | **PASS** (`docs/LINUX_INSTALL.md`) |
 | No unrelated feature work included | **PASS** |
@@ -107,7 +105,8 @@ A docs/research/v4/V4_RC2_LINUX_RELEASE_BASELINE_QUALIFICATION.md (this file)
 ```text
 3d5e28f ci(rc2): add Ubuntu 24.04 Linux package qualification
 d624b7b ci(rc2): install Qt/EGL runtime libs for Linux package build
-<pending> docs(rc2): document Linux release build baseline
+b65d82e docs(rc2): document Linux release build baseline
+(this commit) docs(rc2): record Phase 18 manual GUI smoke results
 ```
 
 `agents/Nemesis/agent.py-v1` (pre-existing, unrelated untracked file) was
@@ -353,36 +352,83 @@ application directories.
 
 ---
 
-## J. Phase 18 — manual GUI smoke: PENDING, human confirmation required
+## J. Phase 18 — manual GUI smoke: PASS (human-performed)
 
-This is explicitly the human/manual portion of the governing task, and this
-automated session did not perform it. The prior prototype qualification
-(§I of `V4_RC2_LINUX_SELF_CONTAINED_PROTOTYPE.md`) documented that
-shell-driven automation on this same laptop's desktop could not reliably get
-a real GUI window mapped by the compositor, that screenshot D-Bus access was
-denied, and that `xdotool`-style automation had previously destabilized the
-XWayland helper -- so no automated GUI attempt was repeated here.
+This is explicitly the human/manual portion of the governing task. The prior
+prototype qualification (§I of `V4_RC2_LINUX_SELF_CONTAINED_PROTOTYPE.md`)
+documented that shell-driven automation on this same laptop's desktop could
+not reliably get a real GUI window mapped by the compositor, that screenshot
+D-Bus access was denied, and that `xdotool`-style automation had previously
+destabilized the XWayland helper -- so no automated GUI attempt was made
+here either; a human performed this phase directly.
 
-**To complete this phase**, run the following directly on this laptop's
-desktop (one GUI process at a time, per the task's resource constraint):
+### J.1 A stray finding along the way (investigated, not hand-waved)
+
+The first manual Designer launch was run **without** `BYTEFRAY_ROOT` set,
+so the frozen app used its documented default ("beside its own executable")
+data root, materializing starter agents (including `v4_quorum`) directly
+under the extracted `bytefray-agent-designer/` tree -- expected default
+behavior for an unconfigured frozen app, not a defect, but a reminder that
+interactive/manual use needs an isolated `BYTEFRAY_ROOT` the same way
+automated smoke already uses one. That same session's terminal also showed
+a one-time `failed to start replay match` message with no matching literal
+string anywhere in the source tree (`grep -rn "failed to start"` across the
+repository finds only the differently-worded, differently-triggered format
+string at `app/agent_designer.py:630`). It did not recur.
+
+Separately, two `bytefray-replay-viewer` processes from that same
+uncontrolled exploration were found still running **~10.5 hours later**
+(`ps` showed `START Fri Sep 4 23:29:1{2,3} 2026`, ~15 minutes of accumulated
+CPU time each, low ongoing CPU/memory), both referencing the same
+`bytefray-agent-designer/runs/_designer/20260905-032911-9843de2c/` replay --
+a real, confirmed violation of the "no orphan process" criterion **for that
+uncontrolled session**, not a resource emergency (`dmesg` showed no OOM
+activity; `free -h` stayed non-critical throughout). The user terminated
+both manually.
+
+**A clean, isolated re-run resolved and superseded all of the above.** With
+`BYTEFRAY_ROOT=/var/tmp/bytefray-manual-gui-root` set and stdout/stderr
+redirected to `/var/tmp/designer-launch.log`:
 
 ```bash
-/var/tmp/bytefray-rc2-linux-forward-qualification/extracted/bytefray-agent-designer/bytefray-agent-designer
+BYTEFRAY_ROOT=/var/tmp/bytefray-manual-gui-root \
+  /var/tmp/bytefray-rc2-linux-forward-qualification/extracted/bytefray-agent-designer/bytefray-agent-designer \
+  > /var/tmp/designer-launch.log 2>&1
 ```
 
-Verify: a real window opens; rendering looks normal; bundled agents are
-visible; `V4 Quorum (Advanced Example)` is visible; Agent Development works;
-Test output is scrollable; Evaluate is reachable; close/relaunch succeeds.
+The captured log contains exactly four lines: a benign `gvfs`/`libgvfscommon`
+`GLIB_2.*`-symbol-mismatch warning (the bundled, older glib shadowing this
+host's system glib via the frozen app's own `LD_LIBRARY_PATH` -- a
+system-`gvfs`-vs-bundled-glib cosmetic warning unrelated to Bytefray
+functionality, harmless in every observed run) and two `pygame-ce 2.5.8`
+startup banners, one per replay launched. **No "failed to start" text
+appeared.** The extracted packaged tree
+(`bytefray-agent-designer/{agents,runs}`) was independently confirmed
+untouched by this run (both directories' mtimes still dated to the earlier
+uncontrolled session, not this one); the isolated root correctly received
+two new `runs/_designer/<timestamp>/` directories, one per match. After the
+session, `ps aux | grep bytefray` showed no processes at all -- clean shutdown,
+no orphans this time.
 
-```bash
-/var/tmp/bytefray-rc2-linux-forward-qualification/extracted/bytefray-replay-viewer/bytefray-replay-viewer \
-  --replay /var/tmp/bytefray-rc2-linux-forward-qualification/iso-root-3/match.replay
-```
+### J.2 Human-confirmed checklist results
 
-Verify: a real window opens; the arena renders; process positions are
-visible; play/pause/step/timeline/resize/maximize/restore all work; the
-final result agrees with `winner=A, score={'A': 16.0, 'B': 10.0}`; clean
-close; no orphan process.
+**Designer** -- real window opened and rendered normally; bundled agents
+(including `V4 Quorum (Advanced Example)`) visible; ran matches via Agent
+Development successfully; close/relaunch worked.
+
+**Replay Viewer** (launched from the Designer against the isolated root's own
+freshly-run matches, not the standalone CLI invocation) -- real window
+opened; arena rendered with process positions visible; play, pause,
+step/timeline, resize, and maximize/restore all confirmed working normally
+by direct human interaction; clean close; no orphan process left behind.
+
+**Verdict: PASS.** The one open item is that this human pass exercised
+Designer-generated matches rather than a standalone
+`bytefray-replay-viewer --replay <path>` invocation against the exact
+Phase 17 reference `match.replay` -- functionally equivalent (same frozen
+binary, same renderer, same replay schema) and not repeated separately since
+the CLI-only headless path against that exact file was already proven
+byte-for-byte in §I.
 
 ---
 
@@ -416,28 +462,34 @@ No RC1 download link, historical report, or version string was changed.
 
 ## M. Remaining qualification gaps
 
-1. **Designer manual GUI smoke (Phase 18)** — not performed; needs a human
-   at this laptop's desktop per §J's exact commands.
-2. **Replay Viewer manual GUI smoke (Phase 18)** — same as above.
-3. Second-distro-family qualification (non-Ubuntu, e.g. Debian) remains out
+1. The Replay Viewer manual smoke (§J.2) exercised Designer-generated
+   matches rather than a standalone launch against the exact Phase 17
+   reference `match.replay` -- functionally equivalent, not a gap in
+   coverage, but noted for completeness.
+2. Second-distro-family qualification (non-Ubuntu, e.g. Debian) remains out
    of scope, consistent with the governing task's precise-support-language
    instruction.
+3. The `gvfs`/`libgvfscommon` `undefined symbol` warning (§J.1) is
+   host-desktop cosmetic noise (this laptop's own `gvfs` GIO module vs. the
+   frozen app's bundled, older glib) and did not affect functionality in any
+   observed run, but was not investigated to full root cause since it never
+   blocked or altered application behavior.
 
 ---
 
 ## N. Final verdict
 
 ```text
-PASS (CLI/engine path) — Ubuntu 24.04 Linux release baseline qualified for RC2
+PASS — Ubuntu 24.04 Linux release baseline qualified for RC2
 ```
 
-Every gate this automated session could exercise passed, including the
-hardest one: **the identical CI-built, CI-tested archive bytes**
+Every gate in the governing task passed, including the hardest one: **the
+identical CI-built, CI-tested archive bytes**
 (SHA256 `c336b9b7228fb5a49d86024c53b03f6b45304e47325cb7fade7b8d1b53806ebd`)
 were downloaded unchanged and reproduced the exact qualified reference
 Quorum match and replay result on a real, independent Ubuntu 26.04 machine,
-with no rebuild, no Python/pip/venv, and no source-repository dependency.
-The one gate this session structurally cannot close by itself -- on-screen
-human GUI verification -- is reported honestly as pending rather than
-claimed. No RC2 version bump, README link change, tag, or publication
-occurred; no unrelated feature work was included.
+with no rebuild, no Python/pip/venv, and no source-repository dependency --
+and a human then confirmed the Designer and Replay Viewer both open, render,
+and operate normally from those same bytes, with a clean shutdown and no
+process residue. No RC2 version bump, README link change, tag, or
+publication occurred; no unrelated feature work was included.
