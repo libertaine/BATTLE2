@@ -35,6 +35,31 @@ jobs:
         with:
           python-version: "3.14"
 
+      # A bare ubuntu-24.04 runner lacks the Qt/EGL runtime libraries a real
+      # desktop install would already have, so PySide6.QtGui fails to import
+      # (ImportError: libEGL.so.1) even under QT_QPA_PLATFORM=offscreen --
+      # tools/build_linux.sh's own embedded Designer GUI smoke needs these
+      # regardless of platform plugin choice. Same package list
+      # .github/workflows/linux-gui-smoke.yml's designer-x11-smoke job
+      # already installs for the same reason; no xvfb here since the build
+      # script's smoke stays headless via QT_QPA_PLATFORM=offscreen.
+      - name: Install Qt/EGL runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xinerama0 \
+            libxcb-xkb1
+
       - name: Record system/toolchain details
         run: |
           echo "== /etc/os-release =="
